@@ -69,3 +69,5 @@ if (violations.length > 0) {
 } else {
   console.log("Architecture boundaries verified.");
 }
+
+await import("./verify-documentation-contracts.mjs");

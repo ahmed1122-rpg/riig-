@@ -115,9 +115,10 @@ cumulative duration buckets, allowing Prometheus to derive p95 with
 `histogram_quantile`.
 
 Then run a smoke journey with a non-admin account: sign in, upload one AVIF or
-PNG image, fill a transparent gap, separate a region, reorder layers, export a
-PSD and multi-page TIFF, upload one scanned Arabic PDF, navigate pages, mark a
-line, and export both per-page and full-document PSD.
+PNG image, fill a transparent gap, separate a region, reorder layers, and export
+that image as PSD and multi-page TIFF. Next, upload one scanned Arabic PDF,
+navigate pages, mark a line, and export that PDF as both per-page and
+full-document PSD. TIFF is an image-project export, not a PDF export.
 
 ## Scheduled retention maintenance
 

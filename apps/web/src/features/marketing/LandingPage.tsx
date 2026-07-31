@@ -415,7 +415,7 @@ export default function LandingPage({
           <ul>
             <li><b>PSD</b><span>طبقات منظمة</span></li>
             <li><b>PNG</b><span>عناصر شفافة + JSON</span></li>
-            <li><b>TIFF</b><span>ملف متعدد الطبقات</span></li>
+            <li><b>TIFF</b><span>صفحة Raster لكل طبقة صورة</span></li>
             <li><b>TXT / CSV</b><span>نص PDF منظم</span></li>
           </ul>
         </section>

@@ -564,7 +564,7 @@ export function ExportReview({
               <div><span>الوقت</span><strong>حسب حجم المصدر</strong></div>
             </div>
 
-            <div className="local-demo-note"><Icon name="info" size={14} /><span>PSD للصور وPDF وPNG الشفافة وPNG + JSON والمخرجات النصية تعمل فعليًا. PDF ينتج نصوصًا Raster مستقلة لتجنب اختلاف الخطوط بين الأجهزة.</span></div>
+            <div className="local-demo-note"><Icon name="info" size={14} /><span>للصور: PSD وTIFF وPNG الشفافة وPNG + JSON. ولـPDF: PSD وPNG + JSON وTXT/CSV/JSON؛ وتُرسم نصوص PSD كطبقات Raster لتجنب اختلاف الخطوط بين الأجهزة.</span></div>
             {saveState !== "saved" && (
               <div className={`export-save-state is-${saveState}`} role="status">
                 <span>

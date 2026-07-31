@@ -3,7 +3,10 @@ import {
   MAX_IMAGE_LAYERS,
   MAX_UPLOAD_BYTES,
   acceptedSourceTypes,
+  exportFormats,
+  exportFormatsByProjectKind,
   layerLayoutMetadata,
+  supportsExportFormat,
   type ImageGuidanceKind,
   type LayerDocument,
   type LayerNode,
@@ -30,6 +33,29 @@ describe("upload contract", () => {
 
   it("caps visual assets at 15 layers", () => {
     expect(MAX_IMAGE_LAYERS).toBe(15);
+  });
+
+  it("publishes one export capability matrix for every project kind", () => {
+    expect(exportFormats).toEqual([
+      "psd",
+      "png-layers-json",
+      "layered-tiff",
+      "transparent-pngs",
+      "txt",
+      "csv",
+      "json",
+    ]);
+    expect(exportFormatsByProjectKind).toEqual({
+      image: [
+        "psd",
+        "png-layers-json",
+        "layered-tiff",
+        "transparent-pngs",
+      ],
+      book: ["psd", "png-layers-json", "txt", "csv", "json"],
+    });
+    expect(supportsExportFormat("book", "psd")).toBe(true);
+    expect(supportsExportFormat("book", "layered-tiff")).toBe(false);
   });
 
   it("exposes explicit automatic, manual, and guided processing contracts", () => {

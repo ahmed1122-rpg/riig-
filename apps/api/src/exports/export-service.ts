@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
+import { supportsExportFormat } from "@motionprep/contracts";
 import type {
-  ExportFormat,
   ExportJob,
   ExportRequest,
   LayerDocument,
@@ -59,20 +59,6 @@ export class ExportDomainError extends Error {
   }
 }
 
-const imageFormats = new Set<ExportFormat>([
-  "psd",
-  "png-layers-json",
-  "layered-tiff",
-  "transparent-pngs",
-]);
-const bookFormats = new Set<ExportFormat>([
-  "psd",
-  "png-layers-json",
-  "txt",
-  "csv",
-  "json",
-]);
-
 interface ReadySource {
   upload: UploadSession;
   object: StoredObject;
@@ -95,9 +81,7 @@ export class ExportService {
     projectKind: ProjectKind,
     idempotencyKey: string,
   ): Promise<ExportJob> {
-    const supported =
-      projectKind === "image" ? imageFormats : bookFormats;
-    if (!supported.has(input.format)) {
+    if (!supportsExportFormat(projectKind, input.format)) {
       throw new ExportDomainError(
         "EXPORT_FORMAT_UNSUPPORTED",
         "محول صيغة التصدير المطلوبة غير متاح بعد لهذا النوع من المشاريع.",

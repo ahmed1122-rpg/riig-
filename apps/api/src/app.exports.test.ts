@@ -80,6 +80,36 @@ describe("API — التصدير", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("EXPORT_FORMAT_UNSUPPORTED");
   });
+  it.each(["layered-tiff", "transparent-pngs"] as const)(
+    "rejects the image-only %s format for a PDF project",
+    async (format) => {
+      const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+      const cookie = await registerCreator(app);
+      const projectResponse = await app.inject({
+        method: "POST",
+        url: "/v1/projects",
+        headers: { cookie },
+        payload: { name: "كتاب بصيغ تصدير مقيدة", kind: "book" },
+      });
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/exports",
+        headers: { cookie },
+        payload: {
+          projectId: projectResponse.json().data.id,
+          sourceVersionId: crypto.randomUUID(),
+          format,
+          scope: "full-document",
+          scale: 1,
+          colorProfile: "sRGB",
+          namingPresetId: "book-default",
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe("EXPORT_FORMAT_UNSUPPORTED");
+    },
+  );
   it("queues exports without generating them inside the API in worker mode", async () => {
     const app = await harness.build(
       loadConfig({

@@ -52,14 +52,32 @@ export type AutoFillPolicy = "automatic" | "review" | "off";
 export type ProcessingMode = "automatic" | "manual" | "guided";
 export type ImageGuidanceKind = "include" | "exclude" | "separate";
 export type PdfMarkerKind = "heading" | "line" | "topic" | "ignore";
-export type ExportFormat =
-  | "psd"
-  | "png-layers-json"
-  | "layered-tiff"
-  | "transparent-pngs"
-  | "txt"
-  | "csv"
-  | "json";
+export const exportFormats = [
+  "psd",
+  "png-layers-json",
+  "layered-tiff",
+  "transparent-pngs",
+  "txt",
+  "csv",
+  "json",
+] as const;
+export type ExportFormat = (typeof exportFormats)[number];
+export const exportFormatsByProjectKind = {
+  image: [
+    "psd",
+    "png-layers-json",
+    "layered-tiff",
+    "transparent-pngs",
+  ],
+  book: ["psd", "png-layers-json", "txt", "csv", "json"],
+} as const satisfies Record<ProjectKind, readonly ExportFormat[]>;
+export function supportsExportFormat(
+  projectKind: ProjectKind,
+  format: ExportFormat,
+): boolean {
+  return (exportFormatsByProjectKind[projectKind] as readonly ExportFormat[])
+    .includes(format);
+}
 export type ExportScope = "full-document" | "per-page" | "selected-page";
 export type UploadStatus =
   | "validating"

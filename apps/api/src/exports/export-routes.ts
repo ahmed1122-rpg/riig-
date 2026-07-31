@@ -1,3 +1,4 @@
+import { exportFormats } from "@motionprep/contracts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth/authorize.js";
@@ -17,15 +18,7 @@ const exportSchema = z
     projectId: z.string().uuid(),
     sourceVersionId: z.string().uuid(),
     documentRevision: z.number().int().positive().optional(),
-    format: z.enum([
-      "psd",
-      "png-layers-json",
-      "layered-tiff",
-      "transparent-pngs",
-      "txt",
-      "csv",
-      "json",
-    ]),
+    format: z.enum(exportFormats),
     scope: z.enum(["full-document", "per-page", "selected-page"]),
     selectedPage: z.number().int().positive().max(250).optional(),
     scale: z.union([z.literal(1), z.literal(2)]),
