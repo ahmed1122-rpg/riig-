@@ -79,7 +79,7 @@
 | OCR للمطبوعات | مقبول في v6 | مصدر holdout المطبوع 16.26% |
 | OCR للمخطوط/الجدول المتدهور | غير مقبول آليًا | يحتاج مراجعة بشرية أو محركًا مخصصًا |
 | PostgreSQL/S3 live topology | مكتمل محليًا | migrations متزامنة + integration ‏8/8 + topology كامل |
-| صور Docker | مكتملة وموقعة محليًا | قواعد مثبتة بالـdigest، SBOM/provenance، صفر High/Critical، توقيعا Cosign متحققان، وhardened web smoke |
+| صور Docker | منشورة وموقعة على GHCR | الإصدار v0.1.0 بالـdigest، SBOM/provenance، صفر High/Critical، توقيعا Cosign keyless متحققان، وhardened web smoke |
 
 ## الأدلة المحلية النهائية
 
@@ -96,12 +96,13 @@
 - أُصلح تعليق Docker على مسار Windows العربي بوصلة junction مؤقتة آمنة ينشئها السكربت وينظفها تلقائيًا.
 - صورة الويب اجتازت smoke بنظام ملفات read-only ومستخدم nginx و`cap-drop ALL` و`no-new-privileges`.
 - نُشرت صورتا الإصدار المحلي من commit `0a2103addf1c71ed6402d955a9a59d8da0d17485` مع SBOM/provenance، وفحص Trivy بصفر High/Critical، وتوقيعي Cosign متحققين؛ حُذف المفتاح الخاص وحُفظ المفتاح العام فقط.
+- نجحت GitHub-hosted quality وCodeQL على SHA `48bdfd9b53b0c955a93f5a121660ea9b3e546df4`، ثم نشر الوسم `v0.1.0` صورتين عامتين على GHCR مع SBOM/provenance وفحص Trivy وتوقيعي Cosign keyless متحققين عبر GitHub OIDC وSigstore transparency log.
 
 ## الأدلة الخارجية غير المتاحة
 
-1. لا يوجد remote محمي أو جلسة GitHub موثقة، لذلك لا يمكن تشغيل CI المستضاف أو GHCR بعد.
+1. remote وCI المستضاف وGHCR مكتملة، لكن يلزم تفعيل branch protection/ruleset يفرض quality وCodeQL على `main`.
 2. لا توجد هوية مزود أو Bucket فعلي لإثبات S3 encryption/versioning/retention.
-3. اكتمل توقيع الـdigests محليًا، لكن لا يوجد بعد سجل مزود محمي أو تجربة staging/rollback على بيئة خارجية.
+3. اكتمل النشر والتوقيع keyless في GHCR، لكن لا توجد بعد تجربة staging/rollback على بيئة خارجية.
 4. لا يوجد تمرين استعادة فعلي موقّع لإثبات RPO≤15 دقيقة وRTO≤4 ساعات.
 5. لا يوجد استحقاق Adobe فعّال للتحقق من Golden PSD/After Effects.
 

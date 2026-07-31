@@ -17,7 +17,7 @@
 | quality وE2E | مكتملان | quality ناجح وPlaywright ‏4/4 |
 | الهجرات وPostgreSQL/S3 | مكتمل | concurrent migrations + integration ‏8/8 |
 | topology الإنتاجي المحلي | مكتمل | replicas + Redis + Mailpit + MinIO + workers + restart/export/webhook |
-| بناء صور Docker | مكتمل وموقّع محليًا | قواعد digest-pinned وSBOM/provenance وصفر High/Critical وتوقيعا Cosign متحققان وhardened web smoke |
+| بناء صور Docker | منشور وموقّع على GHCR | الإصدار v0.1.0 بالـdigest وSBOM/provenance وصفر High/Critical وتوقيعا Cosign keyless متحققان وhardened web smoke |
 
 ## 2. P0 — قرار نطاق OCR
 
@@ -56,19 +56,18 @@
 
 | الترتيب | العمل | المتطلب من المالك/البيئة | دليل القبول |
 |---:|---|---|---|
-| 1 | إنشاء remote محمي | حساب/جلسة موثقة ووجهة المستودع | push لفرع ثابت وbranch protection |
-| 2 | CI مستضاف | البند 1 | quality/E2E/container/security على SHA نفسه |
-| 3 | تحقق S3 الفعلي | OIDC role أو مفاتيح مؤقتة وbucket | TLS/versioning/encryption/retention/read-delete |
-| 4 | staging وrollback | صور digest موقعة | journey وrollback بلا rebuild |
-| 5 | تمرين الاستعادة | backup حقيقي ومفتاح Ed25519 محمي | RPO≤15m وRTO≤4h وmanifest موقّع |
-| 6 | Adobe Golden | ترخيص فعّال | فتح PSD/AE وتقرير اختلافات موقّع |
+| 1 | تفعيل branch protection | remote وCI موجودان | فرض quality وCodeQL ومنع force-push على `main` |
+| 2 | تحقق S3 الفعلي | OIDC role أو مفاتيح مؤقتة وbucket | TLS/versioning/encryption/retention/read-delete |
+| 3 | staging وrollback | صور GHCR الموقعة المنشورة | journey وrollback بلا rebuild |
+| 4 | تمرين الاستعادة | backup حقيقي ومفتاح Ed25519 محمي | RPO≤15m وRTO≤4h وmanifest موقّع |
+| 5 | Adobe Golden | ترخيص فعّال | فتح PSD/AE وتقرير اختلافات موقّع |
 
 ## 5. P1 — الارتقاء بالأدوات والكود
 
 1. إضافة مصنف قدرات للصفحة يميز: مطبوع عادي، تخطيط جدولي، مخطوط، ودقة منخفضة؛ يستخدم للتحذير والتوجيه لا لتغيير benchmark.
 2. توحيد محركات OCR خلف واجهة مزود واحدة مع timeouts وcircuit breaker وقياس RSS/p95 وإصدار نموذج.
 3. إضافة معايرة confidence حسب نوع الصفحة، مع اختبار عدم مرور النتائج السيئة بصمت.
-4. ترقية دليل SBOM/provenance والتوقيع المحلي المكتمل إلى CI مستضاف بهوية OIDC وسجل مزود محمي، ثم توسيعه للنماذج والـlockfile.
+4. توسيع SBOM/provenance والتوقيع keyless المكتمل للصور إلى النماذج والـlockfile.
 5. إضافة اختبارات chaos للـqueue: lease loss، retry exhaustion، stale revision، وفشل نشر الأصل المشتق.
 6. قياس أحجام revisions والأصول المشتقة ووضع تنبيهات retention/capacity.
 
@@ -90,4 +89,4 @@
 4. أدلة S3 وstaging وrollback وrecovery وAdobe فعلية وموقعة.
 5. runbooks والتنبيهات وkill switches مجرّبة.
 
-**القرار الحالي: No-Go للإنتاج العام.** لا توجد أدوات وهمية متبقية؛ اكتمل النشر والتوقيع المحليان، والعوائق هي حد قدرة OCR المثبت وغياب remote/CI وسجل مزود محمي وبيانات المزود وstaging والاستعادة وAdobe.
+**القرار الحالي: No-Go للإنتاج العام.** لا توجد أدوات وهمية متبقية؛ اكتمل remote وCI والنشر والتوقيع keyless على GHCR، والعوائق هي حد قدرة OCR المثبت وغياب branch protection وبيانات المزود وstaging والاستعادة وAdobe.

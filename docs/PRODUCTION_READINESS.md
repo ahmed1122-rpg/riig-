@@ -1,6 +1,6 @@
 # Production readiness
 
-Status on 2026-07-31: the six planned editing tools are implemented and pass the local quality, durable-integration, and production-topology gates. Production approval remains withheld because the independently opened OCR holdout is red and several provider-owned release proofs are unavailable.
+Status on 2026-07-31: the six planned editing tools are implemented; local and GitHub-hosted quality, security, durable-integration, production-topology, and browser gates pass. Signed SBOM/provenance-bearing images are published to GHCR. Production approval remains withheld because the independently opened OCR holdout is red and provider staging, S3, recovery, and Adobe proofs are unavailable.
 
 ## Implemented locally
 
@@ -47,14 +47,15 @@ Therefore the strict benchmark exits non-zero and the release is No-Go. The appr
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
 - A local OCI release was published from source commit `0a2103addf1c71ed6402d955a9a59d8da0d17485` with BuildKit SBOM/provenance, zero unresolved Trivy High/Critical findings, and verified Cosign signatures. The published runtime digest is `sha256:1daeff9e92a8c76553e1e29a97e561547cc7933d504fde15c347be859586c757`; the web digest is `sha256:6aa68db109366280864392ade512a0b70ea4fe0069100ed20e4114283c60a619`.
 - The local signing private key was deleted after verification; only the public verification key and non-secret verification records are retained under `artifacts/release/`.
+- GitHub-hosted quality and CodeQL passed on release SHA `48bdfd9b53b0c955a93f5a121660ea9b3e546df4`. Tag `v0.1.0` published public GHCR runtime/web digests with SBOM/provenance, zero Trivy High/Critical findings, and repository-bound Cosign keyless signatures independently verified against GitHub OIDC and the Sigstore transparency log.
 
 ## Evidence still required
 
-1. A protected remote and hosted CI tied to an immutable Git SHA.
+1. A branch protection/ruleset requiring the passing quality and CodeQL checks. The remote and hosted checks now exist and are proven on an immutable SHA.
 2. Provider-owned S3 evidence for TLS, versioning, encryption, retention, integrity, and least privilege.
-3. Provider-registry publication plus signed digest deployment and rollback on staging. Local digest signing is proven, but the local HTTP registry and offline key signature are not the provider evidence.
+3. Deployment of the published signed GHCR digests to staging plus rollback without rebuilding. Provider-registry publication and keyless signing are complete.
 4. A signed isolated recovery drill proving RPO ≤15 minutes and RTO ≤4 hours.
 5. Golden PSD/After Effects validation in licensed target Adobe versions.
 6. Either a passing newly sealed OCR generation or a formally approved product-scope reduction that excludes manuscripts and severely degraded tables from automatic-transcription claims.
 
-Detailed evidence is in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/remaining-production-plan-2026-07-30.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
+Detailed evidence is in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/remaining-production-plan-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
