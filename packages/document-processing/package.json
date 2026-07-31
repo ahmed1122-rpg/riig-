@@ -1,0 +1,34 @@
+{
+  "name": "@motionprep/document-processing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "production": "./dist/index.js",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage --coverage.thresholds.statements=90 --coverage.thresholds.branches=60 --coverage.thresholds.functions=90 --coverage.thresholds.lines=90"
+  },
+  "dependencies": {
+    "@motionprep/contracts": "*",
+    "@motionprep/presets": "*",
+    "@napi-rs/canvas": "^1.0.2",
+    "@tesseract.js-data/ara": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "pdfjs-dist": "^6.1.200",
+    "sharp": "^0.35.3",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "pdf-lib": "^1.17.1",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}

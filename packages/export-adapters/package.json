@@ -1,0 +1,28 @@
+{
+  "name": "@motionprep/export-adapters",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "production": "./dist/index.js",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage --coverage.thresholds.statements=90 --coverage.thresholds.branches=85 --coverage.thresholds.functions=85 --coverage.thresholds.lines=90"
+  },
+  "dependencies": {
+    "@motionprep/contracts": "*",
+    "ag-psd": "31.0.2",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}

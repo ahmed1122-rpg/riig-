@@ -1,0 +1,190 @@
+/* MotionPrep visual system
+   This file is loaded after the legacy stylesheet. Product-specific rules are
+   deliberately scoped to their root shells so creator, marketing and admin
+   selectors cannot leak into one another. */
+
+:root {
+  color: #111827;
+  background: #f5f7fb;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --vp-midnight: #0b1020;
+  --vp-ink: #111827;
+  --vp-cyan: #22d3ee;
+  --vp-mint: #45e0c2;
+  --vp-violet: #7c5cfc;
+  --vp-coral: #ff6b7a;
+  --vp-amber: #f6c453;
+  --vp-space-2: 8px;
+  --vp-space-3: 12px;
+  --vp-space-4: 16px;
+  --vp-space-5: 20px;
+  --vp-space-6: 24px;
+  --vp-space-8: 32px;
+  --vp-radius-sm: 10px;
+  --vp-radius-md: 14px;
+  --vp-radius-lg: 18px;
+  --vp-shadow-1: 0 10px 30px rgba(20, 29, 53, 0.07);
+  --vp-shadow-2: 0 22px 70px rgba(14, 24, 52, 0.13);
+  --vp-focus: 0 0 0 3px color-mix(in srgb, var(--vp-cyan) 30%, transparent);
+
+  --app-bg: #f5f7fb;
+  --surface: #ffffff;
+  --surface-soft: #f8faff;
+  --surface-muted: #edf1f8;
+  --surface-hover: #f1f5fb;
+  --text: #111827;
+  --text-soft: #4b5870;
+  --text-muted: #66738a;
+  --line: #dce3ee;
+  --line-strong: #c3cedd;
+  --primary: #0f9fbb;
+  --primary-strong: #087d98;
+  --primary-soft: #e2f8fc;
+  --primary-ink: #ffffff;
+  --success: #187a66;
+  --success-soft: #e6f8f3;
+  --amber: #9a690a;
+  --amber-soft: #fff5dc;
+  --danger: #b53d51;
+  --danger-soft: #ffedf0;
+  --canvas: #0b1020;
+  --canvas-grid: rgba(255, 255, 255, 0.045);
+  --sidebar-width: 218px;
+  --topbar-height: 60px;
+  --radius: var(--vp-radius-md);
+}
+
+:root[data-theme="dark"] {
+  color: #f5f7fb;
+  background: #090e1b;
+  --app-bg: #090e1b;
+  --surface: #111827;
+  --surface-soft: #151e31;
+  --surface-muted: #202b42;
+  --surface-hover: #1a263b;
+  --text: #f5f7fb;
+  --text-soft: #c4cede;
+  --text-muted: #94a3b8;
+  --line: #26344e;
+  --line-strong: #3a4a67;
+  --primary: #22d3ee;
+  --primary-strong: #67e8f9;
+  --primary-soft: rgba(34, 211, 238, 0.12);
+  --primary-ink: #07101f;
+  --success: #45e0c2;
+  --success-soft: rgba(69, 224, 194, 0.12);
+  --amber: #f6c453;
+  --amber-soft: rgba(246, 196, 83, 0.12);
+  --danger: #ff8390;
+  --danger-soft: rgba(255, 107, 122, 0.12);
+  --canvas: #050914;
+  --vp-shadow-1: 0 14px 36px rgba(0, 0, 0, 0.22);
+  --vp-shadow-2: 0 28px 80px rgba(0, 0, 0, 0.36);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 0;
+  min-height: 100%;
+  background: var(--app-bg);
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 0;
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--app-bg);
+  color: var(--text);
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  line-height: 1.55;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  box-shadow: var(--vp-focus);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+/* Session bootstrap */
+.session-splash {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 14%, rgba(124, 92, 252, 0.2), transparent 34%),
+    radial-gradient(circle at 82% 74%, rgba(34, 211, 238, 0.15), transparent 38%),
+    var(--vp-midnight);
+  color: #f8fbff;
+}
+
+.session-splash__content {
+  display: grid;
+  justify-items: center;
+  gap: var(--vp-space-3);
+  text-align: center;
+}
+
+.session-splash__mark {
+  position: relative;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 1px solid rgba(130, 231, 244, 0.42);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--vp-cyan);
+  box-shadow: 0 0 40px rgba(34, 211, 238, 0.14);
+}
+
+.session-splash__mark::after {
+  position: absolute;
+  inset: -8px;
+  border: 1px solid rgba(124, 92, 252, 0.26);
+  border-radius: 22px;
+  content: "";
+  animation: vp-session-pulse 1.4s ease-in-out infinite;
+}
+
+.session-splash strong {
+  font-size: 15px;
+}
+
+.session-splash small {
+  color: #aab7d0;
+  font-size: 12px;
+}

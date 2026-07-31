@@ -1,0 +1,357 @@
+/* Evaluation-priority repairs: intentional light shell, legible workspace chrome,
+   and fixed-navigation clearance on small screens. */
+.app-shell,
+.app-shell .app-main {
+  width: 100%;
+  min-width: 0;
+}
+
+.app-shell .mobile-menu,
+.app-shell .sidebar-close {
+  display: none;
+}
+
+@media (min-width: 901px) {
+  .app-shell--dashboard {
+    position: relative;
+    display: block;
+    min-height: 100vh;
+    padding-right: var(--sidebar-width);
+    padding-left: 0;
+  }
+
+  .app-shell--dashboard .sidebar {
+    position: fixed;
+    inset: 0 0 0 auto;
+    display: flex !important;
+    width: var(--sidebar-width);
+    height: 100dvh;
+    overflow-y: auto;
+    visibility: visible;
+    opacity: 1;
+    transform: none !important;
+  }
+
+  .app-shell--dashboard .app-main {
+    width: 100%;
+    min-height: 100vh;
+  }
+}
+
+:root[data-theme="light"] .app-shell .sidebar {
+  border-inline-start-color: #27354c;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(103, 232, 249, 0.1), transparent 230px),
+    linear-gradient(180deg, #121c2f, #0d1526 78%);
+  background-color: #0d1526;
+  box-shadow: -16px 0 38px rgba(15, 23, 42, 0.12);
+  color: #e8f0fb;
+}
+
+:root[data-theme="light"] .app-shell .sidebar .brand,
+:root[data-theme="light"] .app-shell .sidebar .profile {
+  border-color: #2a3953;
+}
+
+:root[data-theme="light"] .app-shell .sidebar .brand-mark {
+  border-color: #334968;
+  background: #172641;
+  color: #67e8f9;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="light"] .app-shell .sidebar :where(.brand-copy strong, .profile strong, .sidebar-note strong) {
+  color: #f4f8ff;
+}
+
+:root[data-theme="light"] .app-shell .sidebar :where(.brand-copy small, .profile small, .sidebar-note span) {
+  color: #93a6c0;
+}
+
+:root[data-theme="light"] .app-shell .sidebar .nav-item {
+  color: #b6c4d7;
+}
+
+:root[data-theme="light"] .app-shell .sidebar .nav-item:hover {
+  background: rgba(255, 255, 255, 0.065);
+  color: #f8fbff;
+}
+
+:root[data-theme="light"] .app-shell .sidebar .nav-item.is-active {
+  background: linear-gradient(90deg, rgba(103, 232, 249, 0.04), rgba(103, 232, 249, 0.14));
+  box-shadow: inset -3px 0 #67e8f9;
+  color: #aef5ff;
+}
+
+:root[data-theme="light"] .app-shell .sidebar .sidebar-note {
+  border-color: #2b3b56;
+  background: #16233a;
+}
+
+:root[data-theme="light"] .app-shell .topbar {
+  border-bottom-color: #dce4ee;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 253, 0.98));
+  background-color: #f8fafc;
+  color: #172033;
+}
+
+.app-shell .dashboard :where(
+  .eyebrow,
+  .time-saved > span:nth-child(2),
+  .time-saved > p,
+  .section-index,
+  .section-heading > p,
+  .path-copy > small,
+  .path-copy > p,
+  .path-output-preview > b,
+  .path-output-preview > i,
+  .recent-copy > small,
+  .processing-head > small,
+  .processing-card > p,
+  .processing-foot > span
+) {
+  font-size: 11px;
+}
+
+.app-shell .dashboard .path-output-preview {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 6px;
+}
+
+.app-shell .dashboard .time-saved > span:not(.time-saved__icon) {
+  font-size: 11px;
+}
+
+:root[data-theme="light"] .app-shell .dashboard :where(
+  .time-saved > p,
+  .section-heading > p,
+  .path-copy > small,
+  .path-copy > p,
+  .recent-copy > small,
+  .processing-head > small,
+  .processing-card > p,
+  .processing-foot > span
+) {
+  color: #53627a;
+}
+
+:root[data-theme="light"] .app-shell--workspace .page-content.is-workspace {
+  background: #111827;
+}
+
+:root[data-theme="light"] .app-shell--workspace .pro-workspace {
+  --workspace-panel: #f5f8fc;
+  --workspace-border: #d7e0ea;
+  --workspace-ink: #172033;
+  --workspace-muted: #64748b;
+}
+
+:root[data-theme="light"] .app-shell--workspace .pro-workspace-header {
+  border-bottom-color: var(--workspace-border);
+  background: linear-gradient(180deg, #ffffff, #f3f6fa);
+  color: var(--workspace-ink);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+}
+
+:root[data-theme="light"] .app-shell--workspace .pro-workspace-header :where(.workspace-title strong, .workspace-meta, .layer-counter) {
+  color: var(--workspace-ink);
+}
+
+:root[data-theme="light"] .app-shell--workspace .pro-workspace-header :where(.workspace-title span, .workspace-title span i) {
+  color: var(--workspace-muted);
+}
+
+:root[data-theme="light"] .app-shell--workspace .pro-source-row {
+  border-color: #27354a;
+  background: #111a2c;
+  color: #e7eef9;
+}
+
+:root[data-theme="light"] .app-shell--workspace .pro-preview-toolbar {
+  border-color: #2a3850;
+  background: #172136;
+  color: #b8c5d8;
+}
+
+:root[data-theme="light"] .app-shell--workspace .pro-status-bar {
+  border-color: var(--workspace-border);
+  background: #f6f8fb;
+  color: #5f6f83;
+}
+
+.app-shell--workspace :where(
+  .pro-source-file strong,
+  .pro-source-file small,
+  .pro-source-version,
+  .pro-upload-pill,
+  .pro-upload-pill b,
+  .pro-preview-control button,
+  .pro-quality-switch button,
+  .pro-focus-button,
+  .pro-zoom-control output,
+  .pro-status-bar,
+  .pro-status-bar strong
+) {
+  font-size: 11px;
+}
+
+.app-shell--workspace .pro-source-file strong {
+  max-width: 220px;
+  font-size: 11px;
+}
+
+.app-shell--workspace .pro-source-file small,
+.app-shell--workspace .pro-source-version,
+.app-shell--workspace .pro-upload-pill b,
+.app-shell--workspace .pro-zoom-control output {
+  font-size: 11px;
+}
+
+.app-shell--workspace .pro-upload-pill {
+  min-height: 32px;
+}
+
+@media (max-width: 900px) {
+  .app-shell .mobile-menu,
+  .app-shell .sidebar-close {
+    display: inline-grid;
+  }
+
+  .app-shell:not(.app-shell--workspace) .page-content {
+    padding-bottom: calc(138px + env(safe-area-inset-bottom));
+  }
+
+  .app-shell:not(.app-shell--workspace) .dashboard {
+    padding-bottom: 18px;
+  }
+
+  .app-shell .mobile-bottom-nav {
+    min-height: 68px;
+    background: color-mix(in srgb, var(--surface) 98%, transparent);
+    box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.1);
+  }
+
+  .app-shell .mobile-bottom-nav .nav-item {
+    min-height: 64px;
+  }
+
+  .app-shell .mobile-bottom-nav .nav-item span,
+  .app-shell--workspace .pro-mobile-dock button {
+    font-size: 11px;
+  }
+
+  .app-shell--workspace .topbar {
+    display: none;
+  }
+
+  .app-shell--workspace .page-content.is-workspace,
+  .app-shell--workspace .pro-workspace {
+    height: 100dvh;
+  }
+
+  .app-shell--workspace .pro-workspace {
+    grid-template-rows: 48px 0 minmax(0, 1fr) 26px;
+  }
+
+  .app-shell--workspace .pro-workspace-header {
+    min-height: 48px;
+  }
+
+  .app-shell--workspace .pro-source-row {
+    min-height: 44px;
+  }
+
+  .app-shell--workspace .pro-preview-toolbar {
+    min-height: 44px;
+  }
+
+  .app-shell--workspace .pro-preview-column {
+    padding-bottom: 58px;
+  }
+
+  .app-shell--workspace .pro-mobile-dock {
+    bottom: 26px;
+    min-height: 58px;
+  }
+
+  .app-shell--workspace .pro-status-bar {
+    gap: 9px;
+  }
+
+  .app-shell--workspace .pro-status-bar span:nth-of-type(2),
+  .app-shell--workspace .pro-status-bar span:nth-of-type(4),
+  .app-shell--workspace .pro-status-bar span:nth-of-type(6),
+  .app-shell--workspace .pro-status-bar strong {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .marketing-page *,
+  .marketing-page *::before,
+  .marketing-page *::after,
+  .session-splash__mark::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Readability and touch-size contract. Technical metadata may use 12px; all
+   ordinary interface text resolves to at least 14px. The :where() selectors
+   keep specificity low while this final cascade layer makes the contract
+   independent from historical file order. */
+:root {
+  font-size: 16px;
+}
+
+:where(
+  .app-shell,
+  .landing-page,
+  .auth-gateway,
+  .admin-shell,
+  .workspace,
+  .export-review
+) :where(p, li, label, input, select, textarea, button, a, span, strong, small) {
+  font-size: max(14px, 0.875rem) !important;
+}
+
+:where(
+  .eyebrow,
+  code,
+  .bounded-note,
+  .admin-updated,
+  .workspace-progress,
+  .pro-window-note,
+  .processing-foot,
+  .auth-trace small
+) {
+  font-size: 12px !important;
+}
+
+:where(
+  button,
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea,
+  a[href],
+  [role="button"]
+) {
+  min-block-size: 44px !important;
+}
+
+:where(
+  .icon-button,
+  .nav-item,
+  .mobile-bottom-nav button,
+  .pro-mobile-dock button,
+  .workspace-mobile-dock button
+) {
+  min-inline-size: 44px !important;
+  min-block-size: 44px !important;
+}

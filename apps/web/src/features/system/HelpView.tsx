@@ -1,0 +1,58 @@
+import { Icon } from "../../shared/Icon";
+
+const steps = [
+  ["ارفع ملفًا واحدًا", "صورة أو PDF حتى 30 MB؛ يتحقق الخادم من النوع والمحتوى."],
+  ["راجع التقطيع", "استخدم الأقلام لإبقاء جزء أو استبعاده أو فصله، وحدد عناوين وأسطر PDF."],
+  ["نظّم الطبقات", "الأسماء تبدأ بـ +، ويمكن تعديل الرؤية والقفل والترتيب قبل التصدير."],
+  ["صدّر إلى Adobe", "PSD هو المسار الأساسي، مع PNG/TIFF أو TXT/CSV/JSON حسب نوع المشروع."],
+] as const;
+
+export function HelpView() {
+  return (
+    <div className="help-view page-enter">
+      <section className="page-title-row">
+        <div>
+          <span className="eyebrow">دليل إنتاج مختصر</span>
+          <h1>المساعدة</h1>
+          <p>المسار الكامل من المصدر إلى ملف جاهز للتحريك، دون خطوات متكررة.</p>
+        </div>
+      </section>
+      <section className="help-atlas" aria-labelledby="help-atlas-title">
+        <div className="help-atlas__copy">
+          <span className="eyebrow">من الرسم إلى أوضاع قابلة للتحريك</span>
+          <h2 id="help-atlas-title">ابدأ بالطبقات التي تخدم اللقطة.</h2>
+          <p>
+            لا تحتاج إلى فصل كل تفصيلة. حدّد الحركة المطلوبة، راجع الحواف
+            والتسمية، ثم احتفظ بإصدار يمكنك الرجوع إليه قبل التصدير.
+          </p>
+          <div className="help-atlas__tags" aria-label="نقاط المراجعة">
+            <span><Icon name="layers" size={15} /> تسمية واضحة</span>
+            <span><Icon name="review" size={15} /> مراجعة بصرية</span>
+            <span><Icon name="history" size={15} /> إصدار محفوظ</span>
+          </div>
+        </div>
+        <img
+          src="/visuals/presenter-poses.webp"
+          width="1024"
+          height="1024"
+          alt="مجموعة أوضاع لشخصية ثلاثية الأبعاد توضح الاستعداد للحركة"
+          loading="lazy"
+          decoding="async"
+        />
+      </section>
+      <ol className="help-steps">
+        {steps.map(([title, description], index) => (
+          <li key={title}>
+            <b>{String(index + 1).padStart(2, "0")}</b>
+            <span><strong>{title}</strong><small>{description}</small></span>
+          </li>
+        ))}
+      </ol>
+      <section className="help-limits">
+        <article><Icon name="image" size={18} /><strong>الصور</strong><span>15 طبقة كحد أقصى، والفائض يُجمع في طبقة مراجعة.</span></article>
+        <article><Icon name="scanText" size={18} /><strong>PDF</strong><span>لا حد لعدد طبقات النص؛ الحد هو 30 MB للملف.</span></article>
+        <article><Icon name="shieldCheck" size={18} /><strong>الحفظ</strong><span>الإصدارات والوظائف محفوظة على الخادم ويمكن فتحها من المشاريع.</span></article>
+      </section>
+    </div>
+  );
+}

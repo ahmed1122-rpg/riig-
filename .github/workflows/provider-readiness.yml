@@ -1,0 +1,100 @@
+name: provider-readiness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: provider-readiness
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production-readiness
+    env:
+      NODE_ENV: production
+      OBJECT_STORAGE_ENDPOINT: ${{ vars.OBJECT_STORAGE_ENDPOINT }}
+      OBJECT_STORAGE_REGION: ${{ vars.OBJECT_STORAGE_REGION }}
+      OBJECT_STORAGE_BUCKET: ${{ vars.OBJECT_STORAGE_BUCKET }}
+      OBJECT_STORAGE_FORCE_PATH_STYLE: ${{ vars.OBJECT_STORAGE_FORCE_PATH_STYLE }}
+      OBJECT_STORAGE_ENCRYPTION_MODE: ${{ vars.OBJECT_STORAGE_ENCRYPTION_MODE }}
+      OBJECT_STORAGE_REQUIRE_VERSIONING: "true"
+      OBJECT_STORAGE_ACCESS_KEY: ${{ secrets.OBJECT_STORAGE_ACCESS_KEY }}
+      OBJECT_STORAGE_SECRET_KEY: ${{ secrets.OBJECT_STORAGE_SECRET_KEY }}
+      OBJECT_STORAGE_SESSION_TOKEN: ${{ secrets.OBJECT_STORAGE_SESSION_TOKEN }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
+      WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
+      RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}
+      RECOVERY_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.RECOVERY_SIGNING_PUBLIC_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - name: Reject ambiguous or missing provider credentials
+        shell: bash
+        run: |
+          has_access_key=false
+          has_secret_key=false
+          test -z "$OBJECT_STORAGE_ACCESS_KEY" || has_access_key=true
+          test -z "$OBJECT_STORAGE_SECRET_KEY" || has_secret_key=true
+          if [[ "$has_access_key" != "$has_secret_key" ]]; then
+            echo "Both object-storage access and secret keys are required together." >&2
+            exit 1
+          fi
+          if [[ -n "$AWS_ROLE_ARN" && "$has_access_key" == "true" ]]; then
+            echo "Choose AWS OIDC or explicit S3 credentials, not both." >&2
+            exit 1
+          fi
+          if [[ -z "$AWS_ROLE_ARN" && "$has_access_key" == "false" ]]; then
+            echo "Configure AWS_ROLE_ARN or explicit S3 credentials." >&2
+            exit 1
+          fi
+          if [[ -n "$AWS_ROLE_ARN" && -z "$AWS_REGION" ]]; then
+            echo "AWS_REGION is required with AWS_ROLE_ARN." >&2
+            exit 1
+          fi
+      - name: Configure short-lived AWS credentials through GitHub OIDC
+        if: ${{ vars.AWS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: MotionPrepProviderReadiness-${{ github.run_id }}
+      - name: Verify immutable release coordinates
+        shell: bash
+        run: |
+          printf 'RUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\n' \
+            "$RUNTIME_IMAGE_REF" "$WEB_IMAGE_REF" > provider-release.env
+          node scripts/verify-release-environment.mjs provider-release.env
+      - name: Probe the deployment-owned object store
+        run: npm run verify:object-storage
+      - name: Verify the latest isolated restore evidence
+        shell: bash
+        run: |
+          test -n "$RECOVERY_MANIFEST_JSON"
+          test -n "$RECOVERY_SIGNING_PUBLIC_KEY_PEM"
+          printf '%s' "$RECOVERY_MANIFEST_JSON" > recovery-manifest.json
+          printf '%s' "$RECOVERY_SIGNING_PUBLIC_KEY_PEM" > recovery-public-key.pem
+          node scripts/verify-recovery-manifest.mjs recovery-manifest.json \
+            --public-key recovery-public-key.pem
+      - name: Publish readiness summary
+        shell: bash
+        run: |
+          {
+            echo "## Provider readiness gate"
+            echo
+            echo "- Immutable image references: verified"
+            echo "- Object storage write/read/integrity/delete probe: verified"
+            echo "- Versioning requirement: verified by application readiness"
+            echo "- Latest RPO/RTO recovery manifest and Ed25519 signature: verified"
+          } >> "$GITHUB_STEP_SUMMARY"

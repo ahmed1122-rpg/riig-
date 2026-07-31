@@ -1,0 +1,28 @@
+{
+  "name": "@motionprep/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage --coverage.include=src/shared/AppShell.tsx --coverage.include=src/features/auth/AuthGateway.tsx --coverage.include=src/features/admin/AdminPanel.tsx --coverage.include=src/features/admin/UnauthorizedView.tsx --coverage.include=src/features/projects/ProjectsView.tsx --coverage.include=src/features/exports/ExportsView.tsx --coverage.include=src/features/workspace/exportFormatState.ts --coverage.include=src/features/workspace/layerChecks.ts --coverage.include=src/features/workspace/layerReviewState.ts --coverage.include=src/features/workspace/workspaceToolRegistry.ts --coverage.include=src/lib/api/transport.ts --coverage.include=src/lib/api/job-polling.ts --coverage.thresholds.statements=45 --coverage.thresholds.branches=40 --coverage.thresholds.functions=35 --coverage.thresholds.lines=45"
+  },
+  "dependencies": {
+    "@motionprep/contracts": "*",
+    "lucide-react": "^0.468.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "5.6.3",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}

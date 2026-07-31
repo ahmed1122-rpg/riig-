@@ -1,0 +1,213 @@
+name: motionprep-integration
+
+x-runtime: &runtime
+  image: motionprep-runtime:integration
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment: &runtime-environment
+    NODE_ENV: test
+    API_PORT: "4000"
+    WEB_ORIGIN: http://127.0.0.1:5173
+    TRUST_PROXY_HOPS: "0"
+    COOKIE_SECURE: "false"
+    PERSISTENCE_MODE: postgres
+    DATABASE_URL: postgresql://motionprep:motionprep-integration@postgres:5432/motionprep
+    DATABASE_POOL_MAX: "8"
+    REDIS_URL: redis://redis:6379
+    METRICS_BEARER_TOKEN: metrics-integration-token-at-least-32-characters
+    AUTH_ENCRYPTION_KEY: bW90aW9ucHJlcC1sb2NhbC1kZXYta2V5LTMyYnl0ZXM=
+    PASSWORD_RESET_URL: http://127.0.0.1:5173/auth/reset
+    EMAIL_DELIVERY_MODE: smtp
+    SMTP_HOST: mailpit
+    SMTP_PORT: "1025"
+    SMTP_SECURE: "false"
+    SMTP_REQUIRE_TLS: "false"
+    SMTP_USER: motionprep
+    SMTP_PASSWORD: motionprep-integration
+    SMTP_FROM: security@motionprep.test
+    OBJECT_STORAGE_MODE: s3
+    OBJECT_STORAGE_ENDPOINT: http://minio:9000
+    OBJECT_STORAGE_REGION: us-east-1
+    OBJECT_STORAGE_BUCKET: motionprep-integration
+    OBJECT_STORAGE_ACCESS_KEY: motionprep
+    OBJECT_STORAGE_SECRET_KEY: motionprep-integration
+    OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
+    OBJECT_STORAGE_ENCRYPTION_MODE: none
+    OBJECT_STORAGE_REQUIRE_VERSIONING: "true"
+    PROCESSING_EXECUTION_MODE: worker
+    EXPORT_EXECUTION_MODE: worker
+    PDF_OCR_MODE: disabled
+    PDF_REGION_OCR_ENABLED: "false"
+    PROCESSING_POLL_MS: "100"
+    PROCESSING_LEASE_MS: "30000"
+    PROCESSING_CONCURRENCY: "1"
+    DOCUMENT_PROCESSING_CONCURRENCY: "1"
+    EXPORT_POLL_MS: "100"
+    EXPORT_CONCURRENCY: "1"
+    EXPORT_LEASE_MS: "60000"
+    PAYMENT_MODE: live
+    USAGE_METERING_MODE: shadow
+    STRIPE_SECRET_KEY: sk_test_motionprep_topology_only
+    STRIPE_WEBHOOK_SECRET: whsec_motionprep_topology_only
+    RELEASE_VERSION: integration
+  networks:
+    - integration
+  init: true
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    environment:
+      POSTGRES_DB: motionprep
+      POSTGRES_USER: motionprep
+      POSTGRES_PASSWORD: motionprep-integration
+    ports:
+      - "55432:5432"
+    networks:
+      - integration
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U motionprep -d motionprep"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine@sha256:8096655e437712b07503796fb64d81359256cfcff0ab29d95a7da72863786efb
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - integration
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: motionprep
+      MINIO_ROOT_PASSWORD: motionprep-integration
+    networks:
+      - integration
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - integration
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 motionprep motionprep-integration
+        mc mb --ignore-existing local/motionprep-integration
+        mc version enable local/motionprep-integration
+        mc version info local/motionprep-integration
+    restart: "no"
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "58025:8025"
+    networks:
+      - integration
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - node
+      - --conditions=production
+      - apps/api/dist/infrastructure/postgres/migrate.js
+    restart: "no"
+
+  api-a:
+    <<: *runtime
+    depends_on: &application-dependencies
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
+    ports:
+      - "54101:4000"
+    healthcheck: &api-healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:4000/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api-b:
+    <<: *runtime
+    depends_on: *application-dependencies
+    ports:
+      - "54102:4000"
+    healthcheck: *api-healthcheck
+
+  worker-media:
+    <<: *runtime
+    depends_on: *application-dependencies
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-media/dist/index.js
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "media"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  worker-document:
+    <<: *runtime
+    depends_on: *application-dependencies
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-document/dist/index.js
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "document"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  worker-export:
+    <<: *runtime
+    depends_on: *application-dependencies
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-export/dist/index.js
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "export"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+networks:
+  integration:
+    driver: bridge

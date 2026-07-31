@@ -1,0 +1,147 @@
+name: motionprep
+
+x-runtime: &runtime
+  image: ${RUNTIME_IMAGE_REF:?Set RUNTIME_IMAGE_REF to an immutable registry digest}
+  env_file:
+    - ${MOTIONPREP_ENV_FILE:-.env.production}
+  networks:
+    - application
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  restart: unless-stopped
+  stop_grace_period: 20s
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  migrate:
+    <<: *runtime
+    command:
+      - node
+      - --conditions=production
+      - apps/api/dist/infrastructure/postgres/migrate.js
+    restart: "no"
+
+  maintenance:
+    <<: *runtime
+    command:
+      - node
+      - --conditions=production
+      - apps/api/dist/maintenance/run-retention-cleanup.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles:
+      - maintenance
+    restart: "no"
+    mem_limit: ${MAINTENANCE_MEMORY_LIMIT:-384m}
+    cpus: ${MAINTENANCE_CPU_LIMIT:-0.5}
+
+  api:
+    <<: *runtime
+    command:
+      - node
+      - --conditions=production
+      - apps/api/dist/server.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "4000"
+    mem_limit: ${API_MEMORY_LIMIT:-768m}
+    cpus: ${API_CPU_LIMIT:-1.0}
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:4000/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  worker-media:
+    <<: *runtime
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-media/dist/index.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: ${MEDIA_MEMORY_LIMIT:-2g}
+    cpus: ${MEDIA_CPU_LIMIT:-2.0}
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "media"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  worker-document:
+    <<: *runtime
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-document/dist/index.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: ${DOCUMENT_MEMORY_LIMIT:-2g}
+    cpus: ${DOCUMENT_CPU_LIMIT:-2.0}
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "document"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  worker-export:
+    <<: *runtime
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-export/dist/index.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: ${EXPORT_MEMORY_LIMIT:-2g}
+    cpus: ${EXPORT_CPU_LIMIT:-2.0}
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "export"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  web:
+    image: ${WEB_IMAGE_REF:?Set WEB_IMAGE_REF to an immutable registry digest}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - application
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /var/cache/nginx:size=32m,mode=1777
+      - /var/run:size=1m,mode=1777
+      - /tmp:size=16m
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    mem_limit: ${WEB_MEMORY_LIMIT:-256m}
+    cpus: ${WEB_CPU_LIMIT:-0.5}
+    restart: unless-stopped
+
+networks:
+  application:
+    driver: bridge

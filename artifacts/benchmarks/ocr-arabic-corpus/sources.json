@@ -1,0 +1,1867 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "arabic-public-domain-scans-v1",
+  "language": "ara",
+  "evaluationPolicy": {
+    "holdoutGeneration": 6,
+    "holdoutSourceIds": [
+      "taha-hussein-jahili-literature-1927",
+      "jurjani-definitions-manuscript"
+    ],
+    "retiredHoldoutSourceIds": [
+      "ibn-fadlan-dahhan",
+      "ajurrumiyya-1592",
+      "egypt-monetary-reform-1915",
+      "kuwait-political-history-1",
+      "prophetic-relics-first-edition",
+      "zaydan-europe-journey",
+      "taymour-engineers-first-edition",
+      "gibran-tear-smile-1914",
+      "sibai-egypt-heroes-1922",
+      "marrash-mashhad-1881"
+    ],
+    "openedAt": "2026-07-31T11:59:59.287Z",
+    "implementationSha256": "5255fe821215181b7bb75144fa1c9a194835a5519db9bd1d4e525a0c138db3a7",
+    "holdoutContentSha256": "c53efecd26164b3e5f4b4df301e7180b626ae2f000780924e4d23da22aca71e0",
+    "implementationFiles": [
+      "package.json",
+      "package-lock.json",
+      "packages/document-processing/package.json",
+      "packages/document-processing/src/index.ts",
+      "packages/document-processing/src/ocr-fallback.ts",
+      "scripts/benchmark-ocr-corpus.mjs",
+      "scripts/fetch-ocr-corpus.mjs",
+      "scripts/ocr-benchmark-utils.mjs",
+      "scripts/ocr-corpus-wikitext.mjs",
+      "scripts/ocr-holdout-policy.mjs",
+      "scripts/open-ocr-holdout.mjs",
+      "scripts/verify-ocr-corpus.mjs"
+    ]
+  },
+  "referenceText": {
+    "provider": "Arabic Wikisource",
+    "license": "Creative Commons Attribution-ShareAlike 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/deed.ar",
+    "qualityLevel": 3,
+    "qualityLabel": "community-proofread",
+    "limitations": "Level 3 pages are community-proofread, not double-validated diplomatic transcriptions."
+  },
+  "acceptance": {
+    "maxAggregateArabicCharacterErrorRate": 0.25,
+    "maxHoldoutArabicCharacterErrorRate": 0.25,
+    "maxSampleArabicCharacterErrorRate": 0.5,
+    "minimumRecognizedArabicCharactersPerSample": 80,
+    "minimumValidationSamples": 5,
+    "minimumHoldoutSamples": 10
+  },
+  "sourceFiles": [
+    {
+      "id": "tuhfa-maktabiya",
+      "fileTitle": "File:التحفة المكتبية.pdf",
+      "commonsPageId": 142938294,
+      "commonsSha1": "d37e57e3fed2b716608347c1f4383e68df611fdd",
+      "descriptionUrl": "https://commons.wikimedia.org/wiki/File:%D8%A7%D9%84%D8%AA%D8%AD%D9%81%D8%A9_%D8%A7%D9%84%D9%85%D9%83%D8%AA%D8%A8%D9%8A%D8%A9.pdf",
+      "creator": "Rifa'a at-Tahtawi",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "bidaya-nihaya-kurdistan-01",
+      "fileTitle": "File:البداية والنهاية (مطبعة كردستان 1348هـ)01.pdf",
+      "commonsPageId": 174242144,
+      "commonsSha1": "bdcd1974dce59781d26a3f2e747ee41c7759c358",
+      "descriptionUrl": "https://commons.wikimedia.org/wiki/File:%D8%A7%D9%84%D8%A8%D8%AF%D8%A7%D9%8A%D8%A9_%D9%88%D8%A7%D9%84%D9%86%D9%87%D8%A7%D9%8A%D8%A9_(%D9%85%D8%B7%D8%A8%D8%B9%D8%A9_%D9%83%D8%B1%D8%AF%D8%B3%D8%AA%D8%A7%D9%86_1348%D9%87%D9%80)01.pdf",
+      "creator": "Ibn Kathir",
+      "evaluationSplit": "validation",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "tahdhib-taarib-1923",
+      "fileTitle": "File:التهذيب في أصول التعريب (1923) - أحمد عيسى.pdf",
+      "commonsPageId": 113913969,
+      "commonsSha1": "3b40ed96a47c1d10ea753a7e3d9b10ca63501b4a",
+      "descriptionUrl": "https://commons.wikimedia.org/wiki/File:%D8%A7%D9%84%D8%AA%D9%87%D8%B0%D9%8A%D8%A8_%D9%81%D9%8A_%D8%A3%D8%B5%D9%88%D9%84_%D8%A7%D9%84%D8%AA%D8%B9%D8%B1%D9%8A%D8%A8_(1923)_-_%D8%A3%D8%AD%D9%85%D8%AF_%D8%B9%D9%8A%D8%B3%D9%89.pdf",
+      "creator": "Ahmed Issa",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "taymour-proverbs-2",
+      "fileTitle": "File:الأمثال العامية- مشروحة ومرتبة على الحرف الأول من المثل (الطبعة الثانية).pdf",
+      "commonsPageId": 116187146,
+      "commonsSha1": "58acc6a38140e6919f5a6f89d77edd91b711129c",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=116187146",
+      "creator": "Ahmed Taymour",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "abbasid-lectures",
+      "fileTitle": "File:محاضرات في تاريخ الدولة العباسية.pdf",
+      "commonsPageId": 115130229,
+      "commonsSha1": "3906340dfb813d66580be751edc7ca003864977d",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=115130229",
+      "creator": "Nabila Hasan Muhammad",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "hawa-shabab",
+      "fileTitle": "File:ديوان الهوى والشباب.pdf",
+      "commonsPageId": 115924433,
+      "commonsSha1": "fd14ce1a40c0517ae85eaa7d678a934e12656cd4",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=115924433",
+      "creator": "Bishara Abd Allah al-Khuri",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "ibn-fadlan-dahhan",
+      "fileTitle": "File:رسالة ابن فضلان في وصف الرحلة إلى بلاد الترك والخزر والروس والصقالبة سنة 309هـ 921م (ت. سامي الدهان) - أحمد بن فضلان.pdf",
+      "commonsPageId": 118879343,
+      "commonsSha1": "d166d654c8a622d93f10bbd51d7201a2d5ec5f7d",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=118879343",
+      "creator": "Ahmad ibn Fadlan; edited by Sami al-Dahhan",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "mustalah-history-3",
+      "fileTitle": "File:مصطلح التاريخ (الطبعة الثالثة).pdf",
+      "commonsPageId": 116092458,
+      "commonsSha1": "b686427ff9216bb8c71cbac8c079fda80b241145",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=116092458",
+      "creator": "Asad Rustum",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "tripoli-history-1349",
+      "fileTitle": "File:تاريخ طرابلس الغرب (المطبعة السلفية، 1349هـ).pdf",
+      "commonsPageId": 156409503,
+      "commonsSha1": "f24bb4871c5bad37c89e285a68dc01cff8d15a02",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=156409503",
+      "creator": "Muhammad ibn Khalil Ibn Ghalbun",
+      "evaluationSplit": "validation",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "ajurrumiyya-1592",
+      "fileTitle": "File:كتاب الآجرومية في النحو (مخطوطة 1592) - ابن آجروم.pdf",
+      "commonsPageId": 121619032,
+      "commonsSha1": "f79b0461b125bae3b7758af3d809353ef15ede38",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=121619032",
+      "creator": "Muhammad ibn Ajurrum",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "egypt-monetary-reform-1915",
+      "fileTitle": "File:إصلاح نظام النقد في مصر.pdf",
+      "commonsPageId": 188153953,
+      "commonsSha1": "58c437fff0954c9dbae890f886a8dd752e51ee9d",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=188153953",
+      "creator": "Mustafa Badawi Shiti",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "kuwait-political-history-1",
+      "fileTitle": "File:تاريخ الكويت السياسي - الجزء الأول - حسين خزعل.pdf",
+      "commonsPageId": 174380797,
+      "commonsSha1": "467d8a9420d44e28e9eb76cbc64285ca7f8ea06e",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=174380797",
+      "creator": "Husayn Khalaf Khazal",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "prophetic-relics-first-edition",
+      "fileTitle": "File:الآثار النبوية (الطبعة الأولى).pdf",
+      "commonsPageId": 116215887,
+      "commonsSha1": "cd12f42ce1d6800ae262c9bc7f6be453e9fc6129",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=116215887",
+      "creator": "Ahmed Taymour",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "zaydan-europe-journey",
+      "fileTitle": "File:رحلة جرجي زيدان إلى أوربا.pdf",
+      "commonsPageId": 116218739,
+      "commonsSha1": "0128852d994f893ca42c7d2d49518de67470c9ed",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=116218739",
+      "creator": "Jurji Zaydan",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "taymour-engineers-first-edition",
+      "fileTitle": "File:أعلام المهندسين في الإسلام (الطبعة الأولى).pdf",
+      "commonsPageId": 116215223,
+      "commonsSha1": "302f721dc5ba17ff4943d9aba43577404dd3277a",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=116215223",
+      "creator": "Ahmed Taymour",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "gibran-tear-smile-1914",
+      "fileTitle": "File:دمعة وابتسامة (1914) - جبران خليل جبران.pdf",
+      "commonsPageId": 95318913,
+      "commonsSha1": "04731b7471d50c3b9e89222cbe824fbdca18c8b3",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=95318913",
+      "creator": "Kahlil Gibran",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "sibai-egypt-heroes-1922",
+      "fileTitle": "File:أبطال مصر (1922) - محمد السباعي.pdf",
+      "commonsPageId": 112842115,
+      "commonsSha1": "e8a38657523742d04346586200f3dc4b5cd37487",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=112842115",
+      "creator": "Muhammad al-Sibai",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "marrash-mashhad-1881",
+      "fileTitle": "File:(Fransīs) Fatḥ Allāh Marrāsh – Kitāb Ghābat al-Ḥaqq & Mashhad al-Aḥwāl (Cairo, 1881) – Volume 2 (Mashhad al-Aḥwāl).pdf",
+      "commonsPageId": 114283957,
+      "commonsSha1": "c791c61e3bca04f457cdee4c9a0369a4d9b64fc5",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=114283957",
+      "creator": "Francis Marrash",
+      "evaluationSplit": "development",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "taha-hussein-jahili-literature-1927",
+      "fileTitle": "File:في الأدب الجاهلي ط1927.pdf",
+      "commonsPageId": 171543639,
+      "commonsSha1": "f4d500f8f953a2bf7f28fce4973c0a2ca72956f7",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=171543639",
+      "creator": "Taha Hussein",
+      "evaluationSplit": "holdout",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    },
+    {
+      "id": "jurjani-definitions-manuscript",
+      "fileTitle": "File:كتاب التعريفات (IA MS.ARA.67).pdf",
+      "commonsPageId": 181588450,
+      "commonsSha1": "e0cc3eaf1dcee2bcf55113031bd2647734cd6af5",
+      "descriptionUrl": "https://commons.wikimedia.org/?curid=181588450",
+      "creator": "Ali ibn Muhammad al-Jurjani",
+      "evaluationSplit": "holdout",
+      "scanLicense": "Public domain",
+      "copyrighted": false
+    }
+  ],
+  "samples": [
+    {
+      "id": "tuhfa-016-prose",
+      "sourceFileId": "tuhfa-maktabiya",
+      "pageTitle": "صفحة:التحفة المكتبية.pdf/16",
+      "pageId": 242887,
+      "revisionId": 490128,
+      "revisionTimestamp": "2023-12-29T13:09:03Z",
+      "imageFile": "images/tuhfa-016-prose.jpg",
+      "referenceFile": "references/tuhfa-016-prose.txt",
+      "dimensions": [
+        "nineteenth-century letterpress",
+        "single column",
+        "large heading",
+        "ink spread and uneven baselines"
+      ]
+    },
+    {
+      "id": "tuhfa-052-table",
+      "sourceFileId": "tuhfa-maktabiya",
+      "pageTitle": "صفحة:التحفة المكتبية.pdf/52",
+      "pageId": 242989,
+      "revisionId": 490952,
+      "revisionTimestamp": "2024-01-10T22:37:26Z",
+      "imageFile": "images/tuhfa-052-table.jpg",
+      "referenceFile": "references/tuhfa-052-table.txt",
+      "dimensions": [
+        "nineteenth-century letterpress",
+        "ruled multi-column table",
+        "mixed orientations",
+        "ink spread"
+      ]
+    },
+    {
+      "id": "bidaya-025-dense-prose",
+      "sourceFileId": "bidaya-nihaya-kurdistan-01",
+      "pageTitle": "صفحة:البداية والنهاية (مطبعة كردستان 1348هـ)01.pdf/25",
+      "pageId": 274987,
+      "revisionId": 545447,
+      "revisionTimestamp": "2025-09-02T20:19:24Z",
+      "imageFile": "images/bidaya-025-dense-prose.jpg",
+      "referenceFile": "references/bidaya-025-dense-prose.txt",
+      "dimensions": [
+        "early twentieth-century print",
+        "dense single column",
+        "page border",
+        "asterisk separators"
+      ]
+    },
+    {
+      "id": "bidaya-202-diacritics",
+      "sourceFileId": "bidaya-nihaya-kurdistan-01",
+      "pageTitle": "صفحة:البداية والنهاية (مطبعة كردستان 1348هـ)01.pdf/202",
+      "pageId": 275164,
+      "revisionId": 545624,
+      "revisionTimestamp": "2025-09-02T20:48:54Z",
+      "imageFile": "images/bidaya-202-diacritics.jpg",
+      "referenceFile": "references/bidaya-202-diacritics.txt",
+      "dimensions": [
+        "early twentieth-century print",
+        "dense single column",
+        "Arabic diacritics",
+        "inline citations and footnotes"
+      ]
+    },
+    {
+      "id": "taarib-138-mixed-low-resolution",
+      "sourceFileId": "tahdhib-taarib-1923",
+      "pageTitle": "صفحة:التهذيب في أصول التعريب (1923) - أحمد عيسى.pdf/138",
+      "pageId": 217340,
+      "revisionId": 614583,
+      "revisionTimestamp": "2026-07-28T13:33:22Z",
+      "imageFile": "images/taarib-138-mixed-low-resolution.jpg",
+      "referenceFile": "references/taarib-138-mixed-low-resolution.txt",
+      "dimensions": [
+        "1923 print",
+        "500-pixel source width",
+        "Arabic and Latin mixed script",
+        "two-column examples"
+      ]
+    },
+    {
+      "id": "taarib-141-mixed-low-resolution",
+      "sourceFileId": "tahdhib-taarib-1923",
+      "pageTitle": "صفحة:التهذيب في أصول التعريب (1923) - أحمد عيسى.pdf/141",
+      "pageId": 217343,
+      "revisionId": 614584,
+      "revisionTimestamp": "2026-07-28T13:33:32Z",
+      "imageFile": "images/taarib-141-mixed-low-resolution.jpg",
+      "referenceFile": "references/taarib-141-mixed-low-resolution.txt",
+      "dimensions": [
+        "1923 print",
+        "500-pixel source width",
+        "Arabic and Latin mixed script",
+        "multi-section examples"
+      ]
+    },
+    {
+      "id": "proverbs-037",
+      "sourceFileId": "taymour-proverbs-2",
+      "pageTitle": "صفحة:الأمثال العامية- مشروحة ومرتبة على الحرف الأول من المثل (الطبعة الثانية).pdf/37",
+      "pageId": 220032,
+      "revisionId": 561216,
+      "revisionTimestamp": "2025-09-16T11:58:29Z",
+      "imageFile": "images/proverbs-037.jpg",
+      "referenceFile": "references/proverbs-037.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "historical Arabic print",
+        "dictionary-style proverb entries",
+        "bold entry markers and compact paragraphs",
+        "page border and aged paper"
+      ]
+    },
+    {
+      "id": "proverbs-164",
+      "sourceFileId": "taymour-proverbs-2",
+      "pageTitle": "صفحة:الأمثال العامية- مشروحة ومرتبة على الحرف الأول من المثل (الطبعة الثانية).pdf/164",
+      "pageId": 220464,
+      "revisionId": 560881,
+      "revisionTimestamp": "2025-09-16T11:07:29Z",
+      "imageFile": "images/proverbs-164.jpg",
+      "referenceFile": "references/proverbs-164.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "historical Arabic print",
+        "dictionary-style proverb entries",
+        "bold entry markers and compact paragraphs",
+        "page border and aged paper"
+      ]
+    },
+    {
+      "id": "proverbs-291",
+      "sourceFileId": "taymour-proverbs-2",
+      "pageTitle": "صفحة:الأمثال العامية- مشروحة ومرتبة على الحرف الأول من المثل (الطبعة الثانية).pdf/291",
+      "pageId": 220728,
+      "revisionId": 560933,
+      "revisionTimestamp": "2025-09-16T11:12:29Z",
+      "imageFile": "images/proverbs-291.jpg",
+      "referenceFile": "references/proverbs-291.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "historical Arabic print",
+        "dictionary-style proverb entries",
+        "bold entry markers and compact paragraphs",
+        "page border and aged paper"
+      ]
+    },
+    {
+      "id": "proverbs-417",
+      "sourceFileId": "taymour-proverbs-2",
+      "pageTitle": "صفحة:الأمثال العامية- مشروحة ومرتبة على الحرف الأول من المثل (الطبعة الثانية).pdf/417",
+      "pageId": 221140,
+      "revisionId": 560946,
+      "revisionTimestamp": "2025-09-16T11:13:59Z",
+      "imageFile": "images/proverbs-417.jpg",
+      "referenceFile": "references/proverbs-417.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "historical Arabic print",
+        "dictionary-style proverb entries",
+        "bold entry markers and compact paragraphs",
+        "page border and aged paper"
+      ]
+    },
+    {
+      "id": "proverbs-544",
+      "sourceFileId": "taymour-proverbs-2",
+      "pageTitle": "صفحة:الأمثال العامية- مشروحة ومرتبة على الحرف الأول من المثل (الطبعة الثانية).pdf/544",
+      "pageId": 221757,
+      "revisionId": 560942,
+      "revisionTimestamp": "2025-09-16T11:13:19Z",
+      "imageFile": "images/proverbs-544.jpg",
+      "referenceFile": "references/proverbs-544.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "historical Arabic print",
+        "dictionary-style proverb entries",
+        "bold entry markers and compact paragraphs",
+        "page border and aged paper"
+      ]
+    },
+    {
+      "id": "abbasid-014",
+      "sourceFileId": "abbasid-lectures",
+      "pageTitle": "صفحة:محاضرات في تاريخ الدولة العباسية.pdf/14",
+      "pageId": 223153,
+      "revisionId": 562148,
+      "revisionTimestamp": "2025-09-16T14:29:21Z",
+      "imageFile": "images/abbasid-014.jpg",
+      "referenceFile": "references/abbasid-014.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "mid-twentieth-century Arabic print",
+        "dense academic prose",
+        "footnotes and parenthetical citations",
+        "single-column justified text"
+      ]
+    },
+    {
+      "id": "abbasid-068",
+      "sourceFileId": "abbasid-lectures",
+      "pageTitle": "صفحة:محاضرات في تاريخ الدولة العباسية.pdf/68",
+      "pageId": 223265,
+      "revisionId": 402661,
+      "revisionTimestamp": "2022-07-25T10:08:56Z",
+      "imageFile": "images/abbasid-068.jpg",
+      "referenceFile": "references/abbasid-068.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "mid-twentieth-century Arabic print",
+        "dense academic prose",
+        "footnotes and parenthetical citations",
+        "single-column justified text"
+      ]
+    },
+    {
+      "id": "abbasid-121",
+      "sourceFileId": "abbasid-lectures",
+      "pageTitle": "صفحة:محاضرات في تاريخ الدولة العباسية.pdf/121",
+      "pageId": 223389,
+      "revisionId": 563151,
+      "revisionTimestamp": "2025-09-16T17:16:19Z",
+      "imageFile": "images/abbasid-121.jpg",
+      "referenceFile": "references/abbasid-121.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "mid-twentieth-century Arabic print",
+        "dense academic prose",
+        "footnotes and parenthetical citations",
+        "single-column justified text"
+      ]
+    },
+    {
+      "id": "abbasid-174",
+      "sourceFileId": "abbasid-lectures",
+      "pageTitle": "صفحة:محاضرات في تاريخ الدولة العباسية.pdf/174",
+      "pageId": 223490,
+      "revisionId": 563092,
+      "revisionTimestamp": "2025-09-16T17:06:20Z",
+      "imageFile": "images/abbasid-174.jpg",
+      "referenceFile": "references/abbasid-174.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "mid-twentieth-century Arabic print",
+        "dense academic prose",
+        "footnotes and parenthetical citations",
+        "single-column justified text"
+      ]
+    },
+    {
+      "id": "abbasid-227",
+      "sourceFileId": "abbasid-lectures",
+      "pageTitle": "صفحة:محاضرات في تاريخ الدولة العباسية.pdf/227",
+      "pageId": 223756,
+      "revisionId": 562329,
+      "revisionTimestamp": "2025-09-16T14:59:21Z",
+      "imageFile": "images/abbasid-227.jpg",
+      "referenceFile": "references/abbasid-227.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "mid-twentieth-century Arabic print",
+        "dense academic prose",
+        "footnotes and parenthetical citations",
+        "single-column justified text"
+      ]
+    },
+    {
+      "id": "poetry-013",
+      "sourceFileId": "hawa-shabab",
+      "pageTitle": "صفحة:ديوان الهوى والشباب.pdf/13",
+      "pageId": 304020,
+      "revisionId": 609339,
+      "revisionTimestamp": "2026-05-24T20:02:08Z",
+      "imageFile": "images/poetry-013.jpg",
+      "referenceFile": "references/poetry-013.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1953 Arabic print",
+        "centered Arabic verse and prose",
+        "short verse lines with generous whitespace",
+        "ornamental borders and headings"
+      ]
+    },
+    {
+      "id": "poetry-056",
+      "sourceFileId": "hawa-shabab",
+      "pageTitle": "صفحة:ديوان الهوى والشباب.pdf/56",
+      "pageId": 304105,
+      "revisionId": 610038,
+      "revisionTimestamp": "2026-06-13T14:12:36Z",
+      "imageFile": "images/poetry-056.jpg",
+      "referenceFile": "references/poetry-056.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1953 Arabic print",
+        "centered Arabic verse and prose",
+        "short verse lines with generous whitespace",
+        "ornamental borders and headings"
+      ]
+    },
+    {
+      "id": "poetry-100",
+      "sourceFileId": "hawa-shabab",
+      "pageTitle": "صفحة:ديوان الهوى والشباب.pdf/100",
+      "pageId": 304211,
+      "revisionId": 610060,
+      "revisionTimestamp": "2026-06-13T15:12:45Z",
+      "imageFile": "images/poetry-100.jpg",
+      "referenceFile": "references/poetry-100.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1953 Arabic print",
+        "centered Arabic verse and prose",
+        "short verse lines with generous whitespace",
+        "ornamental borders and headings"
+      ]
+    },
+    {
+      "id": "poetry-144",
+      "sourceFileId": "hawa-shabab",
+      "pageTitle": "صفحة:ديوان الهوى والشباب.pdf/144",
+      "pageId": 304331,
+      "revisionId": 610467,
+      "revisionTimestamp": "2026-06-15T21:01:53Z",
+      "imageFile": "images/poetry-144.jpg",
+      "referenceFile": "references/poetry-144.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1953 Arabic print",
+        "centered Arabic verse and prose",
+        "short verse lines with generous whitespace",
+        "ornamental borders and headings"
+      ]
+    },
+    {
+      "id": "poetry-187",
+      "sourceFileId": "hawa-shabab",
+      "pageTitle": "صفحة:ديوان الهوى والشباب.pdf/187",
+      "pageId": 304415,
+      "revisionId": 610172,
+      "revisionTimestamp": "2026-06-14T17:52:22Z",
+      "imageFile": "images/poetry-187.jpg",
+      "referenceFile": "references/poetry-187.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1953 Arabic print",
+        "centered Arabic verse and prose",
+        "short verse lines with generous whitespace",
+        "ornamental borders and headings"
+      ]
+    },
+    {
+      "id": "ibn-fadlan-015",
+      "sourceFileId": "ibn-fadlan-dahhan",
+      "pageTitle": "صفحة:رسالة ابن فضلان في وصف الرحلة إلى بلاد الترك والخزر والروس والصقالبة سنة 309هـ 921م (ت. سامي الدهان) - أحمد بن فضلان.pdf/15",
+      "pageId": 250376,
+      "revisionId": 521440,
+      "revisionTimestamp": "2025-02-21T15:25:01Z",
+      "imageFile": "images/ibn-fadlan-015.jpg",
+      "referenceFile": "references/ibn-fadlan-015.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "edited historical Arabic text",
+        "500-pixel source width",
+        "footnotes and running page headers",
+        "dense Arabic prose"
+      ]
+    },
+    {
+      "id": "ibn-fadlan-059",
+      "sourceFileId": "ibn-fadlan-dahhan",
+      "pageTitle": "صفحة:رسالة ابن فضلان في وصف الرحلة إلى بلاد الترك والخزر والروس والصقالبة سنة 309هـ 921م (ت. سامي الدهان) - أحمد بن فضلان.pdf/59",
+      "pageId": 254326,
+      "revisionId": 568521,
+      "revisionTimestamp": "2025-09-17T08:05:57Z",
+      "imageFile": "images/ibn-fadlan-059.jpg",
+      "referenceFile": "references/ibn-fadlan-059.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "edited historical Arabic text",
+        "500-pixel source width",
+        "footnotes and running page headers",
+        "dense Arabic prose"
+      ]
+    },
+    {
+      "id": "ibn-fadlan-103",
+      "sourceFileId": "ibn-fadlan-dahhan",
+      "pageTitle": "صفحة:رسالة ابن فضلان في وصف الرحلة إلى بلاد الترك والخزر والروس والصقالبة سنة 309هـ 921م (ت. سامي الدهان) - أحمد بن فضلان.pdf/103",
+      "pageId": 254354,
+      "revisionId": 534327,
+      "revisionTimestamp": "2025-08-15T18:13:32Z",
+      "imageFile": "images/ibn-fadlan-103.jpg",
+      "referenceFile": "references/ibn-fadlan-103.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "edited historical Arabic text",
+        "500-pixel source width",
+        "footnotes and running page headers",
+        "dense Arabic prose"
+      ]
+    },
+    {
+      "id": "ibn-fadlan-147",
+      "sourceFileId": "ibn-fadlan-dahhan",
+      "pageTitle": "صفحة:رسالة ابن فضلان في وصف الرحلة إلى بلاد الترك والخزر والروس والصقالبة سنة 309هـ 921م (ت. سامي الدهان) - أحمد بن فضلان.pdf/147",
+      "pageId": 256506,
+      "revisionId": 530022,
+      "revisionTimestamp": "2025-05-17T19:36:57Z",
+      "imageFile": "images/ibn-fadlan-147.jpg",
+      "referenceFile": "references/ibn-fadlan-147.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "edited historical Arabic text",
+        "500-pixel source width",
+        "footnotes and running page headers",
+        "dense Arabic prose"
+      ]
+    },
+    {
+      "id": "ibn-fadlan-194",
+      "sourceFileId": "ibn-fadlan-dahhan",
+      "pageTitle": "صفحة:رسالة ابن فضلان في وصف الرحلة إلى بلاد الترك والخزر والروس والصقالبة سنة 309هـ 921م (ت. سامي الدهان) - أحمد بن فضلان.pdf/194",
+      "pageId": 256560,
+      "revisionId": 576356,
+      "revisionTimestamp": "2025-09-18T23:50:29Z",
+      "imageFile": "images/ibn-fadlan-194.jpg",
+      "referenceFile": "references/ibn-fadlan-194.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "edited historical Arabic text",
+        "500-pixel source width",
+        "footnotes and running page headers",
+        "dense Arabic prose"
+      ]
+    },
+    {
+      "id": "mustalah-010",
+      "sourceFileId": "mustalah-history-3",
+      "pageTitle": "صفحة:مصطلح التاريخ (الطبعة الثالثة).pdf/10",
+      "pageId": 225049,
+      "revisionId": 408635,
+      "revisionTimestamp": "2022-09-20T20:17:17Z",
+      "imageFile": "images/mustalah-010.jpg",
+      "referenceFile": "references/mustalah-010.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "modern Arabic scholarly print",
+        "500-pixel source width",
+        "footnotes and bibliographic references",
+        "mixed headings and dense prose"
+      ]
+    },
+    {
+      "id": "mustalah-042",
+      "sourceFileId": "mustalah-history-3",
+      "pageTitle": "صفحة:مصطلح التاريخ (الطبعة الثالثة).pdf/42",
+      "pageId": 225086,
+      "revisionId": 500094,
+      "revisionTimestamp": "2024-08-05T19:42:28Z",
+      "imageFile": "images/mustalah-042.jpg",
+      "referenceFile": "references/mustalah-042.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "modern Arabic scholarly print",
+        "500-pixel source width",
+        "footnotes and bibliographic references",
+        "mixed headings and dense prose"
+      ]
+    },
+    {
+      "id": "mustalah-075",
+      "sourceFileId": "mustalah-history-3",
+      "pageTitle": "صفحة:مصطلح التاريخ (الطبعة الثالثة).pdf/75",
+      "pageId": 225125,
+      "revisionId": 521780,
+      "revisionTimestamp": "2025-02-22T12:30:01Z",
+      "imageFile": "images/mustalah-075.jpg",
+      "referenceFile": "references/mustalah-075.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "modern Arabic scholarly print",
+        "500-pixel source width",
+        "footnotes and bibliographic references",
+        "mixed headings and dense prose"
+      ]
+    },
+    {
+      "id": "mustalah-108",
+      "sourceFileId": "mustalah-history-3",
+      "pageTitle": "صفحة:مصطلح التاريخ (الطبعة الثالثة).pdf/108",
+      "pageId": 225294,
+      "revisionId": 501085,
+      "revisionTimestamp": "2024-08-20T09:02:59Z",
+      "imageFile": "images/mustalah-108.jpg",
+      "referenceFile": "references/mustalah-108.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "modern Arabic scholarly print",
+        "500-pixel source width",
+        "footnotes and bibliographic references",
+        "mixed headings and dense prose"
+      ]
+    },
+    {
+      "id": "mustalah-140",
+      "sourceFileId": "mustalah-history-3",
+      "pageTitle": "صفحة:مصطلح التاريخ (الطبعة الثالثة).pdf/140",
+      "pageId": 225335,
+      "revisionId": 501465,
+      "revisionTimestamp": "2024-08-21T22:58:28Z",
+      "imageFile": "images/mustalah-140.jpg",
+      "referenceFile": "references/mustalah-140.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "modern Arabic scholarly print",
+        "500-pixel source width",
+        "footnotes and bibliographic references",
+        "mixed headings and dense prose"
+      ]
+    },
+    {
+      "id": "tripoli-004",
+      "sourceFileId": "tripoli-history-1349",
+      "pageTitle": "صفحة:تاريخ طرابلس الغرب (المطبعة السلفية، 1349هـ).pdf/4",
+      "pageId": 256019,
+      "revisionId": 522348,
+      "revisionTimestamp": "2025-02-27T17:11:49Z",
+      "imageFile": "images/tripoli-004.jpg",
+      "referenceFile": "references/tripoli-004.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1930 historical Arabic print",
+        "500-pixel source width",
+        "dense Arabic prose",
+        "footnotes, headings, and occasional verse"
+      ]
+    },
+    {
+      "id": "tripoli-028",
+      "sourceFileId": "tripoli-history-1349",
+      "pageTitle": "صفحة:تاريخ طرابلس الغرب (المطبعة السلفية، 1349هـ).pdf/28",
+      "pageId": 255620,
+      "revisionId": 605589,
+      "revisionTimestamp": "2026-03-01T05:12:58Z",
+      "imageFile": "images/tripoli-028.jpg",
+      "referenceFile": "references/tripoli-028.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1930 historical Arabic print",
+        "500-pixel source width",
+        "dense Arabic prose",
+        "footnotes, headings, and occasional verse"
+      ]
+    },
+    {
+      "id": "tripoli-079",
+      "sourceFileId": "tripoli-history-1349",
+      "pageTitle": "صفحة:تاريخ طرابلس الغرب (المطبعة السلفية، 1349هـ).pdf/79",
+      "pageId": 255745,
+      "revisionId": 517118,
+      "revisionTimestamp": "2025-01-11T21:36:11Z",
+      "imageFile": "images/tripoli-079.jpg",
+      "referenceFile": "references/tripoli-079.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1930 historical Arabic print",
+        "500-pixel source width",
+        "dense Arabic prose",
+        "footnotes, headings, and occasional verse"
+      ]
+    },
+    {
+      "id": "tripoli-151",
+      "sourceFileId": "tripoli-history-1349",
+      "pageTitle": "صفحة:تاريخ طرابلس الغرب (المطبعة السلفية، 1349هـ).pdf/151",
+      "pageId": 255836,
+      "revisionId": 516000,
+      "revisionTimestamp": "2024-12-30T22:01:18Z",
+      "imageFile": "images/tripoli-151.jpg",
+      "referenceFile": "references/tripoli-151.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1930 historical Arabic print",
+        "500-pixel source width",
+        "dense Arabic prose",
+        "footnotes, headings, and occasional verse"
+      ]
+    },
+    {
+      "id": "tripoli-178",
+      "sourceFileId": "tripoli-history-1349",
+      "pageTitle": "صفحة:تاريخ طرابلس الغرب (المطبعة السلفية، 1349هـ).pdf/178",
+      "pageId": 255923,
+      "revisionId": 520751,
+      "revisionTimestamp": "2025-02-12T15:56:59Z",
+      "imageFile": "images/tripoli-178.jpg",
+      "referenceFile": "references/tripoli-178.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1930 historical Arabic print",
+        "500-pixel source width",
+        "dense Arabic prose",
+        "footnotes, headings, and occasional verse"
+      ]
+    },
+    {
+      "id": "ajurrumiyya-003",
+      "sourceFileId": "ajurrumiyya-1592",
+      "pageTitle": "صفحة:كتاب الآجرومية في النحو (مخطوطة 1592) - ابن آجروم.pdf/3",
+      "pageId": 224326,
+      "revisionId": 532267,
+      "revisionTimestamp": "2025-07-20T00:13:51Z",
+      "imageFile": "images/ajurrumiyya-003.jpg",
+      "referenceFile": "references/ajurrumiyya-003.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1592 handwritten Arabic manuscript",
+        "1280-pixel source width",
+        "uneven handwritten baselines",
+        "marginal marks and manuscript texture"
+      ]
+    },
+    {
+      "id": "ajurrumiyya-006",
+      "sourceFileId": "ajurrumiyya-1592",
+      "pageTitle": "صفحة:كتاب الآجرومية في النحو (مخطوطة 1592) - ابن آجروم.pdf/6",
+      "pageId": 228274,
+      "revisionId": 532275,
+      "revisionTimestamp": "2025-07-20T00:33:03Z",
+      "imageFile": "images/ajurrumiyya-006.jpg",
+      "referenceFile": "references/ajurrumiyya-006.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1592 handwritten Arabic manuscript",
+        "1280-pixel source width",
+        "uneven handwritten baselines",
+        "marginal marks and manuscript texture"
+      ]
+    },
+    {
+      "id": "ajurrumiyya-010",
+      "sourceFileId": "ajurrumiyya-1592",
+      "pageTitle": "صفحة:كتاب الآجرومية في النحو (مخطوطة 1592) - ابن آجروم.pdf/10",
+      "pageId": 235793,
+      "revisionId": 532278,
+      "revisionTimestamp": "2025-07-20T00:36:09Z",
+      "imageFile": "images/ajurrumiyya-010.jpg",
+      "referenceFile": "references/ajurrumiyya-010.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1592 handwritten Arabic manuscript",
+        "1280-pixel source width",
+        "uneven handwritten baselines",
+        "marginal marks and manuscript texture"
+      ]
+    },
+    {
+      "id": "ajurrumiyya-014",
+      "sourceFileId": "ajurrumiyya-1592",
+      "pageTitle": "صفحة:كتاب الآجرومية في النحو (مخطوطة 1592) - ابن آجروم.pdf/14",
+      "pageId": 235799,
+      "revisionId": 532283,
+      "revisionTimestamp": "2025-07-20T00:45:15Z",
+      "imageFile": "images/ajurrumiyya-014.jpg",
+      "referenceFile": "references/ajurrumiyya-014.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1592 handwritten Arabic manuscript",
+        "1280-pixel source width",
+        "uneven handwritten baselines",
+        "marginal marks and manuscript texture"
+      ]
+    },
+    {
+      "id": "ajurrumiyya-017",
+      "sourceFileId": "ajurrumiyya-1592",
+      "pageTitle": "صفحة:كتاب الآجرومية في النحو (مخطوطة 1592) - ابن آجروم.pdf/17",
+      "pageId": 235805,
+      "revisionId": 532286,
+      "revisionTimestamp": "2025-07-20T00:52:16Z",
+      "imageFile": "images/ajurrumiyya-017.jpg",
+      "referenceFile": "references/ajurrumiyya-017.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1592 handwritten Arabic manuscript",
+        "1280-pixel source width",
+        "uneven handwritten baselines",
+        "marginal marks and manuscript texture"
+      ]
+    },
+    {
+      "id": "monetary-003-prose",
+      "sourceFileId": "egypt-monetary-reform-1915",
+      "pageTitle": "صفحة:إصلاح نظام النقد في مصر.pdf/3",
+      "pageId": 303228,
+      "revisionId": 608382,
+      "revisionTimestamp": "2026-05-02T10:12:15Z",
+      "imageFile": "images/monetary-003-prose.jpg",
+      "referenceFile": "references/monetary-003-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1915 Egyptian letterpress",
+        "single-column economic prose",
+        "Arabic and Western numerals",
+        "aged paper and variable ink density"
+      ]
+    },
+    {
+      "id": "monetary-012-quotation",
+      "sourceFileId": "egypt-monetary-reform-1915",
+      "pageTitle": "صفحة:إصلاح نظام النقد في مصر.pdf/12",
+      "pageId": 303249,
+      "revisionId": 608359,
+      "revisionTimestamp": "2026-05-01T20:39:50Z",
+      "imageFile": "images/monetary-012-quotation.jpg",
+      "referenceFile": "references/monetary-012-quotation.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1915 Egyptian letterpress",
+        "quoted text and punctuation",
+        "single-column dense prose",
+        "aged paper and variable ink density"
+      ]
+    },
+    {
+      "id": "monetary-019-table",
+      "sourceFileId": "egypt-monetary-reform-1915",
+      "pageTitle": "صفحة:إصلاح نظام النقد في مصر.pdf/19",
+      "pageId": 303393,
+      "revisionId": 608186,
+      "revisionTimestamp": "2026-04-27T10:32:37Z",
+      "imageFile": "images/monetary-019-table.jpg",
+      "referenceFile": "references/monetary-019-table.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1915 Egyptian letterpress",
+        "financial table and column headings",
+        "decimal values and currency labels",
+        "aged paper and variable ink density"
+      ]
+    },
+    {
+      "id": "monetary-032-numerals",
+      "sourceFileId": "egypt-monetary-reform-1915",
+      "pageTitle": "صفحة:إصلاح نظام النقد في مصر.pdf/32",
+      "pageId": 303618,
+      "revisionId": 608394,
+      "revisionTimestamp": "2026-05-02T11:31:03Z",
+      "imageFile": "images/monetary-032-numerals.jpg",
+      "referenceFile": "references/monetary-032-numerals.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1915 Egyptian letterpress",
+        "dense prose with measurements",
+        "Arabic numerals and fractions",
+        "aged paper and variable ink density"
+      ]
+    },
+    {
+      "id": "monetary-045-tabular",
+      "sourceFileId": "egypt-monetary-reform-1915",
+      "pageTitle": "صفحة:إصلاح نظام النقد في مصر.pdf/45",
+      "pageId": 303645,
+      "revisionId": 608245,
+      "revisionTimestamp": "2026-04-27T19:32:40Z",
+      "imageFile": "images/monetary-045-tabular.jpg",
+      "referenceFile": "references/monetary-045-tabular.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1915 Egyptian letterpress",
+        "tabular monetary values",
+        "short repeated rows and decimal numbers",
+        "aged paper and variable ink density"
+      ]
+    },
+    {
+      "id": "kuwait-010-foreign-names",
+      "sourceFileId": "kuwait-political-history-1",
+      "pageTitle": "صفحة:تاريخ الكويت السياسي - الجزء الأول - حسين خزعل.pdf/10",
+      "pageId": 292467,
+      "revisionId": 602648,
+      "revisionTimestamp": "2026-01-01T17:20:40Z",
+      "imageFile": "images/kuwait-010-foreign-names.jpg",
+      "referenceFile": "references/kuwait-010-foreign-names.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "twentieth-century Arabic history print",
+        "dense single-column prose",
+        "parenthetical foreign names",
+        "modern scan with page furniture"
+      ]
+    },
+    {
+      "id": "kuwait-011-boundaries",
+      "sourceFileId": "kuwait-political-history-1",
+      "pageTitle": "صفحة:تاريخ الكويت السياسي - الجزء الأول - حسين خزعل.pdf/11",
+      "pageId": 292682,
+      "revisionId": 602650,
+      "revisionTimestamp": "2026-01-01T17:21:01Z",
+      "imageFile": "images/kuwait-011-boundaries.jpg",
+      "referenceFile": "references/kuwait-011-boundaries.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "twentieth-century Arabic history print",
+        "section heading and short lead lines",
+        "mixed paragraph lengths",
+        "modern scan with page furniture"
+      ]
+    },
+    {
+      "id": "kuwait-114-numbered-list",
+      "sourceFileId": "kuwait-political-history-1",
+      "pageTitle": "صفحة:تاريخ الكويت السياسي - الجزء الأول - حسين خزعل.pdf/114",
+      "pageId": 294619,
+      "revisionId": 599062,
+      "revisionTimestamp": "2025-11-14T09:34:00Z",
+      "imageFile": "images/kuwait-114-numbered-list.jpg",
+      "referenceFile": "references/kuwait-114-numbered-list.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "twentieth-century Arabic history print",
+        "numbered list and parentheses",
+        "dense single-column prose",
+        "modern scan with page furniture"
+      ]
+    },
+    {
+      "id": "kuwait-121-dates",
+      "sourceFileId": "kuwait-political-history-1",
+      "pageTitle": "صفحة:تاريخ الكويت السياسي - الجزء الأول - حسين خزعل.pdf/121",
+      "pageId": 294650,
+      "revisionId": 602387,
+      "revisionTimestamp": "2025-12-30T18:25:28Z",
+      "imageFile": "images/kuwait-121-dates.jpg",
+      "referenceFile": "references/kuwait-121-dates.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "twentieth-century Arabic history print",
+        "centered multi-line heading",
+        "Hijri and Gregorian dates",
+        "modern scan with page furniture"
+      ]
+    },
+    {
+      "id": "kuwait-140-heading",
+      "sourceFileId": "kuwait-political-history-1",
+      "pageTitle": "صفحة:تاريخ الكويت السياسي - الجزء الأول - حسين خزعل.pdf/140",
+      "pageId": 297470,
+      "revisionId": 602391,
+      "revisionTimestamp": "2025-12-30T18:33:29Z",
+      "imageFile": "images/kuwait-140-heading.jpg",
+      "referenceFile": "references/kuwait-140-heading.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "twentieth-century Arabic history print",
+        "long section heading",
+        "quoted term and dense prose",
+        "modern scan with page furniture"
+      ]
+    },
+    {
+      "id": "relics-003-preface",
+      "sourceFileId": "prophetic-relics-first-edition",
+      "pageTitle": "صفحة:الآثار النبوية (الطبعة الأولى).pdf/3",
+      "pageId": 222657,
+      "revisionId": 400240,
+      "revisionTimestamp": "2022-07-05T20:02:22Z",
+      "imageFile": "images/relics-003-preface.jpg",
+      "referenceFile": "references/relics-003-preface.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian letterpress",
+        "committee preface with centered ornament",
+        "footnote and quotation punctuation",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "relics-020-dense-history",
+      "sourceFileId": "prophetic-relics-first-edition",
+      "pageTitle": "صفحة:الآثار النبوية (الطبعة الأولى).pdf/20",
+      "pageId": 222676,
+      "revisionId": 512701,
+      "revisionTimestamp": "2024-12-03T19:38:41Z",
+      "imageFile": "images/relics-020-dense-history.jpg",
+      "referenceFile": "references/relics-020-dense-history.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian letterpress",
+        "dense historical prose and dates",
+        "footnote and honorific forms",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "relics-040-quotation",
+      "sourceFileId": "prophetic-relics-first-edition",
+      "pageTitle": "صفحة:الآثار النبوية (الطبعة الأولى).pdf/40",
+      "pageId": 222700,
+      "revisionId": 401746,
+      "revisionTimestamp": "2022-07-18T19:58:44Z",
+      "imageFile": "images/relics-040-quotation.jpg",
+      "referenceFile": "references/relics-040-quotation.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian letterpress",
+        "dense quotation and punctuation",
+        "footnote and long text lines",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "relics-080-scholarly-prose",
+      "sourceFileId": "prophetic-relics-first-edition",
+      "pageTitle": "صفحة:الآثار النبوية (الطبعة الأولى).pdf/80",
+      "pageId": 222747,
+      "revisionId": 400290,
+      "revisionTimestamp": "2022-07-06T19:29:49Z",
+      "imageFile": "images/relics-080-scholarly-prose.jpg",
+      "referenceFile": "references/relics-080-scholarly-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian letterpress",
+        "scholarly prose and personal names",
+        "footnote and compact leading",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "relics-120-diacritics",
+      "sourceFileId": "prophetic-relics-first-edition",
+      "pageTitle": "صفحة:الآثار النبوية (الطبعة الأولى).pdf/120",
+      "pageId": 222800,
+      "revisionId": 401869,
+      "revisionTimestamp": "2022-07-19T15:27:23Z",
+      "imageFile": "images/relics-120-diacritics.jpg",
+      "referenceFile": "references/relics-120-diacritics.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian letterpress",
+        "dense prose with partial diacritics",
+        "quoted material and page furniture",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "journey-003-foreign-places",
+      "sourceFileId": "zaydan-europe-journey",
+      "pageTitle": "صفحة:رحلة جرجي زيدان إلى أوربا.pdf/3",
+      "pageId": 225367,
+      "revisionId": 408552,
+      "revisionTimestamp": "2022-09-18T09:10:00Z",
+      "imageFile": "images/journey-003-foreign-places.jpg",
+      "referenceFile": "references/journey-003-foreign-places.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Arabic travel print",
+        "foreign place names and introductory prose",
+        "mixed punctuation and long lines",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "journey-007-civic-numerals",
+      "sourceFileId": "zaydan-europe-journey",
+      "pageTitle": "صفحة:رحلة جرجي زيدان إلى أوربا.pdf/7",
+      "pageId": 225371,
+      "revisionId": 423487,
+      "revisionTimestamp": "2023-02-19T00:28:54Z",
+      "imageFile": "images/journey-007-civic-numerals.jpg",
+      "referenceFile": "references/journey-007-civic-numerals.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Arabic travel print",
+        "civic prose with dates and counts",
+        "Arabic numerals and parentheses",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "journey-011-financial-table",
+      "sourceFileId": "zaydan-europe-journey",
+      "pageTitle": "صفحة:رحلة جرجي زيدان إلى أوربا.pdf/11",
+      "pageId": 225375,
+      "revisionId": 600250,
+      "revisionTimestamp": "2025-11-26T13:46:10Z",
+      "imageFile": "images/journey-011-financial-table.jpg",
+      "referenceFile": "references/journey-011-financial-table.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Arabic travel print",
+        "financial table and explanatory prose",
+        "currency values and aligned numerals",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "journey-047-dense-prose",
+      "sourceFileId": "zaydan-europe-journey",
+      "pageTitle": "صفحة:رحلة جرجي زيدان إلى أوربا.pdf/47",
+      "pageId": 225413,
+      "revisionId": 423492,
+      "revisionTimestamp": "2023-02-19T00:37:19Z",
+      "imageFile": "images/journey-047-dense-prose.jpg",
+      "referenceFile": "references/journey-047-dense-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Arabic travel print",
+        "dense social prose",
+        "punctuation and paragraph continuation",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "journey-114-art-terms",
+      "sourceFileId": "zaydan-europe-journey",
+      "pageTitle": "صفحة:رحلة جرجي زيدان إلى أوربا.pdf/114",
+      "pageId": 225486,
+      "revisionId": 408551,
+      "revisionTimestamp": "2022-09-18T09:05:13Z",
+      "imageFile": "images/journey-114-art-terms.jpg",
+      "referenceFile": "references/journey-114-art-terms.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Arabic travel print",
+        "museum and artwork terminology",
+        "dash punctuation and foreign references",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "engineers-017-biographical-prose",
+      "sourceFileId": "taymour-engineers-first-edition",
+      "pageTitle": "صفحة:أعلام المهندسين في الإسلام (الطبعة الأولى).pdf/17",
+      "pageId": 222466,
+      "revisionId": 401963,
+      "revisionTimestamp": "2022-07-21T04:34:33Z",
+      "imageFile": "images/engineers-017-biographical-prose.jpg",
+      "referenceFile": "references/engineers-017-biographical-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian technical history print",
+        "biographical prose and personal names",
+        "section headings and short biographical entries",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "engineers-040-footnotes",
+      "sourceFileId": "taymour-engineers-first-edition",
+      "pageTitle": "صفحة:أعلام المهندسين في الإسلام (الطبعة الأولى).pdf/40",
+      "pageId": 222502,
+      "revisionId": 563164,
+      "revisionTimestamp": "2025-09-16T17:18:29Z",
+      "imageFile": "images/engineers-040-footnotes.jpg",
+      "referenceFile": "references/engineers-040-footnotes.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian technical history print",
+        "contentful footnotes and scientific terms",
+        "dense prose with reference markers",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "engineers-063-footnotes",
+      "sourceFileId": "taymour-engineers-first-edition",
+      "pageTitle": "صفحة:أعلام المهندسين في الإسلام (الطبعة الأولى).pdf/63",
+      "pageId": 222543,
+      "revisionId": 562553,
+      "revisionTimestamp": "2025-09-16T15:36:31Z",
+      "imageFile": "images/engineers-063-footnotes.jpg",
+      "referenceFile": "references/engineers-063-footnotes.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian technical history print",
+        "multiple footnotes and historical names",
+        "compact leading and long text lines",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "engineers-085-dense-prose",
+      "sourceFileId": "taymour-engineers-first-edition",
+      "pageTitle": "صفحة:أعلام المهندسين في الإسلام (الطبعة الأولى).pdf/85",
+      "pageId": 222564,
+      "revisionId": 608588,
+      "revisionTimestamp": "2026-05-05T09:09:07Z",
+      "imageFile": "images/engineers-085-dense-prose.jpg",
+      "referenceFile": "references/engineers-085-dense-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian technical history print",
+        "historical technical glossary entries",
+        "multi-line definitions and diacritics",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "engineers-108-technical-prose",
+      "sourceFileId": "taymour-engineers-first-edition",
+      "pageTitle": "صفحة:أعلام المهندسين في الإسلام (الطبعة الأولى).pdf/108",
+      "pageId": 222606,
+      "revisionId": 402294,
+      "revisionTimestamp": "2022-07-22T10:18:23Z",
+      "imageFile": "images/engineers-108-technical-prose.jpg",
+      "referenceFile": "references/engineers-108-technical-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "early twentieth-century Egyptian technical history print",
+        "technical glossary and foreign loanwords",
+        "parenthetical citations and mixed line lengths",
+        "960-pixel source width"
+      ]
+    },
+    {
+      "id": "gibran-021-literary-prose",
+      "sourceFileId": "gibran-tear-smile-1914",
+      "pageTitle": "صفحة:دمعة وابتسامة (1914) - جبران خليل جبران.pdf/21",
+      "pageId": 229009,
+      "revisionId": 607073,
+      "revisionTimestamp": "2026-03-30T12:11:02Z",
+      "imageFile": "images/gibran-021-literary-prose.jpg",
+      "referenceFile": "references/gibran-021-literary-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1914 Arabic literary letterpress",
+        "short poetic prose paragraphs",
+        "punctuation and sparse page coverage",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "gibran-034-literary-prose",
+      "sourceFileId": "gibran-tear-smile-1914",
+      "pageTitle": "صفحة:دمعة وابتسامة (1914) - جبران خليل جبران.pdf/34",
+      "pageId": 229463,
+      "revisionId": 569054,
+      "revisionTimestamp": "2025-09-17T09:36:01Z",
+      "imageFile": "images/gibran-034-literary-prose.jpg",
+      "referenceFile": "references/gibran-034-literary-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1914 Arabic literary letterpress",
+        "literary prose with expressive punctuation",
+        "moderate density and long lines",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "gibran-048-literary-prose",
+      "sourceFileId": "gibran-tear-smile-1914",
+      "pageTitle": "صفحة:دمعة وابتسامة (1914) - جبران خليل جبران.pdf/48",
+      "pageId": 229001,
+      "revisionId": 489005,
+      "revisionTimestamp": "2023-12-23T11:21:04Z",
+      "imageFile": "images/gibran-048-literary-prose.jpg",
+      "referenceFile": "references/gibran-048-literary-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1914 Arabic literary letterpress",
+        "dense literary prose",
+        "quoted speech and paragraph continuation",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "gibran-060-literary-prose",
+      "sourceFileId": "gibran-tear-smile-1914",
+      "pageTitle": "صفحة:دمعة وابتسامة (1914) - جبران خليل جبران.pdf/60",
+      "pageId": 236298,
+      "revisionId": 490120,
+      "revisionTimestamp": "2023-12-29T11:37:33Z",
+      "imageFile": "images/gibran-060-literary-prose.jpg",
+      "referenceFile": "references/gibran-060-literary-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1914 Arabic literary letterpress",
+        "dense poetic prose",
+        "mixed sentence lengths and punctuation",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "gibran-143-literary-prose",
+      "sourceFileId": "gibran-tear-smile-1914",
+      "pageTitle": "صفحة:دمعة وابتسامة (1914) - جبران خليل جبران.pdf/143",
+      "pageId": 229116,
+      "revisionId": 492185,
+      "revisionTimestamp": "2024-01-27T16:53:08Z",
+      "imageFile": "images/gibran-143-literary-prose.jpg",
+      "referenceFile": "references/gibran-143-literary-prose.txt",
+      "referenceQualityLevel": 4,
+      "referenceQualityLabel": "community-validated",
+      "dimensions": [
+        "1914 Arabic literary letterpress",
+        "mixed Arabic and Latin handwritten heading",
+        "quoted refrain and decorative ornaments",
+        "500-pixel source width"
+      ]
+    },
+    {
+      "id": "egypt-heroes-113-prose",
+      "sourceFileId": "sibai-egypt-heroes-1922",
+      "pageTitle": "صفحة:أبطال مصر (1922) - محمد السباعي.pdf/113",
+      "pageId": 243147,
+      "revisionId": 569715,
+      "revisionTimestamp": "2025-09-17T11:28:50Z",
+      "imageFile": "images/egypt-heroes-113-prose.jpg",
+      "referenceFile": "references/egypt-heroes-113-prose.txt",
+      "dimensions": [
+        "1922 Egyptian letterpress",
+        "dense historical prose",
+        "single column and justified lines",
+        "aged paper and ink variation"
+      ]
+    },
+    {
+      "id": "egypt-heroes-114-prose",
+      "sourceFileId": "sibai-egypt-heroes-1922",
+      "pageTitle": "صفحة:أبطال مصر (1922) - محمد السباعي.pdf/114",
+      "pageId": 243254,
+      "revisionId": 567433,
+      "revisionTimestamp": "2025-09-17T05:16:32Z",
+      "imageFile": "images/egypt-heroes-114-prose.jpg",
+      "referenceFile": "references/egypt-heroes-114-prose.txt",
+      "dimensions": [
+        "1922 Egyptian letterpress",
+        "dense biographical prose",
+        "single column and punctuation",
+        "aged paper and ink variation"
+      ]
+    },
+    {
+      "id": "egypt-heroes-115-prose",
+      "sourceFileId": "sibai-egypt-heroes-1922",
+      "pageTitle": "صفحة:أبطال مصر (1922) - محمد السباعي.pdf/115",
+      "pageId": 243261,
+      "revisionId": 490509,
+      "revisionTimestamp": "2024-01-04T12:06:06Z",
+      "imageFile": "images/egypt-heroes-115-prose.jpg",
+      "referenceFile": "references/egypt-heroes-115-prose.txt",
+      "dimensions": [
+        "1922 Egyptian letterpress",
+        "dense historical prose",
+        "proper names and punctuation",
+        "aged paper and ink variation"
+      ]
+    },
+    {
+      "id": "egypt-heroes-116-prose",
+      "sourceFileId": "sibai-egypt-heroes-1922",
+      "pageTitle": "صفحة:أبطال مصر (1922) - محمد السباعي.pdf/116",
+      "pageId": 243260,
+      "revisionId": 506385,
+      "revisionTimestamp": "2024-09-11T14:41:15Z",
+      "imageFile": "images/egypt-heroes-116-prose.jpg",
+      "referenceFile": "references/egypt-heroes-116-prose.txt",
+      "dimensions": [
+        "1922 Egyptian letterpress",
+        "moderately dense prose",
+        "short paragraphs and punctuation",
+        "aged paper and ink variation"
+      ]
+    },
+    {
+      "id": "egypt-heroes-119-prose",
+      "sourceFileId": "sibai-egypt-heroes-1922",
+      "pageTitle": "صفحة:أبطال مصر (1922) - محمد السباعي.pdf/119",
+      "pageId": 243257,
+      "revisionId": 601387,
+      "revisionTimestamp": "2025-12-15T14:14:37Z",
+      "imageFile": "images/egypt-heroes-119-prose.jpg",
+      "referenceFile": "references/egypt-heroes-119-prose.txt",
+      "dimensions": [
+        "1922 Egyptian letterpress",
+        "historical prose and proper names",
+        "single column and justified lines",
+        "aged paper and ink variation"
+      ]
+    },
+    {
+      "id": "marrash-010-literary-prose",
+      "sourceFileId": "marrash-mashhad-1881",
+      "pageTitle": "صفحة:(Fransīs) Fatḥ Allāh Marrāsh – Kitāb Ghābat al-Ḥaqq & Mashhad al-Aḥwāl (Cairo, 1881) – Volume 2 (Mashhad al-Aḥwāl).pdf/10",
+      "pageId": 228113,
+      "revisionId": 413894,
+      "revisionTimestamp": "2022-12-01T18:22:40Z",
+      "imageFile": "images/marrash-010-literary-prose.jpg",
+      "referenceFile": "references/marrash-010-literary-prose.txt",
+      "dimensions": [
+        "1881 Arabic letterpress",
+        "literary prose and diacritics",
+        "single column with long lines",
+        "historical type and ink spread"
+      ]
+    },
+    {
+      "id": "marrash-011-literary-prose",
+      "sourceFileId": "marrash-mashhad-1881",
+      "pageTitle": "صفحة:(Fransīs) Fatḥ Allāh Marrāsh – Kitāb Ghābat al-Ḥaqq & Mashhad al-Aḥwāl (Cairo, 1881) – Volume 2 (Mashhad al-Aḥwāl).pdf/11",
+      "pageId": 228114,
+      "revisionId": 413899,
+      "revisionTimestamp": "2022-12-01T18:33:29Z",
+      "imageFile": "images/marrash-011-literary-prose.jpg",
+      "referenceFile": "references/marrash-011-literary-prose.txt",
+      "dimensions": [
+        "1881 Arabic letterpress",
+        "dense literary prose",
+        "single column and punctuation",
+        "historical type and ink spread"
+      ]
+    },
+    {
+      "id": "marrash-012-literary-prose",
+      "sourceFileId": "marrash-mashhad-1881",
+      "pageTitle": "صفحة:(Fransīs) Fatḥ Allāh Marrāsh – Kitāb Ghābat al-Ḥaqq & Mashhad al-Aḥwāl (Cairo, 1881) – Volume 2 (Mashhad al-Aḥwāl).pdf/12",
+      "pageId": 228115,
+      "revisionId": 413923,
+      "revisionTimestamp": "2022-12-01T19:05:22Z",
+      "imageFile": "images/marrash-012-literary-prose.jpg",
+      "referenceFile": "references/marrash-012-literary-prose.txt",
+      "dimensions": [
+        "1881 Arabic letterpress",
+        "literary prose and quotations",
+        "single column with long lines",
+        "historical type and ink spread"
+      ]
+    },
+    {
+      "id": "marrash-013-literary-prose",
+      "sourceFileId": "marrash-mashhad-1881",
+      "pageTitle": "صفحة:(Fransīs) Fatḥ Allāh Marrāsh – Kitāb Ghābat al-Ḥaqq & Mashhad al-Aḥwāl (Cairo, 1881) – Volume 2 (Mashhad al-Aḥwāl).pdf/13",
+      "pageId": 228116,
+      "revisionId": 413925,
+      "revisionTimestamp": "2022-12-01T19:11:15Z",
+      "imageFile": "images/marrash-013-literary-prose.jpg",
+      "referenceFile": "references/marrash-013-literary-prose.txt",
+      "dimensions": [
+        "1881 Arabic letterpress",
+        "dense literary prose",
+        "single column and diacritics",
+        "historical type and ink spread"
+      ]
+    },
+    {
+      "id": "marrash-014-literary-prose",
+      "sourceFileId": "marrash-mashhad-1881",
+      "pageTitle": "صفحة:(Fransīs) Fatḥ Allāh Marrāsh – Kitāb Ghābat al-Ḥaqq & Mashhad al-Aḥwāl (Cairo, 1881) – Volume 2 (Mashhad al-Aḥwāl).pdf/14",
+      "pageId": 228117,
+      "revisionId": 413928,
+      "revisionTimestamp": "2022-12-01T19:20:44Z",
+      "imageFile": "images/marrash-014-literary-prose.jpg",
+      "referenceFile": "references/marrash-014-literary-prose.txt",
+      "dimensions": [
+        "1881 Arabic letterpress",
+        "literary prose and punctuation",
+        "single column with long lines",
+        "historical type and ink spread"
+      ]
+    },
+    {
+      "id": "jahili-009-prose",
+      "sourceFileId": "taha-hussein-jahili-literature-1927",
+      "pageTitle": "صفحة:في الأدب الجاهلي ط1927.pdf/9",
+      "pageId": 303122,
+      "revisionId": 607349,
+      "revisionTimestamp": "2026-04-06T21:38:32Z",
+      "imageFile": "images/jahili-009-prose.jpg",
+      "referenceFile": "references/jahili-009-prose.txt",
+      "dimensions": [
+        "1927 Egyptian letterpress",
+        "dense critical prose",
+        "single column and justified lines",
+        "aged paper and marginal noise"
+      ]
+    },
+    {
+      "id": "jahili-010-prose",
+      "sourceFileId": "taha-hussein-jahili-literature-1927",
+      "pageTitle": "صفحة:في الأدب الجاهلي ط1927.pdf/10",
+      "pageId": 303123,
+      "revisionId": 607083,
+      "revisionTimestamp": "2026-03-30T12:37:39Z",
+      "imageFile": "images/jahili-010-prose.jpg",
+      "referenceFile": "references/jahili-010-prose.txt",
+      "dimensions": [
+        "1927 Egyptian letterpress",
+        "dense literary prose",
+        "single column and punctuation",
+        "aged paper and marginal noise"
+      ]
+    },
+    {
+      "id": "jahili-011-prose",
+      "sourceFileId": "taha-hussein-jahili-literature-1927",
+      "pageTitle": "صفحة:في الأدب الجاهلي ط1927.pdf/11",
+      "pageId": 303125,
+      "revisionId": 607092,
+      "revisionTimestamp": "2026-03-30T19:57:36Z",
+      "imageFile": "images/jahili-011-prose.jpg",
+      "referenceFile": "references/jahili-011-prose.txt",
+      "dimensions": [
+        "1927 Egyptian letterpress",
+        "critical prose and quotations",
+        "single column with long lines",
+        "aged paper and marginal noise"
+      ]
+    },
+    {
+      "id": "jahili-012-prose",
+      "sourceFileId": "taha-hussein-jahili-literature-1927",
+      "pageTitle": "صفحة:في الأدب الجاهلي ط1927.pdf/12",
+      "pageId": 303126,
+      "revisionId": 607093,
+      "revisionTimestamp": "2026-03-30T20:04:05Z",
+      "imageFile": "images/jahili-012-prose.jpg",
+      "referenceFile": "references/jahili-012-prose.txt",
+      "dimensions": [
+        "1927 Egyptian letterpress",
+        "dense literary prose",
+        "single column and justified lines",
+        "aged paper and marginal noise"
+      ]
+    },
+    {
+      "id": "jahili-013-prose",
+      "sourceFileId": "taha-hussein-jahili-literature-1927",
+      "pageTitle": "صفحة:في الأدب الجاهلي ط1927.pdf/13",
+      "pageId": 303127,
+      "revisionId": 607094,
+      "revisionTimestamp": "2026-03-30T20:09:20Z",
+      "imageFile": "images/jahili-013-prose.jpg",
+      "referenceFile": "references/jahili-013-prose.txt",
+      "dimensions": [
+        "1927 Egyptian letterpress",
+        "dense critical prose",
+        "single column and punctuation",
+        "aged paper and marginal noise"
+      ]
+    },
+    {
+      "id": "jurjani-006-manuscript",
+      "sourceFileId": "jurjani-definitions-manuscript",
+      "pageTitle": "صفحة:كتاب التعريفات (IA MS.ARA.67).pdf/6",
+      "pageId": 301677,
+      "revisionId": 603145,
+      "revisionTimestamp": "2026-01-13T04:36:56Z",
+      "imageFile": "images/jurjani-006-manuscript.jpg",
+      "referenceFile": "references/jurjani-006-manuscript.txt",
+      "dimensions": [
+        "historical Arabic manuscript",
+        "handwritten definitions",
+        "single text block and diacritics",
+        "paper texture and ink variation"
+      ]
+    },
+    {
+      "id": "jurjani-007-manuscript",
+      "sourceFileId": "jurjani-definitions-manuscript",
+      "pageTitle": "صفحة:كتاب التعريفات (IA MS.ARA.67).pdf/7",
+      "pageId": 301680,
+      "revisionId": 603030,
+      "revisionTimestamp": "2026-01-11T17:43:10Z",
+      "imageFile": "images/jurjani-007-manuscript.jpg",
+      "referenceFile": "references/jurjani-007-manuscript.txt",
+      "dimensions": [
+        "historical Arabic manuscript",
+        "handwritten definitions",
+        "single text block and dense lines",
+        "paper texture and ink variation"
+      ]
+    },
+    {
+      "id": "jurjani-008-manuscript",
+      "sourceFileId": "jurjani-definitions-manuscript",
+      "pageTitle": "صفحة:كتاب التعريفات (IA MS.ARA.67).pdf/8",
+      "pageId": 301681,
+      "revisionId": 602962,
+      "revisionTimestamp": "2026-01-10T22:13:19Z",
+      "imageFile": "images/jurjani-008-manuscript.jpg",
+      "referenceFile": "references/jurjani-008-manuscript.txt",
+      "dimensions": [
+        "historical Arabic manuscript",
+        "handwritten definitions",
+        "single text block and diacritics",
+        "paper texture and ink variation"
+      ]
+    },
+    {
+      "id": "jurjani-009-manuscript",
+      "sourceFileId": "jurjani-definitions-manuscript",
+      "pageTitle": "صفحة:كتاب التعريفات (IA MS.ARA.67).pdf/9",
+      "pageId": 301682,
+      "revisionId": 603072,
+      "revisionTimestamp": "2026-01-12T04:53:12Z",
+      "imageFile": "images/jurjani-009-manuscript.jpg",
+      "referenceFile": "references/jurjani-009-manuscript.txt",
+      "dimensions": [
+        "historical Arabic manuscript",
+        "handwritten definitions",
+        "single text block and dense lines",
+        "paper texture and ink variation"
+      ]
+    },
+    {
+      "id": "jurjani-010-manuscript",
+      "sourceFileId": "jurjani-definitions-manuscript",
+      "pageTitle": "صفحة:كتاب التعريفات (IA MS.ARA.67).pdf/10",
+      "pageId": 301683,
+      "revisionId": 602972,
+      "revisionTimestamp": "2026-01-10T22:42:54Z",
+      "imageFile": "images/jurjani-010-manuscript.jpg",
+      "referenceFile": "references/jurjani-010-manuscript.txt",
+      "dimensions": [
+        "historical Arabic manuscript",
+        "handwritten definitions",
+        "single text block and diacritics",
+        "paper texture and ink variation"
+      ]
+    }
+  ]
+}

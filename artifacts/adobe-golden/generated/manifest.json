@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "npm run golden:adobe:generate",
+  "files": [
+    {
+      "filename": "image-layers.psd",
+      "sizeBytes": 39442,
+      "sha256": "911446050af4db447a752b41eabf7b7f9429817b911286080eafafe5d04187c0",
+      "expected": {
+        "width": 640,
+        "height": 360,
+        "rootLayers": [
+          "+البطاقة",
+          "+الخلفية"
+        ],
+        "photoshopMode": "RGB/8",
+        "afterEffectsImport": "Composition - Retain Layer Sizes"
+      }
+    },
+    {
+      "filename": "book-pages.psd",
+      "sizeBytes": 111150,
+      "sha256": "5ec9bf8d901f0f901b68d3ad2fd7dd96208435c4ff764bd2e5d271dcd15b3585",
+      "expected": {
+        "width": 640,
+        "height": 720,
+        "rootLayers": [
+          "+page_001",
+          "+page_002"
+        ],
+        "photoshopMode": "RGB/8",
+        "afterEffectsImport": "Composition - Retain Layer Sizes"
+      }
+    }
+  ]
+}

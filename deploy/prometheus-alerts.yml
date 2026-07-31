@@ -1,0 +1,65 @@
+groups:
+  - name: motionprep-readiness
+    rules:
+      - alert: MotionPrepDependencyUnavailable
+        expr: motionprep_dependencies_ready == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: MotionPrep dependency readiness is failing
+          runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepWorkerMissing
+        expr: max by (worker_type) (motionprep_worker_up) < 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: A required MotionPrep worker type has no healthy heartbeat
+          runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepQueueTooOld
+        expr: motionprep_queue_oldest_queued_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: MotionPrep queue age exceeds five minutes
+          runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepLeaseLoss
+        expr: motionprep_worker_events_last_hour{event="lease_lost"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A MotionPrep worker lost a job lease
+          runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepContainerMemoryPressure
+        expr: |
+          container_memory_working_set_bytes{container_label_com_docker_compose_project="motionprep"}
+          /
+          container_spec_memory_limit_bytes{container_label_com_docker_compose_project="motionprep"}
+          > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: A MotionPrep container exceeds 90% of its memory limit
+          runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepContainerCpuSaturation
+        expr: |
+          rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_project="motionprep"}[5m])
+          /
+          container_spec_cpu_quota{container_label_com_docker_compose_project="motionprep"}
+          * container_spec_cpu_period{container_label_com_docker_compose_project="motionprep"}
+          > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: A MotionPrep container is CPU-saturated
+          runbook: docs/runbooks/processing-job-recovery.md

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "1.0",
+  "items": [
+    {
+      "id": "synthetic-alpha-components",
+      "path": "artifacts/fixtures/alpha-components.png",
+      "sha256": "92aa5d51e4e3ee53a7869c9976373ae15a3a71f23b15b76abd8316822bd23b6f",
+      "source": "artifacts/fixtures/generate-alpha-components.mjs",
+      "owner": "MotionPrep test suite",
+      "license": "Internally generated; test-only redistribution permitted",
+      "expected": "Five disconnected alpha components produce five bounded raster layers.",
+      "risks": ["alpha segmentation", "component bounds", "PSD export"]
+    },
+    {
+      "id": "synthetic-embedded-text-pdf",
+      "path": "artifacts/fixtures/motionprep-e2e.pdf",
+      "sha256": "179e1821a2aded04c5dacb8e710e90e8c4aa2b198517f1813a8bfb4df359b311",
+      "source": "artifacts/fixtures/generate-e2e-pdf.mjs",
+      "owner": "MotionPrep test suite",
+      "license": "Internally generated; test-only redistribution permitted",
+      "expected": "Two pages preserve embedded text and page-relative coordinates.",
+      "risks": ["PDF extraction", "reading order", "text export"]
+    },
+    {
+      "id": "synthetic-scanned-arabic-pdf",
+      "path": "artifacts/fixtures/motionprep-scanned-arabic.pdf",
+      "sha256": "3575a21105cf32054f89f24146232ec6c782f1eb6c40d0ec6b766b57fb0be188",
+      "source": "artifacts/benchmarks/ocr-arabic/generate-fixture.mjs and artifacts/fixtures/generate-e2e-pdf.mjs",
+      "owner": "MotionPrep test suite",
+      "license": "Internally generated using Noto Naskh Arabic under SIL OFL 1.1",
+      "expected": "Local Arabic OCR returns positioned RTL words within the benchmark CER threshold.",
+      "risks": ["scanned Arabic OCR", "RTL positioning", "private offline processing"]
+    },
+    {
+      "id": "real-ocr-tuhfa-016-prose",
+      "path": "artifacts/benchmarks/ocr-arabic-corpus/images/tuhfa-016-prose.jpg",
+      "sha256": "53263f73b74ab4dffb294208c6484f6958583d07d431d70d5123d600da9db01f",
+      "source": "Arabic Wikisource revision 490128; full attribution in artifacts/benchmarks/ocr-arabic-corpus/manifest.json",
+      "owner": "Public-domain scan; Arabic Wikisource proofread contributors",
+      "license": "Public-domain scan; CC BY-SA 4.0 reference transcription",
+      "expected": "Pinned real-scan OCR measurement against a community-proofread reference.",
+      "risks": ["historical letterpress", "ink spread", "uneven baselines", "large Arabic heading"]
+    },
+    {
+      "id": "real-ocr-tuhfa-052-table",
+      "path": "artifacts/benchmarks/ocr-arabic-corpus/images/tuhfa-052-table.jpg",
+      "sha256": "24385dff83ff6ed4f5510a712b6bdc18362bdb41b6e06172e78d25bd787e48f8",
+      "source": "Arabic Wikisource revision 490952; full attribution in artifacts/benchmarks/ocr-arabic-corpus/manifest.json",
+      "owner": "Public-domain scan; Arabic Wikisource proofread contributors",
+      "license": "Public-domain scan; CC BY-SA 4.0 reference transcription",
+      "expected": "Pinned real-scan OCR measurement against a community-proofread reference.",
+      "risks": ["ruled table", "multiple columns", "mixed orientation", "historical letterpress"]
+    },
+    {
+      "id": "real-ocr-bidaya-025-dense-prose",
+      "path": "artifacts/benchmarks/ocr-arabic-corpus/images/bidaya-025-dense-prose.jpg",
+      "sha256": "195a51b041531d662cd6ab7af65906a01f4632241db4955f6b276db4b450d79f",
+      "source": "Arabic Wikisource revision 545447; full attribution in artifacts/benchmarks/ocr-arabic-corpus/manifest.json",
+      "owner": "Public-domain scan; Arabic Wikisource proofread contributors",
+      "license": "Public-domain scan; CC BY-SA 4.0 reference transcription",
+      "expected": "Pinned real-scan OCR measurement against a community-proofread reference.",
+      "risks": ["dense Arabic prose", "page border", "asterisk separators", "early twentieth-century print"]
+    },
+    {
+      "id": "real-ocr-bidaya-202-diacritics",
+      "path": "artifacts/benchmarks/ocr-arabic-corpus/images/bidaya-202-diacritics.jpg",
+      "sha256": "b264295eda6c656f805b0c48356f508e9b81dcf4815490f15cc5b5aa548ce61c",
+      "source": "Arabic Wikisource revision 545624; full attribution in artifacts/benchmarks/ocr-arabic-corpus/manifest.json",
+      "owner": "Public-domain scan; Arabic Wikisource proofread contributors",
+      "license": "Public-domain scan; CC BY-SA 4.0 reference transcription",
+      "expected": "Pinned real-scan OCR measurement against a community-proofread reference.",
+      "risks": ["Arabic diacritics", "inline citations", "footnotes", "dense prose"]
+    },
+    {
+      "id": "real-ocr-taarib-138-mixed",
+      "path": "artifacts/benchmarks/ocr-arabic-corpus/images/taarib-138-mixed-low-resolution.jpg",
+      "sha256": "7dade69b060c3d754e07ae904a248b2b96024bdb9a813469716c8602257b91b9",
+      "source": "Arabic Wikisource revision 614583; full attribution in artifacts/benchmarks/ocr-arabic-corpus/manifest.json",
+      "owner": "Public-domain scan; Arabic Wikisource proofread contributors",
+      "license": "Public-domain scan; CC BY-SA 4.0 reference transcription",
+      "expected": "Pinned real-scan OCR measurement against a community-proofread reference.",
+      "risks": ["500-pixel source width", "Arabic and Latin", "two-column examples", "1923 print"]
+    },
+    {
+      "id": "real-ocr-taarib-141-mixed",
+      "path": "artifacts/benchmarks/ocr-arabic-corpus/images/taarib-141-mixed-low-resolution.jpg",
+      "sha256": "669b65fd8afbb062e903b8874b698cdf2754a17c4c603f1551484ce429e49963",
+      "source": "Arabic Wikisource revision 614584; full attribution in artifacts/benchmarks/ocr-arabic-corpus/manifest.json",
+      "owner": "Public-domain scan; Arabic Wikisource proofread contributors",
+      "license": "Public-domain scan; CC BY-SA 4.0 reference transcription",
+      "expected": "Pinned real-scan OCR measurement against a community-proofread reference.",
+      "risks": ["500-pixel source width", "Arabic and Latin", "multi-section examples", "1923 print"]
+    }
+  ],
+  "notes": [
+    "Synthetic fixtures remain deterministic and internally generated.",
+    "Six representative real Arabic scans are indexed here; the dedicated OCR manifest verifies 41 scans from ten public-domain books, including 35 community-validated pages. Scan and CC BY-SA 4.0 transcription attribution, source revisions, quality levels, limitations, and digests are pinned in artifacts/benchmarks/ocr-arabic-corpus/manifest.json.",
+    "The synthetic OCR font commit, license, and digest are recorded in artifacts/benchmarks/ocr-arabic/expected.json."
+  ]
+}

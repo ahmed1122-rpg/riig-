@@ -1,0 +1,355 @@
+/* Marketing showcase, Adobe handoff, and closing CTA */
+.showcase-section {
+  border-top: 1px solid var(--mk-line);
+}
+
+.showcase-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--vp-space-5);
+}
+
+.showcase-stage figure {
+  margin: 0;
+}
+
+.showcase-board {
+  min-width: 0;
+  padding: var(--vp-space-4);
+  border: 1px solid var(--mk-line);
+  border-radius: var(--vp-radius-lg);
+  background:
+    linear-gradient(145deg, rgba(124, 92, 252, 0.09), transparent 36%),
+    rgba(13, 22, 40, 0.9);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.045);
+}
+
+.showcase-board > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--vp-space-3);
+  min-height: 44px;
+  margin-bottom: var(--vp-space-4);
+  padding-inline: 2px;
+}
+
+.showcase-board > header strong {
+  color: #e7eef9;
+  font-size: 13px;
+}
+
+.showcase-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #92a5c1;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.showcase-kicker i {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 7px;
+  background: rgba(103, 232, 249, 0.07);
+  color: var(--vp-cyan);
+  font: 800 9px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+.showcase-source-grid {
+  display: grid;
+  min-height: 500px;
+  grid-template-rows: minmax(0, 1.35fr) minmax(0, 0.65fr);
+  gap: var(--vp-space-3);
+}
+
+.showcase-source-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--vp-radius-md);
+  background: #121c32;
+}
+
+.showcase-source-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 500ms ease;
+}
+
+.showcase-source-card--character img {
+  object-position: center 34%;
+}
+
+.showcase-source-card--world img {
+  object-position: center 58%;
+}
+
+.showcase-source-card:hover img {
+  transform: scale(1.025);
+}
+
+.showcase-source-card figcaption {
+  position: absolute;
+  inset-inline: 12px;
+  inset-block-end: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-space-3);
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--vp-radius-sm);
+  background: rgba(7, 13, 27, 0.78);
+  backdrop-filter: blur(12px);
+}
+
+.showcase-source-card figcaption b {
+  font-size: 11px;
+}
+
+.showcase-source-card figcaption span {
+  color: #a6b6ce;
+  font-size: 10px;
+}
+
+.showcase-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: #9fb1ca;
+}
+
+.showcase-flow > span {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgba(103, 232, 249, 0.26);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(103, 232, 249, 0.12), transparent 68%),
+    #111b30;
+  color: var(--vp-cyan);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
+}
+
+.showcase-flow > i {
+  width: 54px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.65), transparent);
+}
+
+.showcase-flow > b {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.showcase-output-grid {
+  display: grid;
+  min-height: 500px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 13px;
+  padding: 20px 4px 16px;
+}
+
+.showcase-output-card {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(113, 224, 238, 0.2);
+  border-radius: var(--vp-radius-md);
+  background:
+    linear-gradient(rgba(17, 27, 49, 0.94), rgba(17, 27, 49, 0.94)),
+    conic-gradient(from 90deg, #18243e, #10182b);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.24);
+}
+
+.showcase-output-card--character,
+.showcase-output-card--animal {
+  transform: translateY(-15px);
+}
+
+.showcase-output-card--car,
+.showcase-output-card--background {
+  transform: translateY(15px);
+}
+
+.showcase-output-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 8px;
+  filter: drop-shadow(0 16px 18px rgba(0, 0, 0, 0.3));
+}
+
+.showcase-output-card--background img {
+  padding: 0;
+  object-fit: cover;
+}
+
+.showcase-output-card figcaption {
+  position: absolute;
+  inset-inline-start: 10px;
+  inset-block-end: 10px;
+  padding: 6px 9px;
+  border: 1px solid rgba(103, 232, 249, 0.24);
+  border-radius: 6px;
+  background: rgba(7, 13, 27, 0.85);
+  color: #aeeef5;
+  font: 750 9px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+  direction: ltr;
+}
+
+.adobe-strip {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.15fr);
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--mk-line);
+  border-radius: var(--vp-radius-lg);
+  background:
+    linear-gradient(110deg, rgba(124, 92, 252, 0.12), transparent 45%),
+    rgba(14, 23, 43, 0.82);
+}
+
+.adobe-strip > div {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-space-4);
+  padding: var(--vp-space-6);
+  border-inline-end: 1px solid var(--mk-line);
+}
+
+.adobe-strip__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(124, 92, 252, 0.15);
+  color: #b9aaff;
+}
+
+.adobe-strip > div > span:last-child {
+  display: grid;
+  gap: 4px;
+}
+
+.adobe-strip small {
+  color: var(--mk-muted);
+  font-size: 10px;
+}
+
+.adobe-strip strong {
+  font-size: 14px;
+}
+
+.adobe-strip ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adobe-strip li {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-height: 100px;
+  padding: var(--vp-space-4);
+  border-inline-start: 1px solid var(--mk-line);
+}
+
+.adobe-strip li:first-child {
+  border-inline-start: 0;
+}
+
+.adobe-strip li b {
+  color: #fff;
+  font: 800 15px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+.adobe-strip li span {
+  color: var(--mk-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.marketing-final-cta {
+  position: relative;
+  display: grid;
+  min-height: 300px;
+  grid-template-columns: 180px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(22px, 4vw, 56px);
+  margin-block: clamp(82px, 10vw, 140px) 68px;
+  padding: clamp(28px, 4vw, 54px);
+  overflow: hidden;
+  border: 1px solid rgba(103, 232, 249, 0.24);
+  border-radius: var(--vp-radius-lg);
+  background:
+    radial-gradient(circle at 13% 40%, rgba(34, 211, 238, 0.15), transparent 24rem),
+    linear-gradient(120deg, rgba(124, 92, 252, 0.13), transparent 50%),
+    #101a31;
+}
+
+.marketing-final-cta::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.1);
+  content: "";
+  pointer-events: none;
+}
+
+.marketing-final-cta > img {
+  width: 190px;
+  height: 190px;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.34));
+}
+
+.marketing-final-cta > div {
+  display: grid;
+  gap: var(--vp-space-3);
+}
+
+.marketing-final-cta h2 {
+  font-size: clamp(29px, 3.4vw, 46px);
+}
+
+.marketing-footer {
+  display: grid;
+  width: min(calc(100% - 40px), 1280px);
+  min-height: 100px;
+  grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr);
+  align-items: center;
+  gap: var(--vp-space-5);
+  margin-inline: auto;
+  border-top: 1px solid var(--mk-line);
+}
+
+.marketing-footer p {
+  color: var(--mk-muted);
+  font-size: 11px;
+}
+
+.marketing-footer > button {
+  justify-self: end;
+  color: #c8d5e7;
+  font-size: 11px;
+  font-weight: 800;
+}

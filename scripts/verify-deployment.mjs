@@ -1,0 +1,405 @@
+import { access, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
+
+const root = fileURLToPath(new URL("../", import.meta.url));
+const requiredFiles = [
+  "Dockerfile",
+  "Dockerfile.web",
+  "compose.production.yaml",
+  "compose.yaml",
+  "compose.integration.yaml",
+  ".env.production.example",
+  "deploy/nginx.conf",
+  "deploy/prometheus-alerts.yml",
+  "docs/DEPLOYMENT.md",
+  "docs/OBJECT_STORAGE.md",
+  "docs/PRODUCTION_READINESS.md",
+  "scripts/verify-object-storage.mjs",
+  "docs/runbooks/production-release-and-rollback.md",
+  "docs/runbooks/processing-job-recovery.md",
+  "docs/runbooks/disaster-recovery.md",
+  "docs/runbooks/recovery-manifest.example.json",
+  "scripts/verify-recovery-manifest.mjs",
+  "scripts/verify-production-topology.mjs",
+  "scripts/verify-bundle-budget.mjs",
+  "scripts/verify-release-environment.mjs",
+  "apps/api/migrations/012_processing_worker_leases.sql",
+  "apps/api/migrations/016_retention_cleanup.sql",
+  "apps/api/migrations/018_worker_events.sql",
+  "apps/api/migrations/019_upload_url_compatibility.sql",
+  "apps/api/migrations/020_worker_duration_metrics.sql",
+  ".github/workflows/ci.yml",
+  ".github/workflows/release-images.yml",
+  ".github/workflows/codeql.yml",
+  ".github/workflows/provider-readiness.yml",
+  ".github/dependabot.yml",
+];
+const violations = [];
+
+for (const file of requiredFiles) {
+  try {
+    await access(join(root, file));
+  } catch {
+    violations.push(`Missing deployment artifact: ${file}`);
+  }
+}
+
+const [
+  runtimeDockerfile,
+  webDockerfile,
+  compose,
+  nginx,
+  exampleEnvironment,
+  webApiClient,
+  processingRuntime,
+  processingWorkerConfig,
+  mediaWorkerEntry,
+  documentWorkerEntry,
+  exportWorkerEntry,
+  exportWorkerConfig,
+  objectStorageEnvironment,
+  s3Storage,
+  objectStorageContract,
+  objectStorageSmoke,
+  packageManifest,
+  localCompose,
+] =
+  await Promise.all(
+    [
+      "Dockerfile",
+      "Dockerfile.web",
+      "compose.production.yaml",
+      "deploy/nginx.conf",
+      ".env.production.example",
+      "apps/web/src/lib/api/transport.ts",
+      "apps/api/src/processing/processing-worker-runtime.ts",
+      "apps/api/src/processing/processing-worker-config.ts",
+      "apps/worker-media/src/index.ts",
+      "apps/worker-document/src/index.ts",
+      "apps/worker-export/src/index.ts",
+      "apps/worker-export/src/config.ts",
+      "apps/api/src/storage/object-storage-environment.ts",
+      "apps/api/src/storage/s3-object-storage.ts",
+      "docs/OBJECT_STORAGE.md",
+      "scripts/verify-object-storage.mjs",
+      "package.json",
+      "compose.yaml",
+    ].map((file) => readFile(join(root, file), "utf8")),
+  );
+
+const workflowSources = await Promise.all(
+  [
+    ".github/workflows/ci.yml",
+    ".github/workflows/release-images.yml",
+    ".github/workflows/codeql.yml",
+    ".github/workflows/provider-readiness.yml",
+  ].map((file) => readFile(join(root, file), "utf8")),
+);
+const alertSource = await readFile(
+  join(root, "deploy/prometheus-alerts.yml"),
+  "utf8",
+);
+try {
+  const alertDocument = parse(alertSource);
+  const alertNames = new Set(
+    (alertDocument?.groups ?? []).flatMap((group) =>
+      (group.rules ?? []).map((rule) => rule.alert),
+    ),
+  );
+  for (const alert of [
+    "MotionPrepDependencyUnavailable",
+    "MotionPrepWorkerMissing",
+    "MotionPrepQueueTooOld",
+    "MotionPrepLeaseLoss",
+    "MotionPrepContainerMemoryPressure",
+    "MotionPrepContainerCpuSaturation",
+  ]) {
+    if (!alertNames.has(alert)) {
+      violations.push(`Prometheus alert contract is missing ${alert}.`);
+    }
+  }
+} catch (error) {
+  violations.push(
+    `Prometheus alert rules are invalid YAML: ${error instanceof Error ? error.message : "unknown error"}`,
+  );
+}
+for (const [index, workflow] of workflowSources.entries()) {
+  try {
+    parse(workflow);
+  } catch (error) {
+    violations.push(
+      `Workflow ${index + 1} is invalid YAML: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
+  for (const match of workflow.matchAll(/uses:\s+([^@\s]+)@([^\s#]+)/gu)) {
+    const [, action, reference] = match;
+    if (!/^[a-f0-9]{40}$/u.test(reference ?? "")) {
+      violations.push(
+        `GitHub Action ${action ?? "unknown"} is not pinned by commit SHA: ${reference ?? "missing"}`,
+      );
+    }
+  }
+}
+const ciWorkflow = workflowSources[0];
+try {
+  const ciDocument = parse(ciWorkflow);
+  const containerSteps =
+    ciDocument?.jobs?.["container-build"]?.steps?.map(
+      (step) => step.name,
+    ) ?? [];
+  const fixtureSteps =
+    ciDocument?.jobs?.["release-fixtures"]?.steps?.map(
+      (step) => step.name,
+    ) ?? [];
+  if (!containerSteps.includes("Scan web image")) {
+    violations.push(
+      "The web image scan must run in the job that builds the web image.",
+    );
+  }
+  if (fixtureSteps.includes("Scan web image")) {
+    violations.push(
+      "The fixture job cannot scan an image built on another runner.",
+    );
+  }
+} catch {
+  // The workflow parse violation above already reports the syntax failure.
+}
+for (const imageName of ["postgres", "minio/minio"]) {
+  const localImage = localCompose
+    .split(/\r?\n/u)
+    .find((line) => line.includes(`image: ${imageName}`))
+    ?.trim()
+    .replace(/^image:\s*/u, "");
+  if (!localImage?.includes("@sha256:") || !ciWorkflow.includes(localImage)) {
+    violations.push(
+      `CI ${imageName} service must reuse the exact digest-pinned local dependency image.`,
+    );
+  }
+}
+const releaseWorkflow = workflowSources[1];
+for (const token of [
+  "cosign sign --yes",
+  "Verify repository-bound signatures",
+  "--certificate-identity \"${identity}\"",
+  "RUNTIME_IMAGE_REF",
+  "WEB_IMAGE_REF",
+  "@${{ steps.runtime.outputs.digest }}",
+  "sbom: true",
+  "provenance: mode=max",
+  "--add-host api:127.0.0.1",
+]) {
+  if (!releaseWorkflow.includes(token)) {
+    violations.push(`Release workflow is missing immutable supply-chain token: ${token}`);
+  }
+}
+if (
+  releaseWorkflow.indexOf("Sign approved immutable image digests") <
+  releaseWorkflow.indexOf("Scan published web digest")
+) {
+  violations.push(
+    "Release image signing must occur only after both vulnerability scans pass.",
+  );
+}
+const providerWorkflow = workflowSources[3];
+for (const token of [
+  "Reject ambiguous or missing provider credentials",
+  "AWS_ROLE_ARN",
+  "AWS_REGION",
+  "Configure short-lived AWS credentials through GitHub OIDC",
+  "aws-actions/configure-aws-credentials@",
+  "role-to-assume: ${{ vars.AWS_ROLE_ARN }}",
+  "Choose AWS OIDC or explicit S3 credentials, not both.",
+  "RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}",
+  "RECOVERY_SIGNING_PUBLIC_KEY_PEM",
+  "--public-key recovery-public-key.pem",
+]) {
+  if (!providerWorkflow.includes(token)) {
+    violations.push(
+      `Provider-readiness workflow is missing identity token: ${token}`,
+    );
+  }
+}
+
+if (!runtimeDockerfile.includes("USER node")) {
+  violations.push("Runtime API image must run as the non-root node user.");
+}
+if (
+  !runtimeDockerfile.includes(
+    "COPY package.json package-lock.json tsconfig.node.json ./",
+  )
+) {
+  violations.push(
+    "Runtime image must copy the shared TypeScript configuration before building workspaces.",
+  );
+}
+if (!packageManifest.includes('"test:topology:full"')) {
+  violations.push(
+    "Root package must expose a self-contained production topology lifecycle command.",
+  );
+}
+if (!webDockerfile.includes("USER nginx")) {
+  violations.push("Runtime web image must run as the non-root nginx user.");
+}
+let composeDocument;
+try {
+  composeDocument = parse(compose);
+} catch (error) {
+  violations.push(
+    `Production compose is invalid YAML: ${error instanceof Error ? error.message : "unknown error"}`,
+  );
+}
+for (const service of [
+  "migrate",
+  "maintenance",
+  "api",
+  "worker-media",
+  "worker-document",
+  "worker-export",
+  "web",
+]) {
+  if (!composeDocument?.services?.[service]) {
+    violations.push(`Production compose is missing service ${service}.`);
+  }
+}
+if (!compose.includes("service_completed_successfully")) {
+  violations.push("API/workers must wait for a successful database migration.");
+}
+if (!compose.includes("run-retention-cleanup.js")) {
+  violations.push("Production compose must expose the retention maintenance task.");
+}
+for (const imageVariable of ["RUNTIME_IMAGE_REF", "WEB_IMAGE_REF"]) {
+  if (!compose.includes(`${imageVariable}:?`)) {
+    violations.push(
+      `Production compose must require the immutable ${imageVariable}.`,
+    );
+  }
+}
+if (compose.includes("IMAGE_TAG") || /^\s+build:/mu.test(compose)) {
+  violations.push(
+    "Production compose must consume prebuilt digest references and must not build or deploy tags.",
+  );
+}
+for (const token of ["no-new-privileges:true", "cap_drop:", "read_only: true"]) {
+  if (!compose.includes(token)) {
+    violations.push(`Production containers are missing hardening token: ${token}`);
+  }
+}
+if (!nginx.includes("client_max_body_size 30m")) {
+  violations.push("Nginx upload limit must match the 30 MiB application limit.");
+}
+if (!nginx.includes("proxy_pass http://api:4000")) {
+  violations.push("Nginx must proxy the versioned API to the API service.");
+}
+for (const image of ["postgres", "redis", "minio/minio", "minio/mc", "axllent/mailpit"]) {
+  const imageLine = localCompose
+    .split(/\r?\n/u)
+    .find((line) => line.includes(`image: ${image}`));
+  if (!imageLine?.includes("@sha256:")) {
+    violations.push(`Local ${image} image must be pinned by digest.`);
+  }
+}
+for (const dockerfile of [runtimeDockerfile, webDockerfile]) {
+  for (const line of dockerfile.split(/\r?\n/u)) {
+    if (/^FROM /u.test(line) && !line.includes("@sha256:")) {
+      violations.push(`Dockerfile base image must be pinned by digest: ${line}`);
+    }
+  }
+}
+if (!webApiClient.includes("location.origin")) {
+  violations.push("Production web builds must default to the same-origin API.");
+}
+if (!s3Storage.includes('ChecksumAlgorithm: "SHA256"')) {
+  violations.push("S3 writes must request a SHA-256 provider checksum.");
+}
+if (!s3Storage.includes("HeadObjectCommand")) {
+  violations.push("S3 writes must verify the configured encryption mode.");
+}
+if (!processingRuntime.includes("hasExpectedObjectIntegrity")) {
+  violations.push("Processing workers must verify stored source integrity.");
+}
+if (!exportWorkerEntry.includes("loadExportWorkerConfig")) {
+  violations.push("Export worker must use its validated storage configuration.");
+}
+for (const [name, runtime] of [
+  ["processing", `${processingWorkerConfig}\n${objectStorageEnvironment}`],
+  ["export", `${exportWorkerConfig}\n${objectStorageEnvironment}`],
+]) {
+  if (!runtime.includes("OBJECT_STORAGE_SESSION_TOKEN")) {
+    violations.push(`${name} worker must support temporary S3 credentials.`);
+  }
+}
+for (const token of ["sources/", "derived/", "artifacts/", "24 hours"]) {
+  if (!objectStorageContract.includes(token)) {
+    violations.push(`Object-storage contract is missing retention token: ${token}`);
+  }
+}
+for (const token of [
+  "hasExpectedObjectIntegrity",
+  "storage.ready(false)",
+  "await storage.delete(key)",
+  "requireVersioning",
+]) {
+  if (!objectStorageSmoke.includes(token)) {
+    violations.push(`Provider storage probe is missing verification token: ${token}`);
+  }
+}
+if (!packageManifest.includes('"verify:object-storage"')) {
+  violations.push("Package scripts must expose the provider object-storage probe.");
+}
+if (nginx.includes("location /internal")) {
+  violations.push("Internal metrics must not be exposed by the public web proxy.");
+}
+for (const token of [
+  "FOR UPDATE SKIP LOCKED",
+  "lease_expires_at",
+  "renewLease",
+  "retryOrFail",
+]) {
+  if (!processingRuntime.includes(token)) {
+    violations.push(`Processing worker runtime is missing reliability token: ${token}`);
+  }
+}
+for (const [name, entry] of [
+  ["media", mediaWorkerEntry],
+  ["document", documentWorkerEntry],
+]) {
+  if (!entry.includes("@motionprep/api/processing-worker")) {
+    violations.push(`${name} worker must use the shared processing runtime.`);
+  }
+  if (entry.includes("@aws-sdk") || entry.includes('from "pg"')) {
+    violations.push(`${name} worker entry duplicates runtime infrastructure.`);
+  }
+}
+
+for (const key of [
+  "DATABASE_URL",
+  "REDIS_URL",
+  "AUTH_ENCRYPTION_KEY",
+  "SMTP_PASSWORD",
+  "OBJECT_STORAGE_SECRET_KEY",
+  "OBJECT_STORAGE_SESSION_TOKEN",
+  "OBJECT_STORAGE_ENCRYPTION_MODE",
+  "OBJECT_STORAGE_REQUIRE_VERSIONING",
+  "PAYMENT_MODE",
+  "PDF_OCR_MODE",
+  "EXPORT_EXECUTION_MODE",
+  "PROCESSING_LEASE_MS",
+  "EXPORT_LEASE_MS",
+  "WORKER_EVENT_RETENTION_DAYS",
+  "RUNTIME_IMAGE_REF",
+  "WEB_IMAGE_REF",
+]) {
+  if (!exampleEnvironment.includes(`${key}=`)) {
+    violations.push(`Production environment template is missing ${key}.`);
+  }
+}
+
+if (violations.length > 0) {
+  console.error("Deployment readiness violations:");
+  for (const violation of violations) console.error(`- ${violation}`);
+  process.exitCode = 1;
+} else {
+  console.log("Deployment artifacts verified.");
+}

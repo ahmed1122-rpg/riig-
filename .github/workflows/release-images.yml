@@ -1,0 +1,171 @@
+name: release-images
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Resolve immutable image coordinates
+        id: coordinates
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "runtime=ghcr.io/${owner}/motionprep-runtime" >> "$GITHUB_OUTPUT"
+          echo "web=ghcr.io/${owner}/motionprep-web" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish runtime image
+        id: runtime
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.coordinates.outputs.runtime }}:${{ steps.coordinates.outputs.tag }}
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and publish web image
+        id: web
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile.web
+          push: true
+          tags: ${{ steps.coordinates.outputs.web }}:${{ steps.coordinates.outputs.tag }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+          provenance: mode=max
+          sbom: true
+
+      - name: Prove clean-runner pull and hardened web smoke
+        env:
+          RUNTIME_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
+          WEB_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
+        shell: bash
+        run: |
+          docker pull "${RUNTIME_REF}"
+          docker pull "${WEB_REF}"
+          test "$(docker image inspect "${RUNTIME_REF}" --format '{{.Config.User}}')" = "node"
+          test "$(docker image inspect "${WEB_REF}" --format '{{.Config.User}}')" = "nginx"
+          docker run --detach --name motionprep-release-web \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --add-host api:127.0.0.1 \
+            --tmpfs /var/cache/nginx:rw,size=32m,mode=1777 \
+            --tmpfs /var/run:rw,size=1m,mode=1777 \
+            --tmpfs /tmp:rw,size=16m \
+            --publish 18080:8080 \
+            "${WEB_REF}"
+          timeout 30 bash -c \
+            'until curl --fail --silent http://127.0.0.1:18080/healthz >/dev/null; do sleep 1; done'
+
+      - name: Scan published runtime digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Scan published web digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+      - name: Sign approved immutable image digests
+        env:
+          RUNTIME_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
+          WEB_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
+        shell: bash
+        run: |
+          cosign sign --yes "${RUNTIME_REF}"
+          cosign sign --yes "${WEB_REF}"
+
+      - name: Verify repository-bound signatures
+        env:
+          RUNTIME_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
+          WEB_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
+        shell: bash
+        run: |
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-images.yml@${GITHUB_REF}"
+          for image in "${RUNTIME_REF}" "${WEB_REF}"; do
+            cosign verify \
+              --certificate-identity "${identity}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "${image}"
+          done
+
+      - name: Write immutable deployment manifest
+        env:
+          RUNTIME_IMAGE_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
+          WEB_IMAGE_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
+        shell: bash
+        run: |
+          {
+            echo "RUNTIME_IMAGE_REF=${RUNTIME_IMAGE_REF}"
+            echo "WEB_IMAGE_REF=${WEB_IMAGE_REF}"
+            echo "RELEASE_GIT_SHA=${GITHUB_SHA}"
+          } > release.env
+
+      - name: Upload immutable deployment manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ github.sha }}
+          path: release.env
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish deployment coordinates
+        env:
+          RUNTIME_IMAGE_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
+          WEB_IMAGE_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
+        shell: bash
+        run: |
+          {
+            echo "## Immutable release images"
+            echo
+            echo '```dotenv'
+            echo "RUNTIME_IMAGE_REF=${RUNTIME_IMAGE_REF}"
+            echo "WEB_IMAGE_REF=${WEB_IMAGE_REF}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

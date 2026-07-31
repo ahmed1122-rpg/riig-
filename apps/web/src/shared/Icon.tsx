@@ -1,0 +1,171 @@
+import {
+  AlertTriangle,
+  Activity,
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  BookOpen,
+  BadgeCheck,
+  Check,
+  ChevronLeft,
+  CircleHelp,
+  Clock3,
+  CreditCard,
+  Crosshair,
+  Database,
+  Download,
+  Eraser,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  FileText,
+  FileSearch,
+  FolderOpen,
+  Gauge,
+  Grid2X2,
+  GripVertical,
+  Hand,
+  History,
+  Highlighter,
+  Home,
+  Image,
+  Info,
+  KeyRound,
+  Layers3,
+  List,
+  Lock,
+  LogIn,
+  LogOut,
+  Mail,
+  Menu,
+  Merge,
+  Moon,
+  MousePointer2,
+  Paintbrush,
+  PackageCheck,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  RefreshCw,
+  ScanLine,
+  ScanText,
+  Scissors,
+  Search,
+  Server,
+  Settings,
+  Shield,
+  ShieldCheck,
+  Smartphone,
+  SquareDashed,
+  SlidersHorizontal,
+  Sun,
+  Users,
+  Undo2,
+  Unlock,
+  Upload,
+  WalletCards,
+  WandSparkles,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+export type IconName =
+  | "home" | "folder" | "help" | "settings"
+  | "search" | "menu" | "close" | "chevron" | "plus" | "image"
+  | "book" | "clock" | "layers" | "review" | "spark" | "eye" | "eyeOff"
+  | "lock" | "unlock" | "upload" | "zoomIn" | "zoomOut" | "hand"
+  | "pointer" | "undo" | "check" | "warning"
+  | "info" | "sun" | "moon" | "arrow" | "filter" | "grid" | "list"
+  | "download" | "refresh" | "merge" | "split" | "scan"
+  | "panelClose" | "panelOpen" | "arrowUp" | "arrowDown" | "grip"
+  | "packageCheck" | "brush" | "eraser" | "target" | "highlighter"
+  | "boxSelect" | "scanText" | "badgeCheck"
+  | "activity" | "creditCard"
+  | "database" | "external" | "fileSearch" | "gauge" | "history" | "key"
+  | "login" | "logout" | "mail" | "server" | "shield" | "shieldCheck"
+  | "smartphone" | "users" | "wallet";
+
+const icons: Record<IconName, LucideIcon> = {
+  home: Home,
+  folder: FolderOpen,
+  help: CircleHelp,
+  settings: Settings,
+  search: Search,
+  menu: Menu,
+  close: X,
+  chevron: ChevronLeft,
+  plus: Plus,
+  image: Image,
+  book: BookOpen,
+  clock: Clock3,
+  layers: Layers3,
+  review: ScanLine,
+  spark: WandSparkles,
+  eye: Eye,
+  eyeOff: EyeOff,
+  lock: Lock,
+  unlock: Unlock,
+  upload: Upload,
+  zoomIn: ZoomIn,
+  zoomOut: ZoomOut,
+  hand: Hand,
+  pointer: MousePointer2,
+  undo: Undo2,
+  check: Check,
+  warning: AlertTriangle,
+  info: Info,
+  sun: Sun,
+  moon: Moon,
+  arrow: ArrowLeft,
+  filter: SlidersHorizontal,
+  grid: Grid2X2,
+  list: List,
+  download: Download,
+  refresh: RefreshCw,
+  merge: Merge,
+  split: Scissors,
+  scan: FileText,
+  panelClose: PanelRightClose,
+  panelOpen: PanelRightOpen,
+  arrowUp: ArrowUp,
+  arrowDown: ArrowDown,
+  grip: GripVertical,
+  packageCheck: PackageCheck,
+  brush: Paintbrush,
+  eraser: Eraser,
+  target: Crosshair,
+  highlighter: Highlighter,
+  boxSelect: SquareDashed,
+  scanText: ScanText,
+  badgeCheck: BadgeCheck,
+  activity: Activity,
+  creditCard: CreditCard,
+  database: Database,
+  external: ExternalLink,
+  fileSearch: FileSearch,
+  gauge: Gauge,
+  history: History,
+  key: KeyRound,
+  login: LogIn,
+  logout: LogOut,
+  mail: Mail,
+  server: Server,
+  shield: Shield,
+  shieldCheck: ShieldCheck,
+  smartphone: Smartphone,
+  users: Users,
+  wallet: WalletCards,
+};
+
+interface IconProps {
+  name: IconName;
+  size?: number;
+  className?: string;
+}
+
+export function Icon({ name, size = 20, ...props }: IconProps) {
+  const Component = icons[name];
+  return <Component size={size} strokeWidth={1.8} aria-hidden="true" {...props} />;
+}

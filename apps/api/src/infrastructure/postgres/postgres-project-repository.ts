@@ -1,0 +1,153 @@
+import type {
+  CreateProjectInput,
+  ProjectKind,
+  ProjectStatus,
+  ProjectSummary,
+} from "@motionprep/contracts";
+import type { Pool } from "pg";
+import type { ProjectRepository } from "../../projects/project-repository.js";
+import { toIso } from "./database.js";
+
+interface ProjectRow {
+  id: string;
+  name: string;
+  kind: ProjectKind;
+  status: ProjectStatus;
+  current_source_version_id: string | null;
+  current_source_version_number: number | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+export class PostgresProjectRepository implements ProjectRepository {
+  constructor(private readonly pool: Pool) {}
+
+  async create(
+    ownerUserId: string,
+    input: CreateProjectInput,
+  ): Promise<ProjectSummary> {
+    const now = new Date().toISOString();
+    const result = await this.pool.query<ProjectRow>(
+      `
+        INSERT INTO projects (
+          id, owner_user_id, name, kind, status, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, 'draft', $5, $5)
+        RETURNING id, name, kind, status, current_source_version_id,
+          NULL::integer AS current_source_version_number, created_at, updated_at
+      `,
+      [crypto.randomUUID(), ownerUserId, input.name, input.kind, now],
+    );
+    return mapProject(requiredRow(result.rows[0]));
+  }
+
+  async findOwnedById(
+    ownerUserId: string,
+    id: string,
+  ): Promise<ProjectSummary | null> {
+    const result = await this.pool.query<ProjectRow>(
+      `
+        SELECT ${projectColumns}
+        FROM projects AS project
+        LEFT JOIN source_versions AS source
+          ON source.id = project.current_source_version_id
+        WHERE project.owner_user_id = $1 AND project.id = $2
+      `,
+      [ownerUserId, id],
+    );
+    return result.rows[0] ? mapProject(result.rows[0]) : null;
+  }
+
+  async listOwnedByUser(ownerUserId: string): Promise<ProjectSummary[]> {
+    const result = await this.pool.query<ProjectRow>(
+      `
+        SELECT ${projectColumns}
+        FROM projects AS project
+        LEFT JOIN source_versions AS source
+          ON source.id = project.current_source_version_id
+        WHERE project.owner_user_id = $1
+        ORDER BY project.updated_at DESC
+      `,
+      [ownerUserId],
+    );
+    return result.rows.map(mapProject);
+  }
+
+  async updateStatus(
+    id: string,
+    status: ProjectStatus,
+  ): Promise<ProjectSummary | null> {
+    const result = await this.pool.query<ProjectRow>(
+      `
+        WITH updated AS (
+          UPDATE projects
+          SET status = $2, updated_at = now()
+          WHERE id = $1
+          RETURNING *
+        )
+        SELECT
+          updated.id, updated.name, updated.kind, updated.status,
+          updated.current_source_version_id,
+          source.version_number AS current_source_version_number,
+          updated.created_at, updated.updated_at
+        FROM updated
+        LEFT JOIN source_versions AS source
+          ON source.id = updated.current_source_version_id
+      `,
+      [id, status],
+    );
+    return result.rows[0] ? mapProject(result.rows[0]) : null;
+  }
+
+  async updateCurrentSourceVersion(
+    id: string,
+    sourceVersionId: string,
+    _versionNumber: number,
+  ): Promise<ProjectSummary | null> {
+    const result = await this.pool.query<ProjectRow>(
+      `
+        WITH updated AS (
+          UPDATE projects
+          SET current_source_version_id = $2, updated_at = now()
+          WHERE id = $1
+          RETURNING *
+        )
+        SELECT
+          updated.id, updated.name, updated.kind, updated.status,
+          updated.current_source_version_id,
+          source.version_number AS current_source_version_number,
+          updated.created_at, updated.updated_at
+        FROM updated
+        LEFT JOIN source_versions AS source
+          ON source.id = updated.current_source_version_id
+      `,
+      [id, sourceVersionId],
+    );
+    return result.rows[0] ? mapProject(result.rows[0]) : null;
+  }
+}
+
+const projectColumns = `
+  project.id, project.name, project.kind, project.status,
+  project.current_source_version_id,
+  source.version_number AS current_source_version_number,
+  project.created_at, project.updated_at
+`;
+
+function mapProject(row: ProjectRow): ProjectSummary {
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    status: row.status,
+    currentSourceVersionId: row.current_source_version_id,
+    currentSourceVersionNumber: row.current_source_version_number,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
+function requiredRow<T>(row: T | undefined): T {
+  if (!row) throw new Error("PostgreSQL did not return the inserted project.");
+  return row;
+}

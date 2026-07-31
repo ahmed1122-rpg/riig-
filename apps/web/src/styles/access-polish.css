@@ -1,0 +1,497 @@
+/* Auth and unauthorized roots */
+.auth-gateway {
+  background:
+    radial-gradient(circle at 12% 12%, rgba(124, 92, 252, 0.18), transparent 28rem),
+    var(--vp-midnight);
+}
+
+.auth-gateway .auth-panel {
+  background: var(--surface);
+}
+
+.auth-gateway :where(.auth-input, .auth-submit, .auth-demo-note) {
+  border-radius: var(--vp-radius-sm);
+}
+
+.auth-gateway :where(.auth-field > span:first-child, .auth-switch, .auth-demo-note, .auth-context__copy p) {
+  font-size: 12px;
+}
+
+.unauthorized-page > section {
+  border-radius: var(--vp-radius-lg);
+  box-shadow: var(--vp-shadow-2);
+}
+
+/* Admin styles are explicitly contained to avoid its repeated class names
+   (.filter-tabs, .status, .secondary-button) affecting creator pages. */
+.admin-shell {
+  --admin-line: #d8e1e8;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
+.admin-shell :where(.admin-data-table, .billing-admin-list) {
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(20, 35, 47, 0.055);
+}
+
+.admin-shell :where(
+  .admin-data-head,
+  .admin-data-row,
+  .admin-search input,
+  .billing-admin-row,
+  .audit-table code,
+  .bounded-note
+) {
+  font-size: 11px;
+}
+
+.admin-shell .filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.admin-shell .filter-tabs button {
+  min-height: 34px;
+  padding-inline: 11px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.admin-shell .admin-data-row {
+  min-height: 62px;
+}
+
+.admin-shell button.admin-data-row:hover {
+  box-shadow: inset 3px 0 #078c82;
+}
+
+@keyframes vp-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes vp-layer-float {
+  0%, 100% { margin-top: 0; }
+  50% { margin-top: -7px; }
+}
+
+@keyframes vp-session-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.96); }
+  50% { opacity: 0.7; transform: scale(1.04); }
+}
+
+@media (max-width: 1100px) {
+  .marketing-nav {
+    grid-template-columns: minmax(180px, 1fr) minmax(260px, auto);
+  }
+
+  .marketing-nav nav {
+    display: none;
+  }
+
+  .marketing-hero {
+    grid-template-columns: minmax(310px, 0.85fr) minmax(430px, 1.15fr);
+    gap: 28px;
+  }
+
+  .marketing-hero h1 {
+    font-size: clamp(40px, 5.3vw, 60px);
+  }
+
+  .pipeline-package {
+    inset-inline-end: 8px;
+  }
+
+  .adobe-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .adobe-strip > div {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--mk-line);
+  }
+}
+
+@media (max-width: 900px) {
+  .marketing-page main,
+  .marketing-nav,
+  .marketing-footer {
+    width: min(calc(100% - 28px), 760px);
+  }
+
+  .marketing-hero {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    padding-block: 58px 84px;
+  }
+
+  .marketing-hero__copy {
+    max-width: 690px;
+  }
+
+  .marketing-pipeline {
+    width: min(100%, 720px);
+    margin-inline: auto;
+  }
+
+  .pipeline-art {
+    transform: none;
+  }
+
+  .capability-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .capability-rail article:nth-child(3) {
+    border-inline-start: 0;
+    border-top: 1px solid var(--mk-line);
+  }
+
+  .capability-rail article:nth-child(4) {
+    border-top: 1px solid var(--mk-line);
+  }
+
+  .workflow-composition {
+    grid-template-columns: 1fr;
+  }
+
+  .showcase-stage {
+    grid-template-columns: 1fr;
+    gap: var(--vp-space-4);
+  }
+
+  .showcase-flow {
+    min-height: 68px;
+    flex-direction: row;
+  }
+
+  .showcase-flow > i {
+    width: 68px;
+  }
+
+  .adobe-strip ul {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .adobe-strip li:nth-child(3),
+  .adobe-strip li:nth-child(4) {
+    border-top: 1px solid var(--mk-line);
+  }
+
+  .marketing-final-cta {
+    grid-template-columns: 130px minmax(0, 1fr);
+  }
+
+  .marketing-final-cta > img {
+    width: 145px;
+    height: 145px;
+  }
+
+  .marketing-final-cta > button {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .app-shell .projects-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-shell .project-search {
+    width: 100%;
+  }
+}
+
+@media (max-width: 680px) {
+  .marketing-page main,
+  .marketing-nav,
+  .marketing-footer {
+    width: 100%;
+    padding-inline: 16px;
+  }
+
+  .marketing-nav {
+    min-height: 66px;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+  }
+
+  .marketing-brand {
+    direction: rtl;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .marketing-brand > span:first-child {
+    width: 38px;
+    height: 38px;
+  }
+
+  .marketing-brand strong {
+    max-width: 100%;
+    font-size: clamp(11px, 3.3vw, 13px);
+    overflow-wrap: anywhere;
+  }
+
+  .marketing-brand small,
+  .marketing-login {
+    display: none;
+  }
+
+  .marketing-studio-button {
+    min-height: 40px;
+    padding-inline: 12px;
+    font-size: 10px;
+  }
+
+  .marketing-hero {
+    padding-block-start: 46px;
+  }
+
+  .marketing-hero h1 {
+    max-width: 100%;
+    font-size: clamp(34px, 10.5vw, 46px);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  .marketing-hero__copy > p:not(.marketing-honesty) {
+    font-size: 13px;
+  }
+
+  .marketing-hero__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .marketing-primary-cta,
+  .marketing-secondary-cta {
+    width: 100%;
+  }
+
+  .marketing-honesty {
+    align-items: flex-start;
+    line-height: 1.6;
+  }
+
+  .pipeline-art {
+    aspect-ratio: 1.25;
+  }
+
+  .pipeline-art img {
+    object-position: 48% center;
+  }
+
+  .layer-ribbon {
+    inset-block-start: 10%;
+    inset-inline-end: -7%;
+    width: 52%;
+  }
+
+  .pipeline-package {
+    position: relative;
+    inset: auto;
+    width: calc(100% - 28px);
+    margin: -20px auto 0;
+  }
+
+  .capability-rail {
+    margin-top: 0;
+  }
+
+  .capability-rail article {
+    min-height: 104px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 13px 10px;
+  }
+
+  .capability-rail article > span {
+    width: 32px;
+    height: 32px;
+  }
+
+  .capability-rail strong {
+    font-size: 15px;
+  }
+
+  .capability-rail small {
+    font-size: 10px;
+  }
+
+  .marketing-section {
+    padding-block: 72px;
+  }
+
+  .workflow-panel {
+    min-height: auto;
+    padding: 23px 18px 28px;
+  }
+
+  .workflow-panel > header {
+    grid-template-columns: 32px 42px minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .workflow-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .workflow-panel h3 {
+    font-size: 16px;
+  }
+
+  .workflow-panel > p,
+  .workflow-panel ol,
+  .pdf-mode-map,
+  .pdf-lock-note {
+    width: auto;
+    margin-inline-start: 0;
+    margin-inline-end: 0;
+  }
+
+  .workflow-panel ol {
+    padding-bottom: 190px;
+  }
+
+  .workflow-cutout {
+    width: 205px;
+  }
+
+  .pdf-mode-map {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .showcase-stage {
+    grid-template-columns: 1fr;
+    gap: var(--vp-space-3);
+  }
+
+  .showcase-board {
+    padding: 13px;
+  }
+
+  .showcase-board > header {
+    align-items: start;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 12px;
+  }
+
+  .showcase-source-grid {
+    min-height: 430px;
+  }
+
+  .showcase-output-grid {
+    min-height: 390px;
+    gap: 9px;
+    padding: 15px 0;
+  }
+
+  .showcase-output-card--character,
+  .showcase-output-card--animal {
+    transform: translateY(-8px);
+  }
+
+  .showcase-output-card--car,
+  .showcase-output-card--background {
+    transform: translateY(8px);
+  }
+
+  .showcase-output-card figcaption {
+    inset-inline-start: 7px;
+    inset-block-end: 7px;
+    padding: 5px 7px;
+    font-size: 8px;
+  }
+
+  .adobe-strip ul {
+    grid-template-columns: 1fr;
+  }
+
+  .adobe-strip li {
+    min-height: 72px;
+    border-inline-start: 0;
+    border-top: 1px solid var(--mk-line);
+  }
+
+  .adobe-strip li:first-child {
+    border-top: 0;
+  }
+
+  .marketing-final-cta {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .marketing-final-cta > img {
+    width: 150px;
+    height: 150px;
+    margin-bottom: -20px;
+  }
+
+  .marketing-final-cta > button {
+    grid-column: auto;
+    justify-self: stretch;
+  }
+
+  .marketing-footer {
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+
+  .marketing-footer p {
+    display: none;
+  }
+}
+
+@media (max-width: 390px) {
+  .marketing-page main {
+    width: 100%;
+    padding-inline: 20px;
+  }
+
+  .marketing-nav,
+  .marketing-footer {
+    width: 100%;
+    padding-inline: 14px;
+  }
+
+  .marketing-studio-button {
+    padding-inline: 9px;
+    font-size: 9.5px;
+  }
+
+  .marketing-studio-button svg {
+    display: none;
+  }
+
+  .pipeline-art {
+    aspect-ratio: 1.05;
+  }
+
+  .marketing-hero h1 {
+    padding-inline: 3px;
+    font-size: clamp(30px, 8.5vw, 34px);
+    line-height: 1.13;
+  }
+
+  .marketing-section__heading h2 {
+    font-size: 28px;
+  }
+
+  .capability-rail article {
+    min-height: 96px;
+  }
+
+  .workflow-panel > header {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .workflow-number {
+    display: none;
+  }
+}

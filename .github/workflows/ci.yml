@@ -1,0 +1,231 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - run: npm run quality
+      - run: npm audit --omit=dev --audit-level=high
+
+  container-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: validate
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: true
+          tags: motionprep-runtime:ci
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile.web
+          push: false
+          load: true
+          tags: motionprep-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Verify non-root image users
+        shell: bash
+        run: |
+          test "$(docker image inspect motionprep-runtime:ci --format '{{.Config.User}}')" = "node"
+          test "$(docker image inspect motionprep-web:ci --format '{{.Config.User}}')" = "nginx"
+      - name: Smoke hardened web image
+        shell: bash
+        run: |
+          docker run --detach --name motionprep-web-ci \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --tmpfs /var/cache/nginx:rw,size=32m,mode=1777 \
+            --tmpfs /var/run:rw,size=1m,mode=1777 \
+            --tmpfs /tmp:rw,size=16m \
+            --publish 18080:8080 \
+            motionprep-web:ci
+          timeout 30 bash -c \
+            'until curl --fail --silent http://127.0.0.1:18080/healthz >/dev/null; do sleep 1; done'
+      - name: Scan runtime image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: motionprep-runtime:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+      - name: Scan web image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: motionprep-web:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+  release-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: validate
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - run: npm run fixtures:generate
+      - run: npm run verify:fixtures
+      - run: npm run benchmark:ocr
+      - run: npm run golden:adobe:generate
+      - name: Ensure deterministic fixtures remain unchanged
+        run: git diff --exit-code -- artifacts/fixtures assets/manifests/corpus.json
+      - name: Upload release validation evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-fixture-evidence
+          path: |
+            artifacts/adobe-golden
+            artifacts/benchmarks/ocr-arabic
+          if-no-files-found: error
+          retention-days: 14
+  durable-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: validate
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_DB: motionprep
+          POSTGRES_USER: motionprep
+          POSTGRES_PASSWORD: motionprep-integration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U motionprep -d motionprep"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://motionprep:motionprep-integration@127.0.0.1:5432/motionprep
+      INTEGRATION_DATABASE_URL: postgresql://motionprep:motionprep-integration@127.0.0.1:5432/motionprep
+      INTEGRATION_S3_ENDPOINT: http://127.0.0.1:9000
+      INTEGRATION_S3_BUCKET: motionprep-integration
+      INTEGRATION_S3_ACCESS_KEY: motionprep
+      INTEGRATION_S3_SECRET_KEY: motionprep-integration
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - name: Start pinned MinIO
+        run: |
+          docker run --detach --name motionprep-minio-ci \
+            --publish 9000:9000 \
+            --env MINIO_ROOT_USER="$INTEGRATION_S3_ACCESS_KEY" \
+            --env MINIO_ROOT_PASSWORD="$INTEGRATION_S3_SECRET_KEY" \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data
+          timeout 60 bash -c \
+            'until curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null; do sleep 2; done'
+      - name: Prove concurrent migration safety and idempotency
+        run: node scripts/verify-concurrent-migrations.mjs
+      - run: npm run test:integration --workspace @motionprep/api
+      - name: Print MinIO logs after failure
+        if: failure()
+        run: docker logs motionprep-minio-ci
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: validate
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - run: npm run test:e2e:install
+      - run: npm run test:e2e
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-evidence
+          path: |
+            artifacts/playwright
+            artifacts/playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
+  production-topology:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: validate
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - name: Start the production-shaped integration topology
+        run: docker compose -f compose.integration.yaml up --detach --build --wait
+      - run: npm run test:topology
+      - name: Capture topology diagnostics
+        if: always()
+        run: |
+          docker compose -f compose.integration.yaml ps
+          docker compose -f compose.integration.yaml logs --no-color > topology.log
+      - name: Upload topology evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-topology-evidence
+          path: topology.log
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop topology
+        if: always()
+        run: docker compose -f compose.integration.yaml down --volumes
