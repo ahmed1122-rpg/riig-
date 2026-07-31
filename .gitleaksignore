@@ -1,0 +1,25 @@
+# Reviewed false positives from the imported baseline commit.
+# These fingerprints cover deterministic test/example values only; new findings
+# in the same files remain blocking.
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:.env.example:generic-api-key:14
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app-test-helpers.ts:generic-api-key:46
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.processing-tools.test.ts:generic-api-key:33
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.auth.test.ts:generic-api-key:128
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.auth.test.ts:generic-api-key:182
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.auth.test.ts:generic-api-key:222
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.auth.test.ts:generic-api-key:247
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.auth.test.ts:generic-api-key:296
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.auth.test.ts:generic-api-key:324
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.auth.test.ts:generic-api-key:333
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.billing-admin.test.ts:generic-api-key:23
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.billing-admin.test.ts:generic-api-key:196
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.billing-admin.test.ts:stripe-access-token:77
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.processing.test.ts:generic-api-key:778
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.processing.test.ts:generic-api-key:784
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/billing/stripe-payment-provider.test.ts:stripe-access-token:17
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/billing/stripe-payment-provider.test.ts:stripe-access-token:49
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/billing/stripe-payment-provider.test.ts:stripe-access-token:52
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/billing/stripe-payment-provider.test.ts:stripe-access-token:94
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/billing/stripe-payment-provider.test.ts:stripe-access-token:104
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/config.test.ts:generic-api-key:23
+a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:compose.integration.yaml:generic-api-key:19
