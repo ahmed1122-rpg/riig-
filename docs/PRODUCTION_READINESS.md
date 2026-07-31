@@ -1,8 +1,8 @@
 # Production readiness
 
-Status on 2026-07-31: the six planned editing tools are implemented; local and GitHub-hosted quality, security, durable-integration, production-topology, and browser gates pass. Signed SBOM/provenance-bearing images are published to GHCR. Production approval remains withheld because the independently opened OCR holdout is red and provider staging, S3, recovery, and Adobe proofs are unavailable.
+Status on 2026-07-31: the six planned editing tools are implemented; local and GitHub-hosted quality, security, durable-integration, production-topology, and browser gates pass. `main` is protected, the readiness/release environments are protected, and PR #11 is merged. Regional OCR is now disabled by default because the independent holdout remains red. Production approval remains withheld because real provider staging has not been provisioned and the current `main` commit has not yet produced signed release images. Recovery, Adobe, and load/memory exercises are explicitly deferred.
 
-The `codex/production-readiness` candidate adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology before publication. These changes are locally verified but are not represented by the previously published `v0.1.0` digests until a new protected release completes.
+The merged production-readiness work adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology before publication. These changes are not represented by the previously published `v0.1.0` digests until a new protected release completes.
 
 ## Implemented locally
 
@@ -11,7 +11,7 @@ The `codex/production-readiness` candidate adds server-authoritative upload veri
 - PDF text split and merge with RTL-aware geometry and reading-order repair.
 - Regional PDF OCR rendered from the immutable original source, worker-backed in production, with coordinate translation and atomic compare-and-swap persistence.
 - Raster edge refinement and raster-layer merge as immutable derived PNG assets with integrity metadata and failed-publication cleanup.
-- `PDF_REGION_OCR_ENABLED` as an emergency kill switch. Existing HTTP and worker metrics cover request status/duration, queue age/depth, retries, lease loss, and worker duration without logging source text.
+- `PDF_REGION_OCR_ENABLED` as an emergency kill switch, disabled by default until the independent CER gate passes. Existing HTTP and worker metrics cover request status/duration, queue age/depth, retries, lease loss, and worker duration without logging source text.
 
 ## OCR release gate — generation 6
 
@@ -31,7 +31,7 @@ Generation 6 was created from two never-before-used public-domain sources, seale
 
 The v5 low-contrast pages improved from 58.82%/52.97% to 17.94%/13.41% without validation regression. The v6 printed-book source passed at 16.26%; the manuscript source reached 43.81%, and `jurjani-008-manuscript` exceeded the 50% page limit at 53.76%. The historical development table remains at 69.02%. All five manuscript pages and the table produce final confidence below 0.35 and are marked `needs_review`.
 
-Therefore the strict benchmark exits non-zero and the release is No-Go. The approved product claim remains: “local OCR assistant for printed Arabic documents, with mandatory human review for low-confidence or complex historical pages.” Claiming reliable manuscript or degraded-table transcription is not supported by the evidence.
+Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The current release scope keeps that endpoint disabled, while ordinary PDF ingestion, editing, and export remain eligible for staging. If OCR is re-enabled later, the approved product claim remains limited to printed Arabic documents with mandatory human review; reliable manuscript or degraded-table transcription is not supported by the evidence.
 
 ## Local evidence
 
@@ -53,12 +53,15 @@ Therefore the strict benchmark exits non-zero and the release is No-Go. The appr
 
 ## Evidence still required
 
-1. A branch protection/ruleset requiring the passing quality and CodeQL checks. The remote and hosted checks now exist and are proven on an immutable SHA.
-2. Provider-owned S3 evidence for TLS, versioning, encryption, retention, integrity, and least privilege.
-3. Deployment of the published signed GHCR digests to staging plus rollback without rebuilding. Provider-registry publication and keyless signing are complete.
-4. A signed isolated recovery drill proving RPO ≤15 minutes and RTO ≤4 hours.
-5. Golden PSD/After Effects validation in licensed target Adobe versions.
-6. Either a passing newly sealed OCR generation or a formally approved product-scope reduction that excludes manuscripts and severely degraded tables from automatic-transcription claims.
+1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
+2. A protected release from the current `main` commit, followed by deployment of its signed digest-qualified GHCR images to staging and rollback without rebuilding.
+3. A signed isolated recovery drill proving RPO ≤15 minutes and RTO ≤4 hours (deferred by product decision).
+4. Golden PSD/After Effects validation in licensed target Adobe versions (deferred by product decision).
+5. Representative load and memory validation against the configured container ceilings (deferred by product decision).
+
+The OCR scope gate is resolved for the current candidate by keeping
+`PDF_REGION_OCR_ENABLED=false`. Re-enabling it requires a newly sealed holdout
+that meets CER <= 25% or a separately approved claim and review policy.
 
 Detailed evidence is in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/remaining-production-plan-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
 

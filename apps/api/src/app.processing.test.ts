@@ -689,27 +689,30 @@ describe("API — المعالجة ووثائق الطبقات", () => {
   });
   it("runs regional OCR idempotently and restores the previous text on undo", async () => {
     const ocrCalls: number[] = [];
-    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
-      pdfOcrEngine: {
-        async recognizePage(input) {
-          ocrCalls.push(input.pageNumber);
-          expect(input.image.subarray(1, 4).toString("ascii")).toBe("PNG");
-          return [
-            {
-              text: "نص مصحح",
-              bounds: {
-                x: 0,
-                y: 0,
-                width: Math.max(1, input.width * 0.8),
-                height: Math.max(1, input.height * 0.8),
+    const app = await harness.build(
+      loadConfig({ NODE_ENV: "test", PDF_REGION_OCR_ENABLED: "true" }),
+      {
+        pdfOcrEngine: {
+          async recognizePage(input) {
+            ocrCalls.push(input.pageNumber);
+            expect(input.image.subarray(1, 4).toString("ascii")).toBe("PNG");
+            return [
+              {
+                text: "نص مصحح",
+                bounds: {
+                  x: 0,
+                  y: 0,
+                  width: Math.max(1, input.width * 0.8),
+                  height: Math.max(1, input.height * 0.8),
+                },
+                confidence: 0.95,
+                direction: "rtl",
               },
-              confidence: 0.95,
-              direction: "rtl",
-            },
-          ];
+            ];
+          },
         },
       },
-    });
+    );
     const cookie = await registerCreator(app, "regional-ocr@example.com");
     const projectResponse = await app.inject({
       method: "POST",

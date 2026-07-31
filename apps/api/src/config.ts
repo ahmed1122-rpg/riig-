@@ -52,7 +52,7 @@ const environmentSchema = z
     PDF_OCR_MODE: z.enum(["disabled", "local"]).default("disabled"),
     PDF_REGION_OCR_ENABLED: z
       .enum(["true", "false"])
-      .default("true")
+      .default("false")
       .transform((value) => value === "true"),
     LOGIN_MAX_FAILURES: z.coerce.number().int().min(3).max(20).default(5),
     LOGIN_ATTEMPT_WINDOW_SECONDS: z.coerce

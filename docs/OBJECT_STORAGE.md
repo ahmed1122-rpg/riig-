@@ -117,6 +117,12 @@ With the staging variables loaded, run the non-destructive provider probe:
 npm run verify:object-storage
 ```
 
+The protected `staging-readiness` workflow first runs
+`npm run verify:staging-dependencies --workspace @motionprep/api` to prove TLS
+connections to PostgreSQL, Redis, and SMTP, then runs the object-store probe
+above. It is a pre-release infrastructure check and does not replace the signed
+recovery evidence required by `provider-readiness`.
+
 It checks bucket access and required versioning, performs an encrypted checksum-protected write,
 validates the downloaded bytes, deletes the probe, and confirms that it is no
 longer readable. The command rejects plaintext endpoints and unencrypted

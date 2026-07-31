@@ -1,0 +1,93 @@
+name: staging-readiness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: staging-readiness
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production-readiness
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT }}
+      SMTP_SECURE: ${{ vars.SMTP_SECURE }}
+      SMTP_REQUIRE_TLS: ${{ vars.SMTP_REQUIRE_TLS }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMTP_FROM: ${{ vars.SMTP_FROM }}
+      NODE_ENV: production
+      OBJECT_STORAGE_ENDPOINT: ${{ vars.OBJECT_STORAGE_ENDPOINT }}
+      OBJECT_STORAGE_REGION: ${{ vars.OBJECT_STORAGE_REGION }}
+      OBJECT_STORAGE_BUCKET: ${{ vars.OBJECT_STORAGE_BUCKET }}
+      OBJECT_STORAGE_FORCE_PATH_STYLE: ${{ vars.OBJECT_STORAGE_FORCE_PATH_STYLE }}
+      OBJECT_STORAGE_ENCRYPTION_MODE: ${{ vars.OBJECT_STORAGE_ENCRYPTION_MODE }}
+      OBJECT_STORAGE_REQUIRE_VERSIONING: "true"
+      OBJECT_STORAGE_ACCESS_KEY: ${{ secrets.OBJECT_STORAGE_ACCESS_KEY }}
+      OBJECT_STORAGE_SECRET_KEY: ${{ secrets.OBJECT_STORAGE_SECRET_KEY }}
+      OBJECT_STORAGE_SESSION_TOKEN: ${{ secrets.OBJECT_STORAGE_SESSION_TOKEN }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - name: Reject ambiguous or missing provider credentials
+        shell: bash
+        run: |
+          has_access_key=false
+          has_secret_key=false
+          test -z "$OBJECT_STORAGE_ACCESS_KEY" || has_access_key=true
+          test -z "$OBJECT_STORAGE_SECRET_KEY" || has_secret_key=true
+          if [[ "$has_access_key" != "$has_secret_key" ]]; then
+            echo "Both object-storage access and secret keys are required together." >&2
+            exit 1
+          fi
+          if [[ -n "$AWS_ROLE_ARN" && "$has_access_key" == "true" ]]; then
+            echo "Choose AWS OIDC or explicit S3 credentials, not both." >&2
+            exit 1
+          fi
+          if [[ -z "$AWS_ROLE_ARN" && "$has_access_key" == "false" ]]; then
+            echo "Configure AWS_ROLE_ARN or explicit S3 credentials." >&2
+            exit 1
+          fi
+          if [[ -n "$AWS_ROLE_ARN" && -z "$AWS_REGION" ]]; then
+            echo "AWS_REGION is required with AWS_ROLE_ARN." >&2
+            exit 1
+          fi
+      - name: Configure short-lived AWS credentials through GitHub OIDC
+        if: ${{ vars.AWS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: MotionPrepStagingReadiness-${{ github.run_id }}
+      - name: Probe TLS-protected PostgreSQL, Redis, and SMTP
+        run: npm run verify:staging-dependencies --workspace @motionprep/api
+      - name: Probe the deployment-owned object store
+        run: npm run verify:object-storage
+      - name: Publish staging readiness summary
+        shell: bash
+        run: |
+          {
+            echo "## Staging dependency readiness"
+            echo
+            echo "- PostgreSQL TLS connection: verified"
+            echo "- Redis TLS connection: verified"
+            echo "- SMTP TLS negotiation: verified"
+            echo "- Object storage write/read/integrity/delete: verified"
+            echo "- Recovery evidence: intentionally remains in the production provider gate"
+          } >> "$GITHUB_STEP_SUMMARY"
