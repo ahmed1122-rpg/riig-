@@ -163,6 +163,11 @@ try {
       "The fixture job cannot scan an image built on another runner.",
     );
   }
+  if (!ciWorkflow.includes("--add-host api:127.0.0.1")) {
+    violations.push(
+      "The CI hardened web smoke must provide the API hostname expected by nginx.",
+    );
+  }
 } catch {
   // The workflow parse violation above already reports the syntax failure.
 }
