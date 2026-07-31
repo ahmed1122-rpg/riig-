@@ -1,6 +1,6 @@
 # Production readiness
 
-Status on 2026-07-31: the six planned editing tools are implemented; local and GitHub-hosted quality, security, durable-integration, production-topology, and browser gates pass. `main` is protected, the readiness/release environments are protected, and PR #11 is merged. Regional OCR is now disabled by default because the independent holdout remains red. Production approval remains withheld because real provider staging has not been provisioned and the current `main` commit has not yet produced signed release images. Recovery, Adobe, and load/memory exercises are explicitly deferred.
+Status on 2026-07-31: the six planned editing tools are implemented; local and GitHub-hosted quality, security, durable-integration, production-topology, and browser gates pass. `main` is protected, the readiness/release environments are protected, and PRs #11 and #12 are merged at `b58ffcf1d214bb1d6a4df2034984fc86dfee34a6`. Regional OCR is now disabled by default because the independent holdout remains red. Production approval remains withheld because real provider staging has not been provisioned and the current `main` commit has not yet produced signed release images. Recovery, Adobe, and load/memory exercises are explicitly deferred.
 
 The merged production-readiness work adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology before publication. These changes are not represented by the previously published `v0.1.0` digests until a new protected release completes.
 
@@ -36,7 +36,7 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 ## Local evidence
 
 - `npm run quality`: passed after the final protected OCR change.
-- API tests: 143/143; document-processing tests: 38/38; web tests: 71/71; all configured coverage gates passed.
+- API tests: 153/153; document-processing tests: 38/38; web tests: 71/71; all configured coverage gates passed.
 - Playwright E2E: 6/6 across desktop and mobile Chromium.
 - Web bundle: 141.1 KiB JavaScript and 36.6 KiB CSS, gzip.
 - `npm audit --omit=dev --audit-level=high`: 0 known production vulnerabilities.
@@ -62,6 +62,13 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 The OCR scope gate is resolved for the current candidate by keeping
 `PDF_REGION_OCR_ENABLED=false`. Re-enabling it requires a newly sealed holdout
 that meets CER <= 25% or a separately approved claim and review policy.
+
+The external-state audit after PR #12 found zero variables and zero secrets in
+the protected `production-readiness` environment, and zero runs of both
+`staging-readiness` and `provider-readiness`. No AWS/Azure credential is
+available. The only configured cloud project has billing disabled, so no paid
+or account-owned staging resources were created without an explicit provider,
+region, domain, and budget decision.
 
 Detailed evidence is in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/remaining-production-plan-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
 
