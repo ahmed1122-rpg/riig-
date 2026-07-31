@@ -17,7 +17,7 @@
 | quality وE2E | مكتملان | quality ناجح وPlaywright ‏4/4 |
 | الهجرات وPostgreSQL/S3 | مكتمل | concurrent migrations + integration ‏8/8 |
 | topology الإنتاجي المحلي | مكتمل | replicas + Redis + Mailpit + MinIO + workers + restart/export/webhook |
-| بناء صور Docker | مكتمل محليًا | قواعد digest-pinned وhardened web smoke |
+| بناء صور Docker | مكتمل وموقّع محليًا | قواعد digest-pinned وSBOM/provenance وصفر High/Critical وتوقيعا Cosign متحققان وhardened web smoke |
 
 ## 2. P0 — قرار نطاق OCR
 
@@ -68,7 +68,7 @@
 1. إضافة مصنف قدرات للصفحة يميز: مطبوع عادي، تخطيط جدولي، مخطوط، ودقة منخفضة؛ يستخدم للتحذير والتوجيه لا لتغيير benchmark.
 2. توحيد محركات OCR خلف واجهة مزود واحدة مع timeouts وcircuit breaker وقياس RSS/p95 وإصدار نموذج.
 3. إضافة معايرة confidence حسب نوع الصفحة، مع اختبار عدم مرور النتائج السيئة بصمت.
-4. إضافة SBOM وتوقيع provenance للصور والنماذج والـlockfile في CI.
+4. ترقية دليل SBOM/provenance والتوقيع المحلي المكتمل إلى CI مستضاف بهوية OIDC وسجل مزود محمي، ثم توسيعه للنماذج والـlockfile.
 5. إضافة اختبارات chaos للـqueue: lease loss، retry exhaustion، stale revision، وفشل نشر الأصل المشتق.
 6. قياس أحجام revisions والأصول المشتقة ووضع تنبيهات retention/capacity.
 
@@ -90,4 +90,4 @@
 4. أدلة S3 وstaging وrollback وrecovery وAdobe فعلية وموقعة.
 5. runbooks والتنبيهات وkill switches مجرّبة.
 
-**القرار الحالي: No-Go للإنتاج العام.** لا توجد أدوات وهمية متبقية؛ العوائق هي حد قدرة OCR المثبت وغياب remote/CI وبيانات المزود وstaging والاستعادة وAdobe.
+**القرار الحالي: No-Go للإنتاج العام.** لا توجد أدوات وهمية متبقية؛ اكتمل النشر والتوقيع المحليان، والعوائق هي حد قدرة OCR المثبت وغياب remote/CI وسجل مزود محمي وبيانات المزود وstaging والاستعادة وAdobe.

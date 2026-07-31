@@ -1,0 +1,1 @@
+[{"critical":{"identity":{"docker-reference":"host.docker.internal:5000/motionprep-web@sha256:6aa68db109366280864392ade512a0b70ea4fe0069100ed20e4114283c60a619"},"image":{"docker-manifest-digest":"sha256:6aa68db109366280864392ade512a0b70ea4fe0069100ed20e4114283c60a619"},"type":"https://sigstore.dev/cosign/sign/v1"},"optional":{"component":"web","source-git-sha":"0a2103a"}}]

@@ -45,14 +45,16 @@ Therefore the strict benchmark exits non-zero and the release is No-Go. The appr
 - `npm run test:topology:full`: passed with two API replicas, PostgreSQL, Redis, versioned MinIO, Mailpit, all three workers, restart recovery, export, metrics, and a signed Stripe webhook.
 - Docker runtime and web images build from digest-pinned bases. The web image passed a read-only, non-root, `cap-drop ALL`, `no-new-privileges` health smoke.
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
+- A local OCI release was published from source commit `0a2103addf1c71ed6402d955a9a59d8da0d17485` with BuildKit SBOM/provenance, zero unresolved Trivy High/Critical findings, and verified Cosign signatures. The published runtime digest is `sha256:1daeff9e92a8c76553e1e29a97e561547cc7933d504fde15c347be859586c757`; the web digest is `sha256:6aa68db109366280864392ade512a0b70ea4fe0069100ed20e4114283c60a619`.
+- The local signing private key was deleted after verification; only the public verification key and non-secret verification records are retained under `artifacts/release/`.
 
 ## Evidence still required
 
 1. A protected remote and hosted CI tied to an immutable Git SHA.
 2. Provider-owned S3 evidence for TLS, versioning, encryption, retention, integrity, and least privilege.
-3. Signed digest deployment and rollback on staging.
+3. Provider-registry publication plus signed digest deployment and rollback on staging. Local digest signing is proven, but the local HTTP registry and offline key signature are not the provider evidence.
 4. A signed isolated recovery drill proving RPO ≤15 minutes and RTO ≤4 hours.
 5. Golden PSD/After Effects validation in licensed target Adobe versions.
 6. Either a passing newly sealed OCR generation or a formally approved product-scope reduction that excludes manuscripts and severely degraded tables from automatic-transcription claims.
 
-Detailed evidence is in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/remaining-production-plan-2026-07-30.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
+Detailed evidence is in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/remaining-production-plan-2026-07-30.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.

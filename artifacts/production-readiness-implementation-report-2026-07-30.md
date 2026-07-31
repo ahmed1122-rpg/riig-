@@ -79,7 +79,7 @@
 | OCR للمطبوعات | مقبول في v6 | مصدر holdout المطبوع 16.26% |
 | OCR للمخطوط/الجدول المتدهور | غير مقبول آليًا | يحتاج مراجعة بشرية أو محركًا مخصصًا |
 | PostgreSQL/S3 live topology | مكتمل محليًا | migrations متزامنة + integration ‏8/8 + topology كامل |
-| صور Docker | مكتملة محليًا | قواعد مثبتة بالـdigest وruntime/web وhardened web smoke |
+| صور Docker | مكتملة وموقعة محليًا | قواعد مثبتة بالـdigest، SBOM/provenance، صفر High/Critical، توقيعا Cosign متحققان، وhardened web smoke |
 
 ## الأدلة المحلية النهائية
 
@@ -95,12 +95,13 @@
 - `npm run test:topology:full`: ناجح على نسختي API وRedis وMailpit وMinIO وثلاثة workers وإعادة التشغيل والتصدير وwebhook موقّع.
 - أُصلح تعليق Docker على مسار Windows العربي بوصلة junction مؤقتة آمنة ينشئها السكربت وينظفها تلقائيًا.
 - صورة الويب اجتازت smoke بنظام ملفات read-only ومستخدم nginx و`cap-drop ALL` و`no-new-privileges`.
+- نُشرت صورتا الإصدار المحلي من commit `0a2103addf1c71ed6402d955a9a59d8da0d17485` مع SBOM/provenance، وفحص Trivy بصفر High/Critical، وتوقيعي Cosign متحققين؛ حُذف المفتاح الخاص وحُفظ المفتاح العام فقط.
 
 ## الأدلة الخارجية غير المتاحة
 
 1. لا يوجد remote محمي أو جلسة GitHub موثقة، لذلك لا يمكن تشغيل CI المستضاف أو GHCR بعد.
 2. لا توجد هوية مزود أو Bucket فعلي لإثبات S3 encryption/versioning/retention.
-3. لا توجد صور إصدار موقعة بالـdigest أو تجربة staging/rollback.
+3. اكتمل توقيع الـdigests محليًا، لكن لا يوجد بعد سجل مزود محمي أو تجربة staging/rollback على بيئة خارجية.
 4. لا يوجد تمرين استعادة فعلي موقّع لإثبات RPO≤15 دقيقة وRTO≤4 ساعات.
 5. لا يوجد استحقاق Adobe فعّال للتحقق من Golden PSD/After Effects.
 
