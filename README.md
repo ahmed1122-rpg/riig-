@@ -1,5 +1,7 @@
 # MotionPrep Studio
 
+اسم المستودع على GitHub: `riig-`.
+
 Production-readiness gates and remaining external evidence are tracked in
 [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
 
