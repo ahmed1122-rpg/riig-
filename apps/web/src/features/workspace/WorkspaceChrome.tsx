@@ -1,4 +1,5 @@
 import type { MouseEvent, RefObject } from "react";
+import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
 import type { getLayerCheckSummary } from "./layerChecks";
@@ -85,13 +86,12 @@ export function WorkspaceHeader({
       </div>
       <div
         className="workspace-mode"
-        role="tablist"
+        role="group"
         aria-label="نوع التجهيز"
       >
         <button
           type="button"
-          role="tab"
-          aria-selected={mode === "image"}
+          aria-pressed={mode === "image"}
           className={mode === "image" ? "is-active" : ""}
           onClick={() => onModeChange("image")}
         >
@@ -99,8 +99,7 @@ export function WorkspaceHeader({
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={mode === "book"}
+          aria-pressed={mode === "book"}
           className={mode === "book" ? "is-active" : ""}
           onClick={() => onModeChange("book")}
         >
@@ -110,7 +109,7 @@ export function WorkspaceHeader({
       <div className="workspace-meta">
         <span
           className={
-            mode === "image" && imageLayerCount >= 15
+            mode === "image" && imageLayerCount >= MAX_IMAGE_LAYERS
               ? "layer-counter is-full"
               : "layer-counter"
           }
@@ -118,7 +117,7 @@ export function WorkspaceHeader({
           <Icon name="layers" size={15} />
           {mode === "image" ? (
             <>
-              <b dir="ltr">{imageLayerCount} / 15</b>
+              <b dir="ltr">{imageLayerCount} / {MAX_IMAGE_LAYERS}</b>
               <span>طبقة</span>
             </>
           ) : (
@@ -191,6 +190,7 @@ export function WorkspaceStatusBar({
   processing,
   mode,
   imageCanvasSize,
+  pdfPageSize,
   zoom,
   activeLayerName,
 }: {
@@ -200,6 +200,7 @@ export function WorkspaceStatusBar({
   processing: boolean;
   mode: ProjectMode;
   imageCanvasSize?: { width: number; height: number };
+  pdfPageSize?: { width: number; height: number };
   zoom: number;
   activeLayerName?: string;
 }) {
@@ -251,12 +252,14 @@ export function WorkspaceStatusBar({
         />{" "}
         {processLabel}
       </span>
-      <span dir="ltr">
+      <span dir={mode === "book" && !pdfPageSize ? "rtl" : "ltr"}>
         {mode === "image" && imageCanvasSize
           ? `${imageCanvasSize.width} × ${imageCanvasSize.height} px`
-          : persistedSource
-            ? "1920 × 1080 px"
-            : "—"}
+          : mode === "book" && pdfPageSize
+            ? `${Math.round(pdfPageSize.width)} × ${Math.round(pdfPageSize.height)} pt`
+            : persistedSource
+              ? "أبعاد الصفحة غير متاحة"
+              : "—"}
       </span>
       <span dir="ltr">{zoom}%</span>
       <span dir="ltr">RGB · sRGB</span>
@@ -412,7 +415,7 @@ export function WorkspaceMobileSheet({
           <header>
             <strong>
               {mode === "image"
-                ? `${layers.length} / 15 طبقة`
+                ? `${layers.length} / ${MAX_IMAGE_LAYERS} طبقة`
                 : `${layers.length} طبقات · بلا حد`}
             </strong>
             <span>{selectedIds.length} محددة</span>

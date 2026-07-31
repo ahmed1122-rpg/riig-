@@ -1,6 +1,7 @@
 import { API_ORIGIN, ApiError, request } from "./transport";
 import { waitForJob } from "./job-polling";
 import type { ExportSummary } from "./models";
+import type { ExportFormat } from "@motionprep/contracts";
 
 export function listExports(): Promise<ExportSummary[]> {
   return request<ExportSummary[]>("/v1/exports");
@@ -27,14 +28,7 @@ export async function createExportArtifact(
   projectId: string,
   sourceVersionId: string,
   documentRevision: number,
-  format:
-    | "psd"
-    | "png-layers-json"
-    | "layered-tiff"
-    | "transparent-pngs"
-    | "txt"
-    | "csv"
-    | "json",
+  format: ExportFormat,
   options: {
     scope?: "full-document" | "per-page" | "selected-page";
     selectedPage?: number;

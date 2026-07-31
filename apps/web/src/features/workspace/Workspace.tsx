@@ -63,9 +63,8 @@ import {
 } from "./workspaceGuidance";
 import {
   getWorkspacePipeline,
-  toApiExportFormat,
-  type WorkspaceExportFormat,
 } from "./workspacePresentation";
+import type { ExportFormat } from "@motionprep/contracts";
 import {
   ApiError,
   applyGuidedRefinement,
@@ -822,7 +821,7 @@ export function Workspace({
   };
 
   const createExport = async (
-    format: WorkspaceExportFormat,
+    format: ExportFormat,
     options?: {
       scope?: "full-document" | "per-page" | "selected-page";
       selectedPage?: number;
@@ -848,7 +847,7 @@ export function Workspace({
       projectId,
       sourceVersionId,
       documentRevision,
-      toApiExportFormat(format),
+      format,
       options,
     );
   };
@@ -1053,6 +1052,13 @@ export function Workspace({
         zoom={zoom}
         activeLayerName={activeLayer?.name}
         {...(imageCanvasSize ? { imageCanvasSize } : {})}
+        {...(mode === "book"
+          ? {
+              pdfPageSize: pdfPages.find(
+                (item) => item.pageNumber === activePdfPage,
+              ),
+            }
+          : {})}
       />
 
       {sourceVersionsOpen && projectId && sourceVersionId && (

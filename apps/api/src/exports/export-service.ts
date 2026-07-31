@@ -23,6 +23,7 @@ import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
+import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
 import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import type {
   ObjectStorage,
@@ -273,28 +274,20 @@ export class ExportService {
       new Date(claimedAt.getTime() + leaseMilliseconds).toISOString(),
     );
     if (!job) return null;
-    let leaseLost = false;
-    const heartbeat = setInterval(() => {
+    const heartbeat = startLeaseHeartbeat(async () => {
       const heartbeatAt = this.now();
-      void this.repository
-        .updateClaim(
-          job.id,
-          workerId,
-          {
-            leaseExpiresAt: new Date(
-              heartbeatAt.getTime() + leaseMilliseconds,
-            ).toISOString(),
-          },
-          heartbeatAt.toISOString(),
-        )
-        .then((updated) => {
-          if (!updated) leaseLost = true;
-        })
-        .catch(() => {
-          leaseLost = true;
-        });
-    }, Math.max(10_000, Math.floor(leaseMilliseconds / 3)));
-    heartbeat.unref();
+      const updated = await this.repository.updateClaim(
+        job.id,
+        workerId,
+        {
+          leaseExpiresAt: new Date(
+            heartbeatAt.getTime() + leaseMilliseconds,
+          ).toISOString(),
+        },
+        heartbeatAt.toISOString(),
+      );
+      return Boolean(updated);
+    }, leaseMilliseconds);
     try {
       const completed = await this.generateArtifact(
         job,
@@ -302,7 +295,7 @@ export class ExportService {
         job.namingPresetId,
         workerId,
       );
-      if (leaseLost && completed.status !== "ready") {
+      if (heartbeat.leaseLost() && completed.status !== "ready") {
         throw new ExportLeaseLostError();
       }
       return completed;
@@ -337,7 +330,7 @@ export class ExportService {
         )) ?? this.repository.findById(job.id)
       );
     } finally {
-      clearInterval(heartbeat);
+      heartbeat.stop();
     }
   }
 

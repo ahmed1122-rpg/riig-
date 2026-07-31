@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_IMAGE_LAYERS,
   MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MEBIBYTES,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
   acceptedSourceTypes,
+  evaluatePasswordRequirements,
   exportFormats,
   exportFormatsByProjectKind,
   layerLayoutMetadata,
+  isStrongPassword,
   supportsExportFormat,
   type ImageGuidanceKind,
   type LayerDocument,
@@ -16,6 +21,7 @@ import {
 
 describe("upload contract", () => {
   it("locks the server contract to 30 MiB", () => {
+    expect(MAX_UPLOAD_MEBIBYTES).toBe(30);
     expect(MAX_UPLOAD_BYTES).toBe(31_457_280);
   });
 
@@ -148,5 +154,27 @@ describe("upload contract", () => {
       zIndex: 0,
     };
     expect(layerLayoutMetadata(minimalLayer)).toEqual({});
+  });
+});
+
+describe("password contract", () => {
+  it("keeps the client and API requirements in one explicit policy", () => {
+    expect(PASSWORD_MIN_LENGTH).toBe(10);
+    expect(PASSWORD_MAX_LENGTH).toBe(128);
+    expect(evaluatePasswordRequirements("Short1")).toEqual({
+      length: false,
+      lowercaseLatin: true,
+      uppercaseLatin: true,
+      number: true,
+    });
+    expect(evaluatePasswordRequirements("طويلة-بدون-latin-1")).toEqual({
+      length: true,
+      lowercaseLatin: true,
+      uppercaseLatin: false,
+      number: true,
+    });
+    expect(isStrongPassword("SecurePass1")).toBe(true);
+    expect(isStrongPassword("securepass1")).toBe(false);
+    expect(isStrongPassword(`SecurePass1${"x".repeat(118)}`)).toBe(false);
   });
 });

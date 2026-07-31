@@ -1,5 +1,6 @@
 import type { IconName } from "../../shared/Icon";
 import type { Layer, ProjectMode } from "../../types";
+import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 
 interface LayerCheckItem {
   id: "names" | "structure" | "confidence";
@@ -33,7 +34,8 @@ export function getLayerCheckSummary(
     layers
       .filter((layer) => layer.kind === "page")
       .every((layer) => layer.locked && layer.name.startsWith("+page_"));
-  const layerLimitValid = mode === "book" || layers.length <= 15;
+  const layerLimitValid =
+    mode === "book" || layers.length <= MAX_IMAGE_LAYERS;
   const issueCount =
     invalidNames +
     lowConfidence +
@@ -55,7 +57,7 @@ export function getLayerCheckSummary(
       label: mode === "image" ? "حد الطبقات" : "خلفيات الصفحات",
       message:
         mode === "image"
-          ? `${layers.length} من 15 طبقة`
+          ? `${layers.length} من ${MAX_IMAGE_LAYERS} طبقة`
           : backgroundValid
             ? "ثابتة ومقفلة"
             : "توجد خلفية غير مطابقة",

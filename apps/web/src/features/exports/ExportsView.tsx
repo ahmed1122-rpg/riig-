@@ -6,15 +6,17 @@ import {
   type ExportSummary,
 } from "../../lib/api";
 import { DataState } from "../../shared/DataState";
-import { formatBytes } from "../../shared/formatters";
+import { formatBytes, formatDateTime } from "../../shared/formatters";
 import { Icon } from "../../shared/Icon";
 import type { DemoState } from "../../types";
+import { getExportFormatPresentation } from "./exportPresentation";
 
 interface ExportsViewProps {
   authenticated: boolean;
   onRequireAuth: () => void;
   onCreateProject: () => void;
   onViewProjects: () => void;
+  onNotify: (message: string) => void;
 }
 
 const statusLabels: Record<ExportSummary["status"], string> = {
@@ -32,6 +34,7 @@ export function ExportsView({
   onRequireAuth,
   onCreateProject,
   onViewProjects,
+  onNotify,
 }: ExportsViewProps) {
   const [items, setItems] = useState<ExportSummary[]>([]);
   const [state, setState] = useState<DemoState>(
@@ -50,6 +53,7 @@ export function ExportsView({
     let refreshTimer: number | undefined;
     setState("loading");
     const refresh = () => {
+      if (document.visibilityState === "hidden") return;
       void listExports()
         .then((exports) => {
           if (!active) return;
@@ -70,10 +74,22 @@ export function ExportsView({
           setState("error");
         });
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+        refreshTimer = undefined;
+        return;
+      }
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      refreshTimer = undefined;
+      refresh();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     refresh();
     return () => {
       active = false;
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [authenticated, reloadVersion]);
 
@@ -101,6 +117,12 @@ export function ExportsView({
       const cancelled = await cancelExport(exportId);
       setItems((current) =>
         current.map((item) => (item.id === exportId ? cancelled : item)),
+      );
+    } catch (error) {
+      onNotify(
+        error instanceof Error
+          ? error.message
+          : "تعذر إلغاء التصدير. أعد المحاولة.",
       );
     } finally {
       setCancellingId(undefined);
@@ -134,7 +156,7 @@ export function ExportsView({
                     {item.artifact?.filename ?? `${item.format}.${item.id.slice(0, 8)}`}
                   </strong>
                   <small>
-                    {formatName(item.format)}
+                    {getExportFormatPresentation(item.format).label}
                     {item.artifact
                       ? ` · ${formatBytes(item.artifact.sizeBytes)}`
                       : item.attempt > 0
@@ -151,10 +173,7 @@ export function ExportsView({
                   {statusLabels[item.status]}
                 </span>
                 <span className="project-updated">
-                  {new Intl.DateTimeFormat("ar-EG", {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  }).format(new Date(item.updatedAt))}
+                  {formatDateTime(item.updatedAt)}
                 </span>
                 <div className="export-row-actions">
                   {["preflight", "queued", "generating"].includes(item.status) && (
@@ -207,16 +226,4 @@ export function ExportsView({
       )}
     </div>
   );
-}
-
-function formatName(format: ExportSummary["format"]): string {
-  return {
-    psd: "PSD بطبقات",
-    "png-layers-json": "PNG Layers + JSON",
-    "layered-tiff": "TIFF متعدد الصفحات",
-    "transparent-pngs": "PNG شفافة",
-    txt: "TXT",
-    csv: "CSV",
-    json: "JSON",
-  }[format];
 }

@@ -80,6 +80,10 @@
 .app-dialog__header p { max-width: 440px; margin-top: 7px; color: var(--text-soft); font-size: 9px; line-height: 1.7; }
 .app-dialog__body { padding: 20px 22px; }
 .app-dialog__footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--line); background: var(--surface-soft); }
+.app-dialog.new-project-dialog { padding: 0; }
+.app-dialog.new-project-dialog > .app-dialog__header { margin-bottom: 0; }
+.app-dialog.new-project-dialog > .app-dialog__footer { margin-top: 0; }
+.app-dialog.new-project-dialog > .app-dialog__footer > span { display: flex; align-items: center; max-width: 300px; gap: 7px; color: var(--text-muted); font-size: 8px; line-height: 1.6; }
 
 /* Auth */
 
@@ -130,6 +134,11 @@
 .check-label input { width: 15px; height: 15px; accent-color: #078c82; }
 .auth-helper { display: flex; align-items: flex-start; gap: 6px; color: #6e7b76; font-size: 8px; line-height: 1.7; }
 .auth-helper svg { flex: 0 0 auto; margin-top: 1px; color: #078c82; }
+.password-requirements { display: flex; flex-wrap: wrap; gap: 5px 12px; margin: 0; padding: 0; color: var(--text-muted); font-size: 8px; list-style: none; }
+.password-requirements li { display: inline-flex; align-items: center; gap: 4px; }
+.password-requirements li span { color: var(--danger); font-weight: 800; }
+.password-requirements li.is-met { color: var(--text-soft); }
+.password-requirements li.is-met span { color: var(--success); }
 .auth-submit { width: 100%; min-height: 43px; }
 .auth-switch { color: #66736e; font-size: 9px; text-align: center; }
 .auth-switch button { color: #006f68; font-weight: 800; }

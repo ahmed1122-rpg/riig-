@@ -6,10 +6,10 @@ describe("selectExportFormat", () => {
     expect(
       selectExportFormat(
         { format: "psd", generationState: "done" },
-        "png-files",
+        "transparent-pngs",
       ),
     ).toEqual({
-      format: "png-files",
+      format: "transparent-pngs",
       generationState: "idle",
     });
   });

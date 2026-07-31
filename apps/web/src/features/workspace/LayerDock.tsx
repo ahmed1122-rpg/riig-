@@ -1,4 +1,5 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useId, useMemo, useState } from "react";
+import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
 import type { Layer, ProjectMode } from "../../types";
 import { getLayerCheckSummary } from "./layerChecks";
@@ -60,6 +61,10 @@ export function LayerDock({
   const [renameError, setRenameError] = useState("");
   const [anchorId, setAnchorId] = useState(activeId);
   const [windowStart, setWindowStart] = useState(0);
+  const layersTabId = useId();
+  const checksTabId = useId();
+  const layersPanelId = useId();
+  const checksPanelId = useId();
 
   useEffect(() => {
     setSearch("");
@@ -116,7 +121,10 @@ export function LayerDock({
     )));
   };
 
-  const selectLayer = (id: string, event: React.MouseEvent) => {
+  const selectLayer = (
+    id: string,
+    event: React.MouseEvent | React.KeyboardEvent,
+  ) => {
     if (event.shiftKey) {
       const anchorIndex = layers.findIndex((layer) => layer.id === anchorId);
       const targetIndex = layers.findIndex((layer) => layer.id === id);
@@ -201,6 +209,24 @@ export function LayerDock({
     window.addEventListener("pointerup", handleEnd, { once: true });
   };
 
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    const tabs = ["layers", "checks"] as const;
+    const currentIndex = tabs.indexOf(tab);
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex + 1) % tabs.length;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = tabs.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    setTab(tabs[nextIndex]);
+    const tabButtons = event.currentTarget.parentElement
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    tabButtons?.[nextIndex]?.focus();
+  };
+
   if (collapsed) {
     return (
       <aside className="pro-layer-dock is-collapsed" aria-label="رصيف الطبقات مطوي">
@@ -229,14 +255,18 @@ export function LayerDock({
 
       <header className="pro-dock-header">
         <div className="panel-tabs" role="tablist" aria-label="تفاصيل المشروع">
-          <button type="button" role="tab" aria-selected={tab === "layers"} className={tab === "layers" ? "is-active" : ""} onClick={() => setTab("layers")}>الطبقات <span>{layers.length}</span></button>
-          <button type="button" role="tab" aria-selected={tab === "checks"} className={tab === "checks" ? "is-active" : ""} onClick={() => setTab("checks")}>الفحص <span className="check-count">{checkSummary.issueCount}</span></button>
+          <button id={layersTabId} type="button" role="tab" aria-selected={tab === "layers"} aria-controls={layersPanelId} tabIndex={tab === "layers" ? 0 : -1} className={tab === "layers" ? "is-active" : ""} onClick={() => setTab("layers")} onKeyDown={handleTabKeyDown}>الطبقات <span>{layers.length}</span></button>
+          <button id={checksTabId} type="button" role="tab" aria-selected={tab === "checks"} aria-controls={checksPanelId} tabIndex={tab === "checks" ? 0 : -1} className={tab === "checks" ? "is-active" : ""} onClick={() => setTab("checks")} onKeyDown={handleTabKeyDown}>الفحص <span className="check-count">{checkSummary.issueCount}</span></button>
         </div>
         <button className="pro-icon-button" type="button" aria-label="طي رصيف الطبقات" onClick={() => onCollapsedChange(true)}><Icon name="panelClose" size={16} /></button>
       </header>
 
-      {tab === "checks" ? <ChecksPanel mode={mode} layers={layers} /> : (
-        <>
+      {tab === "checks" ? (
+        <div id={checksPanelId} className="pro-layer-tabpanel pro-layer-tabpanel--checks" role="tabpanel" aria-labelledby={checksTabId} tabIndex={0}>
+          <ChecksPanel mode={mode} layers={layers} />
+        </div>
+      ) : (
+        <div id={layersPanelId} className="pro-layer-tabpanel pro-layer-tabpanel--layers" role="tabpanel" aria-labelledby={layersTabId} tabIndex={0}>
           <div className="pro-layer-tools">
             <label className="pro-layer-search">
               <Icon name="search" size={14} />
@@ -294,7 +324,7 @@ export function LayerDock({
             </div>
           )}
 
-          <div className="pro-layer-list" role="listbox" aria-label="قائمة الطبقات" aria-multiselectable="true">
+          <div className="pro-layer-list" role="list" aria-label="قائمة الطبقات">
             {loading ? <LayerSkeleton /> : !expanded ? null : renderedLayers.length === 0 ? (
               <div className="pro-layer-empty"><Icon name="search" size={19} /><strong>لا توجد طبقات مطابقة</strong><span>جرّب اسمًا آخر أو ألغِ عامل التصفية.</span></div>
             ) : renderedLayers.map((layer) => (
@@ -332,10 +362,10 @@ export function LayerDock({
             {unpinnedLayers.length > LAYER_WINDOW_SIZE && <p className="pro-window-note">الخلفية المثبتة تبقى ظاهرة، بينما تُعرض 32 طبقة نصية فقط لحماية الأداء.</p>}
           </div>
           <footer className="pro-layer-footer">
-            <span>{mode === "image" ? `${layers.length} من 15 طبقة` : `${layers.length} طبقات · بلا حد عددي`}</span>
+            <span>{mode === "image" ? `${layers.length} من ${MAX_IMAGE_LAYERS} طبقة` : `${layers.length} طبقات · بلا حد عددي`}</span>
             <span>{canReorder ? "Alt + ↑↓ للترتيب" : "الترتيب محفوظ وغير قابل للتعديل حاليًا"}</span>
           </footer>
-        </>
+        </div>
       )}
     </aside>
   );
@@ -351,7 +381,7 @@ interface LayerRowProps {
   renameError: string;
   canReorder: boolean;
   onRenameDraftChange: (value: string) => void;
-  onSelect: (event: React.MouseEvent) => void;
+  onSelect: (event: React.MouseEvent | React.KeyboardEvent) => void;
   onStartRename: () => void;
   onSaveRename: () => void;
   onCancelRename: () => void;
@@ -381,14 +411,16 @@ const LayerRow = memo(function LayerRow({
   return (
     <div
       className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${layer.kind === "page" ? "is-fixed" : ""}`}
-      role="option"
-      aria-selected={selected}
+      role="listitem"
+      aria-label={`${layer.name}، ${selected ? "محددة" : "غير محددة"}`}
+      aria-current={active ? "true" : undefined}
       tabIndex={active ? 0 : -1}
       onClick={onSelect}
       onDoubleClick={onStartRename}
       onKeyDown={(event) => {
         if (canReorder && event.altKey && event.key === "ArrowUp") { event.preventDefault(); onMove(-1); }
         if (canReorder && event.altKey && event.key === "ArrowDown") { event.preventDefault(); onMove(1); }
+        if (event.key === " ") { event.preventDefault(); onSelect(event); }
         if (event.key === "F2" || event.key === "Enter") { event.preventDefault(); onStartRename(); }
       }}
     >

@@ -1,4 +1,8 @@
 import { Icon, type IconName } from "../../shared/Icon";
+import {
+  MAX_IMAGE_LAYERS,
+  MAX_UPLOAD_MEBIBYTES,
+} from "@motionprep/contracts";
 
 interface LandingPageProps {
   onOpenGuest: () => void;
@@ -10,8 +14,8 @@ const capabilities: Array<{
   value: string;
   label: string;
 }> = [
-  { icon: "upload", value: "30 MB", label: "حجم الملف الأقصى" },
-  { icon: "layers", value: "15", label: "طبقة كحد أقصى للصورة" },
+  { icon: "upload", value: `${MAX_UPLOAD_MEBIBYTES} MiB`, label: "حجم الملف الأقصى" },
+  { icon: "layers", value: String(MAX_IMAGE_LAYERS), label: "طبقة كحد أقصى للصورة" },
   { icon: "scanText", value: "6", label: "أنماط لتقسيم نص PDF" },
   { icon: "review", value: "قبل التصدير", label: "معاينة وفحص الطبقات" },
 ];
@@ -157,7 +161,7 @@ export default function LandingPage({
               <span>
                 <Icon name={item.icon} size={18} />
               </span>
-              <strong dir={item.value === "30 MB" ? "ltr" : undefined}>{item.value}</strong>
+              <strong dir={item.icon === "upload" ? "ltr" : undefined}>{item.value}</strong>
               <small>{item.label}</small>
             </article>
           ))}
@@ -256,11 +260,11 @@ export default function LandingPage({
                 </div>
               </header>
               <p>
-                فصل تلقائي مع أدوات توجيه ومراجعة فعلية، حتى 15 طبقة، وأسماء
+                فصل تلقائي مع أدوات توجيه ومراجعة فعلية، حتى {MAX_IMAGE_LAYERS} طبقة، وأسماء
                 تبدأ بعلامة <bdi>+</bdi> لتصل إلى Adobe مرتبة.
               </p>
               <ol>
-                <li><Icon name="upload" size={15} /> ارفع صورة واحدة حتى 30 MB</li>
+                <li><Icon name="upload" size={15} /> ارفع صورة واحدة حتى {MAX_UPLOAD_MEBIBYTES} MiB</li>
                 <li><Icon name="brush" size={15} /> وجّه الفصل أو صححه يدويًا</li>
                 <li><Icon name="packageCheck" size={15} /> افحص الأسماء ثم صدّر</li>
               </ol>

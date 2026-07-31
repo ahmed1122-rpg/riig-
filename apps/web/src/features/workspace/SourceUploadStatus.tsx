@@ -1,7 +1,11 @@
 import { Icon } from "../../shared/Icon";
 import type { ProjectMode } from "../../types";
+import {
+  MAX_IMAGE_LAYERS,
+  MAX_UPLOAD_MEBIBYTES,
+} from "@motionprep/contracts";
 
-export type UploadState = "empty" | "validating" | "uploading" | "paused" | "verifying" | "ready" | "error";
+export type UploadState = "empty" | "validating" | "uploading" | "verifying" | "ready" | "error";
 
 interface SourceUploadStatusProps {
   mode: ProjectMode;
@@ -22,7 +26,6 @@ const labels: Record<UploadState, string> = {
   empty: "اختر ملف المصدر",
   validating: "التحقق من الملف",
   uploading: "رفع المصدر",
-  paused: "الرفع متوقف",
   verifying: "التحقق من النسخة",
   ready: "المصدر جاهز",
   error: "تعذر تجهيز الملف",
@@ -50,7 +53,7 @@ export function SourceUploadStatus({
         <span className="source-icon"><Icon name={mode === "image" ? "image" : "scan"} size={17} /></span>
         <span>
           <strong dir="ltr">{fileName}</strong>
-          <small>{mode === "image" ? "ملف واحد · 30 MB · حتى 15 طبقة" : "ملف PDF واحد · 30 MB · طبقات غير محدودة"}</small>
+          <small>{mode === "image" ? `ملف واحد · ${MAX_UPLOAD_MEBIBYTES} MiB · حتى ${MAX_IMAGE_LAYERS} طبقة` : `ملف PDF واحد · ${MAX_UPLOAD_MEBIBYTES} MiB · حتى 250 صفحة`}</small>
         </span>
         {version > 0 && <span className="pro-source-version">v{version}</span>}
         <span className="replace-source">{state === "empty" ? "اختيار" : "استبدال"}</span>
@@ -69,7 +72,7 @@ export function SourceUploadStatus({
         <section className="pro-upload-popover" aria-label="حالة رفع الملف">
           <header><span><strong>{labels[state]}</strong><small>عملية واحدة · ملف واحد</small></span>{state !== "empty" && <b dir="ltr">{progress}%</b>}</header>
           <div className="pro-upload-track"><i style={{ width: `${progress}%` }} /></div>
-          {state === "uploading" && <p><span>2.8 MB/s</span><span>متبقٍ نحو 8 ثوانٍ</span></p>}
+          {state === "uploading" && <p><span>اكتمل {progress}% من العملية</span><span>يستمر التحقق بعد اكتمال النقل</span></p>}
           {state === "verifying" && <p><span>فحص سلامة الملف</span><span>SHA-256</span></p>}
           {state === "ready" && <p className="is-success"><Icon name="badgeCheck" size={13} /> المصدر جاهز · بصمة SHA-256: {hash ? `${hash.slice(0, 4)}…${hash.slice(-4)}` : "بانتظار رفع حقيقي"}</p>}
           {state === "empty" && <p><span>لم يبدأ الرفع</span><span>اختر ملفًا للمتابعة</span></p>}

@@ -1,4 +1,8 @@
 import { Icon } from "../../shared/Icon";
+import {
+  MAX_IMAGE_LAYERS,
+  MAX_UPLOAD_MEBIBYTES,
+} from "@motionprep/contracts";
 import type { ProjectMode } from "../../types";
 
 export function EmptySourcePreview({
@@ -26,8 +30,8 @@ export function EmptySourcePreview({
       </strong>
       <p>
         {mode === "image"
-          ? "PNG أو JPG أو WebP أو AVIF أو TIFF أو BMP · حتى 30 MB · وبحد أقصى 15 طبقة"
-          : "ملف PDF واحد · حتى 30 MB · بلا حد عددي للطبقات"}
+          ? `PNG أو JPG أو WebP أو AVIF أو TIFF أو BMP · حتى ${MAX_UPLOAD_MEBIBYTES} MiB · وبحد أقصى ${MAX_IMAGE_LAYERS} طبقة`
+          : `ملف PDF واحد · حتى ${MAX_UPLOAD_MEBIBYTES} MiB · بلا حد عددي للطبقات`}
       </p>
       <button
         type="button"

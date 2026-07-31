@@ -1,7 +1,11 @@
 import { Icon } from "../../shared/Icon";
+import {
+  MAX_IMAGE_LAYERS,
+  MAX_UPLOAD_MEBIBYTES,
+} from "@motionprep/contracts";
 
 const steps = [
-  ["ارفع ملفًا واحدًا", "صورة أو PDF حتى 30 MB؛ يتحقق الخادم من النوع والمحتوى."],
+  ["ارفع ملفًا واحدًا", `صورة أو PDF حتى ${MAX_UPLOAD_MEBIBYTES} MiB؛ يتحقق الخادم من النوع والمحتوى.`],
   ["راجع التقطيع", "استخدم الأقلام لإبقاء جزء أو استبعاده أو فصله، وحدد عناوين وأسطر PDF."],
   ["نظّم الطبقات", "الأسماء تبدأ بـ +، ويمكن تعديل الرؤية والقفل والترتيب قبل التصدير."],
   ["صدّر إلى Adobe", "للصور: PSD وPNG وTIFF. ولـPDF: PSD وPNG+JSON وTXT/CSV/JSON."],
@@ -49,8 +53,8 @@ export function HelpView() {
         ))}
       </ol>
       <section className="help-limits">
-        <article><Icon name="image" size={18} /><strong>الصور</strong><span>15 طبقة كحد أقصى، والفائض يُجمع في طبقة مراجعة.</span></article>
-        <article><Icon name="scanText" size={18} /><strong>PDF</strong><span>لا حد ثابت لطبقات النص؛ حتى 30 MiB و250 صفحة و100,000 عنصر نصي.</span></article>
+        <article><Icon name="image" size={18} /><strong>الصور</strong><span>{MAX_IMAGE_LAYERS} طبقة كحد أقصى، والفائض يُجمع في طبقة مراجعة.</span></article>
+        <article><Icon name="scanText" size={18} /><strong>PDF</strong><span>لا حد ثابت لطبقات النص؛ حتى {MAX_UPLOAD_MEBIBYTES} MiB و250 صفحة و100,000 عنصر نصي.</span></article>
         <article><Icon name="shieldCheck" size={18} /><strong>الحفظ</strong><span>الإصدارات والوظائف محفوظة على الخادم ويمكن فتحها من المشاريع.</span></article>
       </section>
     </div>

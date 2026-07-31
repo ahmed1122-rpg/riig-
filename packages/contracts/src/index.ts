@@ -1,4 +1,31 @@
-export const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+export const MAX_UPLOAD_MEBIBYTES = 30;
+export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MEBIBYTES * 1024 * 1024;
+export const PASSWORD_MIN_LENGTH = 10;
+export const PASSWORD_MAX_LENGTH = 128;
+
+export interface PasswordRequirementStatus {
+  length: boolean;
+  lowercaseLatin: boolean;
+  uppercaseLatin: boolean;
+  number: boolean;
+}
+
+export function evaluatePasswordRequirements(
+  password: string,
+): PasswordRequirementStatus {
+  return {
+    length:
+      password.length >= PASSWORD_MIN_LENGTH &&
+      password.length <= PASSWORD_MAX_LENGTH,
+    lowercaseLatin: /[a-z]/u.test(password),
+    uppercaseLatin: /[A-Z]/u.test(password),
+    number: /[0-9]/u.test(password),
+  };
+}
+
+export function isStrongPassword(password: string): boolean {
+  return Object.values(evaluatePasswordRequirements(password)).every(Boolean);
+}
 export const BILLING_PLAN_CATALOG = [
   {
     id: "starter",

@@ -26,6 +26,7 @@ import { S3ObjectStorage } from "../storage/s3-object-storage.js";
 import { loadProcessingWorkerConfig } from "./processing-worker-config.js";
 import { getProcessingRetryPolicy } from "./processing-worker-policy.js";
 import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
+import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
 import {
@@ -301,22 +302,15 @@ async function processClaimedJob(
   const startedAt = Date.now();
   const storedRasterAssetKeys: string[] = [];
   let documentPersisted = false;
-  let leaseLost = false;
-  const heartbeat = setInterval(() => {
-    void renewLease(
+  const heartbeat = startLeaseHeartbeat(
+    () => renewLease(
       context.pool,
       job.id,
       context.workerId,
       context.leaseMilliseconds,
-    )
-      .then((renewed) => {
-        if (!renewed) leaseLost = true;
-      })
-      .catch(() => {
-        leaseLost = true;
-      });
-  }, Math.max(10_000, Math.floor(context.leaseMilliseconds / 3)));
-  heartbeat.unref();
+    ),
+    context.leaseMilliseconds,
+  );
 
   try {
     const upload = await context.pool.query<{
@@ -359,7 +353,7 @@ async function processClaimedJob(
         source,
       });
       for (const asset of prepared.rasterAssets) {
-        if (leaseLost) throw new ProcessingLeaseLostError();
+        if (heartbeat.leaseLost()) throw new ProcessingLeaseLostError();
         await context.storage.put({
           key: asset.objectKey,
           body: asset.body,
@@ -402,7 +396,7 @@ async function processClaimedJob(
           : {}),
       });
     }
-    if (leaseLost) throw new ProcessingLeaseLostError();
+    if (heartbeat.leaseLost()) throw new ProcessingLeaseLostError();
     const client = await context.pool.connect();
     try {
       await client.query("BEGIN");
@@ -530,7 +524,8 @@ async function processClaimedJob(
       });
     });
   } catch (error) {
-    const isLeaseLoss = error instanceof ProcessingLeaseLostError || leaseLost;
+    const isLeaseLoss =
+      error instanceof ProcessingLeaseLostError || heartbeat.leaseLost();
     if (
       !isLeaseLoss &&
       !documentPersisted &&
@@ -586,7 +581,7 @@ async function processClaimedJob(
       },
     );
   } finally {
-    clearInterval(heartbeat);
+    heartbeat.stop();
     await context.usageMeter
       .recordProcessingSeconds(
         job.id,

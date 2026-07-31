@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  MAX_IMAGE_LAYERS,
+  MAX_UPLOAD_MEBIBYTES,
+} from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
+import { Dialog } from "../../shared/Dialog";
 import type { ProjectMode } from "../../types";
 
 interface DashboardProps {
@@ -44,7 +49,7 @@ export function Dashboard({ onOpenWorkspace, onNavigateProjects }: DashboardProp
             <span className="section-index">01</span>
             <h2 id="start-title">ماذا تريد أن تجهّز؟</h2>
           </div>
-          <p>اختر المسار، ثم ارفع ملفًا واحدًا بحد أقصى 30 MB.</p>
+          <p>اختر المسار، ثم ارفع ملفًا واحدًا بحد أقصى {MAX_UPLOAD_MEBIBYTES} MiB.</p>
         </div>
 
         <div className="creation-paths">
@@ -53,7 +58,7 @@ export function Dashboard({ onOpenWorkspace, onNavigateProjects }: DashboardProp
             <span className="path-copy">
               <small>للشخصيات، الأشكال والحيوانات</small>
               <strong>تجهيز صورة</strong>
-              <p>حتى 15 طبقة بأسماء تبدأ بـ +، مع ملء تلقائي للفراغات.</p>
+              <p>حتى {MAX_IMAGE_LAYERS} طبقة بأسماء تبدأ بـ +، مع ملء تلقائي للفراغات.</p>
               <span className="path-output-preview" aria-label="مثال على مخرجات الطبقات">
                 <b>مخرج جاهز</b><i dir="rtl">+رأس</i><i dir="rtl">+ذراع_يمين</i><i>≤ 15</i>
               </span>
@@ -104,36 +109,35 @@ export function Dashboard({ onOpenWorkspace, onNavigateProjects }: DashboardProp
       </section>
 
       {wizardOpen && createPortal(
-        <div className="modal-layer" role="presentation" onMouseDown={() => setWizardOpen(false)}>
-          <section className="new-project-dialog" role="dialog" aria-modal="true" aria-labelledby="new-project-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header>
-              <div><span className="eyebrow">ملف واحد، إعداد واحد</span><h2 id="new-project-title">مشروع جديد</h2></div>
-              <button className="icon-button" type="button" onClick={() => setWizardOpen(false)} aria-label="إغلاق"><Icon name="close" /></button>
-            </header>
-
-            <div className="new-project-dialog__body">
+        <Dialog
+          title="مشروع جديد"
+          eyebrow="ملف واحد، إعداد واحد"
+          className="new-project-dialog"
+          onClose={() => setWizardOpen(false)}
+          footer={
+            <>
+              <span><Icon name="info" size={15} /> سيتم اختيار الملف مرة واحدة داخل مساحة العمل؛ لا توجد خطوة رفع مكررة.</span>
+              <button className="primary-button" type="button" onClick={() => { setWizardOpen(false); onOpenWorkspace(mode); }}>
+                فتح مساحة العمل <Icon name="arrow" size={17} />
+              </button>
+            </>
+          }
+        >
+          <div className="new-project-dialog__body">
               <ol className="wizard-steps" aria-label="خطوات إنشاء المشروع">
                 <li className="is-current"><b>1</b> اختر النوع</li><li><b>2</b> ارفع وجهّز داخل مساحة العمل</li>
               </ol>
 
               <div className="mode-choice">
                 <button className={mode === "image" ? "is-selected" : ""} type="button" onClick={() => setMode("image")}>
-                  <Icon name="image" /><span><strong>صورة</strong><small>حتى 15 طبقة</small></span>
+                  <Icon name="image" /><span><strong>صورة</strong><small>حتى {MAX_IMAGE_LAYERS} طبقة</small></span>
                 </button>
                 <button className={mode === "book" ? "is-selected" : ""} type="button" onClick={() => setMode("book")}>
                   <Icon name="scan" /><span><strong>PDF</strong><small>فصل النص</small></span>
                 </button>
               </div>
-            </div>
-
-            <footer>
-              <span><Icon name="info" size={15} /> سيتم اختيار الملف مرة واحدة داخل مساحة العمل؛ لا توجد خطوة رفع مكررة.</span>
-              <button className="primary-button" type="button" onClick={() => { setWizardOpen(false); onOpenWorkspace(mode); }}>
-                فتح مساحة العمل <Icon name="arrow" size={17} />
-              </button>
-            </footer>
-          </section>
-        </div>,
+          </div>
+        </Dialog>,
         document.body,
       )}
     </div>

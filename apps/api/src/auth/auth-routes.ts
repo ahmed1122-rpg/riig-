@@ -1,3 +1,7 @@
+import {
+  isStrongPassword,
+  PASSWORD_MAX_LENGTH,
+} from "@motionprep/contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "./authorize.js";
@@ -13,30 +17,21 @@ interface SessionCookieOptions {
   sessionTtlSeconds: number;
 }
 
+const strongPasswordSchema = z
+  .string()
+  .max(PASSWORD_MAX_LENGTH)
+  .refine(isStrongPassword);
+
 const registerSchema = z.object({
   name: z.string().trim().min(2).max(100),
   email: z.string().trim().email().max(254),
-  password: z
-    .string()
-    .min(10)
-    .max(128)
-    .regex(/[a-z]/)
-    .regex(/[A-Z]/)
-    .regex(/[0-9]/),
+  password: strongPasswordSchema,
 });
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(128),
 });
-
-const strongPasswordSchema = z
-  .string()
-  .min(10)
-  .max(128)
-  .regex(/[a-z]/)
-  .regex(/[A-Z]/)
-  .regex(/[0-9]/);
 
 const mfaChallengeSchema = z.object({
   challengeToken: z.string().min(32).max(256),

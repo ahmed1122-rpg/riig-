@@ -5,6 +5,10 @@ import {
   type SetStateAction,
 } from "react";
 import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MEBIBYTES,
+} from "@motionprep/contracts";
+import {
   ApiError,
   createAndUploadSource,
 } from "../../lib/api";
@@ -50,8 +54,8 @@ function fileValidationError(
   if (file.size === 0) {
     return "الملف فارغ. اختر ملفًا يحتوي على بيانات.";
   }
-  if (file.size > 30 * 1024 * 1024) {
-    return `حجم ${file.name} أكبر من 30 MB. اختر ملفًا أصغر ثم أعد المحاولة.`;
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return `حجم ${file.name} أكبر من ${MAX_UPLOAD_MEBIBYTES} MiB. اختر ملفًا أصغر ثم أعد المحاولة.`;
   }
   if (!isAcceptedFile(file, mode)) {
     return mode === "image"

@@ -9,8 +9,9 @@ export function formatDateTime(
   fallback = "—",
 ): string {
   if (!value) return fallback;
-  return new Intl.DateTimeFormat("ar-EG", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return arabicDateTimeFormatter.format(new Date(value));
 }
+const arabicDateTimeFormatter = new Intl.DateTimeFormat("ar-EG", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});

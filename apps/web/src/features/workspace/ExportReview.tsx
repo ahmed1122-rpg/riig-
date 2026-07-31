@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  exportFormatsByProjectKind,
+  MAX_IMAGE_LAYERS,
+  MAX_UPLOAD_MEBIBYTES,
+  type ExportFormat,
+} from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
 import type { Layer, ProjectMode } from "../../types";
+import { getExportFormatPresentation } from "../exports/exportPresentation";
 import { reindexLayerOrder } from "./layerReviewState";
 import {
   selectExportFormat,
@@ -10,9 +17,6 @@ import {
 import { RasterLayerPreview } from "./RasterLayerPreview";
 
 type PreviewBackground = "white" | "transparent" | "checker";
-type ImageFormat = "psd" | "tiff" | "png-zip" | "png-files";
-type PdfFormat = "psd" | "png-zip" | "txt" | "csv" | "json";
-type ExportFormat = ImageFormat | PdfFormat;
 type PdfScope = "document" | "pages" | "selected";
 
 interface ExportReviewProps {
@@ -38,7 +42,7 @@ interface ExportReviewProps {
     height: number;
   }>;
   onCreateExport: (
-    format: "psd" | "tiff" | "png-zip" | "png-files" | "txt" | "csv" | "json",
+    format: ExportFormat,
     options?: {
       scope?: "full-document" | "per-page" | "selected-page";
       selectedPage?: number;
@@ -46,45 +50,10 @@ interface ExportReviewProps {
   ) => Promise<void>;
 }
 
-interface FormatOption<T extends ExportFormat> {
-  id: T;
+interface FormatOption {
+  id: ExportFormat;
   title: string;
   hint: string;
-  available: boolean;
-}
-
-const imageFormats: FormatOption<ImageFormat>[] = [
-  { id: "psd", title: "PSD بطبقات", hint: "RGB/8-bit مع طبقات Raster", available: true },
-  { id: "png-zip", title: "PNG + JSON", hint: "المصدر وManifest داخل ZIP", available: true },
-  { id: "tiff", title: "TIFF متعدد الصفحات", hint: "صفحة كاملة المساحة لكل طبقة Raster", available: true },
-  { id: "png-files", title: "PNG شفافة", hint: "PNG كاملة المساحة لكل طبقة", available: true },
-];
-
-const pdfFormats: FormatOption<PdfFormat>[] = [
-  { id: "psd", title: "PSD بطبقات", hint: "طبقات نص Raster مستقلة وخلفية بيضاء ثابتة", available: true },
-  { id: "png-zip", title: "PNG + JSON", hint: "المصدر والخلفيات والمواضع", available: true },
-  { id: "txt", title: "TXT", hint: "النص المستخرج", available: true },
-  { id: "csv", title: "CSV", hint: "الوحدات والمواضع", available: true },
-  { id: "json", title: "JSON", hint: "وثيقة الطبقات الكاملة", available: true },
-];
-
-function exportSuccessMessage(format: ExportFormat): string {
-  switch (format) {
-    case "psd":
-      return "تم إنشاء ملف PSD وتنزيله.";
-    case "png-zip":
-      return "تم إنشاء حزمة PNG + JSON وتنزيلها.";
-    case "png-files":
-      return "تم إنشاء حزمة PNG الشفافة وتنزيلها.";
-    case "tiff":
-      return "تم إنشاء ملف TIFF متعدد الصفحات وتنزيله.";
-    case "txt":
-      return "تم إنشاء ملف TXT وتنزيله.";
-    case "csv":
-      return "تم إنشاء ملف CSV وتنزيله.";
-    case "json":
-      return "تم إنشاء ملف JSON وتنزيله.";
-  }
 }
 
 export function ExportReview({
@@ -125,11 +94,20 @@ export function ExportReview({
     () => layers.find((layer) => layer.id === selectedLayerId) ?? layers[0],
     [layers, selectedLayerId],
   );
-  const formats = mode === "image" ? imageFormats : pdfFormats;
+  const formats = useMemo<FormatOption[]>(
+    () =>
+      exportFormatsByProjectKind[mode].map((id) => {
+        const presentation = getExportFormatPresentation(id, mode);
+        return { id, title: presentation.label, hint: presentation.hint };
+      }),
+    [mode],
+  );
   const selectedFormat = formats.find((item) => item.id === format);
   const displayedGenerationMessage =
     generationMessage ??
-    (generationState === "done" ? exportSuccessMessage(format) : undefined);
+    (generationState === "done"
+      ? getExportFormatPresentation(format, mode).successMessage
+      : undefined);
   const fixedBackground = mode === "book" && selected?.kind === "page";
   const structuralEditingUnavailable = canExport;
   const orderingUnavailable = false;
@@ -243,7 +221,7 @@ export function ExportReview({
   }, [returnFocusTo]);
 
   useEffect(() => {
-    setFormat(mode === "image" ? "psd" : "png-zip");
+    setFormat(mode === "image" ? "psd" : "png-layers-json");
     setGenerationState("idle");
     setGenerationMessage(undefined);
     setBackground(mode === "image" ? "checker" : "white");
@@ -289,8 +267,10 @@ export function ExportReview({
 
   const splitSelected = () => {
     if (!selected || fixedBackground) return;
-    if (mode === "image" && layers.length >= 15) {
-      onNotify("لا يمكن إضافة طبقة: الحد الأقصى للصور 15 طبقة.");
+    if (mode === "image" && layers.length >= MAX_IMAGE_LAYERS) {
+      onNotify(
+        `لا يمكن إضافة طبقة: الحد الأقصى للصور ${MAX_IMAGE_LAYERS} طبقة.`,
+      );
       return;
     }
     const newLayer: Layer = {
@@ -309,7 +289,7 @@ export function ExportReview({
   };
 
   const createExport = async () => {
-    if (!selectedFormat?.available) {
+    if (!selectedFormat) {
       const message = "محول الصيغة المختارة غير متاح بعد، ولم تُنشأ مهمة عالقة.";
       setGenerationMessage(message);
       onNotify(message);
@@ -334,7 +314,7 @@ export function ExportReview({
     setGenerationState("working");
     try {
       await onCreateExport(
-        format as "psd" | "tiff" | "png-zip" | "png-files" | "txt" | "csv" | "json",
+        format,
         mode === "book" && format === "psd"
           ? pdfScope === "document"
             ? { scope: "full-document" }
@@ -344,7 +324,10 @@ export function ExportReview({
           : undefined,
       );
       setGenerationState("done");
-      const successMessage = exportSuccessMessage(format);
+      const successMessage = getExportFormatPresentation(
+        format,
+        mode,
+      ).successMessage;
       setGenerationMessage(successMessage);
       onNotify(successMessage);
     } catch (error) {
@@ -443,7 +426,7 @@ export function ExportReview({
 
           <aside className="export-layer-review" aria-label="مراجعة الطبقات">
             <div className="review-section-heading">
-              <div><strong>الطبقات</strong><small>{mode === "image" ? `${layers.length} / 15 طبقة` : `${layers.length} طبقات فعلية في ${pageCount} صفحة`}</small></div>
+              <div><strong>الطبقات</strong><small>{mode === "image" ? `${layers.length} / ${MAX_IMAGE_LAYERS} طبقة` : `${layers.length} طبقات فعلية في ${pageCount} صفحة`}</small></div>
               <span className={mode === "image" ? "review-count" : "review-count is-unlimited"}>
                 {mode === "image" ? `${layers.length}/15` : "بلا حد"}
               </span>
@@ -526,8 +509,8 @@ export function ExportReview({
               <fieldset className="format-options">
                 <legend>الصيغة</legend>
                 {formats.map((item) => (
-                  <label key={item.id} className={`${format === item.id ? "is-selected" : ""} ${item.available ? "" : "is-disabled"}`.trim()}>
-                    <input type="radio" name="export-format" value={item.id} checked={format === item.id} onChange={() => changeFormat(item.id)} disabled={!item.available || generationState === "working"} />
+                  <label key={item.id} className={format === item.id ? "is-selected" : ""}>
+                    <input type="radio" name="export-format" value={item.id} checked={format === item.id} onChange={() => changeFormat(item.id)} disabled={generationState === "working"} />
                     <span><strong>{item.title}</strong><small>{item.hint}</small></span>
                   </label>
                 ))}
@@ -592,7 +575,7 @@ export function ExportReview({
                 )}
               </div>
             )}
-            <button className={`create-export-button ${generationState === "done" ? "is-done" : ""}`} type="button" onClick={() => void createExport()} disabled={generationState === "working" || !selectedFormat?.available || !canExport || saveState === "saving" || saveState === "error"}>
+            <button className={`create-export-button ${generationState === "done" ? "is-done" : ""}`} type="button" onClick={() => void createExport()} disabled={generationState === "working" || !selectedFormat || !canExport || saveState === "saving" || saveState === "error"}>
               <Icon name={generationState === "done" ? "check" : "download"} size={17} />
               {generationState === "working" ? "جارٍ تجهيز النسخة…" : generationState === "done" ? "تم إنشاء الملف" : "إنشاء ملف التصدير"}
             </button>
@@ -622,11 +605,11 @@ function QualitySummary({ mode, imageLayerCount }: { mode: ProjectMode; imageLay
       <ul>
         <li className="is-ok"><Icon name="check" size={14} /><span>أسماء الطبقات تبدأ بـ + واحدة</span></li>
         {mode === "image" ? (
-          <li className={imageLayerCount <= 15 ? "is-ok" : "is-blocker"}><Icon name={imageLayerCount <= 15 ? "check" : "warning"} size={14} /><span>{imageLayerCount} / 15 طبقة للصور</span></li>
+          <li className={imageLayerCount <= MAX_IMAGE_LAYERS ? "is-ok" : "is-blocker"}><Icon name={imageLayerCount <= MAX_IMAGE_LAYERS ? "check" : "warning"} size={14} /><span>{imageLayerCount} / {MAX_IMAGE_LAYERS} طبقة للصور</span></li>
         ) : (
           <>
             <li className="is-ok"><Icon name="check" size={14} /><span>الخلفية البيضاء الثابتة مطلوبة لكل صفحة</span></li>
-            <li className="is-unlimited"><Icon name="info" size={14} /><span>حد المصدر 30 MB · لا يوجد حد ثابت لعدد طبقات PDF</span></li>
+            <li className="is-unlimited"><Icon name="info" size={14} /><span>حد المصدر {MAX_UPLOAD_MEBIBYTES} MiB · لا يوجد حد ثابت لعدد طبقات PDF</span></li>
           </>
         )}
             <li className="is-warning"><Icon name="warning" size={14} /><span>{mode === "image" ? "PSD حقيقي، لكن ادعاء توافق Adobe الكامل مؤجل لاختبارات Golden" : "PSD فعلي بطبقات Raster؛ النصوص قابلة للتحريك كطبقات وليست قابلة للتحرير كنص داخل Photoshop"}</span></li>

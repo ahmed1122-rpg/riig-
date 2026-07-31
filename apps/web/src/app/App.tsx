@@ -1,17 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { AppShell } from "../shared/AppShell";
-import { Dashboard } from "../features/dashboard/Dashboard";
-import { ProjectsView } from "../features/projects/ProjectsView";
-import { Workspace } from "../features/workspace/Workspace";
-import { HelpView } from "../features/system/HelpView";
-import { SettingsView } from "../features/system/SettingsView";
 import type { DemoState, ProjectMode, ViewId } from "../types";
 import {
   getSession,
   type ProjectSummary,
   type SessionUser,
 } from "../lib/api";
-import { ExportsView } from "../features/exports/ExportsView";
 import { Icon } from "../shared/Icon";
 import {
   buildViewSearch,
@@ -27,6 +21,36 @@ const SessionSecurity = lazy(() => import("../features/auth/SessionSecurity"));
 const BillingPortal = lazy(() => import("../features/billing/BillingPortal"));
 const AdminPanel = lazy(() => import("../features/admin/AdminPanel"));
 const UnauthorizedView = lazy(() => import("../features/admin/UnauthorizedView"));
+const Dashboard = lazy(() =>
+  import("../features/dashboard/Dashboard").then(({ Dashboard: component }) => ({
+    default: component,
+  })),
+);
+const ProjectsView = lazy(() =>
+  import("../features/projects/ProjectsView").then(
+    ({ ProjectsView: component }) => ({ default: component }),
+  ),
+);
+const Workspace = lazy(() =>
+  import("../features/workspace/Workspace").then(({ Workspace: component }) => ({
+    default: component,
+  })),
+);
+const ExportsView = lazy(() =>
+  import("../features/exports/ExportsView").then(
+    ({ ExportsView: component }) => ({ default: component }),
+  ),
+);
+const HelpView = lazy(() =>
+  import("../features/system/HelpView").then(({ HelpView: component }) => ({
+    default: component,
+  })),
+);
+const SettingsView = lazy(() =>
+  import("../features/system/SettingsView").then(
+    ({ SettingsView: component }) => ({ default: component }),
+  ),
+);
 const MOBILE_SHELL_QUERY = "(max-width: 900px)";
 
 function FeatureLoading() {
@@ -56,6 +80,11 @@ function SessionSplash() {
 export function App() {
   const [entryIntent] = useState(() =>
     resolveEntryIntent(window.location.search),
+  );
+  const [showDemoStateControls] = useState(
+    () =>
+      import.meta.env.DEV &&
+      new URLSearchParams(window.location.search).get("debugStates") === "1",
   );
   const [view, setView] = useState<ViewId>(entryIntent.initialView);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
@@ -287,8 +316,10 @@ export function App() {
       onToggleMobile={() => setMobileNavOpen((value) => !value)}
       onToggleTheme={() => setLightTheme((value) => !value)}
       onDemoStateChange={setDemoState}
+      showDemoStateControls={showDemoStateControls}
       onOpenAuth={openAuth}
     >
+      <Suspense fallback={<FeatureLoading />}>
       {view === "dashboard" && (
         <Dashboard
           onOpenWorkspace={openWorkspace}
@@ -328,6 +359,7 @@ export function App() {
           onRequireAuth={openAuth}
           onCreateProject={() => openWorkspace("image")}
           onViewProjects={() => navigateView("projects")}
+          onNotify={setNotice}
         />
       )}
       {view === "billing" && (
@@ -352,6 +384,7 @@ export function App() {
         />
       )}
       {view === "help" && <HelpView />}
+      </Suspense>
       {notice && <div className="toast" role="status" aria-live="polite"><IconCheck />{notice}</div>}
     </AppShell>
   );

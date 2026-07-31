@@ -32,6 +32,34 @@ test("public entry and guest authentication boundary are accessible", async ({
   await assertNoSeriousAccessibilityViolations(page);
 });
 
+test("keyboard dismisses the project dialog and mobile drawer", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "فتح الاستوديو كضيف" })
+    .first()
+    .click();
+
+  await expect(page.getByLabel("حالة بيانات العرض")).toHaveCount(0);
+  const projectTrigger = page.getByRole("button", { name: "مشروع جديد" });
+  await projectTrigger.click();
+  await expect(page.getByRole("dialog", { name: "مشروع جديد" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "مشروع جديد" })).toHaveCount(0);
+  await expect(projectTrigger).toBeFocused();
+
+  if (!testInfo.project.name.includes("mobile")) return;
+  const menuTrigger = page.locator(".mobile-menu");
+  await menuTrigger.click();
+  await expect(menuTrigger).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("dialog", { name: "التنقل الرئيسي" })).toBeVisible();
+  await expect(page.locator(".app-main")).toHaveAttribute("aria-hidden", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "التنقل الرئيسي" })).toHaveCount(0);
+  await expect(menuTrigger).toBeFocused();
+});
+
 test("creates an account, processes an image, saves review, and downloads export", async ({
   page,
 }, testInfo) => {

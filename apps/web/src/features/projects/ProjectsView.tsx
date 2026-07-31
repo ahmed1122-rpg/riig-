@@ -143,13 +143,13 @@ export function ProjectsView({
       </section>
 
       <div className="projects-toolbar">
-        <div className="filter-tabs" role="tablist" aria-label="تصفية المشاريع">
+        <div className="filter-tabs" role="group" aria-label="تصفية المشاريع">
           {([
             ["all", "الكل"],
             ["image", "الصور"],
             ["book", "PDF"],
           ] as const).map(([id, label]) => (
-            <button key={id} role="tab" aria-selected={filter === id} className={filter === id ? "is-active" : ""} type="button" onClick={() => setFilter(id)}>{label}</button>
+            <button key={id} aria-pressed={filter === id} className={filter === id ? "is-active" : ""} type="button" onClick={() => setFilter(id)}>{label}</button>
           ))}
         </div>
         <label className="project-search"><Icon name="search" size={17} /><span className="sr-only">بحث</span><input type="search" placeholder="ابحث باسم المشروع" value={query} onChange={(event) => setQuery(event.target.value)} /></label>

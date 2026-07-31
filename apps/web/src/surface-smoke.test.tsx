@@ -39,6 +39,65 @@ describe("production application surfaces", () => {
     expect(markup).toContain("shell-content");
     expect(markup).toContain("app-shell--projects");
     expect(markup).toContain("admin");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("اختبار الحالات");
+  });
+
+  it("renders the accessible mobile navigation states without exposing debug controls", () => {
+    const mobileClosed = renderToStaticMarkup(
+      <AppShell
+        activeView="projects"
+        mobileNavOpen={false}
+        isMobile
+        lightTheme={false}
+        demoState="empty"
+        role="creator"
+        user={null}
+        onNavigate={noop}
+        onOpenAuth={noop}
+        onToggleMobile={noop}
+        onToggleTheme={noop}
+        onDemoStateChange={noop}
+      >
+        <p>mobile-content</p>
+      </AppShell>,
+    );
+    const mobileOpen = renderToStaticMarkup(
+      <AppShell
+        activeView="workspace"
+        mobileNavOpen
+        isMobile
+        lightTheme
+        demoState="error"
+        role="admin"
+        user={{
+          id: "00000000-0000-4000-8000-000000000001",
+          name: "Admin",
+          email: "admin@example.test",
+          role: "admin",
+          mfaEnabled: true,
+        }}
+        onNavigate={noop}
+        onOpenAuth={noop}
+        onToggleMobile={noop}
+        onToggleTheme={noop}
+        onDemoStateChange={noop}
+        showDemoStateControls
+      >
+        <p>workspace-content</p>
+      </AppShell>,
+    );
+
+    expect(mobileClosed).toContain("mobile-bottom-nav");
+    expect(mobileClosed).toContain('aria-expanded="false"');
+    expect(mobileClosed).not.toContain('role="dialog"');
+    expect(mobileClosed).not.toContain("demo-select");
+    expect(mobileOpen).toContain('role="dialog"');
+    expect(mobileOpen).toContain('aria-modal="true"');
+    expect(mobileOpen).toContain('aria-expanded="true"');
+    expect(mobileOpen).toContain("nav-scrim");
+    expect(mobileOpen).toContain("demo-select");
+    expect(mobileOpen).not.toContain("mobile-bottom-nav");
   });
 
   it("renders login, authorization denial, and admin loading boundaries", () => {
@@ -84,6 +143,7 @@ describe("production application surfaces", () => {
         onRequireAuth={noop}
         onCreateProject={noop}
         onViewProjects={noop}
+        onNotify={noop}
       />,
     );
 

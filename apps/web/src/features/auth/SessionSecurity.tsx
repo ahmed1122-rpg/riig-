@@ -1,5 +1,10 @@
 import { useState, type FormEvent } from "react";
 import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  isStrongPassword,
+} from "@motionprep/contracts";
+import {
   ApiError,
   beginMfaSetup,
   changePassword,
@@ -9,6 +14,7 @@ import {
   type SessionUser,
 } from "../../lib/api";
 import { Icon } from "../../shared/Icon";
+import { PasswordRequirements } from "./PasswordRequirements";
 
 interface SessionSecurityProps {
   user: SessionUser | null;
@@ -92,6 +98,7 @@ export default function SessionSecurity({
 
   const updatePassword = (event: FormEvent) => {
     event.preventDefault();
+    if (!isStrongPassword(newPassword)) return;
     void run(async () => {
       await changePassword(currentPassword, newPassword);
       onSessionEnded();
@@ -188,8 +195,9 @@ export default function SessionSecurity({
         <header><div><Icon name="lock" size={19} /><span><strong>تغيير كلمة المرور</strong><small>يبطل جميع الجلسات وروابط الاستعادة السابقة</small></span></div></header>
         <form className="security-form-block security-password-form" onSubmit={updatePassword}>
           <label className="dialog-field">كلمة المرور الحالية<input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label>
-          <label className="dialog-field">كلمة المرور الجديدة<input type="password" autoComplete="new-password" minLength={10} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label>
-          <button type="submit" className="primary-button" disabled={busy || !currentPassword || newPassword.length < 10}>تغيير كلمة المرور</button>
+          <label className="dialog-field">كلمة المرور الجديدة<input type="password" autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} aria-describedby="change-password-requirements" required /></label>
+          <PasswordRequirements password={newPassword} id="change-password-requirements" />
+          <button type="submit" className="primary-button" disabled={busy || !currentPassword || !isStrongPassword(newPassword)}>تغيير كلمة المرور</button>
         </form>
       </article>
     </section>

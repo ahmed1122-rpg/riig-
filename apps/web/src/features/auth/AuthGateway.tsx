@@ -1,6 +1,12 @@
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Icon } from "../../shared/Icon";
 import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  isStrongPassword,
+} from "@motionprep/contracts";
+import { PasswordRequirements } from "./PasswordRequirements";
+import {
   ApiError,
   completeMfaLogin,
   confirmPasswordReset,
@@ -27,6 +33,8 @@ function AuthField({
   trailing,
   invalid = false,
   describedBy,
+  minLength,
+  maxLength,
 }: {
   label: string;
   type?: string;
@@ -37,6 +45,8 @@ function AuthField({
   trailing?: React.ReactNode;
   invalid?: boolean;
   describedBy?: string;
+  minLength?: number;
+  maxLength?: number;
 }) {
   const inputId = useId();
   return (
@@ -50,8 +60,10 @@ function AuthField({
           onChange={(event) => onChange(event.target.value)}
           autoComplete={autoComplete}
           placeholder={placeholder}
+          minLength={minLength}
+          maxLength={maxLength}
           aria-invalid={invalid || undefined}
-          aria-describedby={invalid ? describedBy : undefined}
+          aria-describedby={describedBy}
           required
         />
         {trailing}
@@ -98,8 +110,11 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
 
   useEffect(() => {
     if (screen !== "mfa" || seconds <= 0) return;
-    const interval = window.setInterval(() => setSeconds((value) => value - 1), 1000);
-    return () => window.clearInterval(interval);
+    const timeout = window.setTimeout(
+      () => setSeconds((value) => Math.max(0, value - 1)),
+      1_000,
+    );
+    return () => window.clearTimeout(timeout);
   }, [screen, seconds]);
 
   const title = useMemo(() => ({
@@ -149,7 +164,7 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
 
   const handleRegister = async (event: FormEvent) => {
     event.preventDefault();
-    if (!consent || password.length < 10) {
+    if (!consent || !isStrongPassword(password)) {
       setSubmitState("error");
       return;
     }
@@ -195,7 +210,7 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
 
   const handleReset = async (event: FormEvent) => {
     event.preventDefault();
-    if (!initialResetToken || password.length < 10) {
+    if (!initialResetToken || !isStrongPassword(password)) {
       setSubmitState("error");
       return;
     }
@@ -273,17 +288,19 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
                 onChange={setPassword}
                 autoComplete="new-password"
                 invalid={submitState === "error"}
-                describedBy="register-error"
+                describedBy="register-password-requirements register-error"
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
                 trailing={<button type="button" onClick={() => setShowPassword((value) => !value)} aria-label="تبديل إظهار كلمة المرور"><Icon name={showPassword ? "eyeOff" : "eye"} size={17} /></button>}
               />
-              <p className="auth-helper">10 أحرف على الأقل، تتضمن رقمًا ورمزًا. لا نطلب شروطًا يصعب تذكرها دون فائدة.</p>
+              <PasswordRequirements password={password} id="register-password-requirements" />
               <label className="check-label auth-consent">
                 <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
                 <span>أوافق على شروط الاستخدام وسياسة الخصوصية.</span>
               </label>
               {submitState === "error" && <div id="register-error" className="form-message is-error" role="alert">أكمل البيانات والموافقة، واستخدم كلمة مرور من 10 أحرف على الأقل.</div>}
               <RateLimitedMessage state={submitState} />
-              <button className="primary-button auth-submit" type="submit" disabled={submitState === "loading"}>
+              <button className="primary-button auth-submit" type="submit" disabled={submitState === "loading" || !consent || !isStrongPassword(password)}>
                 {submitState === "loading" ? "جارٍ إعداد الحساب…" : "إنشاء الحساب"}
               </button>
               <p className="auth-switch">لديك حساب بالفعل؟ <button type="button" onClick={() => resetSubmit("login")}>تسجيل الدخول</button></p>
@@ -304,10 +321,11 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
           {screen === "reset" && (
             <form className="auth-form" onSubmit={handleReset}>
               <div className="form-message is-success" role="status">عيّن كلمة مرور جديدة. سيُلغى الرابط وكل الجلسات السابقة بعد الحفظ.</div>
-              <AuthField label="كلمة المرور الجديدة" type="password" value={password} onChange={setPassword} autoComplete="new-password" invalid={submitState === "error"} describedBy="reset-error" />
+              <AuthField label="كلمة المرور الجديدة" type="password" value={password} onChange={setPassword} autoComplete="new-password" invalid={submitState === "error"} describedBy="reset-password-requirements reset-error" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
+              <PasswordRequirements password={password} id="reset-password-requirements" />
               {submitState === "error" && <div id="reset-error" className="form-message is-error" role="alert">الرابط منتهي أو كلمة المرور لا تحقق المتطلبات.</div>}
               <RateLimitedMessage state={submitState} />
-              <button className="primary-button auth-submit" type="submit" disabled={submitState === "loading"}>{submitState === "loading" ? "جارٍ الحفظ…" : "حفظ والعودة للدخول"}</button>
+              <button className="primary-button auth-submit" type="submit" disabled={submitState === "loading" || !isStrongPassword(password)}>{submitState === "loading" ? "جارٍ الحفظ…" : "حفظ والعودة للدخول"}</button>
             </form>
           )}
 

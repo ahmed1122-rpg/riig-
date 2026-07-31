@@ -157,6 +157,31 @@ describe("API — المصادقة والصلاحيات", () => {
     });
     expect(expired.statusCode).toBe(401);
   });
+  it("enforces the shared password policy at the registration boundary", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const invalidPasswords = [
+      "shortA1",
+      "lowercaseonly1",
+      "UPPERCASEONLY1",
+      "NoNumberPassword",
+      `ValidStart1${"x".repeat(118)}`,
+    ];
+
+    for (const [index, password] of invalidPasswords.entries()) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/auth/register",
+        payload: {
+          name: "سياسة كلمة المرور",
+          email: `password-policy-${index}@example.com`,
+          password,
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe("VALIDATION_FAILED");
+    }
+  });
   it("locks repeated login attempts without revealing whether the account exists", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     await registerCreator(app, "locked@example.com");
