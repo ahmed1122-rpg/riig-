@@ -45,6 +45,12 @@ COPY --from=build /workspace/packages/media-processing/dist ./packages/media-pro
 COPY --from=build /workspace/packages/presets/package.json ./packages/presets/package.json
 COPY --from=build /workspace/packages/presets/dist ./packages/presets/dist
 
+# The runtime invokes Node directly and must not ship build/package-manager
+# tooling. Removing it also reduces the vulnerability and mutation surface.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx
+
 USER node
 EXPOSE 4000
 CMD ["node", "--conditions=production", "apps/api/dist/server.js"]

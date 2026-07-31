@@ -225,6 +225,9 @@ for (const token of [
 if (!runtimeDockerfile.includes("USER node")) {
   violations.push("Runtime API image must run as the non-root node user.");
 }
+if (!runtimeDockerfile.includes("rm -rf /usr/local/lib/node_modules/npm")) {
+  violations.push("Runtime API image must remove npm build tooling.");
+}
 if (
   !runtimeDockerfile.includes(
     "COPY package.json package-lock.json tsconfig.node.json ./",
