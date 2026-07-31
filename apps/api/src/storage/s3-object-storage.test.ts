@@ -10,6 +10,11 @@ import {
   type S3Client,
 } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
+import { Readable } from "node:stream";
+import {
+  ObjectStorageReadAbortedError,
+  ObjectStorageReadLimitError,
+} from "./object-storage.js";
 import {
   ObjectStorageEncryptionError,
   ObjectStorageIntegrityError,
@@ -35,7 +40,10 @@ function storedHead(
 }
 
 function storageWith(
-  send: (command: object) => Promise<unknown>,
+  send: (
+    command: object,
+    options?: { abortSignal?: AbortSignal },
+  ) => Promise<unknown>,
   encryptionMode: "none" | "bucket-default" | "sse-s3" = "sse-s3",
 ): S3ObjectStorage {
   const client = {
@@ -57,6 +65,24 @@ function storageWith(
 }
 
 describe("S3ObjectStorage", () => {
+  it("rejects an inconsistent write before contacting S3", async () => {
+    const commands: object[] = [];
+    const storage = storageWith(async (command) => {
+      commands.push(command);
+      return {};
+    });
+
+    await expect(
+      storage.put({
+        key: "sources/project/inconsistent.bin",
+        contentType: "application/octet-stream",
+        sizeBytes: 100,
+        body: Buffer.from("short"),
+      }),
+    ).rejects.toBeInstanceOf(ObjectStorageIntegrityError);
+    expect(commands).toHaveLength(0);
+  });
+
   it("creates a missing development bucket and verifies it", async () => {
     const commands: object[] = [];
     let headAttempts = 0;
@@ -143,7 +169,7 @@ describe("S3ObjectStorage", () => {
       commands.push(command);
       if (command instanceof GetObjectCommand) {
         return {
-          ContentType: "image/png",
+          ...storedHead(source, "image/png", "AES256"),
           Body: {
             transformToByteArray: async () => new Uint8Array(source),
           },
@@ -171,6 +197,95 @@ describe("S3ObjectStorage", () => {
     expect(loaded?.body).toEqual(source);
     expect(commands[1]).toBeInstanceOf(HeadObjectCommand);
     expect(commands[3]).toBeInstanceOf(DeleteObjectCommand);
+  });
+
+  it("streams a verified object and preserves chunk boundaries for backpressure", async () => {
+    const source = Buffer.from("motionprep-stream");
+    const storage = storageWith(async (command) => {
+      if (command instanceof GetObjectCommand) {
+        return {
+          ...storedHead(source, "application/octet-stream", "AES256"),
+          Body: Readable.from([source.subarray(0, 5), source.subarray(5)]),
+        };
+      }
+      return {};
+    });
+
+    const object = await storage.getStream("artifacts/project/export.bin");
+    const chunks: Buffer[] = [];
+    for await (const chunk of object!.body) chunks.push(Buffer.from(chunk));
+
+    expect(Buffer.concat(chunks)).toEqual(source);
+  });
+
+  it("terminates a stream whose bytes do not match persisted integrity metadata", async () => {
+    const expected = Buffer.from("expected");
+    const storage = storageWith(async (command) => {
+      if (command instanceof GetObjectCommand) {
+        return {
+          ...storedHead(expected, "application/octet-stream", "AES256"),
+          Body: Readable.from([Buffer.from("tampered")]),
+        };
+      }
+      return {};
+    });
+    const object = await storage.getStream("artifacts/project/corrupt.bin");
+
+    await expect(async () => {
+      for await (const _chunk of object!.body) {
+        // Consumption is required to complete the streaming integrity check.
+      }
+    }).rejects.toBeInstanceOf(ObjectStorageIntegrityError);
+  });
+
+  it("forwards cancellation to S3 and destroys the response stream", async () => {
+    const source = Buffer.from("cancelled-stream");
+    const responseBody = new Readable({ read() {} });
+    let receivedSignal: AbortSignal | undefined;
+    const storage = storageWith(async (command, options) => {
+      if (command instanceof GetObjectCommand) {
+        receivedSignal = options?.abortSignal;
+        return {
+          ...storedHead(source, "application/octet-stream", "AES256"),
+          Body: responseBody,
+        };
+      }
+      return {};
+    });
+    const controller = new AbortController();
+    const object = await storage.getStream(
+      "artifacts/project/cancelled.bin",
+      { signal: controller.signal },
+    );
+
+    controller.abort();
+
+    expect(receivedSignal).toBe(controller.signal);
+    await expect(async () => {
+      for await (const _chunk of object!.body) {
+        // Cancellation must reject the consumer rather than end successfully.
+      }
+    }).rejects.toBeInstanceOf(ObjectStorageReadAbortedError);
+    expect(responseBody.destroyed).toBe(true);
+  });
+
+  it("rejects a buffered read before transfer when metadata exceeds its limit", async () => {
+    const source = Buffer.from("too-large");
+    const responseBody = Readable.from([source]);
+    const storage = storageWith(async (command) => {
+      if (command instanceof GetObjectCommand) {
+        return {
+          ...storedHead(source, "application/octet-stream", "AES256"),
+          Body: responseBody,
+        };
+      }
+      return {};
+    });
+
+    await expect(
+      storage.get("sources/project/large.bin", { maxBytes: 4 }),
+    ).rejects.toBeInstanceOf(ObjectStorageReadLimitError);
+    expect(responseBody.destroyed).toBe(true);
   });
 
   it("accepts a verified bucket encryption default", async () => {

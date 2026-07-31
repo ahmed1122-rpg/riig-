@@ -22,6 +22,7 @@ import {
 } from "../infrastructure/postgres/processing-row.js";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { createS3ObjectStorageOptions } from "../storage/object-storage-environment.js";
+import { isObjectStorageIntegrityFailure } from "../storage/object-storage.js";
 import { S3ObjectStorage } from "../storage/s3-object-storage.js";
 import { loadProcessingWorkerConfig } from "./processing-worker-config.js";
 import { getProcessingRetryPolicy } from "./processing-worker-policy.js";
@@ -396,7 +397,17 @@ async function processClaimedJob(
     const readyUpload = upload.rows[0];
     if (!readyUpload) throw new WorkerError("SOURCE_NOT_READY");
 
-    const response = await context.storage.get(readyUpload.object_key);
+    let response;
+    try {
+      response = await context.storage.get(readyUpload.object_key, {
+        maxBytes: readyUpload.expected_size_bytes,
+      });
+    } catch (error) {
+      if (isObjectStorageIntegrityFailure(error)) {
+        throw new WorkerError("SOURCE_INTEGRITY_FAILED");
+      }
+      throw error;
+    }
     if (!response) throw new WorkerError("SOURCE_NOT_READY");
     if (
       !readyUpload.sha256 ||

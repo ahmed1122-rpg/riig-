@@ -8,15 +8,26 @@ import {
   NoSuchKey,
   NotFound,
   PutObjectCommand,
+  type GetObjectCommandOutput,
   type HeadObjectCommandOutput,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
-import type {
-  ObjectStorage,
-  StoredObject,
-  StoredObjectMetadata,
+import { Readable } from "node:stream";
+import {
+  assertWritableSize,
+  collectStoredObject,
+  createVerifiedObjectStream,
+  ObjectStorageIntegrityError,
+  ObjectStorageReadLimitError,
+  type ObjectReadOptions,
+  type ObjectStorage,
+  type StoredObject,
+  type StoredObjectMetadata,
+  type StoredObjectStream,
 } from "./object-storage.js";
+
+export { ObjectStorageIntegrityError } from "./object-storage.js";
 
 export interface S3ObjectStorageOptions {
   endpoint?: string;
@@ -92,6 +103,7 @@ export class S3ObjectStorage implements ObjectStorage {
   }
 
   async put(object: StoredObject): Promise<StoredObjectMetadata> {
+    assertWritableSize(object);
     const sha256 = createHash("sha256").update(object.body).digest("hex");
     await this.#client.send(
       new PutObjectCommand({
@@ -136,23 +148,49 @@ export class S3ObjectStorage implements ObjectStorage {
     return head ? metadataFromHead(key, head) : null;
   }
 
-  async get(key: string): Promise<StoredObject | null> {
+  async getStream(
+    key: string,
+    options: ObjectReadOptions = {},
+  ): Promise<StoredObjectStream | null> {
     try {
       const response = await this.#client.send(
-        new GetObjectCommand({ Bucket: this.options.bucket, Key: key }),
+        new GetObjectCommand({
+          Bucket: this.options.bucket,
+          Key: key,
+          ChecksumMode: "ENABLED",
+        }),
+        options.signal ? { abortSignal: options.signal } : undefined,
       );
       if (!response.Body) return null;
-      const body = Buffer.from(await response.Body.transformToByteArray());
+      const metadata = metadataFromResponse(key, response);
+      if (!metadata) throw new ObjectStorageIntegrityError(key);
+      if (
+        options.maxBytes !== undefined &&
+        metadata.sizeBytes > options.maxBytes
+      ) {
+        destroyResponseBody(response.Body);
+        throw new ObjectStorageReadLimitError(
+          key,
+          metadata.sizeBytes,
+          options.maxBytes,
+        );
+      }
+      const source = await responseBodyAsReadable(response.Body);
       return {
-        key,
-        contentType: response.ContentType ?? "application/octet-stream",
-        sizeBytes: body.byteLength,
-        body,
+        ...metadata,
+        body: createVerifiedObjectStream(source, metadata, options.signal),
       };
     } catch (error) {
       if (isMissing(error)) return null;
       throw error;
     }
+  }
+
+  async get(
+    key: string,
+    options: ObjectReadOptions = {},
+  ): Promise<StoredObject | null> {
+    return collectStoredObject(await this.getStream(key, options), options);
   }
 
   async delete(key: string): Promise<void> {
@@ -197,14 +235,6 @@ export class ObjectStorageVersioningError extends Error {
   }
 }
 
-export class ObjectStorageIntegrityError extends Error {
-  readonly code = "OBJECT_STORAGE_INTEGRITY_FAILED";
-
-  constructor(key: string) {
-    super(`Object storage did not preserve the expected metadata for ${key}.`);
-  }
-}
-
 function metadataFromHead(
   key: string,
   head: HeadObjectCommandOutput,
@@ -226,6 +256,36 @@ function metadataFromHead(
     sizeBytes: head.ContentLength,
     sha256,
   };
+}
+
+function metadataFromResponse(
+  key: string,
+  response: GetObjectCommandOutput,
+): StoredObjectMetadata | null {
+  return metadataFromHead(key, response);
+}
+
+async function responseBodyAsReadable(
+  body: GetObjectCommandOutput["Body"],
+): Promise<Readable> {
+  if (!body) throw new Error("S3 response body is missing.");
+  if (body instanceof Readable) return body;
+  if (Symbol.asyncIterator in body) {
+    return Readable.from(body as AsyncIterable<Uint8Array>);
+  }
+  if (typeof body.transformToWebStream === "function") {
+    return Readable.fromWeb(
+      body.transformToWebStream() as Parameters<typeof Readable.fromWeb>[0],
+    );
+  }
+  return Readable.from([
+    Buffer.from(await body.transformToByteArray()),
+  ]);
+}
+
+function destroyResponseBody(body: GetObjectCommandOutput["Body"]): void {
+  const destroy = (body as { destroy?: () => void } | undefined)?.destroy;
+  if (typeof destroy === "function") destroy.call(body);
 }
 
 function checksumHex(value: string | undefined): string | null {

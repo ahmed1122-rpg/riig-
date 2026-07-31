@@ -42,9 +42,10 @@ import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
-import type {
-  ObjectStorage,
-  StoredObject,
+import {
+  isObjectStorageIntegrityFailure,
+  type ObjectStorage,
+  type StoredObject,
 } from "../storage/object-storage.js";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
@@ -254,17 +255,11 @@ export class ProcessingService {
         "أصل طبقة الصورة غير موجود.",
       );
     }
-    const object = await this.storage.get(reference.objectKey);
+    const object = await this.loadRasterObject(reference);
     if (!object) {
       throw new ProcessingDomainError(
         "LAYER_ASSET_NOT_FOUND",
         "أصل طبقة الصورة غير متاح في التخزين.",
-      );
-    }
-    if (!hasExpectedObjectIntegrity(object, reference)) {
-      throw new ProcessingDomainError(
-        "LAYER_ASSET_INTEGRITY_FAILED",
-        "فشل التحقق من سلامة أصل طبقة الصورة.",
       );
     }
     return object;
@@ -876,10 +871,10 @@ export class ProcessingService {
         "اختر طبقة Raster غير مقفلة قبل تحسين الحواف.",
       );
     }
-    const object = await this.storage.get(layer.rasterAsset.objectKey);
-    if (!object || !hasExpectedObjectIntegrity(object, layer.rasterAsset)) {
+    const object = await this.loadRasterObject(layer.rasterAsset);
+    if (!object) {
       throw new ProcessingDomainError(
-        object ? "LAYER_ASSET_INTEGRITY_FAILED" : "LAYER_ASSET_NOT_FOUND",
+        "LAYER_ASSET_NOT_FOUND",
         "تعذر تحميل أصل طبقة Raster أو التحقق من سلامته.",
       );
     }
@@ -999,17 +994,11 @@ export class ProcessingService {
     }
     const stored = await Promise.all(
       rasterLayers.map(async (layer) => {
-        const object = await this.storage.get(layer.rasterAsset.objectKey);
+        const object = await this.loadRasterObject(layer.rasterAsset);
         if (!object) {
           throw new ProcessingDomainError(
             "LAYER_ASSET_NOT_FOUND",
             "أحد أصول Raster المحددة غير متاح.",
-          );
-        }
-        if (!hasExpectedObjectIntegrity(object, layer.rasterAsset)) {
-          throw new ProcessingDomainError(
-            "LAYER_ASSET_INTEGRITY_FAILED",
-            "فشل التحقق من سلامة أحد أصول Raster المحددة.",
           );
         }
         return { layer, object };
@@ -1291,7 +1280,7 @@ export class ProcessingService {
           "الطبقة المستهدفة غير موجودة أو مقفلة أو لا تحمل أصل Raster.",
         );
       }
-      const object = await this.storage.get(layer.rasterAsset.objectKey);
+      const object = await this.loadRasterObject(layer.rasterAsset);
       if (!object) {
         throw new ProcessingDomainError(
           "LAYER_ASSET_NOT_FOUND",
@@ -1385,6 +1374,32 @@ export class ProcessingService {
     return reference;
   }
 
+  private async loadRasterObject(
+    reference: RasterAssetReference,
+  ): Promise<StoredObject | null> {
+    let object: StoredObject | null;
+    try {
+      object = await this.storage.get(reference.objectKey, {
+        maxBytes: reference.sizeBytes,
+      });
+    } catch (error) {
+      if (isObjectStorageIntegrityFailure(error)) {
+        throw new ProcessingDomainError(
+          "LAYER_ASSET_INTEGRITY_FAILED",
+          "فشل التحقق من سلامة أصل طبقة Raster المخزن.",
+        );
+      }
+      throw error;
+    }
+    if (object && !hasExpectedObjectIntegrity(object, reference)) {
+      throw new ProcessingDomainError(
+        "LAYER_ASSET_INTEGRITY_FAILED",
+        "فشل التحقق من سلامة أصل طبقة Raster المخزن.",
+      );
+    }
+    return object;
+  }
+
   private async run(job: ProcessingJob): Promise<ProcessingJob> {
     const upload = await this.uploads.findReadyBySourceVersion(
       job.projectId,
@@ -1393,7 +1408,21 @@ export class ProcessingService {
     if (!upload) {
       return this.fail(job, "SOURCE_NOT_READY", "نسخة المصدر غير جاهزة.");
     }
-    const source = await this.storage.get(upload.objectKey);
+    let source: StoredObject | null;
+    try {
+      source = await this.storage.get(upload.objectKey, {
+        maxBytes: upload.expectedSizeBytes,
+      });
+    } catch (error) {
+      if (isObjectStorageIntegrityFailure(error)) {
+        return this.fail(
+          job,
+          "SOURCE_INTEGRITY_FAILED",
+          "فشل التحقق من سلامة ملف المصدر المخزن.",
+        );
+      }
+      throw error;
+    }
     if (!source) {
       return this.fail(job, "SOURCE_NOT_READY", "ملف المصدر غير متاح.");
     }

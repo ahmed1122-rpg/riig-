@@ -136,6 +136,9 @@ describe("retention cleanup", () => {
       async get() {
         return null;
       },
+      async getStream() {
+        return null;
+      },
       async delete() {
         throw new Error("storage unavailable");
       },

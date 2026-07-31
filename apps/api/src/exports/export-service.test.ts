@@ -88,6 +88,14 @@ describe("ExportService worker execution", () => {
     const artifact = await service.artifact(queued.id);
     expect(artifact.contentType).toBe("text/plain; charset=utf-8");
     expect(artifact.body.toString("utf8")).toContain("الفصل الأول");
+    const streamedArtifact = await service.artifactStream(queued.id);
+    const chunks: Buffer[] = [];
+    for await (const chunk of streamedArtifact.body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    expect(Buffer.concat(chunks).toString("utf8")).toBe(
+      artifact.body.toString("utf8"),
+    );
     expect(await service.listByProjectIds([document.projectId])).toHaveLength(
       1,
     );

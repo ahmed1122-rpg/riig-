@@ -323,6 +323,12 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
         contentType: "application/octet-stream",
         sizeBytes: body.byteLength,
       });
+      const streamed = await storage.getStream(key);
+      const chunks: Buffer[] = [];
+      for await (const chunk of streamed!.body) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      expect(Buffer.concat(chunks)).toEqual(body);
     } finally {
       await storage.delete(key);
     }

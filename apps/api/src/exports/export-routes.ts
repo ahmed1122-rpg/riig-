@@ -179,7 +179,25 @@ export async function registerExportRoutes(
       parseId: exportIdFrom,
       load: (exportId) => requireRequestExport(request, exportId),
       handle: async (job, exportId) => {
-        const artifact = await exports.artifact(exportId);
+        const abortController = new AbortController();
+        const abort = () => abortController.abort();
+        const cleanup = () => {
+          request.raw.removeListener("aborted", abort);
+          reply.raw.removeListener("close", abort);
+        };
+        request.raw.once("aborted", abort);
+        reply.raw.once("close", abort);
+        let artifact;
+        try {
+          artifact = await exports.artifactStream(
+            exportId,
+            abortController.signal,
+          );
+        } catch (error) {
+          cleanup();
+          throw error;
+        }
+        artifact.body.once("close", cleanup);
         return reply
           .header("content-type", artifact.contentType)
           .header(

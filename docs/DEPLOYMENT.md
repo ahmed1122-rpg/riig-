@@ -164,6 +164,9 @@ restore history.
   no public access, and v1 emits no presigned object URLs.
 - Source, derived-raster, and artifact reads fail closed when their bytes, size,
   or content type do not match the metadata stored in PostgreSQL.
+- Artifact responses stream from object storage with backpressure and cancel
+  the upstream read when the client disconnects. Metadata is checked before
+  headers and SHA-256 is checked across the streamed bytes.
 - `TRUST_PROXY_HOPS=1` is correct only when exactly one trusted reverse proxy is
   in front of the web/API path. Adjust it to the real topology.
 - Restrict database, Redis, and storage access to the application network or
@@ -171,8 +174,12 @@ restore history.
 
 ## Scaling
 
-Scale image and document workers independently. Do not increase document
-concurrency until memory use has been measured with representative 30 MiB PDFs.
+Scale image and document workers independently. Export downloads do not buffer
+the complete artifact in API memory. PDF decoders and raster transforms still
+need complete source/asset buffers; these reads are bounded to the exact
+persisted size, but worker concurrency multiplies that memory cost. Do not
+increase document concurrency until memory use has been measured with
+representative 30 MiB PDFs.
 The database job claim uses row locking, so several worker replicas can safely
 share the queue. Every processing/export job uses a renewable lease and bounded
 retry; set `PROCESSING_LEASE_MS` and `EXPORT_LEASE_MS` above the normal p99 job
