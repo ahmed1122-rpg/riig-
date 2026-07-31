@@ -107,5 +107,13 @@ export interface AdminSystemStatus {
     failed: number;
     oldestQueuedSeconds: number;
   }>;
+  maintenance: {
+    task: "retention";
+    lastStartedAt: string | null;
+    lastSucceededAt: string | null;
+    lastFailedAt: string | null;
+    lastError: string | null;
+    stale: boolean;
+  } | null;
   checkedAt: string;
 }

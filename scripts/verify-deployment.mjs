@@ -30,6 +30,10 @@ const requiredFiles = [
   "apps/api/migrations/018_worker_events.sql",
   "apps/api/migrations/019_upload_url_compatibility.sql",
   "apps/api/migrations/020_worker_duration_metrics.sql",
+  "apps/api/migrations/023_project_job_fencing.sql",
+  "apps/api/migrations/024_billing_webhook_ordering.sql",
+  "apps/api/migrations/025_retention_reference_indexes.sql",
+  "apps/api/migrations/026_maintenance_status.sql",
   ".github/workflows/ci.yml",
   ".github/workflows/release-images.yml",
   ".github/workflows/codeql.yml",
@@ -113,6 +117,7 @@ try {
     "MotionPrepWorkerMissing",
     "MotionPrepQueueTooOld",
     "MotionPrepLeaseLoss",
+    "MotionPrepRetentionMaintenanceOverdue",
     "MotionPrepContainerMemoryPressure",
     "MotionPrepContainerCpuSaturation",
   ]) {
@@ -185,6 +190,11 @@ for (const imageName of ["postgres", "minio/minio"]) {
 }
 const releaseWorkflow = workflowSources[1];
 for (const token of [
+  "verify-source:",
+  "needs: verify-source",
+  "environment: production-release",
+  "npm run quality",
+  "npm run test:topology:full",
   "cosign sign --yes",
   "Verify repository-bound signatures",
   "--certificate-identity \"${identity}\"",
@@ -198,6 +208,14 @@ for (const token of [
   if (!releaseWorkflow.includes(token)) {
     violations.push(`Release workflow is missing immutable supply-chain token: ${token}`);
   }
+}
+if (
+  releaseWorkflow.indexOf("publish:") <
+  releaseWorkflow.indexOf("verify-source:")
+) {
+  violations.push(
+    "Release image publishing must remain downstream of the source verification job.",
+  );
 }
 if (
   releaseWorkflow.indexOf("Sign approved immutable image digests") <
@@ -261,6 +279,7 @@ try {
 for (const service of [
   "migrate",
   "maintenance",
+  "maintenance-scheduler",
   "api",
   "worker-media",
   "worker-document",
@@ -276,6 +295,9 @@ if (!compose.includes("service_completed_successfully")) {
 }
 if (!compose.includes("run-retention-cleanup.js")) {
   violations.push("Production compose must expose the retention maintenance task.");
+}
+if (!compose.includes("run-retention-scheduler.js")) {
+  violations.push("Production compose must run scheduled retention maintenance.");
 }
 for (const imageVariable of ["RUNTIME_IMAGE_REF", "WEB_IMAGE_REF"]) {
   if (!compose.includes(`${imageVariable}:?`)) {

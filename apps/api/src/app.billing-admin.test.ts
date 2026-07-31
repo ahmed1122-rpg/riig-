@@ -8,6 +8,9 @@ import {
 } from "./app-test-helpers.js";
 import { InMemoryAuthRepository } from "./auth/auth-repository.js";
 import { AuthService } from "./auth/auth-service.js";
+import { InMemoryProjectRepository } from "./projects/project-repository.js";
+import { InMemoryUploadRepository } from "./uploads/upload-repository.js";
+import { InMemoryProcessingJobRepository } from "./processing/processing-repository.js";
 
 const harness = createAppTestHarness();
 
@@ -173,6 +176,32 @@ describe("API — الفوترة والإدارة", () => {
       renewalAt: "2026-09-28T00:00:00.000Z",
       cancelAtPeriodEnd: false,
     });
+
+    const staleWebhook = await app.inject({
+      method: "POST",
+      url: "/v1/billing/webhooks/stripe",
+      headers: {
+        "content-type": "application/json",
+        "x-test-signature": "valid",
+      },
+      payload: JSON.stringify({
+        eventId: "evt_subscription_stale_active_001",
+        occurredAt: 1_785_200_050,
+        kind: "subscription",
+        status: "active",
+      }),
+    });
+    expect(staleWebhook.statusCode).toBe(200);
+    expect(staleWebhook.json().data).toMatchObject({
+      processed: false,
+      duplicate: false,
+    });
+    const subscriptionAfterStaleEvent = await app.inject({
+      method: "GET",
+      url: "/v1/billing/subscription",
+      headers: { cookie },
+    });
+    expect(subscriptionAfterStaleEvent.json().data.status).toBe("past_due");
   });
   it("enforces admin roles and records sensitive access changes", async () => {
     const authRepository = new InMemoryAuthRepository();
@@ -264,5 +293,101 @@ describe("API — الفوترة والإدارة", () => {
     });
     expect(audit.json().data[0].action).toBe("admin.user.access_updated");
     expect(audit.json().data[0].reason).toContain("مراجعة أمنية");
+  });
+
+  it("retries only a failed processing job whose ready source is current", async () => {
+    const authRepository = new InMemoryAuthRepository();
+    const seed = new AuthService(authRepository);
+    const admin = await seed.seedUser({
+      name: "مدير المعالجة",
+      email: "processing-admin@example.com",
+      password: "AdminPass123",
+      role: "admin",
+    });
+    const projects = new InMemoryProjectRepository();
+    const uploads = new InMemoryUploadRepository();
+    const processingJobs = new InMemoryProcessingJobRepository();
+    const project = await projects.create(admin.id, {
+      name: "مهمة تحتاج تدخلاً",
+      kind: "image",
+    });
+    const sourceVersionId = crypto.randomUUID();
+    const uploadId = crypto.randomUUID();
+    await projects.updateCurrentSourceVersion(project.id, sourceVersionId, 1);
+    await uploads.save({
+      uploadId,
+      projectId: project.id,
+      filename: "retry.png",
+      contentType: "image/png",
+      expectedSizeBytes: 4,
+      status: "ready",
+      sourceVersionId,
+      sha256: "a".repeat(64),
+      objectKey: `sources/${project.id}/${uploadId}/retry.png`,
+      expiresAt: "2026-08-01T00:00:00.000Z",
+      maxBytes: 31_457_280,
+      uploadUrl: `/v1/uploads/${uploadId}/content`,
+      createdAt: "2026-07-31T00:00:00.000Z",
+      updatedAt: "2026-07-31T00:00:00.000Z",
+    });
+    const jobId = crypto.randomUUID();
+    await processingJobs.save({
+      id: jobId,
+      projectId: project.id,
+      sourceVersionId,
+      projectKind: "image",
+      options: {},
+      status: "failed",
+      progress: 42,
+      attempt: 3,
+      maxAttempts: 3,
+      nextAttemptAt: "2026-07-31T00:00:00.000Z",
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      errorCode: "PROCESSING_FAILED",
+      createdAt: "2026-07-31T00:00:00.000Z",
+      updatedAt: "2026-07-31T00:00:00.000Z",
+    });
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      auth: authRepository,
+      projects,
+      uploads,
+      processingJobs,
+    });
+    const login = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        email: "processing-admin@example.com",
+        password: "AdminPass123",
+      },
+    });
+    const cookie = sessionCookie(login.headers["set-cookie"]);
+
+    const retried = await app.inject({
+      method: "POST",
+      url: `/v1/admin/processing/${jobId}/retry`,
+      headers: { cookie },
+      payload: {
+        reason: "إعادة بعد استعادة خدمة المعالجة الخارجية",
+      },
+    });
+
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json().data).toMatchObject({
+      status: "queued",
+      progress: 0,
+      attempt: 0,
+      errorCode: null,
+    });
+    const audit = await app.inject({
+      method: "GET",
+      url: "/v1/admin/audit",
+      headers: { cookie },
+    });
+    expect(audit.json().data[0]).toMatchObject({
+      action: "admin.processing.retry_requested",
+      targetId: jobId,
+    });
   });
 });

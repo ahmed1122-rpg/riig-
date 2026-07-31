@@ -2,6 +2,12 @@ import { z } from "zod";
 
 const retentionEnvironmentSchema = z.object({
   RETENTION_BATCH_SIZE: z.coerce.number().int().min(1).max(1_000).default(100),
+  RETENTION_RUN_INTERVAL_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(15)
+    .max(1_440)
+    .default(60),
   JOB_RETENTION_DAYS: z.coerce.number().int().min(7).max(3_650).default(90),
   AUDIT_RETENTION_DAYS: z.coerce
     .number()

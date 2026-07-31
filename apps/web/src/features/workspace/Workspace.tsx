@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../shared/Icon";
+import { useConfirmation } from "../../shared/useConfirmation";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
 import { ExportReview } from "./ExportReview";
 import { ImageGuidanceEditor, PdfGuidanceEditor } from "./GuidedEditors";
@@ -185,6 +186,7 @@ export function Workspace({
   const layersRef = useRef<Layer[]>([]);
   const layerSavePromiseRef = useRef<Promise<number> | null>(null);
   const saveInFlightRef = useRef(false);
+  const { requestConfirmation, confirmationDialog } = useConfirmation();
 
   const layers = mode === "image" ? imageLayers : bookLayers;
   layersRef.current = layers;
@@ -284,6 +286,7 @@ export function Workspace({
     pdfMode,
     onRequireAuth,
     onNotify,
+    confirmSourceReplacement: requestConfirmation,
     onLayerAssetUrls: replaceLayerAssetUrls,
     onDocumentReady: (file, result, preparedLayers) => {
       setProjectId(result.projectId);
@@ -778,9 +781,14 @@ export function Workspace({
       return;
     }
     if (
-      !window.confirm(
-        "ستُعاد قراءة ملف PDF بهذا النمط، وستُستبدل مراجعة الطبقات والعلامات اليدوية الحالية. هل تريد المتابعة؟",
-      )
+      !(await requestConfirmation({
+        title: "إعادة تحليل ملف PDF؟",
+        description:
+          "ستُعاد قراءة الملف بهذا النمط، وستُستبدل مراجعة الطبقات " +
+          "والعلامات اليدوية الحالية.",
+        confirmLabel: "إعادة التحليل",
+        tone: "danger",
+      }))
     ) {
       return;
     }
@@ -825,6 +833,9 @@ export function Workspace({
     options?: {
       scope?: "full-document" | "per-page" | "selected-page";
       selectedPage?: number;
+      scale: 1;
+      colorProfile: "sRGB";
+      namingPresetId: string;
     },
   ) => {
     if (!projectId || !sourceVersionId) {
@@ -1016,6 +1027,14 @@ export function Workspace({
                 guidanceRevision={guidanceRevision}
                 onApply={applyPdfGuide}
                 onHistoryNavigate={navigateDocumentHistory}
+                onConfirmDiscardRegions={(message) =>
+                  requestConfirmation({
+                    title: "تجاهل المناطق غير المحفوظة؟",
+                    description: message,
+                    confirmLabel: "تجاهل والانتقال",
+                    tone: "danger",
+                  })
+                }
                 onToolSelect={selectEditorTool}
                 {...(editorCommand ? { toolCommand: editorCommand } : {})}
               />
@@ -1364,6 +1383,7 @@ export function Workspace({
           onCreateExport={createExport}
         />
       )}
+      {confirmationDialog}
     </div>
   );
 }

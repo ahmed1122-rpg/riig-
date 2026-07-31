@@ -7,6 +7,7 @@ import {
   getAdminProcessing,
   getAdminSystem,
   getAdminUsers,
+  retryAdminProcessing,
   updateAdminUserAccess,
   type AdminAuditEvent,
   type AdminBillingData,
@@ -51,7 +52,7 @@ const navigation: AdminNavItem[] = [
 
 type Tone = "ready" | "review" | "danger" | "processing" | undefined;
 
-function Status({ children, tone }: { children: React.ReactNode; tone?: Tone }) {
+export function Status({ children, tone }: { children: React.ReactNode; tone?: Tone }) {
   return (
     <span className={`status ${tone ? `status--${tone}` : ""}`}>
       {children}
@@ -59,7 +60,7 @@ function Status({ children, tone }: { children: React.ReactNode; tone?: Tone }) 
   );
 }
 
-function DataFeedback({
+export function DataFeedback({
   loading,
   error,
   empty,
@@ -86,7 +87,7 @@ function formatDate(value: string | null): string {
   return formatDateTime(value, "لم يسجّل دخوله");
 }
 
-function outcomeTone(outcome: AdminAuditEvent["outcome"]): Tone {
+export function outcomeTone(outcome: AdminAuditEvent["outcome"]): Tone {
   return outcome === "success" ? "ready" : outcome === "denied" ? "review" : "danger";
 }
 
@@ -109,6 +110,10 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
   const [nextStatus, setNextStatus] = useState<AdminUser["status"]>("active");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+  const [lastSuccessfulAt, setLastSuccessfulAt] = useState<Date>();
+  const [retryingJob, setRetryingJob] = useState<AdminProcessingJob>();
+  const [retryReason, setRetryReason] = useState("");
+  const [retrying, setRetrying] = useState(false);
 
   const currentAllowed = allowedNavigation.some((item) => item.id === activeView);
   const effectiveView = currentAllowed ? activeView : allowedNavigation[0]?.id ?? "overview";
@@ -133,6 +138,9 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
                   : Promise.resolve();
 
     void operation
+      .then(() => {
+        if (!cancelled) setLastSuccessfulAt(new Date());
+      })
       .catch((caught: unknown) => {
         if (cancelled) return;
         setError(
@@ -150,6 +158,31 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
   }, [effectiveView, reloadKey]);
 
   const retry = () => setReloadKey((value) => value + 1);
+
+  const retryProcessingJob = async () => {
+    if (!retryingJob || retryReason.trim().length < 10) return;
+    setRetrying(true);
+    try {
+      const updated = await retryAdminProcessing(
+        retryingJob.id,
+        retryReason.trim(),
+      );
+      setJobs((current) =>
+        current.map((job) => (job.id === updated.id ? updated : job)),
+      );
+      setRetryingJob(undefined);
+      setRetryReason("");
+      onNotify("أُعيدت المهمة إلى الطابور وسُجل السبب في سجل التدقيق.");
+    } catch (caught) {
+      onNotify(
+        caught instanceof ApiError
+          ? caught.message
+          : "تعذر طلب إعادة محاولة المهمة.",
+      );
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const openUser = (user: AdminUser) => {
     setEditing(user);
@@ -201,12 +234,12 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
 
       <div className="admin-main">
         <header className="admin-topbar">
-          <div className="admin-topbar__leading"><button type="button" className="icon-button admin-mobile-menu" aria-label="فتح قائمة الإدارة" onClick={() => setMobileNavOpen(true)}><Icon name="menu" size={18} /></button><span><i /> متصل بالخادم</span><b>مركز الإدارة</b></div>
+          <div className="admin-topbar__leading"><button type="button" className="icon-button admin-mobile-menu" aria-label="فتح قائمة الإدارة" onClick={() => setMobileNavOpen(true)}><Icon name="menu" size={18} /></button><span className={`admin-connection ${error ? "is-error" : loading ? "is-checking" : "is-connected"}`}><i /> {error ? "تعذر الاتصال" : loading ? "جارٍ التحقق" : `متصل · ${lastSuccessfulAt?.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }) ?? "الآن"}`}</span><b>مركز الإدارة</b></div>
           <div className="admin-topbar__actions"><button type="button" className="secondary-button" onClick={retry}><Icon name="refresh" size={15} /> تحديث</button><span className="admin-avatar">{roleLabels[role].slice(0, 1)}</span></div>
         </header>
         <main className="admin-content">
           {effectiveView === "overview" && <Overview data={overview} loading={loading} error={error} onRetry={retry} />}
-          {effectiveView === "processing" && <Processing jobs={jobs} query={query} onQuery={setQuery} loading={loading} error={error} onRetry={retry} />}
+          {effectiveView === "processing" && <Processing jobs={jobs} query={query} onQuery={setQuery} loading={loading} error={error} onRetry={retry} canRetry={role === "admin"} onRetryJob={(job) => { setRetryingJob(job); setRetryReason(""); }} />}
           {effectiveView === "users" && <Users users={users} query={query} onQuery={setQuery} canEdit={role === "admin"} onOpen={openUser} loading={loading} error={error} onRetry={retry} />}
           {effectiveView === "billing" && <Billing data={billing} loading={loading} error={error} onRetry={retry} />}
           {effectiveView === "audit" && <Audit rows={audit} query={query} onQuery={setQuery} onNotify={onNotify} loading={loading} error={error} onRetry={retry} />}
@@ -225,6 +258,18 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
           <label className="dialog-field">الدور<select value={nextRole} onChange={(event) => setNextRole(event.target.value as AdminUser["role"])}><option value="creator">صانع محتوى</option><option value="support">دعم</option><option value="finance">مالية</option><option value="admin">مدير</option></select></label>
           <label className="dialog-field">حالة الحساب<select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as AdminUser["status"])}><option value="active">نشط</option><option value="pending_verification">بانتظار التحقق</option><option value="suspended">موقوف</option></select></label>
           <label className="dialog-field">سبب الإجراء<textarea rows={4} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="اكتب سببًا واضحًا من 10 أحرف على الأقل" /></label>
+        </Dialog>
+      )}
+      {retryingJob && (
+        <Dialog
+          role="alertdialog"
+          title="إعادة مهمة المعالجة إلى الطابور؟"
+          description="ينفذ الخادم الإجراء فقط إذا ظلت المهمة فاشلة ومصدرها هو الإصدار الحالي الجاهز."
+          onClose={() => !retrying && setRetryingJob(undefined)}
+          className="confirm-dialog"
+          footer={<><button type="button" className="secondary-button" disabled={retrying} onClick={() => setRetryingJob(undefined)}>إلغاء</button><button type="button" className="danger-button" disabled={retrying || retryReason.trim().length < 10} onClick={() => void retryProcessingJob()}>{retrying ? "جارٍ الإعادة…" : "إعادة إلى الطابور"}</button></>}
+        >
+          <label className="dialog-field">سبب إعادة المحاولة<textarea rows={4} value={retryReason} onChange={(event) => setRetryReason(event.target.value)} placeholder="اشرح سبب التدخل اليدوي في 10 أحرف على الأقل" /></label>
         </Dialog>
       )}
     </div>
@@ -251,11 +296,11 @@ function Overview({ data, loading, error, onRetry }: { data: AdminOverviewData |
   );
 }
 
-function Processing({ jobs, query, onQuery, loading, error, onRetry }: { jobs: AdminProcessingJob[]; query: string; onQuery: (value: string) => void; loading: boolean; error: string | null; onRetry: () => void }) {
+export function Processing({ jobs, query, onQuery, loading, error, onRetry, canRetry, onRetryJob }: { jobs: AdminProcessingJob[]; query: string; onQuery: (value: string) => void; loading: boolean; error: string | null; onRetry: () => void; canRetry: boolean; onRetryJob: (job: AdminProcessingJob) => void }) {
   const visible = jobs.filter((job) => `${job.id} ${job.projectId} ${job.status} ${job.errorCode ?? ""}`.toLowerCase().includes(query.toLowerCase()));
   return (
     <section className="admin-view page-enter">
-      <header className="admin-page-heading"><div><span className="eyebrow">طابور المعالجة</span><h1>المعالجة</h1><p>قراءة مباشرة لحالة المهام؛ إعادة المحاولة اليدوية مؤجلة حتى يتوفر عقد آمن لها.</p></div></header>
+      <header className="admin-page-heading"><div><span className="eyebrow">طابور المعالجة</span><h1>المعالجة</h1><p>قراءة مباشرة للحالة؛ المدير فقط يستطيع إعادة مهمة فاشلة ذات مصدر حالي جاهز مع سبب مدقق.</p></div></header>
       <Search value={query} onChange={onQuery} placeholder="رقم المهمة أو المشروع أو رمز الخطأ…" />
       <DataFeedback loading={loading} error={error} empty={!loading && !error && visible.length === 0} onRetry={onRetry} />
       {!loading && !error && visible.length > 0 && (
@@ -266,7 +311,7 @@ function Processing({ jobs, query, onQuery, loading, error, onRetry }: { jobs: A
             <span role="columnheader">الحالة</span>
             <span role="columnheader">التقدم</span>
             <span role="columnheader">آخر تحديث</span>
-            <span role="columnheader" aria-label="التنبيه" />
+            <span role="columnheader">الإجراء</span>
           </div>
           {visible.map((job) => (
             <div className="admin-data-row" role="row" key={job.id}>
@@ -275,7 +320,7 @@ function Processing({ jobs, query, onQuery, loading, error, onRetry }: { jobs: A
               <span role="cell"><Status tone={job.status === "ready" ? "ready" : job.status === "failed" ? "danger" : "processing"}>{job.status}</Status></span>
               <span role="cell"><bdi>{job.progress}%</bdi></span>
               <span role="cell">{formatDate(job.updatedAt)}</span>
-              <span role="cell">{job.errorCode ? <abbr title={job.errorCode}>!</abbr> : null}</span>
+              <span role="cell">{canRetry && job.status === "failed" ? <button type="button" className="admin-row-action" onClick={() => onRetryJob(job)}>إعادة</button> : job.errorCode ? <abbr title={job.errorCode}>!</abbr> : null}</span>
             </div>
           ))}
         </div>
@@ -378,7 +423,7 @@ function AuditTable({ rows }: { rows: AdminAuditEvent[] }) {
   );
 }
 
-function System({
+export function System({
   data,
   loading,
   error,
@@ -402,6 +447,7 @@ function System({
         <article><span><Icon name="activity" size={19} /></span><div><strong>حالة المنظومة</strong><small>آخر فحص {formatDate(data.checkedAt)}</small></div><Status tone={data.status === "ready" ? "ready" : "danger"}>{data.status === "ready" ? "جاهزة" : "متدهورة"}</Status><span /></article>
         <article><span><Icon name="settings" size={19} /></span><div><strong>العمال النشطون</strong><small>{healthyWorkers} من {data.workers.length} heartbeat حديث</small></div><Status tone={healthyWorkers >= 3 ? "ready" : "review"}>{healthyWorkers}</Status><span /></article>
         <article><span><Icon name="warning" size={19} /></span><div><strong>وظائف فاشلة</strong><small>إجمالي الحالات الفاشلة في الطوابير المرصودة</small></div><Status tone={queueFailures > 0 ? "danger" : "ready"}>{queueFailures}</Status><span /></article>
+        <article><span><Icon name="history" size={19} /></span><div><strong>تنظيف الاحتفاظ</strong><small>{data.maintenance?.lastSucceededAt ? `آخر نجاح ${formatDate(data.maintenance.lastSucceededAt)}` : "لم يُسجل تشغيل ناجح بعد"}{data.maintenance?.lastError ? ` · ${data.maintenance.lastError}` : ""}</small></div><Status tone={!data.maintenance || data.maintenance.stale ? "danger" : "ready"}>{!data.maintenance ? "مفقود" : data.maintenance.stale ? "متأخر" : "منتظم"}</Status><span /></article>
         {data.queues.map((queue) => (
           <article key={queue.queue}><span><Icon name="database" size={19} /></span><div><strong>{queue.queue}</strong><small>انتظار {queue.queued} · نشط {queue.active} · أقدم انتظار {Math.round(queue.oldestQueuedSeconds)}ث</small></div><Status tone={queue.oldestQueuedSeconds > 120 || queue.failed > 0 ? "review" : "ready"}>{queue.failed > 0 ? `${queue.failed} فشل` : "مستقرة"}</Status><span /></article>
         ))}

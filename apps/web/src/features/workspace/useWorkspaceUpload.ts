@@ -34,6 +34,11 @@ interface WorkspaceUploadOptions {
   pdfMode: PdfSegmentation;
   onRequireAuth: () => void;
   onNotify: (message: string) => void;
+  confirmSourceReplacement: (input: {
+    title: string;
+    description: string;
+    confirmLabel: string;
+  }) => Promise<boolean>;
   onLayerAssetUrls: (urls: string[]) => void;
   onDocumentReady: (
     file: File,
@@ -110,9 +115,13 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
     }
     if (
       options.persistedSource &&
-      !window.confirm(
-        `سيُحفظ ${options.sourceName} كنسخة سابقة، ويصبح ${file.name} مصدرًا جديدًا. هل تريد المتابعة؟`,
-      )
+      !(await options.confirmSourceReplacement({
+        title: "استبدال المصدر الحالي؟",
+        description:
+          `سيُحفظ ${options.sourceName} كنسخة سابقة، ` +
+          `ويصبح ${file.name} مصدرًا جديدًا.`,
+        confirmLabel: "رفع المصدر الجديد",
+      }))
     ) {
       return;
     }

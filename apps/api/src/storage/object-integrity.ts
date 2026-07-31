@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import type { StoredObject } from "./object-storage.js";
+import type {
+  StoredObject,
+  StoredObjectMetadata,
+} from "./object-storage.js";
 
 export interface StoredObjectExpectation {
   sizeBytes: number;
@@ -21,5 +24,17 @@ export function hasExpectedObjectIntegrity(
   return (
     createHash("sha256").update(object.body).digest("hex") ===
     expected.sha256.toLowerCase()
+  );
+}
+
+export function hasExpectedObjectMetadata(
+  object: StoredObjectMetadata,
+  expected: StoredObjectExpectation,
+): boolean {
+  return (
+    object.sizeBytes === expected.sizeBytes &&
+    object.sha256 === expected.sha256.toLowerCase() &&
+    (expected.contentType === undefined ||
+      object.contentType === expected.contentType)
   );
 }

@@ -28,8 +28,13 @@ import type { LayerDocumentRepository } from "../processing/processing-repositor
 import type {
   ObjectStorage,
   StoredObject,
+  StoredObjectStream,
 } from "../storage/object-storage.js";
-import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
+import { isObjectStorageIntegrityFailure } from "../storage/object-storage.js";
+import {
+  hasExpectedObjectIntegrity,
+  hasExpectedObjectMetadata,
+} from "../storage/object-integrity.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
 import type { ExportRepository } from "./export-repository.js";
 import {
@@ -44,9 +49,11 @@ export class ExportDomainError extends Error {
     readonly code:
       | "EXPORT_NOT_FOUND"
       | "EXPORT_FORMAT_UNSUPPORTED"
+      | "EXPORT_OPTION_UNSUPPORTED"
       | "EXPORT_SCOPE_UNSUPPORTED"
       | "EXPORT_NOT_CANCELLABLE"
       | "EXPORT_SOURCE_NOT_READY"
+      | "EXPORT_SOURCE_NOT_CURRENT"
       | "EXPORT_SOURCE_INTEGRITY_FAILED"
       | "EXPORT_ARTIFACT_NOT_READY"
       | "EXPORT_ARTIFACT_INTEGRITY_FAILED"
@@ -55,14 +62,30 @@ export class ExportDomainError extends Error {
       | "EXPORT_PREFLIGHT_FAILED"
       | "EXPORT_REQUEST_IN_PROGRESS",
     message: string,
+    readonly jobId?: string,
   ) {
     super(message);
+  }
+}
+
+export class ExportExecutionError extends Error {
+  constructor(
+    message: string,
+    readonly jobId: string,
+    cause?: unknown,
+  ) {
+    super(message, { cause });
   }
 }
 
 interface ReadySource {
   upload: UploadSession;
   object: StoredObject;
+}
+
+export interface ExportClaimLifecycle {
+  onClaimed?: (job: ExportJob) => Promise<boolean>;
+  onSettled?: (job: ExportJob) => void;
 }
 
 export class ExportService {
@@ -81,7 +104,14 @@ export class ExportService {
     input: ExportRequest,
     projectKind: ProjectKind,
     idempotencyKey: string,
+    onQueued?: (job: ExportJob) => Promise<boolean>,
   ): Promise<ExportJob> {
+    if (input.scale !== 1 || input.colorProfile !== "sRGB") {
+      throw new ExportDomainError(
+        "EXPORT_OPTION_UNSUPPORTED",
+        "الإصدار الحالي يحافظ على الدقة الأصلية وملف sRGB فقط.",
+      );
+    }
     if (!supportsExportFormat(projectKind, input.format)) {
       throw new ExportDomainError(
         "EXPORT_FORMAT_UNSUPPORTED",
@@ -95,6 +125,18 @@ export class ExportService {
       throw new ExportDomainError(
         "EXPORT_SCOPE_UNSUPPORTED",
         "نطاق الصفحة متاح لمشاريع PDF فقط.",
+      );
+    }
+    if (
+      this.uploads &&
+      !(await this.uploads.findReadyBySourceVersion(
+        input.projectId,
+        input.sourceVersionId,
+      ))
+    ) {
+      throw new ExportDomainError(
+        "EXPORT_SOURCE_NOT_READY",
+        "نسخة المصدر لا تتبع المشروع أو لم تكتمل جاهزيتها.",
       );
     }
 
@@ -166,6 +208,13 @@ export class ExportService {
     };
     try {
       await this.repository.save(job);
+      if (onQueued && !(await onQueued(job))) {
+        throw new ExportDomainError(
+          "EXPORT_SOURCE_NOT_CURRENT",
+          "تغير إصدار المصدر الحالي قبل إدخال التصدير إلى الطابور.",
+          job.id,
+        );
+      }
       if (!this.executeInline) return job;
       return await this.generateArtifact(
         job,
@@ -182,7 +231,14 @@ export class ExportService {
         scopedIdempotencyKey,
         exportId,
       );
-      throw error;
+      if (error instanceof ExportDomainError) {
+        throw new ExportDomainError(error.code, error.message, exportId);
+      }
+      throw new ExportExecutionError(
+        error instanceof Error ? error.message : "تعذر تجهيز مهمة التصدير.",
+        exportId,
+        error,
+      );
     }
   }
 
@@ -201,7 +257,20 @@ export class ExportService {
         "انتهت مدة الاحتفاظ بملف التصدير.",
       );
     }
-    const object = await this.storage.get(this.artifactKey(job));
+    let object: StoredObject | null;
+    try {
+      object = await this.storage.get(this.artifactKey(job), {
+        maxBytes: job.artifact.sizeBytes,
+      });
+    } catch (error) {
+      if (isObjectStorageIntegrityFailure(error)) {
+        throw new ExportDomainError(
+          "EXPORT_ARTIFACT_INTEGRITY_FAILED",
+          "فشل التحقق من سلامة ملف التصدير المخزن.",
+        );
+      }
+      throw error;
+    }
     if (!object) {
       throw new ExportDomainError(
         "EXPORT_ARTIFACT_NOT_READY",
@@ -214,6 +283,44 @@ export class ExportService {
         sha256: job.artifact.sha256,
       })
     ) {
+      throw new ExportDomainError(
+        "EXPORT_ARTIFACT_INTEGRITY_FAILED",
+        "فشل التحقق من سلامة ملف التصدير المخزن.",
+      );
+    }
+    return object;
+  }
+
+  async artifactStream(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<StoredObjectStream> {
+    const job = await this.find(id);
+    if (job.status !== "ready" || !job.artifact || !this.storage) {
+      throw new ExportDomainError(
+        "EXPORT_ARTIFACT_NOT_READY",
+        "ملف التصدير غير جاهز للتنزيل.",
+      );
+    }
+    if (Date.parse(job.artifact.expiresAt) <= this.now().getTime()) {
+      await this.storage.delete(this.artifactKey(job)).catch(() => undefined);
+      throw new ExportDomainError(
+        "EXPORT_ARTIFACT_NOT_READY",
+        "انتهت مدة الاحتفاظ بملف التصدير.",
+      );
+    }
+    const object = await this.storage.getStream(
+      this.artifactKey(job),
+      signal ? { signal } : undefined,
+    );
+    if (!object) {
+      throw new ExportDomainError(
+        "EXPORT_ARTIFACT_NOT_READY",
+        "ملف التصدير غير متاح أو انتهت مدة الاحتفاظ به.",
+      );
+    }
+    if (!hasExpectedObjectMetadata(object, job.artifact)) {
+      object.body.destroy();
       throw new ExportDomainError(
         "EXPORT_ARTIFACT_INTEGRITY_FAILED",
         "فشل التحقق من سلامة ملف التصدير المخزن.",
@@ -266,6 +373,7 @@ export class ExportService {
   async claimAndProcess(
     workerId: string,
     leaseMilliseconds = 5 * 60_000,
+    lifecycle: ExportClaimLifecycle = {},
   ): Promise<ExportJob | null> {
     const claimedAt = this.now();
     const job = await this.repository.claimNext(
@@ -274,6 +382,9 @@ export class ExportService {
       new Date(claimedAt.getTime() + leaseMilliseconds).toISOString(),
     );
     if (!job) return null;
+    if (lifecycle.onClaimed && !(await lifecycle.onClaimed(job))) {
+      return this.repository.findById(job.id);
+    }
     const heartbeat = startLeaseHeartbeat(async () => {
       const heartbeatAt = this.now();
       const updated = await this.repository.updateClaim(
@@ -331,6 +442,7 @@ export class ExportService {
       );
     } finally {
       heartbeat.stop();
+      lifecycle.onSettled?.(job);
     }
   }
 
@@ -699,7 +811,20 @@ export class ExportService {
         "نسخة المصدر المطلوبة غير موجودة أو لم يكتمل رفعها.",
       );
     }
-    const object = await this.storage.get(upload.objectKey);
+    let object: StoredObject | null;
+    try {
+      object = await this.storage.get(upload.objectKey, {
+        maxBytes: upload.expectedSizeBytes,
+      });
+    } catch (error) {
+      if (isObjectStorageIntegrityFailure(error)) {
+        throw new ExportDomainError(
+          "EXPORT_SOURCE_INTEGRITY_FAILED",
+          "فشل التحقق من سلامة ملف المصدر المخزن.",
+        );
+      }
+      throw error;
+    }
     if (!object) {
       throw new ExportDomainError(
         "EXPORT_SOURCE_NOT_READY",
@@ -744,7 +869,20 @@ export class ExportService {
       return Promise.all(
         layers.map(async (layer) => {
           const reference = layer.rasterAsset!;
-          const object = await this.storage!.get(reference.objectKey);
+          let object: StoredObject | null;
+          try {
+            object = await this.storage!.get(reference.objectKey, {
+              maxBytes: reference.sizeBytes,
+            });
+          } catch (error) {
+            if (isObjectStorageIntegrityFailure(error)) {
+              throw new ExportAdapterError(
+                "RASTER_ASSET_MISMATCH",
+                `فشل التحقق من سلامة أصل الطبقة ${layer.name}.`,
+              );
+            }
+            throw error;
+          }
           if (!object) {
             throw new ExportAdapterError(
               "RASTER_ASSET_MISMATCH",

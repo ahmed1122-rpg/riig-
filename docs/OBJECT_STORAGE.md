@@ -59,11 +59,33 @@ Production rejects `OBJECT_STORAGE_ENCRYPTION_MODE=none`.
 - If encryption is missing or differs from explicit SSE-S3, the new object is
   deleted and the operation fails.
 
-Writes request an S3 SHA-256 checksum. MotionPrep also stores its own SHA-256
-and size in PostgreSQL. Every source read, derived-raster read, and artifact
-download compares the retrieved bytes with that saved metadata. A mismatch
-fails closed with an explicit integrity error; corrupted content is never sent
-to a processor or user.
+Writes reject a declared size that differs from the supplied bytes and request
+an S3 SHA-256 checksum. MotionPrep also stores its own SHA-256 and size in
+PostgreSQL. Every source read, derived-raster read, and artifact download
+compares the retrieved bytes with that saved metadata. Source and raster
+mismatches fail before the bytes reach a processor. Artifact downloads compare
+the S3 metadata with PostgreSQL before response headers, then verify the byte
+count and SHA-256 incrementally while streaming. If bytes change during an
+active transfer, the stream and HTTP connection terminate instead of returning
+an apparently successful corrupt file.
+
+## Read and download memory policy
+
+- Export downloads use Node streams from S3 through Fastify. Backpressure is
+  preserved end to end; the artifact is not concatenated into one API buffer.
+- Client disconnects abort the storage request and destroy the verification
+  stream, avoiding continued S3 transfer after the consumer disappears.
+- Processing libraries for PDF and raster transforms currently require random
+  access to a complete input buffer. Those reads therefore remain buffered,
+  but the object metadata is checked before transfer and each call is bounded
+  to the exact size recorded for that source or raster asset.
+- The compatibility `get()` storage API has a defensive 128 MiB ceiling when a
+  caller does not supply a stricter limit. New processing code must pass the
+  persisted expected size explicitly.
+
+The metadata preflight is not a substitute for the streaming digest check: it
+prevents known size/hash mismatches before headers, while the digest validates
+the actual response body at end of stream.
 
 ## Transfer boundary
 
@@ -85,7 +107,9 @@ Before release against the selected cloud provider:
 4. Verify the source, derived, and artifact keys are private and encrypted.
 5. Confirm an export is rejected after its saved expiry and that the provider
    lifecycle removes the object.
-6. Review provider audit logs for denied or unexpectedly broad object access.
+6. Interrupt a large artifact download and confirm the upstream S3 request is
+   cancelled and API memory remains flat rather than scaling with file size.
+7. Review provider audit logs for denied or unexpectedly broad object access.
 
 With the staging variables loaded, run the non-destructive provider probe:
 

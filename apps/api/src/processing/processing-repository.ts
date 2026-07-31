@@ -11,6 +11,7 @@ export interface ProcessingJobRepository {
     sourceVersionId: string,
   ): Promise<ProcessingJob | null>;
   save(job: ProcessingJob): Promise<void>;
+  retryFailed(id: string, retriedAt: string): Promise<ProcessingJob | null>;
 }
 
 export interface LayerDocumentRepository {
@@ -62,6 +63,27 @@ export class InMemoryProcessingJobRepository
 
   async save(job: ProcessingJob): Promise<void> {
     this.#jobs.set(job.id, job);
+  }
+
+  async retryFailed(
+    id: string,
+    retriedAt: string,
+  ): Promise<ProcessingJob | null> {
+    const job = this.#jobs.get(id);
+    if (!job || job.status !== "failed") return null;
+    const retried: ProcessingJob = {
+      ...job,
+      status: "queued",
+      progress: 0,
+      attempt: 0,
+      nextAttemptAt: retriedAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      errorCode: null,
+      updatedAt: retriedAt,
+    };
+    this.#jobs.set(id, retried);
+    return retried;
   }
 }
 

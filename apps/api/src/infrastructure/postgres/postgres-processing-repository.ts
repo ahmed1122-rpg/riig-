@@ -95,6 +95,46 @@ export class PostgresProcessingJobRepository
       ],
     );
   }
+
+  async retryFailed(
+    id: string,
+    retriedAt: string,
+  ): Promise<ProcessingJob | null> {
+    const result = await this.pool.query<ProcessingRow>(
+      `UPDATE processing_jobs AS job
+       SET status = 'queued',
+           progress = 0,
+           attempt = 0,
+           next_attempt_at = $2,
+           lease_owner = NULL,
+           lease_expires_at = NULL,
+           error_code = NULL,
+           updated_at = $2
+       WHERE job.id = $1
+         AND job.status = 'failed'
+         AND EXISTS (
+           SELECT 1
+           FROM projects AS project
+           WHERE project.id = job.project_id
+             AND project.current_source_version_id = job.source_version_id
+             AND project.active_job_type = 'processing'
+             AND project.active_job_id = job.id
+         )
+         AND EXISTS (
+           SELECT 1
+           FROM upload_sessions AS upload
+           WHERE upload.project_id = job.project_id
+             AND upload.source_version_id = job.source_version_id
+             AND upload.status = 'ready'
+         )
+       RETURNING
+         id, project_id, source_version_id, project_kind, options, status,
+         progress, attempt, max_attempts, next_attempt_at, lease_owner,
+         lease_expires_at, error_code, created_at, updated_at`,
+      [id, retriedAt],
+    );
+    return result.rows[0] ? mapProcessingRow(result.rows[0]) : null;
+  }
 }
 
 export class PostgresLayerDocumentRepository

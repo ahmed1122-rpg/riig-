@@ -167,6 +167,45 @@ describe("ProcessingService document tools", () => {
       .toBe(3);
   });
 
+  it("rejects guided refinement when the referenced raster bytes are corrupted", async () => {
+    const { service, storage } = await createImageFixture();
+    const original = await storage.get("source/raster-a.png");
+    const tampered = Buffer.from(original!.body);
+    tampered[Math.floor(tampered.length / 2)]! ^= 0xff;
+    await storage.put({
+      key: original!.key,
+      contentType: original!.contentType,
+      sizeBytes: tampered.byteLength,
+      body: tampered,
+    });
+
+    await expect(
+      service.applyGuidedRefinement({
+        projectId,
+        sourceVersionId,
+        projectKind: "image",
+        baseRevision: 1,
+        mode: "guided",
+        imageStrokes: [
+          {
+            id: "corrupt-raster-stroke",
+            targetLayerId: "raster-a",
+            kind: "separate",
+            brushSize: 3,
+            points: [
+              { x: 0.2, y: 0.2 },
+              { x: 0.3, y: 0.3 },
+            ],
+            createdAt: "2026-07-30T17:00:00.000Z",
+          },
+        ],
+        pdfRegions: [],
+        actorUserId,
+        operationId: "corrupt-raster-operation-001",
+      }),
+    ).rejects.toMatchObject({ code: "LAYER_ASSET_INTEGRITY_FAILED" });
+  });
+
   it("merges raster layers into one derived asset and restores both on undo", async () => {
     const { service, storage } = await createImageFixture();
 
@@ -382,12 +421,12 @@ function solidPng(
     .toBuffer();
 }
 
-function storeRaster(
+async function storeRaster(
   storage: InMemoryObjectStorage,
   key: string,
   body: Buffer,
 ): Promise<void> {
-  return storage.put({
+  await storage.put({
     key,
     contentType: "image/png",
     sizeBytes: body.byteLength,

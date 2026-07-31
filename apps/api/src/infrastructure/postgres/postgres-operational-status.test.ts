@@ -68,6 +68,18 @@ describe("PostgresOperationalStatusProvider", () => {
             duration_buckets: ["1", "2", "4", "8", "9", "9", "9", "9"],
           },
         ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            task: "retention",
+            last_started_at: "2026-07-29T00:00:00.000Z",
+            last_succeeded_at: "2026-07-29T00:01:00.000Z",
+            last_failed_at: null,
+            last_error: null,
+            stale: false,
+          },
+        ],
       });
     const provider = new PostgresOperationalStatusProvider({
       query,
@@ -90,13 +102,19 @@ describe("PostgresOperationalStatusProvider", () => {
         buckets: [1, 2, 4, 8, 9, 9, 9, 9],
       },
     });
-    expect(query).toHaveBeenCalledTimes(4);
+    expect(snapshot.maintenance).toMatchObject({
+      task: "retention",
+      stale: false,
+    });
+    expect(query).toHaveBeenCalledTimes(5);
     expect(query.mock.calls[3]?.[0]).toContain("worker_duration_metrics");
+    expect(query.mock.calls[4]?.[0]).toContain("maintenance_status");
   });
 
   it("reports degraded status when a required worker type is absent", async () => {
     const query = vi
       .fn()
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })

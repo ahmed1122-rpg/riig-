@@ -302,6 +302,7 @@ export async function buildApp(
     exports: exportRepository,
     processingJobs: processingJobRepository,
     billing: billingRepository,
+    projects,
     ...(dependencies.adminAccess ? { access: dependencies.adminAccess } : {}),
     ...(dependencies.operationalStatus
       ? { operationalStatus: dependencies.operationalStatus }

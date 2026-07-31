@@ -10,6 +10,7 @@ import {
 
 const config: RetentionConfig = {
   RETENTION_BATCH_SIZE: 100,
+  RETENTION_RUN_INTERVAL_MINUTES: 60,
   JOB_RETENTION_DAYS: 90,
   AUDIT_RETENTION_DAYS: 400,
   USAGE_LEDGER_RETENTION_DAYS: 400,
@@ -121,8 +122,21 @@ describe("retention cleanup", () => {
       },
     };
     const storage = {
-      async put() {},
+      async put() {
+        return {
+          key: "unused",
+          contentType: "application/octet-stream",
+          sizeBytes: 0,
+          sha256: "0".repeat(64),
+        };
+      },
+      async inspect() {
+        return null;
+      },
       async get() {
+        return null;
+      },
+      async getStream() {
         return null;
       },
       async delete() {

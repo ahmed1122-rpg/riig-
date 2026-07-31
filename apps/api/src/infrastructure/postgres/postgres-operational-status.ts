@@ -38,13 +38,22 @@ interface WorkerDurationMetricRow {
   duration_buckets: Array<string | number>;
 }
 
+interface MaintenanceRow {
+  task: "retention";
+  last_started_at: Date | string | null;
+  last_succeeded_at: Date | string | null;
+  last_failed_at: Date | string | null;
+  last_error: string | null;
+  stale: boolean;
+}
+
 export class PostgresOperationalStatusProvider
   implements OperationalStatusProvider
 {
   constructor(private readonly pool: Pool) {}
 
   async snapshot(): Promise<OperationalStatusSnapshot> {
-    const [workers, queues, recentWorkerEvents, durationMetrics] =
+    const [workers, queues, recentWorkerEvents, durationMetrics, maintenance] =
       await Promise.all([
         this.pool.query<WorkerRow>(
           `SELECT
@@ -116,6 +125,14 @@ export class PostgresOperationalStatusProvider
            ] AS duration_buckets
          FROM worker_duration_metrics`,
         ),
+        this.pool.query<MaintenanceRow>(
+          `SELECT
+             task, last_started_at, last_succeeded_at, last_failed_at,
+             last_error,
+             stale_after_at IS NULL OR stale_after_at < now() AS stale
+           FROM maintenance_status
+           WHERE task = 'retention'`,
+        ),
       ]);
     const mappedWorkers = workers.rows.map((row): WorkerStatus => ({
       instanceId: row.instance_id,
@@ -166,15 +183,33 @@ export class PostgresOperationalStatusProvider
     for (const worker of mappedWorkers) {
       if (!worker.stale) expectedWorkerTypes.delete(worker.workerType);
     }
+    const maintenanceRow = maintenance.rows[0];
+    const mappedMaintenance = maintenanceRow
+      ? {
+          task: maintenanceRow.task,
+          lastStartedAt: optionalIso(maintenanceRow.last_started_at),
+          lastSucceededAt: optionalIso(maintenanceRow.last_succeeded_at),
+          lastFailedAt: optionalIso(maintenanceRow.last_failed_at),
+          lastError: maintenanceRow.last_error,
+          stale: maintenanceRow.stale,
+        }
+      : null;
     return {
       status:
         mappedWorkers.some((worker) => worker.stale) ||
-        expectedWorkerTypes.size > 0
+        expectedWorkerTypes.size > 0 ||
+        !mappedMaintenance ||
+        mappedMaintenance.stale
           ? "degraded"
           : "ready",
       workers: mappedWorkers,
       queues: mappedQueues,
+      maintenance: mappedMaintenance,
       checkedAt: new Date().toISOString(),
     };
   }
+}
+
+function optionalIso(value: Date | string | null): string | null {
+  return value === null ? null : toIso(value);
 }

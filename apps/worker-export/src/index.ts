@@ -22,6 +22,7 @@ export async function main(
         pollMilliseconds: config.EXPORT_POLL_MS,
         concurrency: config.EXPORT_CONCURRENCY,
         leaseMilliseconds: config.EXPORT_LEASE_MS,
+        drainTimeoutMilliseconds: config.EXPORT_DRAIN_TIMEOUT_MS,
         sharpCacheMemoryMb: config.SHARP_CACHE_MEMORY_MB,
         sharpConcurrency: config.SHARP_CONCURRENCY,
         ...(config.EXPORT_WORKER_ID

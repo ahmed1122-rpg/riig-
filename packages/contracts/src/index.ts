@@ -1,5 +1,7 @@
 export const MAX_UPLOAD_MEBIBYTES = 30;
 export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MEBIBYTES * 1024 * 1024;
+export const MAX_PDF_PAGES = 250;
+export const MAX_PDF_TEXT_ITEMS = 100_000;
 export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_LENGTH = 128;
 

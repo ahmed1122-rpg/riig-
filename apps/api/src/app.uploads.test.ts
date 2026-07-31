@@ -107,7 +107,7 @@ describe("API — الرفع وإصدارات المصدر", () => {
     expect(conflicting.statusCode).toBe(409);
     expect(conflicting.json().error.code).toBe("ACTIVE_UPLOAD_EXISTS");
   });
-  it("verifies and completes an upload idempotently", async () => {
+  it("verifies stored bytes on the server and repeats the upload idempotently", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     const cookie = await registerCreator(app);
     const projectResponse = await app.inject({
@@ -117,42 +117,59 @@ describe("API — الرفع وإصدارات المصدر", () => {
       payload: { name: "صورة مرشد", kind: "image" },
     });
     const projectId = projectResponse.json().data.id as string;
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
     const intent = await app.inject({
       method: "POST",
       url: "/v1/uploads/intents",
       headers: { cookie },
       payload: {
         projectId,
-        filename: "guide.webp",
-        contentType: "image/webp",
-        sizeBytes: 4096,
+        filename: "guide.png",
+        contentType: "image/png",
+        sizeBytes: png.byteLength,
       },
     });
-    const uploadId = intent.json().data.uploadId as string;
-    const completionPayload = {
-      observedContentType: "image/webp",
-      observedSizeBytes: 4096,
-      sha256: "a".repeat(64),
-    };
-
     const completed = await app.inject({
-      method: "POST",
-      url: `/v1/uploads/${uploadId}/complete`,
-      headers: { cookie },
-      payload: completionPayload,
+      method: "PUT",
+      url: intent.json().data.uploadUrl,
+      headers: { cookie, "content-type": "image/png" },
+      payload: png,
     });
     const repeated = await app.inject({
-      method: "POST",
-      url: `/v1/uploads/${uploadId}/complete`,
-      headers: { cookie },
-      payload: completionPayload,
+      method: "PUT",
+      url: intent.json().data.uploadUrl,
+      headers: { cookie, "content-type": "image/png" },
+      payload: png,
     });
 
+    expect(completed.statusCode).toBe(200);
     expect(completed.json().data.status).toBe("ready");
+    expect(completed.json().data.sha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(completed.json().data.sourceVersionId).toBeTruthy();
     expect(repeated.json().data.sourceVersionId).toBe(
       completed.json().data.sourceVersionId,
     );
+    expect(repeated.json().data.sha256).toBe(completed.json().data.sha256);
+  });
+  it("does not expose the former client-asserted completion endpoint", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const cookie = await registerCreator(app);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/v1/uploads/${crypto.randomUUID()}/complete`,
+      headers: { cookie },
+      payload: {
+        observedContentType: "image/png",
+        observedSizeBytes: 1,
+        sha256: "a".repeat(64),
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
   });
   it("receives file bytes, detects their type, and computes the hash on the server", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
@@ -233,6 +250,21 @@ describe("API — الرفع وإصدارات المصدر", () => {
     };
 
     const firstSourceVersionId = await uploadVersion("first.png", false);
+    const unconfirmedReplacement = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: {
+        cookie,
+        "x-idempotency-key": "version-unconfirmed.png",
+      },
+      payload: {
+        projectId,
+        filename: "unconfirmed.png",
+        contentType: "image/png",
+        sizeBytes: png.byteLength,
+        replaceSourceVersion: false,
+      },
+    });
     const secondSourceVersionId = await uploadVersion("second.png", true);
     const versionsResponse = await app.inject({
       method: "GET",
@@ -246,6 +278,10 @@ describe("API — الرفع وإصدارات المصدر", () => {
     });
 
     expect(secondSourceVersionId).not.toBe(firstSourceVersionId);
+    expect(unconfirmedReplacement.statusCode).toBe(409);
+    expect(unconfirmedReplacement.json().error.code).toBe(
+      "SOURCE_REPLACEMENT_CONFIRMATION_REQUIRED",
+    );
     expect(versionsResponse.statusCode).toBe(200);
     expect(
       versionsResponse.json().data.map(

@@ -54,6 +54,7 @@ interface PdfGuidanceEditorProps extends SharedEditorProps {
   toolCommand?: WorkspaceEditorCommand;
   onToolSelect?: (toolId: ReadyWorkspaceToolId) => void;
   onHistoryNavigate: (direction: "undo" | "redo") => Promise<void>;
+  onConfirmDiscardRegions?: (message: string) => Promise<boolean>;
 }
 
 const pdfPromptTools = [
@@ -249,6 +250,7 @@ export function PdfGuidanceEditor({
   toolCommand,
   onToolSelect,
   onHistoryNavigate,
+  onConfirmDiscardRegions,
 }: PdfGuidanceEditorProps) {
   const [processingMode, setProcessingMode] = useState<ProcessingMode>("guided");
   const [activeLabel, setActiveLabel] = useState<MarkerLabel>("line");
@@ -358,6 +360,16 @@ export function PdfGuidanceEditor({
     }
   };
 
+  const changePage = async (nextPage: number) => {
+    if (regions.length > 0) {
+      const confirmed = await onConfirmDiscardRegions?.(
+        "لم تُطبّق المناطق الحالية. سيؤدي الانتقال إلى تجاهلها.",
+      );
+      if (!confirmed) return;
+    }
+    onPageChange?.(nextPage);
+  };
+
   return (
     <>
       <div className="stage guidance-stage">
@@ -411,13 +423,9 @@ export function PdfGuidanceEditor({
             <div className="pdf-page-navigation">
               <button
                 type="button"
-                onClick={() => {
-                  if (
-                    regions.length > 0 &&
-                    !window.confirm("لم تُطبّق المناطق الحالية. هل تريد الانتقال دون حفظها؟")
-                  ) return;
-                  onPageChange?.(Math.max(1, pageNumber - 1));
-                }}
+                onClick={() =>
+                  void changePage(Math.max(1, pageNumber - 1))
+                }
                 disabled={pageNumber === 1}
                 aria-label="الصفحة السابقة"
               >
@@ -426,13 +434,9 @@ export function PdfGuidanceEditor({
               <span>صفحة <b>{pageNumber}</b> من {pageCount}</span>
               <button
                 type="button"
-                onClick={() => {
-                  if (
-                    regions.length > 0 &&
-                    !window.confirm("لم تُطبّق المناطق الحالية. هل تريد الانتقال دون حفظها؟")
-                  ) return;
-                  onPageChange?.(Math.min(pageCount, pageNumber + 1));
-                }}
+                onClick={() =>
+                  void changePage(Math.min(pageCount, pageNumber + 1))
+                }
                 disabled={pageNumber === pageCount}
                 aria-label="الصفحة التالية"
               >

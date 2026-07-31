@@ -55,6 +55,7 @@ describe("StripePaymentProvider", () => {
     const payload = JSON.stringify({
       id: "evt_motionprep_paid",
       object: "event",
+      created: 1_785_100_000,
       type: "checkout.session.completed",
       data: {
         object: {
@@ -79,6 +80,7 @@ describe("StripePaymentProvider", () => {
     });
     expect(event).toMatchObject({
       eventId: "evt_motionprep_paid",
+      occurredAt: 1_785_100_000,
       status: "paid",
       amountMinor: 1900,
       currency: "USD",
@@ -142,6 +144,7 @@ describe("StripePaymentProvider", () => {
       }),
     ).toMatchObject({
       kind: "subscription",
+      occurredAt: 1_785_200_000,
       status: "past_due",
       providerCustomerId: "cus_motionprep",
       providerSubscriptionId: "sub_motionprep",

@@ -18,6 +18,7 @@ export interface CreateProviderCheckoutInput {
 interface ProviderCheckoutWebhookEvent {
   kind: "checkout";
   eventId: string;
+  occurredAt: number;
   checkoutId: string;
   status: "paid" | "failed" | "cancelled";
   amountMinor: number | null;
@@ -31,6 +32,7 @@ interface ProviderCheckoutWebhookEvent {
 interface ProviderSubscriptionWebhookEvent {
   kind: "subscription";
   eventId: string;
+  occurredAt: number;
   checkoutId: string | null;
   userId: string | null;
   planId: SubscriptionView["planId"] | null;

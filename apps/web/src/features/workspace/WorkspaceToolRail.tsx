@@ -2,7 +2,6 @@ import { Icon } from "../../shared/Icon";
 import type { ProjectMode } from "../../types";
 import {
   getReadyWorkspaceTools,
-  getVisiblePlannedWorkspaceTools,
   type ResolvedWorkspaceTool,
   type WorkspaceToolGroup,
 } from "./workspaceToolRegistry";
@@ -31,7 +30,6 @@ export function WorkspaceToolRail({
   onToolChange,
 }: WorkspaceToolRailProps) {
   const tools = getReadyWorkspaceTools(mode, hasSource);
-  const plannedTools = getVisiblePlannedWorkspaceTools(mode);
   const groups = (["prompts", "document", "history"] as const)
     .map((group) => ({ group, items: tools.filter((tool) => tool.group === group) }))
     .filter(({ items }) => items.length > 0);
@@ -74,19 +72,6 @@ export function WorkspaceToolRail({
             </div>
           </section>
         ))}
-        {!collapsed && plannedTools.length > 0 && (
-          <details className="pro-planned-tools">
-            <summary>أدوات مخططة · غير متاحة</summary>
-            <ul>
-              {plannedTools.map((tool) => (
-                <li key={tool.id}>
-                  <Icon name={tool.icon} size={14} />
-                  <span><strong>{tool.label}</strong><small>{tool.unavailableReason}</small></span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
       </div>
       {!collapsed && (
         <div className="pro-active-tool" aria-live="polite">

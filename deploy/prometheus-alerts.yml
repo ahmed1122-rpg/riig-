@@ -37,6 +37,15 @@ groups:
           summary: A MotionPrep worker lost a job lease
           runbook: docs/runbooks/processing-job-recovery.md
 
+      - alert: MotionPrepRetentionMaintenanceOverdue
+        expr: motionprep_maintenance_stale{task="retention"} == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Scheduled retention maintenance is missing or overdue
+          runbook: docs/DEPLOYMENT.md
+
       - alert: MotionPrepContainerMemoryPressure
         expr: |
           container_memory_working_set_bytes{container_label_com_docker_compose_project="motionprep"}

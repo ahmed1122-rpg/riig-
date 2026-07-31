@@ -954,4 +954,67 @@ describe("API — المعالجة ووثائق الطبقات", () => {
     expect(queued.json().data.status).toBe("queued");
     expect(document.statusCode).toBe(404);
   });
+  it("rejects processing of a ready source that is no longer current", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const cookie = await registerCreator(app, "current-source@example.com");
+    const projectResponse = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      headers: { cookie },
+      payload: { name: "معالجة المصدر الحالي", kind: "image" },
+    });
+    const projectId = projectResponse.json().data.id as string;
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const upload = async (filename: string, replaceSourceVersion: boolean) => {
+      const intent = await app.inject({
+        method: "POST",
+        url: "/v1/uploads/intents",
+        headers: {
+          cookie,
+          "x-idempotency-key": `current-source-${filename}`,
+        },
+        payload: {
+          projectId,
+          filename,
+          contentType: "image/png",
+          sizeBytes: png.byteLength,
+          replaceSourceVersion,
+        },
+      });
+      const uploaded = await app.inject({
+        method: "PUT",
+        url: intent.json().data.uploadUrl,
+        headers: { cookie, "content-type": "image/png" },
+        payload: png,
+      });
+      return uploaded.json().data.sourceVersionId as string;
+    };
+    const firstSource = await upload("first.png", false);
+    const secondSource = await upload("second.png", true);
+
+    const stale = await app.inject({
+      method: "POST",
+      url: "/v1/processing/jobs",
+      headers: {
+        cookie,
+        "x-idempotency-key": "stale-current-source",
+      },
+      payload: { projectId, sourceVersionId: firstSource },
+    });
+    const projects = await app.inject({
+      method: "GET",
+      url: "/v1/projects",
+      headers: { cookie },
+    });
+
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("SOURCE_NOT_CURRENT");
+    expect(projects.json().data[0]).toMatchObject({
+      currentSourceVersionId: secondSource,
+      status: "queued",
+    });
+  });
 });

@@ -9,6 +9,7 @@ interface DialogProps {
   onClose: () => void;
   className?: string;
   eyebrow?: string;
+  role?: "dialog" | "alertdialog";
 }
 
 const focusableSelector =
@@ -23,6 +24,7 @@ export function Dialog({
   onClose,
   className = "",
   eyebrow = "خطوة محمية",
+  role = "dialog",
 }: DialogProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -111,7 +113,7 @@ export function Dialog({
       <div
         ref={dialogRef}
         className={`app-dialog ${className}`}
-        role="dialog"
+        role={role}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}

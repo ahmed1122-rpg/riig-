@@ -124,6 +124,7 @@ export class StripePaymentProvider implements PaymentProvider {
       return {
         kind: "subscription",
         eventId: event.id,
+        occurredAt: event.created,
         checkoutId:
           subscription.metadata.motionprep_checkout_id ?? null,
         userId: subscription.metadata.motionprep_user_id ?? null,
@@ -174,6 +175,7 @@ export class StripePaymentProvider implements PaymentProvider {
     return {
       kind: "checkout",
       eventId: event.id,
+      occurredAt: event.created,
       checkoutId,
       status,
       amountMinor: session.amount_total,

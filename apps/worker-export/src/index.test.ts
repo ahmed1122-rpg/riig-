@@ -34,4 +34,5 @@ test("maps validated environment into the export runtime", async () => {
   assert.equal(received?.workerId, "export-test");
   assert.equal(received?.objectStorage.bucket, "motionprep-test");
   assert.equal(received?.objectStorage.requireVersioning, false);
+  assert.equal(received?.drainTimeoutMilliseconds, 30_000);
 });

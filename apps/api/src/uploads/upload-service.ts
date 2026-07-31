@@ -1,5 +1,6 @@
 import {
   MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MEBIBYTES,
   type SourceType,
   type UploadIntentInput,
   type UploadSession,
@@ -23,6 +24,7 @@ export class UploadDomainError extends Error {
       | "UPLOAD_TYPE_MISMATCH"
       | "UPLOAD_HASH_INVALID"
       | "UPLOAD_CONTENT_INVALID"
+      | "UPLOAD_STORAGE_MISMATCH"
       | "UPLOAD_REQUEST_IN_PROGRESS",
     message: string,
   ) {
@@ -40,12 +42,6 @@ function safeExtension(contentType: SourceType): string {
     "image/bmp": "bmp",
     "application/pdf": "pdf",
   }[contentType];
-}
-
-export interface CompleteUploadInput {
-  observedContentType: SourceType;
-  observedSizeBytes: number;
-  sha256: string;
 }
 
 export class UploadService {
@@ -93,25 +89,32 @@ export class UploadService {
           : "UPLOAD_SIZE_MISMATCH",
         inspection.contentType !== session.contentType
           ? "نوع الملف الفعلي لا يطابق النوع المعلن."
-          : "حجم الملف المرفوع لا يطابق الحجم المتوقع أو يتجاوز 30MB.",
+          : `حجم الملف المرفوع لا يطابق الحجم المتوقع أو يتجاوز ${MAX_UPLOAD_MEBIBYTES} MiB.`,
       );
     }
 
-    await this.storage.put({
-      key: session.objectKey,
-      contentType: inspection.contentType,
-      sizeBytes: inspection.sizeBytes,
-      body: bytes,
-    });
-
     try {
-      return await this.complete(uploadId, {
-        observedContentType: inspection.contentType,
-        observedSizeBytes: inspection.sizeBytes,
-        sha256: inspection.sha256,
+      const stored = await this.storage.put({
+        key: session.objectKey,
+        contentType: inspection.contentType,
+        sizeBytes: inspection.sizeBytes,
+        body: bytes,
       });
+      if (
+        stored.key !== session.objectKey ||
+        stored.contentType !== inspection.contentType ||
+        stored.sizeBytes !== inspection.sizeBytes ||
+        stored.sha256 !== inspection.sha256
+      ) {
+        throw new UploadDomainError(
+          "UPLOAD_STORAGE_MISMATCH",
+          "تعذر إثبات سلامة الملف بعد تخزينه. أعد الرفع لاحقًا.",
+        );
+      }
+      return await this.completeVerified(session, inspection.sha256);
     } catch (error) {
-      await this.storage.delete(session.objectKey);
+      await this.storage.delete(session.objectKey).catch(() => undefined);
+      await this.fail(session).catch(() => undefined);
       throw error;
     }
   }
@@ -221,45 +224,10 @@ export class UploadService {
     }
   }
 
-  async complete(
-    uploadId: string,
-    input: CompleteUploadInput,
+  private async completeVerified(
+    session: UploadSession,
+    sha256: string,
   ): Promise<UploadSession> {
-    const session = await this.requireSession(uploadId);
-    if (session.status === "ready") return session;
-    if (session.status !== "uploading" && session.status !== "verifying") {
-      throw new UploadDomainError(
-        "UPLOAD_NOT_COMPLETABLE",
-        "لا يمكن إكمال جلسة الرفع في حالتها الحالية.",
-      );
-    }
-
-    if (input.observedContentType !== session.contentType) {
-      await this.fail(session);
-      throw new UploadDomainError(
-        "UPLOAD_TYPE_MISMATCH",
-        "نوع الملف الفعلي لا يطابق النوع المعلن.",
-      );
-    }
-
-    if (
-      input.observedSizeBytes > MAX_UPLOAD_BYTES ||
-      input.observedSizeBytes !== session.expectedSizeBytes
-    ) {
-      await this.fail(session);
-      throw new UploadDomainError(
-        "UPLOAD_SIZE_MISMATCH",
-        "حجم الملف المرفوع لا يطابق الحجم المتوقع أو يتجاوز 30MB.",
-      );
-    }
-
-    if (!/^[a-f0-9]{64}$/i.test(input.sha256)) {
-      throw new UploadDomainError(
-        "UPLOAD_HASH_INVALID",
-        "بصمة الملف غير صالحة.",
-      );
-    }
-
     const verifying = this.updated(session, { status: "verifying" });
     await this.repository.save(verifying);
     if (!session.sourceVersionId) {
@@ -272,7 +240,7 @@ export class UploadService {
 
     const ready = this.updated(verifying, {
       status: "ready",
-      sha256: input.sha256.toLowerCase(),
+      sha256: sha256.toLowerCase(),
     });
     await this.repository.save(ready);
     await this.sourceVersions?.update(session.sourceVersionId, {

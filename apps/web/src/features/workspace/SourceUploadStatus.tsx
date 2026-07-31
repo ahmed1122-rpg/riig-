@@ -2,6 +2,7 @@ import { Icon } from "../../shared/Icon";
 import type { ProjectMode } from "../../types";
 import {
   MAX_IMAGE_LAYERS,
+  MAX_PDF_PAGES,
   MAX_UPLOAD_MEBIBYTES,
 } from "@motionprep/contracts";
 
@@ -53,7 +54,7 @@ export function SourceUploadStatus({
         <span className="source-icon"><Icon name={mode === "image" ? "image" : "scan"} size={17} /></span>
         <span>
           <strong dir="ltr">{fileName}</strong>
-          <small>{mode === "image" ? `ملف واحد · ${MAX_UPLOAD_MEBIBYTES} MiB · حتى ${MAX_IMAGE_LAYERS} طبقة` : `ملف PDF واحد · ${MAX_UPLOAD_MEBIBYTES} MiB · حتى 250 صفحة`}</small>
+          <small>{mode === "image" ? `ملف واحد · ${MAX_UPLOAD_MEBIBYTES} MiB · حتى ${MAX_IMAGE_LAYERS} طبقة` : `ملف PDF واحد · ${MAX_UPLOAD_MEBIBYTES} MiB · حتى ${MAX_PDF_PAGES} صفحة`}</small>
         </span>
         {version > 0 && <span className="pro-source-version">v{version}</span>}
         <span className="replace-source">{state === "empty" ? "اختيار" : "استبدال"}</span>
