@@ -44,9 +44,11 @@ export class ExportDomainError extends Error {
     readonly code:
       | "EXPORT_NOT_FOUND"
       | "EXPORT_FORMAT_UNSUPPORTED"
+      | "EXPORT_OPTION_UNSUPPORTED"
       | "EXPORT_SCOPE_UNSUPPORTED"
       | "EXPORT_NOT_CANCELLABLE"
       | "EXPORT_SOURCE_NOT_READY"
+      | "EXPORT_SOURCE_NOT_CURRENT"
       | "EXPORT_SOURCE_INTEGRITY_FAILED"
       | "EXPORT_ARTIFACT_NOT_READY"
       | "EXPORT_ARTIFACT_INTEGRITY_FAILED"
@@ -55,14 +57,30 @@ export class ExportDomainError extends Error {
       | "EXPORT_PREFLIGHT_FAILED"
       | "EXPORT_REQUEST_IN_PROGRESS",
     message: string,
+    readonly jobId?: string,
   ) {
     super(message);
+  }
+}
+
+export class ExportExecutionError extends Error {
+  constructor(
+    message: string,
+    readonly jobId: string,
+    cause?: unknown,
+  ) {
+    super(message, { cause });
   }
 }
 
 interface ReadySource {
   upload: UploadSession;
   object: StoredObject;
+}
+
+export interface ExportClaimLifecycle {
+  onClaimed?: (job: ExportJob) => Promise<boolean>;
+  onSettled?: (job: ExportJob) => void;
 }
 
 export class ExportService {
@@ -81,7 +99,14 @@ export class ExportService {
     input: ExportRequest,
     projectKind: ProjectKind,
     idempotencyKey: string,
+    onQueued?: (job: ExportJob) => Promise<boolean>,
   ): Promise<ExportJob> {
+    if (input.scale !== 1 || input.colorProfile !== "sRGB") {
+      throw new ExportDomainError(
+        "EXPORT_OPTION_UNSUPPORTED",
+        "الإصدار الحالي يحافظ على الدقة الأصلية وملف sRGB فقط.",
+      );
+    }
     if (!supportsExportFormat(projectKind, input.format)) {
       throw new ExportDomainError(
         "EXPORT_FORMAT_UNSUPPORTED",
@@ -95,6 +120,18 @@ export class ExportService {
       throw new ExportDomainError(
         "EXPORT_SCOPE_UNSUPPORTED",
         "نطاق الصفحة متاح لمشاريع PDF فقط.",
+      );
+    }
+    if (
+      this.uploads &&
+      !(await this.uploads.findReadyBySourceVersion(
+        input.projectId,
+        input.sourceVersionId,
+      ))
+    ) {
+      throw new ExportDomainError(
+        "EXPORT_SOURCE_NOT_READY",
+        "نسخة المصدر لا تتبع المشروع أو لم تكتمل جاهزيتها.",
       );
     }
 
@@ -166,6 +203,13 @@ export class ExportService {
     };
     try {
       await this.repository.save(job);
+      if (onQueued && !(await onQueued(job))) {
+        throw new ExportDomainError(
+          "EXPORT_SOURCE_NOT_CURRENT",
+          "تغير إصدار المصدر الحالي قبل إدخال التصدير إلى الطابور.",
+          job.id,
+        );
+      }
       if (!this.executeInline) return job;
       return await this.generateArtifact(
         job,
@@ -182,7 +226,14 @@ export class ExportService {
         scopedIdempotencyKey,
         exportId,
       );
-      throw error;
+      if (error instanceof ExportDomainError) {
+        throw new ExportDomainError(error.code, error.message, exportId);
+      }
+      throw new ExportExecutionError(
+        error instanceof Error ? error.message : "تعذر تجهيز مهمة التصدير.",
+        exportId,
+        error,
+      );
     }
   }
 
@@ -266,6 +317,7 @@ export class ExportService {
   async claimAndProcess(
     workerId: string,
     leaseMilliseconds = 5 * 60_000,
+    lifecycle: ExportClaimLifecycle = {},
   ): Promise<ExportJob | null> {
     const claimedAt = this.now();
     const job = await this.repository.claimNext(
@@ -274,6 +326,9 @@ export class ExportService {
       new Date(claimedAt.getTime() + leaseMilliseconds).toISOString(),
     );
     if (!job) return null;
+    if (lifecycle.onClaimed && !(await lifecycle.onClaimed(job))) {
+      return this.repository.findById(job.id);
+    }
     const heartbeat = startLeaseHeartbeat(async () => {
       const heartbeatAt = this.now();
       const updated = await this.repository.updateClaim(
@@ -331,6 +386,7 @@ export class ExportService {
       );
     } finally {
       heartbeat.stop();
+      lifecycle.onSettled?.(job);
     }
   }
 

@@ -190,7 +190,15 @@ export async function registerProcessingRoutes(
     if (!project) {
       return sendProjectNotFound(reply, request.id);
     }
-    await projects.updateStatus(project.id, "processing");
+    if (project.currentSourceVersionId !== body.data.sourceVersionId) {
+      return sendApiError(
+        reply,
+        request.id,
+        409,
+        "SOURCE_NOT_CURRENT",
+        "اختر إصدار المصدر الحالي أو استعد الإصدار المطلوب قبل المعالجة.",
+      );
+    }
     try {
       const job = await processing.createAndRun(
         project.id,
@@ -201,13 +209,34 @@ export async function registerProcessingRoutes(
           : {},
         requestIdempotencyKey(request),
         user.id,
+        async (queuedJob) =>
+          Boolean(
+            await projects.updateStatusForSource(
+              project.id,
+              queuedJob.sourceVersionId,
+              "processing",
+              { type: "processing", id: queuedJob.id },
+            ),
+          ),
       );
       if (job.status === "ready") {
-        await projects.updateStatus(project.id, "needs_review");
+        await projects.finishJobStatus(
+          project.id,
+          job.sourceVersionId,
+          { type: "processing", id: job.id },
+          "needs_review",
+        );
       }
       return reply.status(202).send({ data: job, error: null });
     } catch (error) {
-      await projects.updateStatus(project.id, "failed");
+      if (error instanceof ProcessingDomainError && error.jobId) {
+        await projects.finishJobStatus(
+          project.id,
+          body.data.sourceVersionId,
+          { type: "processing", id: error.jobId },
+          "failed",
+        );
+      }
       return domainError(error, request, reply);
     }
   });
@@ -369,7 +398,12 @@ export async function registerProcessingRoutes(
           actorUserId: user.id,
           operationId: requestIdempotencyKey(request),
         });
-        await projects.updateStatus(project.id, "needs_review");
+        await projects.updateStatusForSource(
+          project.id,
+          body.data.sourceVersionId,
+          "needs_review",
+          null,
+        );
         return reply.status(200).send({ data: result, error: null });
       } catch (error) {
         return domainError(error, request, reply);
@@ -413,6 +447,15 @@ export async function registerProcessingRoutes(
             "OCR الإقليمي متاح لمستندات PDF فقط.",
           );
         }
+        if (project.currentSourceVersionId !== body.data.sourceVersionId) {
+          return sendApiError(
+            reply,
+            request.id,
+            409,
+            "SOURCE_NOT_CURRENT",
+            "استعد إصدار المصدر المطلوب قبل تشغيل OCR الإقليمي.",
+          );
+        }
         const operationId = requestIdempotencyKey(request);
         const job = await processing.createAndRun(
           project.id,
@@ -427,9 +470,34 @@ export async function registerProcessingRoutes(
           },
           operationId,
           user.id,
+          async (queuedJob) =>
+            Boolean(
+              await projects.updateStatusForSource(
+                project.id,
+                queuedJob.sourceVersionId,
+                "processing",
+                { type: "processing", id: queuedJob.id },
+              ),
+            ),
         );
+        if (job.status === "ready") {
+          await projects.finishJobStatus(
+            project.id,
+            job.sourceVersionId,
+            { type: "processing", id: job.id },
+            "needs_review",
+          );
+        }
         return reply.status(202).send({ data: job, error: null });
       } catch (error) {
+        if (error instanceof ProcessingDomainError && error.jobId) {
+          await projects.finishJobStatus(
+            params.data.projectId,
+            body.data.sourceVersionId,
+            { type: "processing", id: error.jobId },
+            "needs_review",
+          );
+        }
         return domainError(error, request, reply);
       }
     },
@@ -462,7 +530,12 @@ export async function registerProcessingRoutes(
           operationId: requestIdempotencyKey(request),
           ...body.data,
         });
-        await projects.updateStatus(project.id, "needs_review");
+        await projects.updateStatusForSource(
+          project.id,
+          body.data.sourceVersionId,
+          "needs_review",
+          null,
+        );
         return reply.status(200).send({ data: result, error: null });
       } catch (error) {
         return domainError(error, request, reply);
@@ -497,7 +570,12 @@ export async function registerProcessingRoutes(
           operationId: requestIdempotencyKey(request),
           ...body.data,
         });
-        await projects.updateStatus(project.id, "needs_review");
+        await projects.updateStatusForSource(
+          project.id,
+          body.data.sourceVersionId,
+          "needs_review",
+          null,
+        );
         return reply.status(200).send({ data: result, error: null });
       } catch (error) {
         return domainError(error, request, reply);
@@ -529,7 +607,12 @@ export async function registerProcessingRoutes(
           projectId: project.id,
           ...body.data,
         });
-        await projects.updateStatus(project.id, "needs_review");
+        await projects.updateStatusForSource(
+          project.id,
+          body.data.sourceVersionId,
+          "needs_review",
+          null,
+        );
         return reply.status(200).send({ data: document, error: null });
       } catch (error) {
         return domainError(error, request, reply);
@@ -564,7 +647,12 @@ export async function registerProcessingRoutes(
           operationId: requestIdempotencyKey(request),
           ...body.data,
         });
-        await projects.updateStatus(project.id, "needs_review");
+        await projects.updateStatusForSource(
+          project.id,
+          body.data.sourceVersionId,
+          "needs_review",
+          null,
+        );
         return reply.status(200).send({ data: result, error: null });
       } catch (error) {
         return domainError(error, request, reply);
@@ -599,7 +687,12 @@ export async function registerProcessingRoutes(
           operationId: requestIdempotencyKey(request),
           ...body.data,
         });
-        await projects.updateStatus(project.id, "needs_review");
+        await projects.updateStatusForSource(
+          project.id,
+          body.data.sourceVersionId,
+          "needs_review",
+          null,
+        );
         return reply.status(200).send({ data: result, error: null });
       } catch (error) {
         return domainError(error, request, reply);
@@ -617,6 +710,8 @@ const processingDomainError = createDomainErrorResponder(
       ? 404
       : code === "DOCUMENT_REVISION_CONFLICT" ||
           code === "PROCESSING_IN_PROGRESS" ||
+          code === "SOURCE_NOT_CURRENT" ||
+          code === "SOURCE_NOT_READY" ||
           code === "GUIDANCE_DUPLICATE" ||
           code === "EDIT_HISTORY_UNAVAILABLE"
         ? 409

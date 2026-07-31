@@ -382,12 +382,12 @@ function solidPng(
     .toBuffer();
 }
 
-function storeRaster(
+async function storeRaster(
   storage: InMemoryObjectStorage,
   key: string,
   body: Buffer,
 ): Promise<void> {
-  return storage.put({
+  await storage.put({
     key,
     contentType: "image/png",
     sizeBytes: body.byteLength,

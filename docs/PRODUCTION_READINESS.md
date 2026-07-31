@@ -2,6 +2,8 @@
 
 Status on 2026-07-31: the six planned editing tools are implemented; local and GitHub-hosted quality, security, durable-integration, production-topology, and browser gates pass. Signed SBOM/provenance-bearing images are published to GHCR. Production approval remains withheld because the independently opened OCR holdout is red and provider staging, S3, recovery, and Adobe proofs are unavailable.
 
+The `codex/production-readiness` candidate adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology before publication. These changes are locally verified but are not represented by the previously published `v0.1.0` digests until a new protected release completes.
+
 ## Implemented locally
 
 - Source-version restoration with actor/reason history, optimistic preconditions, idempotency, and persistent revision references.
@@ -34,14 +36,14 @@ Therefore the strict benchmark exits non-zero and the release is No-Go. The appr
 ## Local evidence
 
 - `npm run quality`: passed after the final protected OCR change.
-- Document-processing tests: 38/38; web tests: 62/62; all configured coverage gates passed.
-- Playwright E2E: 4/4.
-- Web bundle: 131.2 KiB JavaScript and 36.0 KiB CSS, gzip.
-- `npm audit`: 0 known vulnerabilities across 495 dependencies.
+- API tests: 143/143; document-processing tests: 38/38; web tests: 71/71; all configured coverage gates passed.
+- Playwright E2E: 6/6 across desktop and mobile Chromium.
+- Web bundle: 141.1 KiB JavaScript and 36.6 KiB CSS, gzip.
+- `npm audit --omit=dev --audit-level=high`: 0 known production vulnerabilities.
 - Fixture verification after opening: 91 OCR samples, 20 books, 136 dimensions; implementation and holdout digests match.
 - Executable TODO/FIXME/HACK/NotImplemented scan: zero findings.
 - `node scripts/verify-concurrent-migrations.mjs`: passed against PostgreSQL after migrations 021/022, including two simultaneous runners and an idempotent replay.
-- Durable PostgreSQL/S3 suite: 8/8, covering source restoration, lease reclamation, retention, object round trips, and a real export worker.
+- Durable PostgreSQL/S3 suite: 12/12 after migrations 001-026, covering source restoration, lease reclamation, active-job exclusivity, ordered billing events, reference-safe retention, maintenance status, object round trips, and a real export worker.
 - `npm run test:topology:full`: passed with two API replicas, PostgreSQL, Redis, versioned MinIO, Mailpit, all three workers, restart recovery, export, metrics, and a signed Stripe webhook.
 - Docker runtime and web images build from digest-pinned bases. The web image passed a read-only, non-root, `cap-drop ALL`, `no-new-privileges` health smoke.
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
@@ -59,3 +61,5 @@ Therefore the strict benchmark exits non-zero and the release is No-Go. The appr
 6. Either a passing newly sealed OCR generation or a formally approved product-scope reduction that excludes manuscripts and severely degraded tables from automatic-transcription claims.
 
 Detailed evidence is in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/remaining-production-plan-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
+
+The current completion matrix, remaining priorities, acceptance criteria, and PDF fixture inventory are in `artifacts/completion-audit-and-execution-plan-2026-07-31.md`.

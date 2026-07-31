@@ -669,7 +669,7 @@
   padding: 4px 12px 10px;
 }
 
-.export-fields label {
+.export-fields > div {
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr);
   align-items: center;
@@ -678,7 +678,9 @@
   font-size: 7px;
 }
 
-.export-fields select {
+.export-fields output {
+  display: flex;
+  align-items: center;
   min-width: 0;
   min-height: 30px;
   padding: 0 7px;
@@ -706,8 +708,8 @@
 
 .advanced-export-toggle svg:last-child { margin-inline-start: auto; transform: rotate(-90deg); }
 .advanced-export-options { display: grid; gap: 6px; padding: 0 14px 10px; color: var(--text-muted); font-size: 7px; }
-.advanced-export-options label { display: flex; align-items: center; gap: 6px; }
-.advanced-export-options input { accent-color: var(--primary); }
+.advanced-export-options span { display: flex; align-items: flex-start; gap: 6px; line-height: 1.6; }
+.advanced-export-options svg { flex: 0 0 auto; color: var(--success); }
 
 .export-estimate {
   display: grid;
@@ -773,7 +775,7 @@
   .format-options label,
   .scope-options label { min-height: 36px; padding-block: 4px; }
   .export-fields { gap: 5px; padding-bottom: 6px; }
-  .export-fields select { min-height: 27px; }
+  .export-fields output { min-height: 27px; }
   .advanced-export-toggle { min-height: 28px; margin-bottom: 5px; }
   .export-estimate { margin-bottom: 5px; padding-top: 6px; }
   .local-demo-note { margin-bottom: 5px; padding-block: 6px; }
@@ -807,7 +809,7 @@
   .format-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .scope-options { grid-template-columns: repeat(2, 1fr); }
   .export-fields { grid-template-columns: repeat(3, 1fr); }
-  .export-fields label { grid-template-columns: 1fr; }
+  .export-fields > div { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {

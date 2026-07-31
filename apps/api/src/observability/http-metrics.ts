@@ -81,6 +81,12 @@ export async function registerHttpMetrics(
           "# TYPE motionprep_job_duration_seconds histogram",
           "# HELP motionprep_worker_up Whether a required worker instance has a fresh heartbeat.",
           "# TYPE motionprep_worker_up gauge",
+          "# HELP motionprep_maintenance_stale Whether scheduled maintenance is missing or overdue.",
+          "# TYPE motionprep_maintenance_stale gauge",
+          "# HELP motionprep_maintenance_last_success_timestamp_seconds Unix time of the latest successful maintenance run.",
+          "# TYPE motionprep_maintenance_last_success_timestamp_seconds gauge",
+          "# HELP motionprep_maintenance_last_failure_timestamp_seconds Unix time of the latest failed maintenance run.",
+          "# TYPE motionprep_maintenance_last_failure_timestamp_seconds gauge",
         );
         for (const queue of snapshot.queues) {
           for (const [state, value] of [
@@ -120,6 +126,12 @@ export async function registerHttpMetrics(
             `motionprep_worker_up{worker_type="${workerType}",instance="missing",release="unknown"} 0`,
           );
         }
+        const maintenance = snapshot.maintenance;
+        lines.push(
+          `motionprep_maintenance_stale{task="retention"} ${!maintenance || maintenance.stale ? 1 : 0}`,
+          `motionprep_maintenance_last_success_timestamp_seconds{task="retention"} ${timestampSeconds(maintenance?.lastSucceededAt)}`,
+          `motionprep_maintenance_last_failure_timestamp_seconds{task="retention"} ${timestampSeconds(maintenance?.lastFailedAt)}`,
+        );
       } catch {
         lines.push(
           "# HELP motionprep_operational_snapshot_success Whether operational metrics were collected.",
@@ -167,6 +179,10 @@ export async function registerHttpMetrics(
       .type("text/plain; version=0.0.4; charset=utf-8")
       .send(`${lines.join("\n")}\n`);
   });
+}
+
+function timestampSeconds(value: string | null | undefined): number {
+  return value ? Math.floor(Date.parse(value) / 1_000) : 0;
 }
 
 function renderHttpMetrics(metrics: ReadonlyMap<string, HttpMetric>): string[] {

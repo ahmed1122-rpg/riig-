@@ -31,6 +31,19 @@ export function getAdminProcessing(): Promise<AdminProcessingJob[]> {
   return request("/v1/admin/processing");
 }
 
+export function retryAdminProcessing(
+  jobId: string,
+  reason: string,
+): Promise<AdminProcessingJob> {
+  return request(
+    `/v1/admin/processing/${encodeURIComponent(jobId)}/retry`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    },
+  );
+}
+
 export function getAdminBilling(): Promise<AdminBillingData> {
   return request("/v1/admin/billing");
 }

@@ -5,7 +5,10 @@ import type {
   SubscriptionView,
 } from "@motionprep/contracts";
 import type { Pool } from "pg";
-import type { BillingRepository } from "../../billing/billing-repository.js";
+import type {
+  BillingRepository,
+  ProviderEventVersion,
+} from "../../billing/billing-repository.js";
 import { toIso } from "./database.js";
 
 interface SubscriptionRow {
@@ -119,6 +122,71 @@ export class PostgresBillingRepository implements BillingRepository {
         subscription.cancelAtPeriodEnd ?? false,
       ],
     );
+  }
+
+  async saveSubscriptionFromProvider(
+    subscription: SubscriptionView,
+    event: ProviderEventVersion,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `
+        INSERT INTO subscriptions (
+          id, user_id, plan_id, status, renewal_at, usage, provider,
+          provider_customer_id, provider_subscription_id,
+          cancel_at_period_end, provider_event_created_at, provider_event_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (user_id) DO UPDATE SET
+          plan_id = EXCLUDED.plan_id,
+          status = EXCLUDED.status,
+          renewal_at = EXCLUDED.renewal_at,
+          usage = jsonb_build_object(
+            'jobs', COALESCE(
+              (subscriptions.usage ->> 'jobs')::integer,
+              (EXCLUDED.usage ->> 'jobs')::integer
+            ),
+            'jobLimit', (EXCLUDED.usage ->> 'jobLimit')::integer,
+            'processingMinutes', COALESCE(
+              (subscriptions.usage ->> 'processingMinutes')::numeric,
+              (EXCLUDED.usage ->> 'processingMinutes')::numeric
+            ),
+            'processingMinuteLimit',
+              (EXCLUDED.usage ->> 'processingMinuteLimit')::numeric
+          ),
+          provider = EXCLUDED.provider,
+          provider_customer_id = EXCLUDED.provider_customer_id,
+          provider_subscription_id = EXCLUDED.provider_subscription_id,
+          cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+          provider_event_created_at = EXCLUDED.provider_event_created_at,
+          provider_event_id = EXCLUDED.provider_event_id
+        WHERE
+          subscriptions.provider_event_created_at IS NULL
+          OR EXCLUDED.provider_event_created_at
+            > subscriptions.provider_event_created_at
+          OR (
+            EXCLUDED.provider_event_created_at
+              = subscriptions.provider_event_created_at
+            AND EXCLUDED.provider_event_id COLLATE "C"
+              > subscriptions.provider_event_id COLLATE "C"
+          )
+        RETURNING user_id
+      `,
+      [
+        subscription.id,
+        subscription.userId,
+        subscription.planId,
+        subscription.status,
+        subscription.renewalAt,
+        JSON.stringify(subscription.usage),
+        subscription.provider ?? null,
+        subscription.providerCustomerId ?? null,
+        subscription.providerSubscriptionId ?? null,
+        subscription.cancelAtPeriodEnd ?? false,
+        event.occurredAt,
+        event.eventId,
+      ],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async findCheckout(id: string): Promise<CheckoutSession | null> {

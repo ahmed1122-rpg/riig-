@@ -124,6 +124,38 @@ describe("API — التصدير", () => {
       headers: { cookie },
       payload: { name: "تصدير خلفي", kind: "image" },
     });
+    const projectId = projectResponse.json().data.id as string;
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const intent = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: { cookie },
+      payload: {
+        projectId,
+        filename: "worker-export.png",
+        contentType: "image/png",
+        sizeBytes: png.byteLength,
+      },
+    });
+    const uploaded = await app.inject({
+      method: "PUT",
+      url: intent.json().data.uploadUrl,
+      headers: { cookie, "content-type": "image/png" },
+      payload: png,
+    });
+    const sourceVersionId = uploaded.json().data.sourceVersionId as string;
+    await app.inject({
+      method: "POST",
+      url: "/v1/processing/jobs",
+      headers: {
+        cookie,
+        "x-idempotency-key": "prepare-worker-export",
+      },
+      payload: { projectId, sourceVersionId },
+    });
     const response = await app.inject({
       method: "POST",
       url: "/v1/exports",
@@ -132,8 +164,8 @@ describe("API — التصدير", () => {
         "x-idempotency-key": "worker-export-001",
       },
       payload: {
-        projectId: projectResponse.json().data.id,
-        sourceVersionId: crypto.randomUUID(),
+        projectId,
+        sourceVersionId,
         format: "psd",
         scope: "full-document",
         scale: 1,

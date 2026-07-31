@@ -11,7 +11,8 @@ x-runtime: &runtime
   tmpfs:
     - /tmp:size=256m,mode=1777
   restart: unless-stopped
-  stop_grace_period: 20s
+  # Worker drain defaults to 30s; leave a margin for lease requeue and cleanup.
+  stop_grace_period: 45s
   security_opt:
     - no-new-privileges:true
   cap_drop:
@@ -38,6 +39,18 @@ services:
     profiles:
       - maintenance
     restart: "no"
+    mem_limit: ${MAINTENANCE_MEMORY_LIMIT:-384m}
+    cpus: ${MAINTENANCE_CPU_LIMIT:-0.5}
+
+  maintenance-scheduler:
+    <<: *runtime
+    command:
+      - node
+      - --conditions=production
+      - apps/api/dist/maintenance/run-retention-scheduler.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     mem_limit: ${MAINTENANCE_MEMORY_LIMIT:-384m}
     cpus: ${MAINTENANCE_CPU_LIMIT:-0.5}
 

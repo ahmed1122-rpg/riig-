@@ -27,8 +27,11 @@ import { loadProcessingWorkerConfig } from "./processing-worker-config.js";
 import { getProcessingRetryPolicy } from "./processing-worker-policy.js";
 import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
 import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
+import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
+import { releaseProcessingJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
+import { updateProjectStatusForJob } from "../projects/project-job-status.js";
 import {
   applyPdfRegionOcr,
   PdfRegionOcrError,
@@ -113,9 +116,45 @@ export async function runProcessingWorker(
     config.USAGE_METERING_MODE,
   );
   let running = true;
+  const drain = new WorkerDrainCoordinator<{
+    job: ProcessingJob;
+    workerId: string;
+  }>({
+    timeoutMilliseconds: config.PROCESSING_DRAIN_TIMEOUT_MS,
+    release: async ({ job, workerId }) => {
+      const released = await releaseProcessingJobForShutdown(
+        pool,
+        job,
+        workerId,
+      );
+      if (!released) return;
+      await recordWorkerEvent(pool, {
+        workerType: options.projectKind === "image" ? "media" : "document",
+        eventType: "retry",
+        jobId: job.id,
+      });
+      log(options.serviceName, "info", "processing.shutdown_requeued", {
+        job_id: job.id,
+        worker_id: workerId,
+      });
+    },
+    onReleaseError: (error, { job, workerId }) => {
+      log(options.serviceName, "error", "processing.shutdown_requeue_failed", {
+        job_id: job.id,
+        worker_id: workerId,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    },
+  });
 
   const requestShutdown = () => {
+    if (!running) return;
     running = false;
+    log(options.serviceName, "info", "worker.drain_started", {
+      active_jobs: drain.activeCount,
+      drain_timeout_ms: config.PROCESSING_DRAIN_TIMEOUT_MS,
+    });
+    drain.requestShutdown();
   };
   process.once("SIGINT", requestShutdown);
   process.once("SIGTERM", requestShutdown);
@@ -153,6 +192,12 @@ export async function runProcessingWorker(
             pdfOcrEngine,
             usageMeter,
             isRunning: () => running,
+            onClaimed: (job) =>
+              drain.register(`${instanceId}:${index + 1}`, {
+                job,
+                workerId: `${instanceId}:${index + 1}`,
+              }),
+            onSettled: () => drain.unregister(`${instanceId}:${index + 1}`),
           }),
         ),
       );
@@ -162,6 +207,7 @@ export async function runProcessingWorker(
   } finally {
     process.off("SIGINT", requestShutdown);
     process.off("SIGTERM", requestShutdown);
+    if (!running) await drain.waitForRelease();
     await pool.end();
     await pdfOcrEngine?.close();
     storage.destroy();
@@ -179,10 +225,13 @@ interface WorkerLoopContext {
   pdfOcrEngine: LocalArabicPdfOcrEngine | null;
   usageMeter: PostgresUsageMeter;
   isRunning: () => boolean;
+  onClaimed: (job: ProcessingJob) => Promise<boolean>;
+  onSettled: () => void;
 }
 
 async function workerLoop(context: WorkerLoopContext): Promise<void> {
   while (context.isRunning()) {
+    let registered = false;
     try {
       const job = await claimNextProcessingJob(
         context.pool,
@@ -194,6 +243,8 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
         await delay(context.pollMilliseconds);
         continue;
       }
+      registered = await context.onClaimed(job);
+      if (!registered) continue;
       log(context.serviceName, "info", "processing.started", {
         job_id: job.id,
         project_id: job.projectId,
@@ -212,6 +263,8 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
         error: error instanceof Error ? error.message : "unknown",
       });
       await delay(context.pollMilliseconds);
+    } finally {
+      if (registered) context.onSettled();
     }
   }
 }
@@ -225,7 +278,12 @@ export async function claimNextProcessingJob(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const exhausted = await client.query<{ project_id: string }>(
+    const exhausted = await client.query<{
+      id: string;
+      project_id: string;
+      source_version_id: string;
+      options: ProcessingJob["options"];
+    }>(
       `UPDATE processing_jobs
        SET status = 'failed',
            error_code = 'WORKER_LEASE_EXHAUSTED',
@@ -236,19 +294,18 @@ export async function claimNextProcessingJob(
          AND status IN ('processing', 'verifying')
          AND lease_expires_at <= now()
          AND attempt >= max_attempts
-       RETURNING project_id`,
+       RETURNING id, project_id, source_version_id, options`,
       [projectKind],
     );
-    const exhaustedProjects = [
-      ...new Set(exhausted.rows.map((row) => row.project_id)),
-    ];
-    if (exhaustedProjects.length > 0) {
-      await client.query(
-        `UPDATE projects
-         SET status = 'failed', updated_at = now()
-         WHERE id = ANY($1::uuid[])`,
-        [exhaustedProjects],
-      );
+    for (const row of exhausted.rows) {
+      await updateProjectStatusForJob(client, {
+        projectId: row.project_id,
+        sourceVersionId: row.source_version_id,
+        jobType: "processing",
+        jobId: row.id,
+        status: row.options.pdfRegionOcr ? "needs_review" : "failed",
+        finished: true,
+      });
     }
 
     const result = await client.query<ProcessingRow>(
@@ -285,6 +342,16 @@ export async function claimNextProcessingJob(
          job.error_code, job.created_at, job.updated_at`,
       [projectKind, workerId, leaseMilliseconds],
     );
+    if (result.rows[0]) {
+      await updateProjectStatusForJob(client, {
+        projectId: result.rows[0].project_id,
+        sourceVersionId: result.rows[0].source_version_id,
+        jobType: "processing",
+        jobId: result.rows[0].id,
+        status: "processing",
+        finished: false,
+      });
+    }
     await client.query("COMMIT");
     return result.rows[0] ? mapProcessingRow(result.rows[0]) : null;
   } catch (error) {
@@ -497,12 +564,14 @@ async function processClaimedJob(
         [job.id, context.workerId],
       );
       if (completed.rowCount !== 1) throw new ProcessingLeaseLostError();
-      await client.query(
-        `UPDATE projects
-         SET status = 'needs_review', updated_at = now()
-         WHERE id = $1`,
-        [job.projectId],
-      );
+      await updateProjectStatusForJob(client, {
+        projectId: job.projectId,
+        sourceVersionId: job.sourceVersionId,
+        jobType: "processing",
+        jobId: job.id,
+        status: "needs_review",
+        finished: true,
+      });
       await client.query("COMMIT");
       documentPersisted = true;
     } catch (error) {
@@ -676,13 +745,15 @@ async function retryOrFail(
   );
   const status = result.rows[0]?.status;
   if (!status) return "lease_lost";
-  if (status === "failed" && !job.options.pdfRegionOcr) {
-    await pool.query(
-      `UPDATE projects
-       SET status = 'failed', updated_at = now()
-       WHERE id = $1`,
-      [job.projectId],
-    );
+  if (status === "failed") {
+    await updateProjectStatusForJob(pool, {
+      projectId: job.projectId,
+      sourceVersionId: job.sourceVersionId,
+      jobType: "processing",
+      jobId: job.id,
+      status: job.options.pdfRegionOcr ? "needs_review" : "failed",
+      finished: true,
+    });
   }
   return status;
 }

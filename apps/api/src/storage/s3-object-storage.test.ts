@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
@@ -11,9 +12,27 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   ObjectStorageEncryptionError,
+  ObjectStorageIntegrityError,
   ObjectStorageVersioningError,
   S3ObjectStorage,
 } from "./s3-object-storage.js";
+
+function storedHead(
+  source: Buffer,
+  contentType: string,
+  serverSideEncryption?: string,
+) {
+  const sha256 = createHash("sha256").update(source).digest("hex");
+  return {
+    ContentLength: source.byteLength,
+    ContentType: contentType,
+    ChecksumSHA256: Buffer.from(sha256, "hex").toString("base64"),
+    Metadata: { "motionprep-sha256": sha256 },
+    ...(serverSideEncryption
+      ? { ServerSideEncryption: serverSideEncryption }
+      : {}),
+  };
+}
 
 function storageWith(
   send: (command: object) => Promise<unknown>,
@@ -131,7 +150,7 @@ describe("S3ObjectStorage", () => {
         };
       }
       if (command instanceof HeadObjectCommand) {
-        return { ServerSideEncryption: "AES256" };
+        return storedHead(source, "image/png", "AES256");
       }
       return {};
     });
@@ -156,10 +175,11 @@ describe("S3ObjectStorage", () => {
 
   it("accepts a verified bucket encryption default", async () => {
     const commands: object[] = [];
+    const source = Buffer.from("pdf");
     const storage = storageWith(async (command) => {
       commands.push(command);
       if (command instanceof HeadObjectCommand) {
-        return { ServerSideEncryption: "aws:kms" };
+        return storedHead(source, "application/pdf", "aws:kms");
       }
       return {};
     }, "bucket-default");
@@ -167,8 +187,8 @@ describe("S3ObjectStorage", () => {
     await storage.put({
       key: "source/project/book.pdf",
       contentType: "application/pdf",
-      sizeBytes: 3,
-      body: Buffer.from("pdf"),
+      sizeBytes: source.byteLength,
+      body: source,
     });
 
     expect(commands[0]).toBeInstanceOf(PutObjectCommand);
@@ -180,8 +200,12 @@ describe("S3ObjectStorage", () => {
 
   it("deletes an object when the promised bucket encryption is absent", async () => {
     const commands: object[] = [];
+    const source = Buffer.from("pdf");
     const storage = storageWith(async (command) => {
       commands.push(command);
+      if (command instanceof HeadObjectCommand) {
+        return storedHead(source, "application/pdf");
+      }
       return {};
     }, "bucket-default");
 
@@ -189,8 +213,8 @@ describe("S3ObjectStorage", () => {
       storage.put({
         key: "source/project/unsafe.pdf",
         contentType: "application/pdf",
-        sizeBytes: 3,
-        body: Buffer.from("pdf"),
+        sizeBytes: source.byteLength,
+        body: source,
       }),
     ).rejects.toBeInstanceOf(ObjectStorageEncryptionError);
 
@@ -200,10 +224,11 @@ describe("S3ObjectStorage", () => {
 
   it("deletes an object when explicit SSE-S3 is not confirmed", async () => {
     const commands: object[] = [];
+    const source = Buffer.from("pdf");
     const storage = storageWith(async (command) => {
       commands.push(command);
       if (command instanceof HeadObjectCommand) {
-        return { ServerSideEncryption: "aws:kms" };
+        return storedHead(source, "application/pdf", "aws:kms");
       }
       return {};
     });
@@ -212,8 +237,8 @@ describe("S3ObjectStorage", () => {
       storage.put({
         key: "source/project/wrong-encryption.pdf",
         contentType: "application/pdf",
-        sizeBytes: 3,
-        body: Buffer.from("pdf"),
+        sizeBytes: source.byteLength,
+        body: source,
       }),
     ).rejects.toBeInstanceOf(ObjectStorageEncryptionError);
 
@@ -224,22 +249,49 @@ describe("S3ObjectStorage", () => {
 
   it("can omit request encryption only for explicit non-production storage", async () => {
     const commands: object[] = [];
+    const source = Buffer.from([1]);
     const storage = storageWith(async (command) => {
       commands.push(command);
+      if (command instanceof HeadObjectCommand) {
+        return storedHead(source, "application/octet-stream");
+      }
       return {};
     }, "none");
 
     await storage.put({
       key: "integration/plain.bin",
       contentType: "application/octet-stream",
-      sizeBytes: 1,
-      body: Buffer.from([1]),
+      sizeBytes: source.byteLength,
+      body: source,
     });
 
-    expect(commands).toHaveLength(1);
+    expect(commands).toHaveLength(2);
     expect(
       (commands[0] as PutObjectCommand).input.ServerSideEncryption,
     ).toBeUndefined();
+  });
+
+  it("deletes an object whose persisted metadata does not match the upload", async () => {
+    const commands: object[] = [];
+    const source = Buffer.from("motionprep");
+    const storage = storageWith(async (command) => {
+      commands.push(command);
+      if (command instanceof HeadObjectCommand) {
+        return storedHead(Buffer.from("different"), "image/png", "AES256");
+      }
+      return {};
+    });
+
+    await expect(
+      storage.put({
+        key: "sources/project/corrupt.png",
+        contentType: "image/png",
+        sizeBytes: source.byteLength,
+        body: source,
+      }),
+    ).rejects.toBeInstanceOf(ObjectStorageIntegrityError);
+
+    expect(commands[2]).toBeInstanceOf(DeleteObjectCommand);
   });
 
   it("allows the AWS default credential provider chain", () => {

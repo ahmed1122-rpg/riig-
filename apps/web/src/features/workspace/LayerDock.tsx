@@ -61,6 +61,8 @@ export function LayerDock({
   const [renameError, setRenameError] = useState("");
   const [anchorId, setAnchorId] = useState(activeId);
   const [windowStart, setWindowStart] = useState(0);
+  const [draggedLayerId, setDraggedLayerId] = useState<string>();
+  const [dragOverLayerId, setDragOverLayerId] = useState<string>();
   const layersTabId = useId();
   const checksTabId = useId();
   const layersPanelId = useId();
@@ -154,6 +156,63 @@ export function LayerDock({
     next.splice(to, 0, moved);
     onLayersChange(reindexLayerOrder(next));
     onNotify(`تم نقل ${moved.name} ${direction < 0 ? "لأعلى" : "لأسفل"}.`);
+  };
+
+  const moveLayerTo = (sourceId: string, targetId: string) => {
+    const from = layers.findIndex((layer) => layer.id === sourceId);
+    const to = layers.findIndex((layer) => layer.id === targetId);
+    if (
+      from < 0 ||
+      to < 0 ||
+      from === to ||
+      layers[from].kind === "page" ||
+      layers[to].kind === "page"
+    ) return;
+    const next = [...layers];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onLayersChange(reindexLayerOrder(next));
+    onSelectionChange([moved.id], moved.id);
+    onNotify(`تم نقل ${moved.name} إلى موضع جديد.`);
+  };
+
+  const navigateLayer = (
+    id: string,
+    direction: "previous" | "next" | "first" | "last",
+  ) => {
+    const current = filteredLayers.findIndex((layer) => layer.id === id);
+    if (current < 0 || filteredLayers.length === 0) return;
+    const targetIndex =
+      direction === "first"
+        ? 0
+        : direction === "last"
+          ? filteredLayers.length - 1
+          : Math.max(
+              0,
+              Math.min(
+                filteredLayers.length - 1,
+                current + (direction === "previous" ? -1 : 1),
+              ),
+            );
+    const target = filteredLayers[targetIndex];
+    if (!target || target.id === id) return;
+    const unpinnedIndex = unpinnedLayers.findIndex(
+      (layer) => layer.id === target.id,
+    );
+    if (unpinnedIndex >= 0) {
+      setWindowStart(
+        Math.floor(unpinnedIndex / LAYER_WINDOW_SIZE) * LAYER_WINDOW_SIZE,
+      );
+    }
+    onSelectionChange([target.id], target.id);
+    window.requestAnimationFrame(() => {
+      const rows = document.querySelectorAll<HTMLElement>(
+        ".pro-layer-row[data-layer-id]",
+      );
+      [...rows].find(
+        (row) => row.dataset.layerId === target.id,
+      )?.focus();
+    });
   };
 
   const saveRename = (id: string) => {
@@ -338,6 +397,8 @@ export function LayerDock({
                 renameDraft={renameDraft}
                 renameError={renameError}
                 canReorder={canReorder}
+                dragging={draggedLayerId === layer.id}
+                dragOver={dragOverLayerId === layer.id}
                 onRenameDraftChange={(value) => { setRenameDraft(value); setRenameError(""); }}
                 onSelect={(event) => selectLayer(layer.id, event)}
                 onStartRename={() => {
@@ -357,6 +418,30 @@ export function LayerDock({
                   onLayersChange(layers.map((item) => item.id === layer.id ? { ...item, locked: !item.locked } : item));
                 }}
                 onMove={(direction) => moveLayer(layer.id, direction)}
+                onNavigate={(direction) => navigateLayer(layer.id, direction)}
+                onDragStart={(event) => {
+                  setDraggedLayerId(layer.id);
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", layer.id);
+                }}
+                onDragOver={(event) => {
+                  if (!draggedLayerId || draggedLayerId === layer.id) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setDragOverLayerId(layer.id);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const sourceId =
+                    draggedLayerId || event.dataTransfer.getData("text/plain");
+                  if (sourceId) moveLayerTo(sourceId, layer.id);
+                  setDraggedLayerId(undefined);
+                  setDragOverLayerId(undefined);
+                }}
+                onDragEnd={() => {
+                  setDraggedLayerId(undefined);
+                  setDragOverLayerId(undefined);
+                }}
               />
             ))}
             {unpinnedLayers.length > LAYER_WINDOW_SIZE && <p className="pro-window-note">الخلفية المثبتة تبقى ظاهرة، بينما تُعرض 32 طبقة نصية فقط لحماية الأداء.</p>}
@@ -380,6 +465,8 @@ interface LayerRowProps {
   renameDraft: string;
   renameError: string;
   canReorder: boolean;
+  dragging: boolean;
+  dragOver: boolean;
   onRenameDraftChange: (value: string) => void;
   onSelect: (event: React.MouseEvent | React.KeyboardEvent) => void;
   onStartRename: () => void;
@@ -388,6 +475,13 @@ interface LayerRowProps {
   onToggleVisible: () => void;
   onToggleLock: () => void;
   onMove: (direction: -1 | 1) => void;
+  onNavigate: (
+    direction: "previous" | "next" | "first" | "last",
+  ) => void;
+  onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
+  onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnd: () => void;
 }
 
 const LayerRow = memo(function LayerRow({
@@ -399,6 +493,8 @@ const LayerRow = memo(function LayerRow({
   renameDraft,
   renameError,
   canReorder,
+  dragging,
+  dragOver,
   onRenameDraftChange,
   onSelect,
   onStartRename,
@@ -407,24 +503,45 @@ const LayerRow = memo(function LayerRow({
   onToggleVisible,
   onToggleLock,
   onMove,
+  onNavigate,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: LayerRowProps) {
   return (
     <div
-      className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${layer.kind === "page" ? "is-fixed" : ""}`}
+      className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${layer.kind === "page" ? "is-fixed" : ""} ${dragging ? "is-dragging" : ""} ${dragOver ? "is-drag-over" : ""}`}
+      data-layer-id={layer.id}
       role="listitem"
       aria-label={`${layer.name}، ${selected ? "محددة" : "غير محددة"}`}
       aria-current={active ? "true" : undefined}
       tabIndex={active ? 0 : -1}
       onClick={onSelect}
       onDoubleClick={onStartRename}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       onKeyDown={(event) => {
         if (canReorder && event.altKey && event.key === "ArrowUp") { event.preventDefault(); onMove(-1); }
         if (canReorder && event.altKey && event.key === "ArrowDown") { event.preventDefault(); onMove(1); }
+        if (!event.altKey && event.key === "ArrowUp") { event.preventDefault(); onNavigate("previous"); }
+        if (!event.altKey && event.key === "ArrowDown") { event.preventDefault(); onNavigate("next"); }
+        if (event.key === "Home") { event.preventDefault(); onNavigate("first"); }
+        if (event.key === "End") { event.preventDefault(); onNavigate("last"); }
         if (event.key === " ") { event.preventDefault(); onSelect(event); }
         if (event.key === "F2" || event.key === "Enter") { event.preventDefault(); onStartRename(); }
       }}
     >
-      <button className="pro-layer-grip" type="button" aria-label={`سحب ${layer.name}`} title={canReorder ? "اسحب أو استخدم Alt + الأسهم" : "إعادة الترتيب غير مدعومة لهذا المصدر"} disabled={!canReorder}><Icon name="grip" size={14} /></button>
+      <button
+        className="pro-layer-grip"
+        type="button"
+        draggable={canReorder && layer.kind !== "page"}
+        aria-label={`سحب ${layer.name}`}
+        title={canReorder ? "اسحب أو استخدم Alt + الأسهم" : "إعادة الترتيب غير مدعومة لهذا المصدر"}
+        disabled={!canReorder || layer.kind === "page"}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+      ><Icon name="grip" size={14} /></button>
       <span className="pro-layer-thumb" style={{ "--layer-color": layer.color } as React.CSSProperties}>
         {layer.kind === "text" ? "ن" : layer.kind === "page" ? <Icon name="scan" size={13} /> : <i />}
       </span>

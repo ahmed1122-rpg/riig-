@@ -85,6 +85,14 @@ describe("API — البنية التحتية", () => {
                 },
               },
             ],
+            maintenance: {
+              task: "retention" as const,
+              lastStartedAt: "2026-07-29T00:00:00.000Z",
+              lastSucceededAt: "2026-07-29T00:01:00.000Z",
+              lastFailedAt: null,
+              lastError: null,
+              stale: false,
+            },
             checkedAt: "2026-07-29T00:00:00.000Z",
           };
         },
@@ -115,6 +123,9 @@ describe("API — البنية التحتية", () => {
       'motionprep_worker_up{worker_type="export",instance="missing",release="unknown"} 0',
     );
     expect(response.body).toContain("motionprep_dependencies_ready 1");
+    expect(response.body).toContain(
+      'motionprep_maintenance_stale{task="retention"} 0',
+    );
     expect(response.body).toContain("motionprep_process_resident_memory_bytes");
     expect(response.body).toContain("motionprep_process_cpu_seconds_total");
   });

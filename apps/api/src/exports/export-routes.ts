@@ -11,7 +11,11 @@ import { createDomainErrorResponder } from "../http/domain-route-error.js";
 import { requestIdempotencyKey } from "../http/request-metadata.js";
 import { runResourceRoute } from "../http/resource-route.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
-import { ExportDomainError, type ExportService } from "./export-service.js";
+import {
+  ExportDomainError,
+  ExportExecutionError,
+  type ExportService,
+} from "./export-service.js";
 
 const exportSchema = z
   .object({
@@ -50,7 +54,8 @@ const domainError = createDomainErrorResponder(
     code === "EXPORT_NOT_FOUND"
       ? 404
       : code === "EXPORT_REQUEST_IN_PROGRESS" ||
-          code === "EXPORT_DOCUMENT_REVISION_CONFLICT"
+          code === "EXPORT_DOCUMENT_REVISION_CONFLICT" ||
+          code === "EXPORT_SOURCE_NOT_CURRENT"
         ? 409
         : code === "EXPORT_SOURCE_INTEGRITY_FAILED" ||
             code === "EXPORT_ARTIFACT_INTEGRITY_FAILED"
@@ -124,13 +129,38 @@ export async function registerExportRoutes(
         },
         project.kind,
         requestIdempotencyKey(request),
+        async (queuedJob) =>
+          Boolean(
+            await projects.updateStatusForSource(
+              project.id,
+              queuedJob.sourceVersionId,
+              "exporting",
+              { type: "export", id: queuedJob.id },
+            ),
+          ),
       );
-      await projects.updateStatus(
-        project.id,
-        job.status === "ready" ? "completed" : "exporting",
-      );
+      if (job.status === "ready") {
+        await projects.finishJobStatus(
+          project.id,
+          job.sourceVersionId,
+          { type: "export", id: job.id },
+          "completed",
+        );
+      }
       return reply.status(202).send({ data: job, error: null });
     } catch (error) {
+      const failedJobId =
+        error instanceof ExportDomainError || error instanceof ExportExecutionError
+          ? error.jobId
+          : undefined;
+      if (failedJobId) {
+        await projects.finishJobStatus(
+          project.id,
+          body.data.sourceVersionId,
+          { type: "export", id: failedJobId },
+          "failed",
+        );
+      }
       return domainError(error, request, reply);
     }
   });
@@ -169,7 +199,12 @@ export async function registerExportRoutes(
       load: (exportId) => requireRequestExport(request, exportId),
       handle: async (_job, exportId) => {
         const cancelled = await exports.cancel(exportId);
-        await projects.updateStatus(cancelled.projectId, "needs_review");
+        await projects.finishJobStatus(
+          cancelled.projectId,
+          cancelled.sourceVersionId,
+          { type: "export", id: cancelled.id },
+          "needs_review",
+        );
         return { data: cancelled, error: null };
       },
       onError: domainError,

@@ -241,7 +241,7 @@ export class BillingService {
           );
         }
         const planId = event.planId ?? current.planId;
-        await this.repository.saveSubscription({
+        const applied = await this.repository.saveSubscriptionFromProvider({
           ...current,
           planId,
           status: event.status,
@@ -251,7 +251,24 @@ export class BillingService {
           providerSubscriptionId: event.providerSubscriptionId,
           cancelAtPeriodEnd: event.cancelAtPeriodEnd,
           usage: usageForPlan(current.usage, planId),
+        }, {
+          occurredAt: event.occurredAt,
+          eventId: event.eventId,
         });
+        if (!applied) {
+          await this.audit.record({
+            actorUserId: current.userId,
+            action: "billing.subscription.stale_ignored",
+            targetType: "subscription",
+            targetId: current.id,
+            outcome: "success",
+            reason:
+              `provider=${input.providerId};event=${event.eventId};` +
+              `occurred_at=${event.occurredAt}`,
+            requestId: input.requestId,
+          });
+          return { accepted: true, processed: false, duplicate: false };
+        }
         await this.audit.record({
           actorUserId: current.userId,
           action: `billing.subscription.${event.status}`,
@@ -292,6 +309,10 @@ export class BillingService {
           });
           await this.activateSubscription(checkout.userId, checkout.planId, {
             provider: input.providerId,
+            providerEvent: {
+              occurredAt: event.occurredAt,
+              eventId: event.eventId,
+            },
             ...(event.providerCustomerId
               ? { providerCustomerId: event.providerCustomerId }
               : {}),
@@ -381,13 +402,14 @@ export class BillingService {
     planId: SubscriptionView["planId"],
     providerDetails?: {
       provider: PaymentProviderId;
+      providerEvent?: { occurredAt: number; eventId: string };
       providerCustomerId?: string;
       providerSubscriptionId?: string;
       renewalAt?: string;
     },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const current = await this.subscription(userId);
-    await this.repository.saveSubscription({
+    const subscription: SubscriptionView = {
       ...current,
       planId,
       status: "active",
@@ -415,7 +437,15 @@ export class BillingService {
           }
         : {}),
       usage: usageForPlan(current.usage, planId),
-    });
+    };
+    if (providerDetails?.providerEvent) {
+      return this.repository.saveSubscriptionFromProvider(
+        subscription,
+        providerDetails.providerEvent,
+      );
+    }
+    await this.repository.saveSubscription(subscription);
+    return true;
   }
 }
 

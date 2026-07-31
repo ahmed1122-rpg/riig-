@@ -79,7 +79,14 @@ When Stripe is enabled, configure:
 
 ## Release
 
-The `release-images` workflow builds each image once, publishes it to GHCR,
+Protect the `production-release` GitHub environment with required reviewers and
+restrict deployments to protected tags/branches. Before publication, the
+`release-images` workflow checks out the exact release SHA and re-runs
+`npm run quality`, the production dependency audit, and
+`npm run test:topology:full`. The publish job cannot start unless this source
+gate succeeds.
+
+The workflow then builds each image once, publishes it to GHCR,
 generates SBOM/provenance, scans it, signs the resulting digest with Cosign,
 and uploads `release.env`. Copy its digest-qualified `RUNTIME_IMAGE_REF` and
 `WEB_IMAGE_REF` values into the deployment environment. Production Compose
@@ -122,14 +129,19 @@ full-document PSD. TIFF is an image-project export, not a PDF export.
 
 ## Scheduled retention maintenance
 
-Run the idempotent one-shot maintenance task at least hourly using the
-platform scheduler:
+The production Compose stack runs `maintenance-scheduler` hourly by default.
+Each run takes a PostgreSQL advisory lock, so multiple deployed schedulers do
+not overlap. Set `RETENTION_RUN_INTERVAL_MINUTES` between 15 and 1440 minutes.
+
+For platforms with a native scheduler, disable the Compose scheduler and run
+the same idempotent one-shot command at least hourly:
 
 ```bash
 docker compose --env-file .env.production -f compose.production.yaml \
   --profile maintenance run --rm maintenance
 ```
 
+Each database prune is transactional and bounded by `RETENTION_BATCH_SIZE`.
 It deletes expired upload and export bytes before marking their database rows
 as purged. A storage failure leaves the row eligible for retry and makes the
 command exit non-zero. It also removes expired sessions, MFA challenges,
@@ -137,7 +149,8 @@ password-reset tokens, idempotency keys, stale worker heartbeats, and old
 terminal-job metadata according to the explicit retention variables. Audit and
 usage-ledger defaults are 400 days; legal/compliance ownership must approve any
 shorter value. Never apply this task to live `sources/` or `derived/` objects
-that remain referenced by a ready source version or layer document.
+that remain referenced by a project, upload, job, layer document, or source
+restore history.
 
 ## Security controls
 
@@ -165,10 +178,18 @@ share the queue. Every processing/export job uses a renewable lease and bounded
 retry; set `PROCESSING_LEASE_MS` and `EXPORT_LEASE_MS` above the normal p99 job
 duration while retaining heartbeat headroom.
 
+On `SIGTERM`, workers stop claiming new work and drain for
+`PROCESSING_DRAIN_TIMEOUT_MS` or `EXPORT_DRAIN_TIMEOUT_MS` (30 seconds by
+default). Any lease still active at the deadline is atomically returned to the
+queue without consuming a retry attempt. Keep the container stop grace period
+larger than the drain timeout; the production Compose profile uses 45 seconds.
+
 Scrape `http://api:4000/internal/metrics` only from the private application
 network. It exposes HTTP and job-duration histograms, queue depth/age, recent
 retry and lease-loss counts, worker heartbeat gauges, and aggregate dependency
-readiness. Load `deploy/prometheus-alerts.yml` into the monitoring system. The
+readiness. It also exposes the latest retention success/failure timestamps and
+`motionprep_maintenance_stale`; the administrator system view reports the same
+durable state. Load `deploy/prometheus-alerts.yml` into the monitoring system. The
 CPU/RAM alerts in that file consume the standard container runtime/cAdvisor
 series and compare usage with the Compose ceilings. The public Nginx
 configuration deliberately exposes no `/internal` location.

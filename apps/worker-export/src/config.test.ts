@@ -18,6 +18,7 @@ describe("export worker object-storage configuration", () => {
 
     assert.equal(config.OBJECT_STORAGE_ACCESS_KEY, undefined);
     assert.equal(config.OBJECT_STORAGE_SECRET_KEY, undefined);
+    assert.equal(config.EXPORT_DRAIN_TIMEOUT_MS, 30_000);
   });
 
   it("accepts temporary explicit credentials", () => {

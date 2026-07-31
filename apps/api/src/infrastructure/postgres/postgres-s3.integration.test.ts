@@ -5,6 +5,7 @@ import type {
   ExportJob,
   LayerDocument,
   ProcessingJob,
+  SubscriptionView,
 } from "@motionprep/contracts";
 import { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -14,12 +15,15 @@ import {
   PostgresRetentionStore,
   RetentionCleanup,
 } from "../../maintenance/retention-cleanup.js";
+import { PostgresRetentionRunner } from "../../maintenance/retention-runtime.js";
 import { runExportWorker } from "../../exports/export-worker-runtime.js";
 import { PostgresExportRepository } from "./postgres-export-repository.js";
+import { PostgresBillingRepository } from "./postgres-billing-repository.js";
 import {
   PostgresLayerDocumentRepository,
   PostgresProcessingJobRepository,
 } from "./postgres-processing-repository.js";
+import { PostgresProjectRepository } from "./postgres-project-repository.js";
 import { PostgresSourceVersionRestoreCommand } from "./postgres-source-version-restore.js";
 
 const integrationEnvironment = {
@@ -325,6 +329,166 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     expect(await storage.get(key)).toBeNull();
   });
 
+  it("rejects stale provider subscription events atomically", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const user = await pool.query<{ owner_user_id: string }>(
+      "SELECT owner_user_id FROM projects WHERE id = $1",
+      [fixture.projectId],
+    );
+    const userId = user.rows[0]!.owner_user_id;
+    const repository = new PostgresBillingRepository(pool);
+    const current = createSubscription(userId, {
+      planId: "studio",
+      status: "active",
+    });
+    const stale = createSubscription(userId, {
+      planId: "starter",
+      status: "cancelled",
+    });
+
+    await expect(
+      repository.saveSubscriptionFromProvider(current, {
+        eventId: "evt_200",
+        occurredAt: 200,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      repository.saveSubscriptionFromProvider(stale, {
+        eventId: "evt_100",
+        occurredAt: 100,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      repository.saveSubscriptionFromProvider(stale, {
+        eventId: "evt_200",
+        occurredAt: 200,
+      }),
+    ).resolves.toBe(false);
+
+    await expect(repository.findSubscription(userId)).resolves.toMatchObject({
+      planId: "studio",
+      status: "active",
+    });
+  });
+
+  it("prunes only unreferenced terminal source versions", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const removableSourceId = crypto.randomUUID();
+    const retainedSourceId = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO source_versions (
+         id, project_id, upload_id, version_number, filename, content_type,
+         size_bytes, status, sha256, created_at, updated_at
+       ) VALUES
+         ($1, $3, $4, 1, 'removable.png', 'image/png', 1, 'failed', NULL, $6, $6),
+         ($2, $3, $5, 2, 'retained.png', 'image/png', 1, 'failed', NULL, $6, $6)`,
+      [
+        removableSourceId,
+        retainedSourceId,
+        fixture.projectId,
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        "2020-01-01T00:00:00.000Z",
+      ],
+    );
+    await pool.query(
+      "UPDATE projects SET current_source_version_id = $2 WHERE id = $1",
+      [fixture.projectId, retainedSourceId],
+    );
+
+    const counts = await new PostgresRetentionStore(pool).pruneDatabase(
+      "2026-07-28T10:00:00.000Z",
+      retentionConfig(),
+    );
+    const remaining = await pool.query<{ id: string }>(
+      "SELECT id FROM source_versions WHERE id = ANY($1::uuid[]) ORDER BY id",
+      [[removableSourceId, retainedSourceId]],
+    );
+
+    expect(counts.sourceVersions).toBe(1);
+    expect(remaining.rows.map((row) => row.id)).toEqual([retainedSourceId]);
+  });
+
+  it("reserves a project for only one active job", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    await pool.query(
+      `INSERT INTO source_versions (
+         id, project_id, upload_id, version_number, filename, content_type,
+         size_bytes, status, sha256, created_at, updated_at
+       ) VALUES ($1, $2, $3, 1, 'ready.png', 'image/png', 1, 'ready', $4, $5, $5)`,
+      [
+        fixture.sourceVersionId,
+        fixture.projectId,
+        crypto.randomUUID(),
+        "a".repeat(64),
+        "2026-07-28T09:00:00.000Z",
+      ],
+    );
+    await pool.query(
+      "UPDATE projects SET current_source_version_id = $2 WHERE id = $1",
+      [fixture.projectId, fixture.sourceVersionId],
+    );
+    const projects = new PostgresProjectRepository(pool);
+    const firstJobId = crypto.randomUUID();
+
+    await expect(
+      projects.updateStatusForSource(
+        fixture.projectId,
+        fixture.sourceVersionId,
+        "processing",
+        { type: "processing", id: firstJobId },
+      ),
+    ).resolves.toMatchObject({ status: "processing" });
+    await expect(
+      projects.updateStatusForSource(
+        fixture.projectId,
+        fixture.sourceVersionId,
+        "exporting",
+        { type: "export", id: crypto.randomUUID() },
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      projects.finishJobStatus(
+        fixture.projectId,
+        fixture.sourceVersionId,
+        { type: "processing", id: firstJobId },
+        "needs_review",
+      ),
+    ).resolves.toMatchObject({ status: "needs_review" });
+  });
+
+  it("records successful retention maintenance while holding the database lock", async () => {
+    const config = retentionConfig();
+    const runner = new PostgresRetentionRunner(
+      pool,
+      new RetentionCleanup(
+        new PostgresRetentionStore(pool),
+        storage,
+        config,
+        () => new Date("2026-07-28T10:00:00.000Z"),
+      ),
+      config.RETENTION_RUN_INTERVAL_MINUTES * 60_000,
+    );
+
+    await expect(runner.run()).resolves.toMatchObject({
+      checkedAt: "2026-07-28T10:00:00.000Z",
+    });
+    const status = await pool.query<{
+      task: string;
+      last_succeeded_at: Date | null;
+      last_error: string | null;
+    }>(
+      `SELECT task, last_succeeded_at, last_error
+       FROM maintenance_status WHERE task = 'retention'`,
+    );
+
+    expect(status.rows[0]).toMatchObject({
+      task: "retention",
+      last_succeeded_at: expect.any(Date),
+      last_error: null,
+    });
+  });
+
   it("purges expired upload and export objects through the retention task", async () => {
     const fixture = await insertProjectFixture(pool, "image");
     const uploadId = crypto.randomUUID();
@@ -374,14 +538,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     const report = await new RetentionCleanup(
       new PostgresRetentionStore(pool),
       storage,
-      {
-        RETENTION_BATCH_SIZE: 10,
-        JOB_RETENTION_DAYS: 90,
-        AUDIT_RETENTION_DAYS: 400,
-        USAGE_LEDGER_RETENTION_DAYS: 400,
-        WORKER_HEARTBEAT_RETENTION_DAYS: 7,
-        WORKER_EVENT_RETENTION_DAYS: 30,
-      },
+      retentionConfig(),
       () => new Date("2026-07-28T10:00:00.000Z"),
     ).run();
 
@@ -439,6 +596,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
         pollMilliseconds: 25,
         concurrency: 1,
         leaseMilliseconds: 30_000,
+        drainTimeoutMilliseconds: 5_000,
         sharpCacheMemoryMb: 16,
         sharpConcurrency: 1,
         workerId: `integration-export-${crypto.randomUUID()}`,
@@ -605,6 +763,42 @@ function createBookDocument(fixture: ProjectFixture): LayerDocument {
       },
     ],
   };
+}
+
+function createSubscription(
+  userId: string,
+  overrides: Partial<SubscriptionView> = {},
+): SubscriptionView {
+  return {
+    id: crypto.randomUUID(),
+    userId,
+    planId: "creator",
+    status: "active",
+    renewalAt: "2026-08-28T10:00:00.000Z",
+    usage: {
+      jobs: 4,
+      jobLimit: 100,
+      processingMinutes: 3,
+      processingMinuteLimit: 600,
+    },
+    provider: "stripe",
+    providerCustomerId: `cus_${crypto.randomUUID()}`,
+    providerSubscriptionId: `sub_${crypto.randomUUID()}`,
+    cancelAtPeriodEnd: false,
+    ...overrides,
+  };
+}
+
+function retentionConfig() {
+  return {
+    RETENTION_BATCH_SIZE: 10,
+    RETENTION_RUN_INTERVAL_MINUTES: 60,
+    JOB_RETENTION_DAYS: 90,
+    AUDIT_RETENTION_DAYS: 400,
+    USAGE_LEDGER_RETENTION_DAYS: 400,
+    WORKER_HEARTBEAT_RETENTION_DAYS: 7,
+    WORKER_EVENT_RETENTION_DAYS: 30,
+  } as const;
 }
 
 async function waitFor<T>(

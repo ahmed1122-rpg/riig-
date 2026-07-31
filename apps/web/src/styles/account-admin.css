@@ -420,6 +420,10 @@
 .admin-topbar__actions { display: flex; min-width: 0; align-items: center; gap: 10px; }
 .admin-topbar__leading > span { display: flex; align-items: center; gap: 6px; color: #39725f; font-size: 8px; font-weight: 800; }
 .admin-topbar__leading > span i { width: 6px; height: 6px; border-radius: 50%; background: #35a36c; box-shadow: 0 0 0 4px rgba(53,163,108,.09); }
+.admin-topbar__leading > span.is-checking { color: #8a6b20; }
+.admin-topbar__leading > span.is-checking i { background: #d9a62d; box-shadow: 0 0 0 4px rgba(217,166,45,.1); }
+.admin-topbar__leading > span.is-error { color: var(--danger); }
+.admin-topbar__leading > span.is-error i { background: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 10%, transparent); }
 .admin-topbar__leading > b { padding-inline-start: 10px; border-inline-start: 1px solid var(--admin-line); font-size: 10px; }
 .admin-mobile-menu { display: none; }
 .admin-avatar { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 50%; background: #254c44; color: #effbf7; font-size: 9px; font-weight: 800; }
@@ -457,7 +461,9 @@
 .admin-data-head,
 .admin-data-row { display: grid; align-items: center; gap: 10px; padding: 0 13px; }
 .processing-table .admin-data-head,
-.processing-table .admin-data-row { grid-template-columns: minmax(170px,1.5fr) minmax(90px,.8fr) minmax(110px,1fr) 60px 75px 20px; }
+.processing-table .admin-data-row { grid-template-columns: minmax(170px,1.5fr) minmax(90px,.8fr) minmax(110px,1fr) 60px 75px 58px; }
+.admin-row-action { min-height: 27px; padding: 0 8px; border: 1px solid var(--admin-line); background: #f7faf9; color: var(--primary-strong); font-size: 7px; font-weight: 800; }
+.admin-row-action:hover { border-color: var(--primary); background: var(--primary-soft); }
 .users-table .admin-data-head,
 .users-table .admin-data-row { grid-template-columns: minmax(210px,1.5fr) 90px 80px 90px 75px 20px; }
 .audit-table .admin-data-head,
@@ -533,7 +539,7 @@ button.admin-data-row:hover { background: #f7faf9; }
   .payment-card-demo { grid-row: 2 / 5; margin: 0; }
   .plan-row { grid-template-columns: minmax(160px,1fr) minmax(150px,.7fr) 85px 110px; gap: 10px; }
   .processing-table .admin-data-head,
-  .processing-table .admin-data-row { grid-template-columns: minmax(150px,1.4fr) minmax(80px,.75fr) minmax(100px,1fr) 55px 70px 18px; }
+  .processing-table .admin-data-row { grid-template-columns: minmax(150px,1.4fr) minmax(80px,.75fr) minmax(100px,1fr) 55px 70px 55px; }
   .admin-data-row,
   .admin-data-head { gap: 6px; padding-inline: 9px; }
 }

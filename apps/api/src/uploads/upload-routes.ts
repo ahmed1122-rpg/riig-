@@ -1,5 +1,6 @@
 import {
   MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MEBIBYTES,
   acceptedSourceTypes,
 } from "@motionprep/contracts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -24,12 +25,6 @@ const uploadIntentSchema = z.object({
   replaceSourceVersion: z.boolean().optional(),
 });
 
-const completeUploadSchema = z.object({
-  observedContentType: z.enum(acceptedSourceTypes),
-  observedSizeBytes: z.number().int().positive().max(MAX_UPLOAD_BYTES),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/i),
-});
-
 const uploadParamsSchema = z.object({ uploadId: z.string().uuid() });
 
 const domainError = createDomainErrorResponder(
@@ -37,6 +32,8 @@ const domainError = createDomainErrorResponder(
   (code) =>
     code === "UPLOAD_NOT_FOUND"
       ? 404
+      : code === "UPLOAD_STORAGE_MISMATCH"
+        ? 502
       : code === "ACTIVE_UPLOAD_EXISTS" ||
           code === "UPLOAD_REQUEST_IN_PROGRESS"
         ? 409
@@ -95,7 +92,7 @@ export async function registerUploadRoutes(
         request.id,
         400,
         "UPLOAD_REJECTED",
-        "الملف غير مدعوم أو يتجاوز الحد الأقصى 30 ميجابايت.",
+        `الملف غير مدعوم أو يتجاوز الحد الأقصى ${MAX_UPLOAD_MEBIBYTES} MiB.`,
       );
     }
 
@@ -105,6 +102,19 @@ export async function registerUploadRoutes(
     );
     if (!project) {
       return sendProjectNotFound(reply, request.id);
+    }
+
+    if (
+      project.currentSourceVersionId &&
+      parsed.data.replaceSourceVersion !== true
+    ) {
+      return sendApiError(
+        reply,
+        request.id,
+        409,
+        "SOURCE_REPLACEMENT_CONFIRMATION_REQUIRED",
+        "يتطلب استبدال المصدر الحالي تأكيدًا صريحًا.",
+      );
     }
 
     const inputMatchesProject =
@@ -171,29 +181,6 @@ export async function registerUploadRoutes(
       await requireRequestUpload(request, params.data.uploadId);
       const session = await persistReadyUpload(() =>
         uploads.receive(params.data.uploadId, content),
-      );
-      return { data: session, error: null };
-    } catch (error) {
-      return domainError(error, request, reply);
-    }
-  });
-
-  app.post("/v1/uploads/:uploadId/complete", async (request, reply) => {
-    const params = uploadParamsSchema.safeParse(request.params);
-    const body = completeUploadSchema.safeParse(request.body);
-    if (!params.success || !body.success) {
-      return sendApiError(
-        reply,
-        request.id,
-        400,
-        "VALIDATION_FAILED",
-        "بيانات إكمال الرفع غير صالحة.",
-      );
-    }
-    try {
-      await requireRequestUpload(request, params.data.uploadId);
-      const session = await persistReadyUpload(() =>
-        uploads.complete(params.data.uploadId, body.data),
       );
       return { data: session, error: null };
     } catch (error) {

@@ -112,34 +112,6 @@
   cursor: not-allowed;
   opacity: .62;
 }
-.pro-planned-tools {
-  margin-top: 8px;
-  border-top: 1px solid var(--line);
-  padding: 10px 5px 0;
-}
-.pro-planned-tools summary {
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 800;
-}
-.pro-planned-tools ul {
-  display: grid;
-  gap: 8px;
-  margin: 9px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.pro-planned-tools li {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: start;
-  gap: 6px;
-  color: var(--text-muted);
-}
-.pro-planned-tools li span { display: grid; gap: 3px; }
-.pro-planned-tools li strong { color: var(--text-soft); font-size: 12px; }
-.pro-planned-tools li small { font-size: 12px; line-height: 1.55; }
 .pro-active-tool {
   display: grid;
   gap: 3px;
@@ -155,7 +127,6 @@
 .pro-tool-rail.is-collapsed .pro-tool-group { display: grid; place-items: center; }
 .pro-tool-rail.is-collapsed .pro-tool-group button { width: 36px; min-height: 34px; grid-template-columns: 1fr; place-items: center; padding: 0; }
 .pro-tool-rail.is-collapsed .pro-tool-group button.is-active { box-shadow: inset 0 -2px var(--primary); }
-.pro-tool-rail.is-collapsed .pro-planned-tools { display: none; }
 
 .source-version-dialog { max-width: 720px; }
 .source-version-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -506,6 +477,9 @@
 .pro-layer-row:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
 .pro-layer-row.is-fixed { margin-top: 5px; border-color: var(--line); background: repeating-linear-gradient(-45deg, var(--surface-soft), var(--surface-soft) 6px, var(--surface) 6px, var(--surface) 12px); }
 .pro-layer-grip { display: grid; width: 18px; height: 30px; place-items: center; color: var(--text-muted); cursor: grab; }
+.pro-layer-row.is-dragging { opacity: .45; }
+.pro-layer-row.is-drag-over { box-shadow: inset 0 2px 0 var(--primary); }
+.pro-layer-grip:active { cursor: grabbing; }
 .pro-layer-thumb { display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid var(--line); border-radius: 3px; background: color-mix(in srgb, var(--layer-color) 18%, var(--surface)); color: var(--text-soft); font-size: 8px; }
 .pro-layer-thumb i { width: 12px; height: 16px; border-radius: 40%; background: var(--layer-color); }
 .pro-layer-copy { display: grid; min-width: 0; gap: 3px; text-align: start; }
@@ -660,8 +634,7 @@
   .pro-tool-rail .pro-tool-group h3,
   .pro-tool-rail .pro-tool-group button span,
   .pro-tool-rail .pro-tool-group kbd,
-  .pro-tool-rail .pro-active-tool,
-  .pro-tool-rail .pro-planned-tools { display: none; }
+  .pro-tool-rail .pro-active-tool { display: none; }
   .pro-tool-rail .pro-tool-groups { padding-inline: 5px; }
   .pro-tool-rail .pro-tool-group { display: grid; place-items: center; }
   .pro-tool-rail .pro-tool-group button { width: 36px; min-height: 34px; grid-template-columns: 1fr; place-items: center; padding: 0; }

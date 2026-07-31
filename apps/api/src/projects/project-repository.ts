@@ -3,6 +3,13 @@ import type {
   ProjectSummary,
 } from "@motionprep/contracts";
 
+export type ProjectJobType = "processing" | "export";
+
+export interface ActiveProjectJob {
+  type: ProjectJobType;
+  id: string;
+}
+
 export interface ProjectRepository {
   create(ownerUserId: string, input: CreateProjectInput): Promise<ProjectSummary>;
   findOwnedById(
@@ -14,6 +21,18 @@ export interface ProjectRepository {
     id: string,
     status: ProjectSummary["status"],
   ): Promise<ProjectSummary | null>;
+  updateStatusForSource(
+    id: string,
+    sourceVersionId: string,
+    status: ProjectSummary["status"],
+    activeJob: ActiveProjectJob | null,
+  ): Promise<ProjectSummary | null>;
+  finishJobStatus(
+    id: string,
+    sourceVersionId: string,
+    activeJob: ActiveProjectJob,
+    status: ProjectSummary["status"],
+  ): Promise<ProjectSummary | null>;
   updateCurrentSourceVersion(
     id: string,
     sourceVersionId: string,
@@ -23,6 +42,8 @@ export interface ProjectRepository {
 
 interface ProjectRecord extends ProjectSummary {
   ownerUserId: string;
+  activeJobType: ProjectJobType | null;
+  activeJobId: string | null;
 }
 
 export class InMemoryProjectRepository implements ProjectRepository {
@@ -41,6 +62,8 @@ export class InMemoryProjectRepository implements ProjectRepository {
       status: "draft",
       currentSourceVersionId: null,
       currentSourceVersionNumber: null,
+      activeJobType: null,
+      activeJobId: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -75,6 +98,61 @@ export class InMemoryProjectRepository implements ProjectRepository {
     const updated = {
       ...project,
       status,
+      activeJobType: null,
+      activeJobId: null,
+      updatedAt: new Date().toISOString(),
+    };
+    this.#projects.set(id, updated);
+    return this.toSummary(updated);
+  }
+
+  async updateStatusForSource(
+    id: string,
+    sourceVersionId: string,
+    status: ProjectSummary["status"],
+    activeJob: ActiveProjectJob | null,
+  ): Promise<ProjectSummary | null> {
+    const project = this.#projects.get(id);
+    if (
+      !project ||
+      project.currentSourceVersionId !== sourceVersionId ||
+      (project.activeJobId !== null &&
+        (project.activeJobType !== activeJob?.type ||
+          project.activeJobId !== activeJob?.id))
+    ) {
+      return null;
+    }
+    const updated: ProjectRecord = {
+      ...project,
+      status,
+      activeJobType: activeJob?.type ?? null,
+      activeJobId: activeJob?.id ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    this.#projects.set(id, updated);
+    return this.toSummary(updated);
+  }
+
+  async finishJobStatus(
+    id: string,
+    sourceVersionId: string,
+    activeJob: ActiveProjectJob,
+    status: ProjectSummary["status"],
+  ): Promise<ProjectSummary | null> {
+    const project = this.#projects.get(id);
+    if (
+      !project ||
+      project.currentSourceVersionId !== sourceVersionId ||
+      project.activeJobType !== activeJob.type ||
+      project.activeJobId !== activeJob.id
+    ) {
+      return null;
+    }
+    const updated: ProjectRecord = {
+      ...project,
+      status,
+      activeJobType: null,
+      activeJobId: null,
       updatedAt: new Date().toISOString(),
     };
     this.#projects.set(id, updated);
@@ -92,6 +170,8 @@ export class InMemoryProjectRepository implements ProjectRepository {
       ...project,
       currentSourceVersionId: sourceVersionId,
       currentSourceVersionNumber: versionNumber,
+      activeJobType: null,
+      activeJobId: null,
       updatedAt: new Date().toISOString(),
     };
     this.#projects.set(id, updated);
@@ -99,7 +179,12 @@ export class InMemoryProjectRepository implements ProjectRepository {
   }
 
   private toSummary(project: ProjectRecord): ProjectSummary {
-    const { ownerUserId: _ownerUserId, ...summary } = project;
+    const {
+      ownerUserId: _ownerUserId,
+      activeJobType: _activeJobType,
+      activeJobId: _activeJobId,
+      ...summary
+    } = project;
     return summary;
   }
 }

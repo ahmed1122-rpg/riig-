@@ -1,4 +1,5 @@
 import os from "node:os";
+import type { ExportJob } from "@motionprep/contracts";
 import sharp from "sharp";
 import { InMemoryIdempotencyStore } from "../idempotency/idempotency-store.js";
 import { createDatabase } from "../infrastructure/postgres/database.js";
@@ -12,6 +13,9 @@ import {
 import { ExportService } from "./export-service.js";
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
+import { updateProjectStatusForJob } from "../projects/project-job-status.js";
+import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
+import { releaseExportJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
 
 export interface ExportWorkerConfig {
   databaseUrl: string;
@@ -20,6 +24,7 @@ export interface ExportWorkerConfig {
   pollMilliseconds: number;
   concurrency: number;
   leaseMilliseconds: number;
+  drainTimeoutMilliseconds: number;
   sharpCacheMemoryMb: number;
   sharpConcurrency: number;
   workerId?: string;
@@ -53,6 +58,36 @@ export async function runExportWorker(
   const workerId =
     config.workerId ??
     `${os.hostname()}:${process.pid}:${crypto.randomUUID().slice(0, 8)}`;
+  const drain = new WorkerDrainCoordinator<{
+    job: ExportJob;
+    workerId: string;
+  }>({
+    timeoutMilliseconds: config.drainTimeoutMilliseconds,
+    release: async ({ job, workerId: leaseOwner }) => {
+      const released = await releaseExportJobForShutdown(
+        database.pool,
+        job,
+        leaseOwner,
+      );
+      if (!released) return;
+      await recordWorkerEvent(database.pool, {
+        workerType: "export",
+        eventType: "retry",
+        jobId: job.id,
+      });
+      log("info", "export.shutdown_requeued", {
+        job_id: job.id,
+        worker_id: leaseOwner,
+      });
+    },
+    onReleaseError: (error, { job, workerId: leaseOwner }) => {
+      log("error", "export.shutdown_requeue_failed", {
+        job_id: job.id,
+        worker_id: leaseOwner,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    },
+  });
   sharp.cache({
     memory: config.sharpCacheMemoryMb,
     files: 0,
@@ -64,6 +99,15 @@ export async function runExportWorker(
     message: string,
     context: Record<string, unknown>,
   ) => options.onLog?.({ level, message, context });
+  const requestDrain = () => {
+    log("info", "worker.drain_started", {
+      active_jobs: drain.activeCount,
+      drain_timeout_ms: config.drainTimeoutMilliseconds,
+    });
+    drain.requestShutdown();
+  };
+  options.signal?.addEventListener("abort", requestDrain, { once: true });
+  if (options.signal?.aborted) requestDrain();
 
   await Promise.all([database.ready(), storage.ready(false)]);
   log("info", "worker.ready", {
@@ -87,18 +131,29 @@ export async function runExportWorker(
       ),
     );
   } finally {
+    options.signal?.removeEventListener("abort", requestDrain);
+    if (options.signal?.aborted) await drain.waitForRelease();
     await heartbeat.stop();
     await database.close();
     storage.destroy();
   }
 
   async function workerLoop(slot: number): Promise<void> {
+    const slotWorkerId = `${workerId}:${slot}`;
     while (!options.signal?.aborted) {
       try {
         const startedAt = Date.now();
         const job = await service.claimAndProcess(
-          `${workerId}:${slot}`,
+          slotWorkerId,
           config.leaseMilliseconds,
+          {
+            onClaimed: (claimed) =>
+              drain.register(slotWorkerId, {
+                job: claimed,
+                workerId: slotWorkerId,
+              }),
+            onSettled: () => drain.unregister(slotWorkerId),
+          },
         );
         if (!job) {
           await abortableDelay(config.pollMilliseconds, options.signal);
@@ -127,23 +182,23 @@ export async function runExportWorker(
           });
         });
         if (job.status === "ready") {
-          await database.pool.query(
-            `
-              UPDATE projects
-              SET status = 'completed', updated_at = now()
-              WHERE id = $1
-            `,
-            [job.projectId],
-          );
+          await updateProjectStatusForJob(database.pool, {
+            projectId: job.projectId,
+            sourceVersionId: job.sourceVersionId,
+            jobType: "export",
+            jobId: job.id,
+            status: "completed",
+            finished: true,
+          });
         } else if (job.status === "failed") {
-          await database.pool.query(
-            `
-              UPDATE projects
-              SET status = 'failed', updated_at = now()
-              WHERE id = $1
-            `,
-            [job.projectId],
-          );
+          await updateProjectStatusForJob(database.pool, {
+            projectId: job.projectId,
+            sourceVersionId: job.sourceVersionId,
+            jobType: "export",
+            jobId: job.id,
+            status: "failed",
+            finished: true,
+          });
         }
         log("info", "export.cycle_completed", {
           slot,

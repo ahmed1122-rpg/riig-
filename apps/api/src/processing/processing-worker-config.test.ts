@@ -17,6 +17,7 @@ describe("processing worker object-storage configuration", () => {
 
     expect(config.OBJECT_STORAGE_ACCESS_KEY).toBeUndefined();
     expect(config.OBJECT_STORAGE_SECRET_KEY).toBeUndefined();
+    expect(config.PROCESSING_DRAIN_TIMEOUT_MS).toBe(30_000);
   });
 
   it("accepts temporary explicit credentials", () => {

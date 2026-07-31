@@ -28,6 +28,14 @@ export interface OperationalStatusSnapshot {
   status: "ready" | "degraded";
   workers: WorkerStatus[];
   queues: QueueStatus[];
+  maintenance: {
+    task: "retention";
+    lastStartedAt: string | null;
+    lastSucceededAt: string | null;
+    lastFailedAt: string | null;
+    lastError: string | null;
+    stale: boolean;
+  } | null;
   checkedAt: string;
 }
 

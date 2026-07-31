@@ -43,9 +43,12 @@ interface ExportReviewProps {
   }>;
   onCreateExport: (
     format: ExportFormat,
-    options?: {
+    options: {
       scope?: "full-document" | "per-page" | "selected-page";
       selectedPage?: number;
+      scale: 1;
+      colorProfile: "sRGB";
+      namingPresetId: string;
     },
   ) => Promise<void>;
 }
@@ -103,6 +106,7 @@ export function ExportReview({
     [mode],
   );
   const selectedFormat = formats.find((item) => item.id === format);
+  const namingPresetId = mode === "image" ? "character-basic" : "kinetic-words";
   const displayedGenerationMessage =
     generationMessage ??
     (generationState === "done"
@@ -315,13 +319,21 @@ export function ExportReview({
     try {
       await onCreateExport(
         format,
-        mode === "book" && format === "psd"
-          ? pdfScope === "document"
-            ? { scope: "full-document" }
-            : pdfScope === "pages"
-              ? { scope: "per-page" }
-              : { scope: "selected-page", selectedPage: page }
-          : undefined,
+        {
+          scale: 1,
+          colorProfile: "sRGB",
+          namingPresetId,
+          ...(mode === "book" && format === "psd"
+            ? pdfScope === "document"
+              ? { scope: "full-document" as const }
+              : pdfScope === "pages"
+                ? { scope: "per-page" as const }
+                : {
+                    scope: "selected-page" as const,
+                    selectedPage: page,
+                  }
+            : {}),
+        },
       );
       setGenerationState("done");
       const successMessage = getExportFormatPresentation(
@@ -526,9 +538,9 @@ export function ExportReview({
               )}
 
               <div className="export-fields">
-                <label><span>الدقة</span><select defaultValue="original" disabled><option value="original">الحجم الأصلي</option></select></label>
-                <label><span>ملف الألوان</span><select defaultValue="srgb" disabled><option value="srgb">sRGB IEC61966-2.1</option></select></label>
-                <label><span>قالب التسمية</span><select defaultValue="adobe" disabled><option value="adobe">أسماء + الحالية</option></select></label>
+                <div><span>الدقة الفعلية</span><output>الحجم الأصلي · 1×</output></div>
+                <div><span>ملف الألوان</span><output>sRGB IEC61966-2.1</output></div>
+                <div><span>قالب الوثيقة</span><output>{namingPresetId}</output></div>
               </div>
 
               <button className="advanced-export-toggle" type="button" onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen}>
@@ -536,8 +548,8 @@ export function ExportReview({
               </button>
               {advancedOpen && (
                 <div className="advanced-export-options">
-                  <label><input type="checkbox" defaultChecked /> تضمين ملف manifest</label>
-                  <label><input type="checkbox" defaultChecked /> الاحتفاظ ببيانات الموضع</label>
+                  <span><Icon name="check" size={13} /> تُحفظ بيانات الموضع داخل الملف أو manifest بحسب الصيغة.</span>
+                  <span><Icon name="check" size={13} /> تُنشئ الصيغ الحزمية manifest تلقائيًا ولا تعرض خيارًا وهميًا لتعطيله.</span>
                 </div>
               )}
             </div>

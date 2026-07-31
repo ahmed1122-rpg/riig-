@@ -5,7 +5,10 @@ import type {
   ProjectSummary,
 } from "@motionprep/contracts";
 import type { Pool } from "pg";
-import type { ProjectRepository } from "../../projects/project-repository.js";
+import type {
+  ActiveProjectJob,
+  ProjectRepository,
+} from "../../projects/project-repository.js";
 import { toIso } from "./database.js";
 
 interface ProjectRow {
@@ -81,7 +84,10 @@ export class PostgresProjectRepository implements ProjectRepository {
       `
         WITH updated AS (
           UPDATE projects
-          SET status = $2, updated_at = now()
+          SET status = $2,
+              active_job_type = NULL,
+              active_job_id = NULL,
+              updated_at = now()
           WHERE id = $1
           RETURNING *
         )
@@ -99,6 +105,82 @@ export class PostgresProjectRepository implements ProjectRepository {
     return result.rows[0] ? mapProject(result.rows[0]) : null;
   }
 
+  async updateStatusForSource(
+    id: string,
+    sourceVersionId: string,
+    status: ProjectStatus,
+    activeJob: ActiveProjectJob | null,
+  ): Promise<ProjectSummary | null> {
+    const result = await this.pool.query<ProjectRow>(
+      `
+        WITH updated AS (
+          UPDATE projects
+          SET status = $3,
+              active_job_type = $4,
+              active_job_id = $5,
+              updated_at = now()
+          WHERE id = $1
+            AND current_source_version_id = $2
+            AND (
+              active_job_id IS NULL
+              OR (active_job_type = $4 AND active_job_id = $5)
+            )
+          RETURNING *
+        )
+        SELECT
+          updated.id, updated.name, updated.kind, updated.status,
+          updated.current_source_version_id,
+          source.version_number AS current_source_version_number,
+          updated.created_at, updated.updated_at
+        FROM updated
+        LEFT JOIN source_versions AS source
+          ON source.id = updated.current_source_version_id
+      `,
+      [
+        id,
+        sourceVersionId,
+        status,
+        activeJob?.type ?? null,
+        activeJob?.id ?? null,
+      ],
+    );
+    return result.rows[0] ? mapProject(result.rows[0]) : null;
+  }
+
+  async finishJobStatus(
+    id: string,
+    sourceVersionId: string,
+    activeJob: ActiveProjectJob,
+    status: ProjectStatus,
+  ): Promise<ProjectSummary | null> {
+    const result = await this.pool.query<ProjectRow>(
+      `
+        WITH updated AS (
+          UPDATE projects
+          SET status = $5,
+              active_job_type = NULL,
+              active_job_id = NULL,
+              updated_at = now()
+          WHERE id = $1
+            AND current_source_version_id = $2
+            AND active_job_type = $3
+            AND active_job_id = $4
+          RETURNING *
+        )
+        SELECT
+          updated.id, updated.name, updated.kind, updated.status,
+          updated.current_source_version_id,
+          source.version_number AS current_source_version_number,
+          updated.created_at, updated.updated_at
+        FROM updated
+        LEFT JOIN source_versions AS source
+          ON source.id = updated.current_source_version_id
+      `,
+      [id, sourceVersionId, activeJob.type, activeJob.id, status],
+    );
+    return result.rows[0] ? mapProject(result.rows[0]) : null;
+  }
+
   async updateCurrentSourceVersion(
     id: string,
     sourceVersionId: string,
@@ -108,7 +190,10 @@ export class PostgresProjectRepository implements ProjectRepository {
       `
         WITH updated AS (
           UPDATE projects
-          SET current_source_version_id = $2, updated_at = now()
+          SET current_source_version_id = $2,
+              active_job_type = NULL,
+              active_job_id = NULL,
+              updated_at = now()
           WHERE id = $1
           RETURNING *
         )

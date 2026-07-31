@@ -8,9 +8,15 @@ import {
   NoSuchKey,
   NotFound,
   PutObjectCommand,
+  type HeadObjectCommandOutput,
   S3Client,
 } from "@aws-sdk/client-s3";
-import type { ObjectStorage, StoredObject } from "./object-storage.js";
+import { createHash } from "node:crypto";
+import type {
+  ObjectStorage,
+  StoredObject,
+  StoredObjectMetadata,
+} from "./object-storage.js";
 
 export interface S3ObjectStorageOptions {
   endpoint?: string;
@@ -85,7 +91,8 @@ export class S3ObjectStorage implements ObjectStorage {
     }
   }
 
-  async put(object: StoredObject): Promise<void> {
+  async put(object: StoredObject): Promise<StoredObjectMetadata> {
+    const sha256 = createHash("sha256").update(object.body).digest("hex");
     await this.#client.send(
       new PutObjectCommand({
         Bucket: this.options.bucket,
@@ -94,32 +101,39 @@ export class S3ObjectStorage implements ObjectStorage {
         ContentType: object.contentType,
         ContentLength: object.sizeBytes,
         ChecksumAlgorithm: "SHA256",
+        ChecksumSHA256: Buffer.from(sha256, "hex").toString("base64"),
+        Metadata: { "motionprep-sha256": sha256 },
         ...(this.options.encryptionMode === "sse-s3"
           ? { ServerSideEncryption: "AES256" as const }
           : {}),
       }),
     );
-    if (this.options.encryptionMode !== "none") {
-      const metadata = await this.#client.send(
-        new HeadObjectCommand({
-          Bucket: this.options.bucket,
-          Key: object.key,
-        }),
-      );
-      const encrypted =
-        this.options.encryptionMode === "sse-s3"
-          ? metadata.ServerSideEncryption === "AES256"
-          : Boolean(metadata.ServerSideEncryption);
-      if (!encrypted) {
-        await this.#client.send(
-          new DeleteObjectCommand({
-            Bucket: this.options.bucket,
-            Key: object.key,
-          }),
-        );
-        throw new ObjectStorageEncryptionError(object.key);
-      }
+    const head = await this.#head(object.key);
+    const metadata = head ? metadataFromHead(object.key, head) : null;
+    if (
+      !metadata ||
+      metadata.sizeBytes !== object.sizeBytes ||
+      metadata.contentType !== object.contentType ||
+      metadata.sha256 !== sha256
+    ) {
+      await this.delete(object.key);
+      throw new ObjectStorageIntegrityError(object.key);
     }
+    const encrypted =
+      this.options.encryptionMode === "none" ||
+      (this.options.encryptionMode === "sse-s3"
+        ? head?.ServerSideEncryption === "AES256"
+        : Boolean(head?.ServerSideEncryption));
+    if (!encrypted) {
+      await this.delete(object.key);
+      throw new ObjectStorageEncryptionError(object.key);
+    }
+    return metadata;
+  }
+
+  async inspect(key: string): Promise<StoredObjectMetadata | null> {
+    const head = await this.#head(key);
+    return head ? metadataFromHead(key, head) : null;
   }
 
   async get(key: string): Promise<StoredObject | null> {
@@ -150,6 +164,21 @@ export class S3ObjectStorage implements ObjectStorage {
   destroy(): void {
     this.#client.destroy();
   }
+
+  async #head(key: string): Promise<HeadObjectCommandOutput | null> {
+    try {
+      return await this.#client.send(
+        new HeadObjectCommand({
+          Bucket: this.options.bucket,
+          Key: key,
+          ChecksumMode: "ENABLED",
+        }),
+      );
+    } catch (error) {
+      if (isMissing(error)) return null;
+      throw error;
+    }
+  }
 }
 
 export class ObjectStorageEncryptionError extends Error {
@@ -166,6 +195,43 @@ export class ObjectStorageVersioningError extends Error {
   constructor(bucket: string) {
     super(`Object storage bucket ${bucket} must have versioning enabled.`);
   }
+}
+
+export class ObjectStorageIntegrityError extends Error {
+  readonly code = "OBJECT_STORAGE_INTEGRITY_FAILED";
+
+  constructor(key: string) {
+    super(`Object storage did not preserve the expected metadata for ${key}.`);
+  }
+}
+
+function metadataFromHead(
+  key: string,
+  head: HeadObjectCommandOutput,
+): StoredObjectMetadata | null {
+  const providerChecksum = checksumHex(head.ChecksumSHA256);
+  const applicationChecksum = head.Metadata?.["motionprep-sha256"]?.toLowerCase();
+  const sha256 = providerChecksum ?? applicationChecksum;
+  if (
+    head.ContentLength === undefined ||
+    !head.ContentType ||
+    !sha256 ||
+    !/^[a-f0-9]{64}$/u.test(sha256)
+  ) {
+    return null;
+  }
+  return {
+    key,
+    contentType: head.ContentType,
+    sizeBytes: head.ContentLength,
+    sha256,
+  };
+}
+
+function checksumHex(value: string | undefined): string | null {
+  if (!value) return null;
+  const bytes = Buffer.from(value, "base64");
+  return bytes.byteLength === 32 ? bytes.toString("hex") : null;
 }
 
 function isMissing(error: unknown): boolean {

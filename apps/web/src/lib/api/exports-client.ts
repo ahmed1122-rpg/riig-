@@ -32,6 +32,9 @@ export async function createExportArtifact(
   options: {
     scope?: "full-document" | "per-page" | "selected-page";
     selectedPage?: number;
+    scale?: 1;
+    colorProfile?: "sRGB";
+    namingPresetId?: string;
     signal?: AbortSignal;
     onProgress?: (progress: number) => void;
   } = {},
@@ -52,9 +55,9 @@ export async function createExportArtifact(
       ...(options.selectedPage === undefined
         ? {}
         : { selectedPage: options.selectedPage }),
-      scale: 1,
-      colorProfile: "sRGB",
-      namingPresetId: "adobe-plus",
+      scale: options.scale ?? 1,
+      colorProfile: options.colorProfile ?? "sRGB",
+      namingPresetId: options.namingPresetId ?? "character-basic",
     }),
   });
   const completed = await waitForJob({

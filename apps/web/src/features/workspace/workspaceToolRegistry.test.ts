@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  getPlannedWorkspaceTools,
   getReadyWorkspaceTools,
-  getVisiblePlannedWorkspaceTools,
   isWorkspaceShortcut,
   resolveWorkspaceToolDispatch,
 } from "./workspaceToolRegistry";
@@ -22,15 +20,8 @@ describe("workspace tool registry", () => {
       "source.versions",
     ]);
     expect(tools.every((tool) => tool.available)).toBe(true);
-    expect(getPlannedWorkspaceTools("image")).toEqual([]);
   });
 
-  it("hides planned tools when production visibility is disabled", () => {
-    expect(getVisiblePlannedWorkspaceTools("image", false)).toEqual([]);
-    expect(getVisiblePlannedWorkspaceTools("image", true)).toEqual(
-      getPlannedWorkspaceTools("image"),
-    );
-  });
 
   it("disables source commands with a truthful reason before upload", () => {
     const tools = getReadyWorkspaceTools("book", false);
@@ -84,7 +75,6 @@ describe("workspace tool registry", () => {
         tools.find((tool) => tool.id === "pdf.region-ocr")!,
       ),
     ).toEqual({ kind: "pdf-region-ocr" });
-    expect(getPlannedWorkspaceTools("book")).toEqual([]);
     const imageTools = getReadyWorkspaceTools("image", true);
     expect(
       resolveWorkspaceToolDispatch(

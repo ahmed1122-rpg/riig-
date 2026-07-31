@@ -61,21 +61,12 @@ export interface ReadyWorkspaceTool extends WorkspaceToolBase {
   requiresSource: true;
 }
 
-export interface PlannedWorkspaceTool extends WorkspaceToolBase {
-  availability: "planned";
-  unavailableReason: string;
-}
-
-type WorkspaceToolDefinition =
-  | ReadyWorkspaceTool
-  | PlannedWorkspaceTool;
-
 export interface ResolvedWorkspaceTool extends ReadyWorkspaceTool {
   available: boolean;
   unavailableReason?: string;
 }
 
-const tools: readonly WorkspaceToolDefinition[] = [
+const tools: readonly ReadyWorkspaceTool[] = [
   {
     id: "image.keep",
     mode: "image",
@@ -305,9 +296,7 @@ export function getReadyWorkspaceTools(
 ): ResolvedWorkspaceTool[] {
   return tools
     .filter(
-      (tool): tool is ReadyWorkspaceTool =>
-        tool.availability === "ready" &&
-        (tool.mode === mode || tool.mode === "all"),
+      (tool) => tool.mode === mode || tool.mode === "all",
     )
     .map((tool): ResolvedWorkspaceTool => {
     if (tool.requiresSource && !hasSource) {
@@ -321,29 +310,11 @@ export function getReadyWorkspaceTools(
   });
 }
 
-export function getPlannedWorkspaceTools(
-  mode: ProjectMode,
-): PlannedWorkspaceTool[] {
-  return tools.filter(
-    (tool): tool is PlannedWorkspaceTool =>
-      tool.availability === "planned" &&
-      (tool.mode === mode || tool.mode === "all"),
-  );
-}
-
-export function getVisiblePlannedWorkspaceTools(
-  mode: ProjectMode,
-  includePlanned = import.meta.env.DEV,
-): PlannedWorkspaceTool[] {
-  return includePlanned ? getPlannedWorkspaceTools(mode) : [];
-}
-
 export function getReadyWorkspaceToolDefinition(
   id: ReadyWorkspaceToolId,
 ): ReadyWorkspaceTool {
   const tool = tools.find(
-    (candidate): candidate is ReadyWorkspaceTool =>
-      candidate.id === id && candidate.availability === "ready",
+    (candidate) => candidate.id === id,
   );
   if (!tool) throw new Error(`Unknown ready workspace tool: ${id}`);
   return tool;

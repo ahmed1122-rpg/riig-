@@ -3,6 +3,8 @@ import {
   MAX_IMAGE_LAYERS,
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_MEBIBYTES,
+  MAX_PDF_PAGES,
+  MAX_PDF_TEXT_ITEMS,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   acceptedSourceTypes,
@@ -23,6 +25,8 @@ describe("upload contract", () => {
   it("locks the server contract to 30 MiB", () => {
     expect(MAX_UPLOAD_MEBIBYTES).toBe(30);
     expect(MAX_UPLOAD_BYTES).toBe(31_457_280);
+    expect(MAX_PDF_PAGES).toBe(250);
+    expect(MAX_PDF_TEXT_ITEMS).toBe(100_000);
   });
 
   it("allows only the initial supported source types", () => {

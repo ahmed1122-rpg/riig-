@@ -11,13 +11,23 @@ export interface BillingRepository {
   ): Promise<SubscriptionView | null>;
   listSubscriptions(limit: number): Promise<SubscriptionView[]>;
   saveSubscription(subscription: SubscriptionView): Promise<void>;
+  saveSubscriptionFromProvider(
+    subscription: SubscriptionView,
+    event: ProviderEventVersion,
+  ): Promise<boolean>;
   findCheckout(id: string): Promise<CheckoutSession | null>;
   listCheckouts(limit: number): Promise<CheckoutSession[]>;
   saveCheckout(checkout: CheckoutSession): Promise<void>;
 }
 
+export interface ProviderEventVersion {
+  occurredAt: number;
+  eventId: string;
+}
+
 export class InMemoryBillingRepository implements BillingRepository {
   readonly #subscriptions = new Map<string, SubscriptionView>();
+  readonly #providerVersions = new Map<string, ProviderEventVersion>();
   readonly #checkouts = new Map<string, CheckoutSession>();
 
   async findSubscription(userId: string): Promise<SubscriptionView | null> {
@@ -48,6 +58,17 @@ export class InMemoryBillingRepository implements BillingRepository {
     this.#subscriptions.set(subscription.userId, subscription);
   }
 
+  async saveSubscriptionFromProvider(
+    subscription: SubscriptionView,
+    event: ProviderEventVersion,
+  ): Promise<boolean> {
+    const current = this.#providerVersions.get(subscription.userId);
+    if (current && compareProviderEvents(event, current) <= 0) return false;
+    this.#subscriptions.set(subscription.userId, subscription);
+    this.#providerVersions.set(subscription.userId, event);
+    return true;
+  }
+
   async findCheckout(id: string): Promise<CheckoutSession | null> {
     return this.#checkouts.get(id) ?? null;
   }
@@ -61,4 +82,14 @@ export class InMemoryBillingRepository implements BillingRepository {
   async saveCheckout(checkout: CheckoutSession): Promise<void> {
     this.#checkouts.set(checkout.id, checkout);
   }
+}
+
+function compareProviderEvents(
+  left: ProviderEventVersion,
+  right: ProviderEventVersion,
+): number {
+  if (left.occurredAt !== right.occurredAt) {
+    return left.occurredAt - right.occurredAt;
+  }
+  return left.eventId.localeCompare(right.eventId);
 }

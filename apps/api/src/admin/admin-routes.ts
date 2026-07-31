@@ -10,6 +10,7 @@ import type { ProcessingJobRepository } from "../processing/processing-repositor
 import type { UploadRepository } from "../uploads/upload-repository.js";
 import type { AdminAccessCommand } from "./admin-access-command.js";
 import type { OperationalStatusProvider } from "../observability/operational-status.js";
+import type { ProjectRepository } from "../projects/project-repository.js";
 
 const updateUserSchema = z
   .object({
@@ -20,6 +21,10 @@ const updateUserSchema = z
   .refine((value) => value.role !== undefined || value.status !== undefined);
 
 const userParamsSchema = z.object({ userId: z.string().uuid() });
+const processingParamsSchema = z.object({ jobId: z.string().uuid() });
+const retryProcessingSchema = z.object({
+  reason: z.string().trim().min(10).max(500),
+});
 
 function adminError(
   error: unknown,
@@ -49,6 +54,7 @@ export async function registerAdminRoutes(
     billing: BillingRepository;
     access?: AdminAccessCommand;
     operationalStatus?: OperationalStatusProvider;
+    projects: ProjectRepository;
   },
 ): Promise<void> {
   app.get("/v1/admin/overview", async (request, reply) => {
@@ -128,6 +134,108 @@ export async function registerAdminRoutes(
     }
   });
 
+  app.post("/v1/admin/processing/:jobId/retry", async (request, reply) => {
+    const params = processingParamsSchema.safeParse(request.params);
+    const body = retryProcessingSchema.safeParse(request.body);
+    if (!params.success || !body.success) {
+      return reply.status(400).send({
+        data: null,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "سبب إعادة المحاولة أو معرّف المهمة غير صالح.",
+          requestId: request.id,
+        },
+      });
+    }
+    try {
+      const actor = await requireRole(request, dependencies.auth, ["admin"]);
+      const job = await dependencies.processingJobs.findById(params.data.jobId);
+      if (!job) {
+        return reply.status(404).send({
+          data: null,
+          error: {
+            code: "PROCESSING_JOB_NOT_FOUND",
+            message: "مهمة المعالجة غير موجودة.",
+            requestId: request.id,
+          },
+        });
+      }
+      const source = await dependencies.uploads.findReadyBySourceVersion(
+        job.projectId,
+        job.sourceVersionId,
+      );
+      if (job.status !== "failed" || !source) {
+        return reply.status(409).send({
+          data: null,
+          error: {
+            code: "PROCESSING_JOB_NOT_RETRYABLE",
+            message: "لا يمكن إعادة هذه المهمة؛ يجب أن تكون فاشلة ومصدرها جاهزًا.",
+            requestId: request.id,
+          },
+        });
+      }
+      const activated = await dependencies.projects.updateStatusForSource(
+        job.projectId,
+        job.sourceVersionId,
+        "queued",
+        { type: "processing", id: job.id },
+      );
+      if (!activated) {
+        return reply.status(409).send({
+          data: null,
+          error: {
+            code: "PROCESSING_SOURCE_NOT_CURRENT",
+            message: "لم يعد مصدر المهمة هو الإصدار الحالي للمشروع.",
+            requestId: request.id,
+          },
+        });
+      }
+      const retried = await dependencies.processingJobs.retryFailed(
+        job.id,
+        new Date().toISOString(),
+      );
+      if (!retried) {
+        const concurrentlyRetried = await dependencies.processingJobs.findById(
+          job.id,
+        );
+        if (
+          concurrentlyRetried &&
+          ["queued", "processing", "verifying", "ready"].includes(
+            concurrentlyRetried.status,
+          )
+        ) {
+          return { data: concurrentlyRetried, error: null };
+        }
+        await dependencies.projects.finishJobStatus(
+          job.projectId,
+          job.sourceVersionId,
+          { type: "processing", id: job.id },
+          "failed",
+        );
+        return reply.status(409).send({
+          data: null,
+          error: {
+            code: "PROCESSING_JOB_NOT_RETRYABLE",
+            message: "تغيرت حالة المهمة قبل إعادة المحاولة.",
+            requestId: request.id,
+          },
+        });
+      }
+      await dependencies.audit.record({
+        actorUserId: actor.id,
+        action: "admin.processing.retry_requested",
+        targetType: "processing_job",
+        targetId: retried.id,
+        outcome: "success",
+        reason: body.data.reason,
+        requestId: request.id,
+      });
+      return { data: retried, error: null };
+    } catch (error) {
+      return adminError(error, request, reply);
+    }
+  });
+
   app.get("/v1/admin/system", async (request, reply) => {
     try {
       await requireRole(request, dependencies.auth, ["support", "admin"]);
@@ -137,6 +245,7 @@ export async function registerAdminRoutes(
             status: "degraded" as const,
             workers: [],
             queues: [],
+            maintenance: null,
             checkedAt: new Date().toISOString(),
           },
           error: null,

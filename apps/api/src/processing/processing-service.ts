@@ -61,6 +61,7 @@ import {
 type ProcessingDomainErrorCode =
   | "PROCESSING_NOT_FOUND"
   | "PROCESSING_IN_PROGRESS"
+  | "SOURCE_NOT_CURRENT"
   | "SOURCE_NOT_READY"
   | "SOURCE_INTEGRITY_FAILED"
   | "DOCUMENT_NOT_FOUND"
@@ -86,6 +87,7 @@ export class ProcessingDomainError extends Error {
   constructor(
     readonly code: ProcessingDomainErrorCode,
     message: string,
+    readonly jobId?: string,
   ) {
     super(message);
   }
@@ -112,7 +114,18 @@ export class ProcessingService {
     options: ProcessingJob["options"],
     idempotencyKey: string,
     ownerUserId?: string,
+    onQueued?: (job: ProcessingJob) => Promise<boolean>,
   ): Promise<ProcessingJob> {
+    const source = await this.uploads.findReadyBySourceVersion(
+      projectId,
+      sourceVersionId,
+    );
+    if (!source) {
+      throw new ProcessingDomainError(
+        "SOURCE_NOT_READY",
+        "نسخة المصدر لا تتبع المشروع أو لم تكتمل جاهزيتها.",
+      );
+    }
     const existing = await this.jobs.findBySource(projectId, sourceVersionId);
     if (existing) {
       const existingRegional = existing.options.pdfRegionOcr;
@@ -171,6 +184,20 @@ export class ProcessingService {
     } catch (error) {
       if (reserved) await this.usageMeter?.releaseJob(job.id);
       throw error;
+    }
+    if (onQueued && !(await onQueued(job))) {
+      await this.jobs.save({
+        ...job,
+        status: "failed",
+        errorCode: "SOURCE_NOT_CURRENT",
+        updatedAt: this.now().toISOString(),
+      });
+      if (reserved) await this.usageMeter?.releaseJob(job.id);
+      throw new ProcessingDomainError(
+        "SOURCE_NOT_CURRENT",
+        "تغير إصدار المصدر الحالي قبل إدخال المهمة إلى الطابور.",
+        job.id,
+      );
     }
     if (!this.executeInline) return job;
     const startedAt = Date.now();
@@ -1538,7 +1565,7 @@ export class ProcessingService {
       errorCode: code,
       updatedAt: this.now().toISOString(),
     });
-    throw new ProcessingDomainError(toDomainCode(code), message);
+    throw new ProcessingDomainError(toDomainCode(code), message, job.id);
   }
 }
 

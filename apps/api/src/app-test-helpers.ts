@@ -83,6 +83,7 @@ export class FakeStripeProvider implements PaymentProvider {
     this.receivedRawBody = Buffer.isBuffer(rawBody);
     const body = JSON.parse(rawBody.toString("utf8")) as {
       eventId: string;
+      occurredAt?: number;
       kind?: "subscription";
       status?: "active" | "past_due" | "cancelled";
     };
@@ -90,6 +91,7 @@ export class FakeStripeProvider implements PaymentProvider {
       return {
         kind: "subscription" as const,
         eventId: body.eventId,
+        occurredAt: body.occurredAt ?? 1_785_200_100,
         checkoutId: this.checkoutId,
         userId: null,
         planId: "creator" as const,
@@ -104,6 +106,7 @@ export class FakeStripeProvider implements PaymentProvider {
     return {
       kind: "checkout" as const,
       eventId: body.eventId,
+      occurredAt: body.occurredAt ?? 1_785_200_000,
       checkoutId: this.checkoutId!,
       status: "paid" as const,
       amountMinor: 1900,
