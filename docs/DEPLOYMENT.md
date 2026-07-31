@@ -21,6 +21,15 @@ leave the object-storage access/secret key pair unset. For another
 S3-compatible provider, leave `AWS_ROLE_ARN` unset and provide both secrets;
 the workflow rejects mixed or partial credential modes.
 
+Before a release exists, run the separate `staging-readiness` workflow on
+`main`. It performs live, non-destructive connectivity checks against
+TLS-protected PostgreSQL, Redis, SMTP, and S3. Store `DATABASE_URL`,
+`REDIS_URL`, `SMTP_USER`, and `SMTP_PASSWORD` as protected environment secrets;
+store the non-secret SMTP and bucket coordinates as environment variables.
+This preflight deliberately does not accept or waive recovery evidence. The
+full `provider-readiness` gate continues to require the signed isolated restore
+manifest when disaster-recovery testing resumes.
+
 The initial recovery targets are RPO <= 15 minutes and RTO <= 4 hours. Confirm
 these numbers with the business before launch and configure the managed
 PostgreSQL service for point-in-time recovery accordingly.
@@ -49,7 +58,10 @@ use Stripe Customer Portal.
 4. Set `WEB_ORIGIN` and `PASSWORD_RESET_URL` to the public HTTPS origin.
 5. Keep `PAYMENT_MODE=disabled` until the Stripe webhook is registered.
 6. Keep `PDF_OCR_MODE=local`; the bundled Arabic model performs OCR inside the
-   document worker and does not call an external document service.
+   document worker and does not call an external document service. Keep
+   `PDF_REGION_OCR_ENABLED=false` until a newly sealed independent holdout
+   reaches CER <= 25%. Ordinary PDF ingestion, page tools, and export remain
+   available while regional OCR is disabled.
 7. Set `OBJECT_STORAGE_ENCRYPTION_MODE=sse-s3` when the provider accepts an
    explicit `AES256` request, or `bucket-default` when encryption is enforced
    by bucket policy. Both modes are verified after every write; an object that
@@ -110,6 +122,15 @@ Verify:
 curl --fail https://<public-host>/healthz
 curl --fail https://<public-host>/v1/health/live
 curl --fail https://<public-host>/v1/health/ready
+npm run verify:object-storage
+```
+
+The protected pre-release dependency probe is equivalent to running the
+following two commands from a staging task with the deployment workload
+identity and environment:
+
+```bash
+npm run verify:staging-dependencies --workspace @motionprep/api
 npm run verify:object-storage
 ```
 

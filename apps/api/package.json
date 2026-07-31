@@ -30,6 +30,8 @@
     "db:migrate:prod": "node --conditions=production dist/infrastructure/postgres/migrate.js",
     "maintenance:retention:prod": "node --conditions=production dist/maintenance/run-retention-cleanup.js",
     "maintenance:retention:scheduler:prod": "node --conditions=production dist/maintenance/run-retention-scheduler.js",
+    "verify:staging-dependencies:test": "node --test scripts/verify-staging-dependencies.node-test.mjs",
+    "verify:staging-dependencies": "node scripts/verify-staging-dependencies.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",

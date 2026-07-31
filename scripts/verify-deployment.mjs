@@ -17,6 +17,8 @@ const requiredFiles = [
   "docs/OBJECT_STORAGE.md",
   "docs/PRODUCTION_READINESS.md",
   "scripts/verify-object-storage.mjs",
+  "apps/api/scripts/verify-staging-dependencies.mjs",
+  "apps/api/scripts/verify-staging-dependencies.node-test.mjs",
   "docs/runbooks/production-release-and-rollback.md",
   "docs/runbooks/processing-job-recovery.md",
   "docs/runbooks/disaster-recovery.md",
@@ -38,6 +40,7 @@ const requiredFiles = [
   ".github/workflows/release-images.yml",
   ".github/workflows/codeql.yml",
   ".github/workflows/provider-readiness.yml",
+  ".github/workflows/staging-readiness.yml",
   ".github/dependabot.yml",
 ];
 const violations = [];
@@ -69,6 +72,7 @@ const [
   objectStorageSmoke,
   packageManifest,
   localCompose,
+  apiPackageManifest,
 ] =
   await Promise.all(
     [
@@ -90,6 +94,7 @@ const [
       "scripts/verify-object-storage.mjs",
       "package.json",
       "compose.yaml",
+      "apps/api/package.json",
     ].map((file) => readFile(join(root, file), "utf8")),
   );
 
@@ -99,6 +104,7 @@ const workflowSources = await Promise.all(
     ".github/workflows/release-images.yml",
     ".github/workflows/codeql.yml",
     ".github/workflows/provider-readiness.yml",
+    ".github/workflows/staging-readiness.yml",
   ].map((file) => readFile(join(root, file), "utf8")),
 );
 const alertSource = await readFile(
@@ -173,6 +179,15 @@ try {
       "The CI hardened web smoke must provide the API hostname expected by nginx.",
     );
   }
+  if (
+    !ciWorkflow.includes(
+      "npm run verify:staging-dependencies:test --workspace @motionprep/api",
+    )
+  ) {
+    violations.push(
+      "CI validate must run the staging dependency verifier tests.",
+    );
+  }
 } catch {
   // The workflow parse violation above already reports the syntax failure.
 }
@@ -242,6 +257,21 @@ for (const token of [
     violations.push(
       `Provider-readiness workflow is missing identity token: ${token}`,
     );
+  }
+}
+const stagingWorkflow = workflowSources[4];
+for (const token of [
+  "environment: production-readiness",
+  "DATABASE_URL: ${{ secrets.DATABASE_URL }}",
+  "REDIS_URL: ${{ secrets.REDIS_URL }}",
+  "SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}",
+  "Configure short-lived AWS credentials through GitHub OIDC",
+  "npm run verify:staging-dependencies --workspace @motionprep/api",
+  "npm run verify:object-storage",
+  "Recovery evidence: intentionally remains in the production provider gate",
+]) {
+  if (!stagingWorkflow.includes(token)) {
+    violations.push(`Staging-readiness workflow is missing token: ${token}`);
   }
 }
 
@@ -377,6 +407,14 @@ for (const token of [
 }
 if (!packageManifest.includes('"verify:object-storage"')) {
   violations.push("Package scripts must expose the provider object-storage probe.");
+}
+if (!apiPackageManifest.includes('"verify:staging-dependencies"')) {
+  violations.push("API package scripts must expose the staging dependency probe.");
+}
+if (!/^PDF_REGION_OCR_ENABLED=false$/mu.test(exampleEnvironment)) {
+  violations.push(
+    "Regional PDF OCR must remain disabled in the production template until the holdout gate passes.",
+  );
 }
 if (nginx.includes("location /internal")) {
   violations.push("Internal metrics must not be exposed by the public web proxy.");

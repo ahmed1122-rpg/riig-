@@ -81,16 +81,16 @@ describe("production configuration", () => {
     expect(config.OBJECT_STORAGE_FORCE_PATH_STYLE).toBe(false);
     expect(config.OBJECT_STORAGE_ENCRYPTION_MODE).toBe("bucket-default");
     expect(config.PDF_OCR_MODE).toBe("local");
-    expect(config.PDF_REGION_OCR_ENABLED).toBe(true);
+    expect(config.PDF_REGION_OCR_ENABLED).toBe(false);
   });
 
-  it("supports an independent regional OCR kill switch", () => {
+  it("requires an explicit opt-in for regional OCR", () => {
     const config = loadConfig({
       NODE_ENV: "test",
-      PDF_REGION_OCR_ENABLED: "false",
+      PDF_REGION_OCR_ENABLED: "true",
     });
 
-    expect(config.PDF_REGION_OCR_ENABLED).toBe(false);
+    expect(config.PDF_REGION_OCR_ENABLED).toBe(true);
   });
 
   it("rejects plaintext production database, Redis, and SMTP transports", () => {
