@@ -31,7 +31,10 @@ jobs:
       LOAD_ITERATIONS: ${{ inputs.iterations }}
       LOAD_MAX_ERROR_RATE: "0"
       LOAD_MAX_WORKFLOW_P95_MS: ${{ vars.LOAD_MAX_WORKFLOW_P95_MS }}
-      LOAD_PDF_PATH: ${{ vars.REPRESENTATIVE_PDF_PATH }}
+      LOAD_PDF_PATH: .tmp/representative-load.pdf
+      REPRESENTATIVE_PDF_URL: ${{ secrets.REPRESENTATIVE_PDF_URL }}
+      REPRESENTATIVE_PDF_SHA256: ${{ vars.REPRESENTATIVE_PDF_SHA256 }}
+      REPRESENTATIVE_PDF_MIN_BYTES: ${{ vars.REPRESENTATIVE_PDF_MIN_BYTES }}
       LOAD_METRICS_URL: ${{ vars.STAGING_METRICS_URL }}
       LOAD_METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
       LOAD_REQUIRE_METRICS: "true"
@@ -43,10 +46,11 @@ jobs:
           node-version: 22.12.0
           cache: npm
       - run: npm ci
+      - name: Fetch and verify the protected representative PDF
+        run: npm run fetch:representative-pdf
       - name: Require explicit representative-load policy
         shell: bash
         run: |
-          test -n "$LOAD_PDF_PATH" || { echo "REPRESENTATIVE_PDF_PATH is required"; exit 1; }
           test -f "$LOAD_PDF_PATH" || { echo "Representative PDF fixture is unavailable"; exit 1; }
           test -n "$LOAD_MAX_WORKFLOW_P95_MS" || { echo "LOAD_MAX_WORKFLOW_P95_MS is required"; exit 1; }
           test -n "$LOAD_METRICS_URL" || { echo "STAGING_METRICS_URL is required"; exit 1; }

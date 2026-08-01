@@ -1,13 +1,19 @@
 import { runProcessingWorker } from "@motionprep/api/processing-worker";
+import { initializeTracing } from "@motionprep/api/tracing";
 import { pathToFileURL } from "node:url";
 
 export async function main(
   run: typeof runProcessingWorker = runProcessingWorker,
 ): Promise<void> {
-  await run({
-    projectKind: "image",
-    serviceName: "motionprep-worker-media",
-  });
+  const tracing = initializeTracing("motionprep-worker-media", process.env);
+  try {
+    await run({
+      projectKind: "image",
+      serviceName: "motionprep-worker-media",
+    });
+  } finally {
+    await tracing.shutdown();
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

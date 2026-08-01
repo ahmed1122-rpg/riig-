@@ -340,9 +340,15 @@ export interface ExportRequest {
   namingPresetId: string;
 }
 
+export interface TraceContext {
+  traceparent: string;
+  tracestate?: string;
+}
+
 export interface ExportJob {
   id: string;
   correlationId?: string;
+  traceContext?: TraceContext;
   projectId: string;
   sourceVersionId: string;
   documentRevision?: number;
@@ -374,6 +380,7 @@ export interface ExportJob {
 export interface ProcessingJob {
   id: string;
   correlationId?: string;
+  traceContext?: TraceContext;
   projectId: string;
   sourceVersionId: string;
   projectKind: ProjectKind;

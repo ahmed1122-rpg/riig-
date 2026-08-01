@@ -9,8 +9,10 @@ import { SmtpEmailSender } from "./infrastructure/email/smtp-email-sender.js";
 import { StripePaymentProvider } from "./billing/stripe-payment-provider.js";
 import { LocalArabicPdfOcrEngine } from "@motionprep/document-processing";
 import { EmailOutboxDispatcher } from "./infrastructure/email/email-outbox-dispatcher.js";
+import { initializeTracing } from "./observability/tracing.js";
 
 const config = loadConfig();
+const tracing = initializeTracing("motionprep-api", process.env);
 const persistence =
   config.PERSISTENCE_MODE === "postgres"
     ? createPostgresPersistence(config)
@@ -151,6 +153,7 @@ const app = await buildApp(config, {
   ...(pdfOcrEngine ? { pdfOcrEngine } : {}),
   readiness: ready,
 });
+app.addHook("onClose", async () => tracing.shutdown());
 if (persistence || security || objectStorage || emailSender || pdfOcrEngine) {
   // Fastify's onClose lifecycle hook is invoked only during application
   // shutdown and cannot receive an HTTP request. CodeQL otherwise models this

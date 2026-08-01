@@ -90,6 +90,8 @@ import {
   transformOpenApiDocumentation,
 } from "./http/openapi-defaults.js";
 import { UploadReconciler } from "./uploads/upload-reconciler.js";
+import { registerHttpErrorHandler } from "./http/error-handler.js";
+import { registerHttpTracing } from "./observability/tracing.js";
 
 const APPLICATION_VERSION = "0.1.2";
 
@@ -130,6 +132,7 @@ export async function buildApp(
     genReqId: () => randomUUID(),
     trustProxy: config.TRUST_PROXY_HOPS || false,
   });
+  registerHttpTracing(app);
 
   await app.register(helmet, {
     hsts:
@@ -502,6 +505,8 @@ export async function buildApp(
       ? { operationalStatus: dependencies.operationalStatus }
       : {}),
   });
+
+  registerHttpErrorHandler(app);
 
   app.setNotFoundHandler((request, reply) =>
     reply.status(404).send({

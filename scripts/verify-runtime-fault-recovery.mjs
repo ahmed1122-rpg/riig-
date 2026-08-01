@@ -9,6 +9,7 @@ const scenarios = [
   { dependency: "postgres", label: "PostgreSQL" },
 ];
 const evidence = [];
+const workerServices = ["worker-media", "worker-document", "worker-export"];
 
 await waitForReadiness(200, "initial dependency readiness", 60_000);
 
@@ -31,12 +32,42 @@ for (const scenario of scenarios) {
     `${scenario.label} recovery to restore readiness`,
     90_000,
   );
+  await waitForHealthyServices(
+    workerServices,
+    `${scenario.label} recovery to restore worker health`,
+    60_000,
+  );
   evidence.push({
     dependency: scenario.dependency,
     outageDetected: true,
     readinessRecovered: true,
+    workersRecovered: true,
     elapsedMs: Date.now() - startedAt,
   });
+}
+
+async function waitForHealthyServices(services, label, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let lastState = "unknown";
+  while (Date.now() < deadline) {
+    const states = services.map((service) => serviceState(service));
+    lastState = states.join(", ");
+    if (states.every((state) => state === "running/healthy")) return;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`Timed out waiting for ${label}; last state ${lastState}.`);
+}
+
+function serviceState(service) {
+  const id = dockerOutput("compose", ...compose.slice(1), "ps", "--quiet", service);
+  if (!id) return `${service}=missing`;
+  const state = dockerOutput(
+    "inspect",
+    "--format",
+    "{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",
+    id,
+  );
+  return `${service}=${state}`.replace(`${service}=running/healthy`, "running/healthy");
 }
 
 process.stdout.write(
@@ -75,4 +106,14 @@ function dockerCompose(...args) {
       result.error ? { cause: result.error } : undefined,
     );
   }
+}
+
+function dockerOutput(...args) {
+  const result = spawnSync("docker", args, {
+    encoding: "utf8",
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error || result.status !== 0) return "";
+  return result.stdout.trim();
 }

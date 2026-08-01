@@ -1,4 +1,4 @@
-import { Pool, type PoolConfig } from "pg";
+import { Pool, type PoolClient, type PoolConfig } from "pg";
 
 export interface DatabaseHandle {
   pool: Pool;
@@ -27,7 +27,7 @@ export function createDatabase(
     allowExitOnIdle: false,
   };
   const pool = new Pool(options);
-  pool.on("error", (error) => {
+  const reportError = (error: Error) => {
     if (runtimeOptions.onError) {
       runtimeOptions.onError(error);
       return;
@@ -45,6 +45,32 @@ export function createDatabase(
         context: { error_code: errorCode, error_name: error.name },
       })}\n`,
     );
+  };
+  pool.on("error", reportError);
+
+  // pg removes its idle-client error listener while a client is checked out.
+  // A database restart can otherwise emit an unhandled Client "error" event
+  // between connect() and release(), terminating a worker or API process.
+  const checkedOutErrorListeners = new WeakMap<
+    PoolClient,
+    (error: Error) => void
+  >();
+  pool.on("acquire", (client) => {
+    const listener = (error: Error) => reportError(error);
+    checkedOutErrorListeners.set(client, listener);
+    client.on("error", listener);
+  });
+  pool.on("release", (_error, client) => {
+    const listener = checkedOutErrorListeners.get(client);
+    if (!listener) return;
+    client.off("error", listener);
+    checkedOutErrorListeners.delete(client);
+  });
+  pool.on("remove", (client) => {
+    const listener = checkedOutErrorListeners.get(client);
+    if (!listener) return;
+    client.off("error", listener);
+    checkedOutErrorListeners.delete(client);
   });
 
   return {

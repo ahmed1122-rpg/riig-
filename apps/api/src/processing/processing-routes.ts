@@ -12,6 +12,7 @@ import {
 } from "../http/api-response.js";
 import { createDomainErrorResponder } from "../http/domain-route-error.js";
 import { requestIdempotencyKey } from "../http/request-metadata.js";
+import { requestTraceContext } from "../observability/tracing.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import {
   ProcessingDomainError,
@@ -220,6 +221,7 @@ export async function registerProcessingRoutes(
             ),
           ),
         request.id,
+        requestTraceContext(request),
       );
       if (job.status === "ready") {
         await projects.finishJobStatus(
@@ -505,6 +507,8 @@ export async function registerProcessingRoutes(
                 { type: "processing", id: queuedJob.id },
               ),
             ),
+          request.id,
+          requestTraceContext(request),
         );
         if (job.status === "ready") {
           await projects.finishJobStatus(

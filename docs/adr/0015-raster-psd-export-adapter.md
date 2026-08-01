@@ -1,4 +1,4 @@
-# ADR 0006 — Raster PSD export adapter
+# ADR 0015 — Raster PSD export adapter
 
 ## السياق
 

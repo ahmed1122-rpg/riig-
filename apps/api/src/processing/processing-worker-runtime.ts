@@ -38,6 +38,7 @@ import {
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
 import { updateProjectStatusForJob } from "../projects/project-job-status.js";
+import { withJobTrace } from "../observability/tracing.js";
 import {
   applyPdfRegionOcr,
   PdfRegionOcrError,
@@ -277,7 +278,9 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
         attempt: job.attempt,
         max_attempts: job.maxAttempts,
       });
-      await processClaimedJob(context, job);
+      await withJobTrace("motionprep.processing.execute", job, () =>
+        processClaimedJob(context, job),
+      );
       log(context.serviceName, "info", "processing.completed", {
         job_id: job.id,
         correlation_id: job.correlationId,
@@ -366,7 +369,8 @@ export async function claimNextProcessingJob(
          job.id, job.project_id, job.source_version_id, job.project_kind,
          job.options, job.status, job.progress, job.attempt, job.max_attempts,
          job.next_attempt_at, job.lease_owner, job.lease_expires_at,
-         job.error_code, job.correlation_id, job.created_at, job.updated_at`,
+         job.error_code, job.correlation_id, job.trace_parent, job.trace_state,
+         job.created_at, job.updated_at`,
       [projectKind, workerId, leaseMilliseconds],
     );
     if (result.rows[0]) {

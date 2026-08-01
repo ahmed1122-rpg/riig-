@@ -87,7 +87,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
          AND table_name IN ('processing_jobs', 'export_jobs')
          AND column_name IN (
            'attempt', 'max_attempts', 'lease_owner', 'lease_expires_at',
-           'correlation_id'
+           'correlation_id', 'trace_parent', 'trace_state'
          )
        ORDER BY table_name, column_name`,
     );
@@ -95,7 +95,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     expect(applied.rows.map((row) => row.filename)).toEqual(
       expectedMigrations,
     );
-    expect(columns.rows).toHaveLength(10);
+    expect(columns.rows).toHaveLength(14);
   });
 
   it("atomically creates a password reset and durable email delivery", async () => {
@@ -483,6 +483,12 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       attempt: 1,
       leaseOwner: "worker-a",
       leaseExpiresAt: "2026-07-28T09:59:00.000Z",
+      correlationId: crypto.randomUUID(),
+      traceContext: {
+        traceparent:
+          "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        tracestate: "motionprep=export",
+      },
     });
     await repository.save(expiredJob);
 
@@ -508,6 +514,8 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       status: "generating",
       attempt: 2,
       leaseExpiresAt: "2026-07-28T10:05:00.000Z",
+      correlationId: expiredJob.correlationId,
+      traceContext: expiredJob.traceContext,
     });
     expect(["worker-b", "worker-c"]).toContain(
       successfulClaims[0]?.leaseOwner,
@@ -524,6 +532,10 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       leaseOwner: "document-a",
       leaseExpiresAt: "2020-01-01T00:00:00.000Z",
       correlationId: crypto.randomUUID(),
+      traceContext: {
+        traceparent:
+          "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+      },
     });
     await repository.save(expiredJob);
 
@@ -540,6 +552,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       status: "processing",
       attempt: 2,
       correlationId: expiredJob.correlationId,
+      traceContext: expiredJob.traceContext,
     });
 
     const exhaustedJob = createProcessingJob(

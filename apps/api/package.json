@@ -18,6 +18,11 @@
       "types": "./src/storage/object-storage-environment.ts",
       "production": "./dist/storage/object-storage-environment.js",
       "default": "./src/storage/object-storage-environment.ts"
+    },
+    "./tracing": {
+      "types": "./src/observability/tracing.ts",
+      "production": "./dist/observability/tracing.js",
+      "default": "./src/observability/tracing.ts"
     }
   },
   "scripts": {
@@ -51,6 +56,10 @@
     "@motionprep/guidance": "*",
     "@motionprep/media-processing": "*",
     "@motionprep/presets": "*",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
+    "@opentelemetry/resources": "^2.10.0",
+    "@opentelemetry/sdk-node": "^0.221.0",
     "fastify": "^5.4.0",
     "fflate": "^0.8.3",
     "nodemailer": "^9.0.3",

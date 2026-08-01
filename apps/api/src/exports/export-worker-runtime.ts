@@ -21,6 +21,7 @@ import {
   jitteredPollingDelay,
 } from "../jobs/polling-delay.js";
 import { abortableDelay } from "../jobs/abortable-delay.js";
+import { withJobTrace } from "../observability/tracing.js";
 
 export interface ExportWorkerConfig {
   databaseUrl: string;
@@ -183,6 +184,8 @@ export async function runExportWorker(
                 workerId: slotWorkerId,
               }),
             onSettled: () => drain.unregister(slotWorkerId),
+            runClaimed: (claimed, run) =>
+              withJobTrace("motionprep.export.execute", claimed, run),
           },
         );
         if (!job) {

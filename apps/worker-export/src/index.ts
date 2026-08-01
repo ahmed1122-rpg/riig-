@@ -1,5 +1,6 @@
 import { runExportWorker } from "@motionprep/api/export-worker";
 import { createS3ObjectStorageOptions } from "@motionprep/api/object-storage-environment";
+import { initializeTracing } from "@motionprep/api/tracing";
 import { pathToFileURL } from "node:url";
 import { loadExportWorkerConfig } from "./config.js";
 
@@ -8,6 +9,7 @@ export async function main(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const config = loadExportWorkerConfig(environment);
+  const tracing = initializeTracing("motionprep-worker-export", environment);
   const controller = new AbortController();
   const abort = () => controller.abort();
   process.once("SIGINT", abort);
@@ -47,6 +49,7 @@ export async function main(
   } finally {
     process.off("SIGINT", abort);
     process.off("SIGTERM", abort);
+    await tracing.shutdown();
   }
 }
 

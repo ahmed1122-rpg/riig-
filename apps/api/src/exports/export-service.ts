@@ -5,6 +5,7 @@ import type {
   ExportRequest,
   LayerDocument,
   ProjectKind,
+  TraceContext,
   UploadSession,
 } from "@motionprep/contracts";
 import {
@@ -86,6 +87,10 @@ interface ReadySource {
 export interface ExportClaimLifecycle {
   onClaimed?: (job: ExportJob) => Promise<boolean>;
   onSettled?: (job: ExportJob) => void;
+  runClaimed?: (
+    job: ExportJob,
+    run: () => Promise<ExportJob>,
+  ) => Promise<ExportJob>;
 }
 
 export class ExportService {
@@ -106,6 +111,7 @@ export class ExportService {
     idempotencyKey: string,
     onQueued?: (job: ExportJob) => Promise<boolean>,
     correlationId?: string,
+    traceContext?: TraceContext,
   ): Promise<ExportJob> {
     if (input.scale !== 1 || input.colorProfile !== "sRGB") {
       throw new ExportDomainError(
@@ -185,6 +191,7 @@ export class ExportService {
     const job: ExportJob = {
       id: exportId,
       ...(correlationId ? { correlationId } : {}),
+      ...(traceContext ? { traceContext } : {}),
       projectId: input.projectId,
       sourceVersionId: input.sourceVersionId,
       documentRevision,
@@ -402,12 +409,16 @@ export class ExportService {
       return Boolean(updated);
     }, leaseMilliseconds);
     try {
-      const completed = await this.generateArtifact(
-        job,
-        job.projectKind,
-        job.namingPresetId,
-        workerId,
-      );
+      const run = () =>
+        this.generateArtifact(
+          job,
+          job.projectKind,
+          job.namingPresetId,
+          workerId,
+        );
+      const completed = lifecycle.runClaimed
+        ? await lifecycle.runClaimed(job, run)
+        : await run();
       if (heartbeat.leaseLost() && completed.status !== "ready") {
         throw new ExportLeaseLostError();
       }

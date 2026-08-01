@@ -152,9 +152,14 @@ npm run verify:object-storage
 After deployment, run the protected `staging-application-readiness` workflow.
 It proves public web/API health, application version, exact release SHA, the
 capability contract, and one authenticated PDF upload/process/export/download
-journey. Run `performance-readiness` separately with representative concurrency
-and set `REPRESENTATIVE_PDF_PATH` to an approved near-limit PDF corpus item; the
-small repository smoke fixtures are not performance evidence. Configure a p95
+journey. Run `performance-readiness` separately with representative concurrency.
+Store a short-lived HTTPS URL for an approved near-limit corpus item in the
+`REPRESENTATIVE_PDF_URL` environment secret, its lowercase SHA-256 in
+`REPRESENTATIVE_PDF_SHA256`, and an explicit minimum size in
+`REPRESENTATIVE_PDF_MIN_BYTES`. The workflow downloads the source without
+logging the URL, rejects redirects outside HTTPS, verifies the digest, PDF
+signature, and the configured upload ceiling, then deletes it with the runner.
+The small repository smoke fixtures are not performance evidence. Configure a p95
 limit and the protected metrics endpoint so the retained report includes
 p50/p95/p99, RSS, heap, CPU, and queue snapshots. Neither workflow turns a
 local smoke test into a provider or capacity attestation.
@@ -265,6 +270,19 @@ in the referenced secret file rather than the configuration. The CPU/RAM alerts
 in that file consume the standard container runtime/cAdvisor
 series and compare usage with the Compose ceilings. The public Nginx
 configuration deliberately exposes no `/internal` location.
+
+Distributed tracing is opt-in. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the
+collector's full OTLP/HTTP traces endpoint (normally ending in `/v1/traces`).
+Production rejects non-HTTPS endpoints and credentials embedded in the URL.
+Pass collector authentication through `OTEL_EXPORTER_OTLP_HEADERS`, keep that
+value in the deployment secret store, and begin with the parent-based ratio
+sampler from `.env.production.example`.
+
+The API creates server spans and persists valid W3C `traceparent`/`tracestate`
+with processing and export jobs. Workers restore that parent before executing
+the job, so a request can be followed across the PostgreSQL-backed queues.
+`correlation_id` remains in responses and structured logs for support workflows;
+tracing complements it rather than replacing it.
 
 ## External release gates and deliberately deferred scope
 
