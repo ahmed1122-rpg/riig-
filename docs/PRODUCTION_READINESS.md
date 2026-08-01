@@ -1,8 +1,8 @@
 # Production readiness
 
-Status on 2026-08-01: the local release candidate on `codex/final-production-remediation` passes the complete source-quality gate, the durable PostgreSQL/S3 suite, the production-shaped Docker topology, browser E2E, and the production dependency audit. It is not a published release; the exact immutable SHA is recorded only after review and commit. Regional OCR remains disabled because its independent holdout evidence is stale and the historical generation failed its holdout target. Production approval remains withheld until this exact source is reviewed and merged, signed digest-qualified images are published, and the protected provider/staging workflows pass against real managed services. Recovery, Adobe, and representative load/memory exercises remain explicit launch gates.
+Status on 2026-08-01: release `v0.1.1` was reviewed in PR #14, merged at `3f29087cc22e604e9cca66455a3ef9d359a5d85c`, and published as signed digest-qualified runtime and web images after the protected exact-SHA release workflow passed. Regional OCR remains disabled because its independent holdout evidence is stale and the historical generation failed its holdout target. Application deployment approval remains withheld until the protected provider/staging workflows pass against real managed services and the published digests complete staging and rollback exercises. Recovery, licensed Adobe-version validation, and representative load/memory exercises remain explicit launch gates.
 
-The candidate production-readiness work adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful billing/export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology against the exact checkout SHA before publication. These changes are not represented by the previously published `v0.1.0` digests until a new protected release completes.
+The production-readiness work adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful billing/export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology against the exact checkout SHA before publication. These changes are represented by `v0.1.1`; the historical `v0.1.0` digests must not be used for this release.
 
 ## Implemented locally
 
@@ -79,10 +79,27 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
 - Historical only: a local OCI release was published from source commit `0a2103addf1c71ed6402d955a9a59d8da0d17485`, and tag `v0.1.0` was published from `48bdfd9b53b0c955a93f5a121660ea9b3e546df4`. Their retained verification records remain useful evidence for the signing mechanism, but their digests do **not** contain this candidate and must not be deployed as its release.
 
+## Hosted release evidence — v0.1.1
+
+- PR #14 passed all nine required checks and was squash-merged to protected
+  `main`. The merged SHA passed the complete `main` CI run, CodeQL, secret scan,
+  Dependabot analyses, browser E2E, durable integration, release fixtures,
+  production topology, container hardening, and Trivy.
+- Protected release run `30714117234` rechecked clean exact-SHA source, quality,
+  audit, browser journeys, concurrent migrations, durable PostgreSQL/S3, and
+  the production-shaped topology before the publish job was approved.
+- Both published OCI indexes contain linux/amd64 images plus attestation
+  manifests. The workflow generated SBOM/provenance, found no unresolved
+  High/Critical Trivy finding, signed both digests with keyless Cosign, and
+  verified repository-bound GitHub OIDC identities before writing the manifest.
+- Runtime: `ghcr.io/ahmed1122-rpg/motionprep-runtime@sha256:2243850e5315fd7827a09c6ff16859ca5e3ed2cc05d6a1366478a21e8523a85c`.
+- Web: `ghcr.io/ahmed1122-rpg/motionprep-web@sha256:63185c525bd08d0073d384452966159aef49dc4cfb827d956b27196f224bc3b4`.
+- The immutable manifest artifact records `RELEASE_GIT_SHA=3f29087cc22e604e9cca66455a3ef9d359a5d85c`, and both GHCR references resolve independently by digest.
+
 ## Evidence still required
 
 1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
-2. A protected release from the reviewed and merged candidate SHA, followed by deployment of those same signed digest-qualified GHCR images to staging and rollback without rebuilding.
+2. Deployment of the published `v0.1.1` signed digests to staging and rollback without rebuilding.
 3. A signed isolated recovery drill proving RPO ≤15 minutes and RTO ≤4 hours (deferred by product decision).
 4. Golden PSD/After Effects validation in licensed target Adobe versions (deferred by product decision).
 5. Representative load and memory validation against the configured container ceilings (deferred by product decision).
