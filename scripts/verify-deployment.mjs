@@ -10,6 +10,7 @@ const requiredFiles = [
   "compose.production.yaml",
   "compose.yaml",
   "compose.integration.yaml",
+  ".gitignore",
   ".env.production.example",
   "deploy/nginx.conf",
   "deploy/prometheus-alerts.yml",
@@ -58,6 +59,7 @@ const [
   webDockerfile,
   compose,
   nginx,
+  gitignore,
   exampleEnvironment,
   webApiClient,
   processingRuntime,
@@ -80,6 +82,7 @@ const [
       "Dockerfile.web",
       "compose.production.yaml",
       "deploy/nginx.conf",
+      ".gitignore",
       ".env.production.example",
       "apps/web/src/lib/api/transport.ts",
       "apps/api/src/processing/processing-worker-runtime.ts",
@@ -351,6 +354,18 @@ if (!nginx.includes("client_max_body_size 30m")) {
 }
 if (!nginx.includes("proxy_pass http://api:4000")) {
   violations.push("Nginx must proxy the versioned API to the API service.");
+}
+if (!nginx.includes("proxy_set_header X-Forwarded-For $remote_addr;")) {
+  violations.push("Nginx must replace untrusted forwarded-IP chains.");
+}
+for (const token of [
+  ".env.*",
+  "!.env.example",
+  "!.env.*.example",
+]) {
+  if (!gitignore.includes(token)) {
+    violations.push(`Git ignore policy is missing environment rule: ${token}`);
+  }
 }
 for (const image of ["postgres", "redis", "minio/minio", "minio/mc", "axllent/mailpit"]) {
   const imageLine = localCompose

@@ -16,6 +16,11 @@ import { recordWorkerEvent } from "../observability/worker-events.js";
 import { updateProjectStatusForJob } from "../projects/project-job-status.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
 import { releaseExportJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
+import {
+  initialPollingDelay,
+  jitteredPollingDelay,
+} from "../jobs/polling-delay.js";
+import { abortableDelay } from "../jobs/abortable-delay.js";
 
 export interface ExportWorkerConfig {
   databaseUrl: string;
@@ -140,6 +145,10 @@ export async function runExportWorker(
 
   async function workerLoop(slot: number): Promise<void> {
     const slotWorkerId = `${workerId}:${slot}`;
+    await abortableDelay(
+      initialPollingDelay(config.pollMilliseconds),
+      options.signal,
+    );
     while (!options.signal?.aborted) {
       try {
         const startedAt = Date.now();
@@ -156,7 +165,10 @@ export async function runExportWorker(
           },
         );
         if (!job) {
-          await abortableDelay(config.pollMilliseconds, options.signal);
+          await abortableDelay(
+            jitteredPollingDelay(config.pollMilliseconds),
+            options.signal,
+          );
           continue;
         }
         await recordWorkerEvent(database.pool, {
@@ -213,30 +225,11 @@ export async function runExportWorker(
           slot,
           error: error instanceof Error ? error.message : "unknown",
         });
-        await abortableDelay(config.pollMilliseconds, options.signal);
+        await abortableDelay(
+          jitteredPollingDelay(config.pollMilliseconds),
+          options.signal,
+        );
       }
     }
   }
-}
-
-function abortableDelay(
-  milliseconds: number,
-  signal?: AbortSignal,
-): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timeout);
-      resolve();
-    };
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, milliseconds);
-    timeout.unref();
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
 }

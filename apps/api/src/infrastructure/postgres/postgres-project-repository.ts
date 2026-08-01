@@ -1,6 +1,5 @@
 import type {
   CreateProjectInput,
-  ProjectKind,
   ProjectStatus,
   ProjectSummary,
 } from "@motionprep/contracts";
@@ -9,18 +8,10 @@ import type {
   ActiveProjectJob,
   ProjectRepository,
 } from "../../projects/project-repository.js";
-import { toIso } from "./database.js";
-
-interface ProjectRow {
-  id: string;
-  name: string;
-  kind: ProjectKind;
-  status: ProjectStatus;
-  current_source_version_id: string | null;
-  current_source_version_number: number | null;
-  created_at: Date | string;
-  updated_at: Date | string;
-}
+import {
+  mapPostgresProject,
+  type PostgresProjectRow,
+} from "./postgres-project-mapper.js";
 
 export class PostgresProjectRepository implements ProjectRepository {
   constructor(private readonly pool: Pool) {}
@@ -30,7 +21,7 @@ export class PostgresProjectRepository implements ProjectRepository {
     input: CreateProjectInput,
   ): Promise<ProjectSummary> {
     const now = new Date().toISOString();
-    const result = await this.pool.query<ProjectRow>(
+    const result = await this.pool.query<PostgresProjectRow>(
       `
         INSERT INTO projects (
           id, owner_user_id, name, kind, status, created_at, updated_at
@@ -41,14 +32,14 @@ export class PostgresProjectRepository implements ProjectRepository {
       `,
       [crypto.randomUUID(), ownerUserId, input.name, input.kind, now],
     );
-    return mapProject(requiredRow(result.rows[0]));
+    return mapPostgresProject(requiredRow(result.rows[0]));
   }
 
   async findOwnedById(
     ownerUserId: string,
     id: string,
   ): Promise<ProjectSummary | null> {
-    const result = await this.pool.query<ProjectRow>(
+    const result = await this.pool.query<PostgresProjectRow>(
       `
         SELECT ${projectColumns}
         FROM projects AS project
@@ -58,11 +49,11 @@ export class PostgresProjectRepository implements ProjectRepository {
       `,
       [ownerUserId, id],
     );
-    return result.rows[0] ? mapProject(result.rows[0]) : null;
+    return result.rows[0] ? mapPostgresProject(result.rows[0]) : null;
   }
 
   async listOwnedByUser(ownerUserId: string): Promise<ProjectSummary[]> {
-    const result = await this.pool.query<ProjectRow>(
+    const result = await this.pool.query<PostgresProjectRow>(
       `
         SELECT ${projectColumns}
         FROM projects AS project
@@ -73,14 +64,14 @@ export class PostgresProjectRepository implements ProjectRepository {
       `,
       [ownerUserId],
     );
-    return result.rows.map(mapProject);
+    return result.rows.map((row) => mapPostgresProject(row));
   }
 
   async updateStatus(
     id: string,
     status: ProjectStatus,
   ): Promise<ProjectSummary | null> {
-    const result = await this.pool.query<ProjectRow>(
+    const result = await this.pool.query<PostgresProjectRow>(
       `
         WITH updated AS (
           UPDATE projects
@@ -102,7 +93,7 @@ export class PostgresProjectRepository implements ProjectRepository {
       `,
       [id, status],
     );
-    return result.rows[0] ? mapProject(result.rows[0]) : null;
+    return result.rows[0] ? mapPostgresProject(result.rows[0]) : null;
   }
 
   async updateStatusForSource(
@@ -111,7 +102,7 @@ export class PostgresProjectRepository implements ProjectRepository {
     status: ProjectStatus,
     activeJob: ActiveProjectJob | null,
   ): Promise<ProjectSummary | null> {
-    const result = await this.pool.query<ProjectRow>(
+    const result = await this.pool.query<PostgresProjectRow>(
       `
         WITH updated AS (
           UPDATE projects
@@ -144,7 +135,7 @@ export class PostgresProjectRepository implements ProjectRepository {
         activeJob?.id ?? null,
       ],
     );
-    return result.rows[0] ? mapProject(result.rows[0]) : null;
+    return result.rows[0] ? mapPostgresProject(result.rows[0]) : null;
   }
 
   async finishJobStatus(
@@ -153,7 +144,7 @@ export class PostgresProjectRepository implements ProjectRepository {
     activeJob: ActiveProjectJob,
     status: ProjectStatus,
   ): Promise<ProjectSummary | null> {
-    const result = await this.pool.query<ProjectRow>(
+    const result = await this.pool.query<PostgresProjectRow>(
       `
         WITH updated AS (
           UPDATE projects
@@ -178,7 +169,7 @@ export class PostgresProjectRepository implements ProjectRepository {
       `,
       [id, sourceVersionId, activeJob.type, activeJob.id, status],
     );
-    return result.rows[0] ? mapProject(result.rows[0]) : null;
+    return result.rows[0] ? mapPostgresProject(result.rows[0]) : null;
   }
 
   async updateCurrentSourceVersion(
@@ -186,7 +177,7 @@ export class PostgresProjectRepository implements ProjectRepository {
     sourceVersionId: string,
     _versionNumber: number,
   ): Promise<ProjectSummary | null> {
-    const result = await this.pool.query<ProjectRow>(
+    const result = await this.pool.query<PostgresProjectRow>(
       `
         WITH updated AS (
           UPDATE projects
@@ -208,7 +199,7 @@ export class PostgresProjectRepository implements ProjectRepository {
       `,
       [id, sourceVersionId],
     );
-    return result.rows[0] ? mapProject(result.rows[0]) : null;
+    return result.rows[0] ? mapPostgresProject(result.rows[0]) : null;
   }
 }
 
@@ -218,19 +209,6 @@ const projectColumns = `
   source.version_number AS current_source_version_number,
   project.created_at, project.updated_at
 `;
-
-function mapProject(row: ProjectRow): ProjectSummary {
-  return {
-    id: row.id,
-    name: row.name,
-    kind: row.kind,
-    status: row.status,
-    currentSourceVersionId: row.current_source_version_id,
-    currentSourceVersionNumber: row.current_source_version_number,
-    createdAt: toIso(row.created_at),
-    updatedAt: toIso(row.updated_at),
-  };
-}
 
 function requiredRow<T>(row: T | undefined): T {
   if (!row) throw new Error("PostgreSQL did not return the inserted project.");

@@ -35,9 +35,6 @@ import {
 } from "./pdfSegmentation";
 import {
   arrangeLayersForReading,
-  collectLayerReviewUpdates,
-  snapshotLayerReview,
-  type LayerReviewSnapshot,
 } from "./layerReviewState";
 import {
   getReadyWorkspaceTools,
@@ -65,7 +62,8 @@ import {
 import {
   getWorkspacePipeline,
 } from "./workspacePresentation";
-import type { ExportFormat } from "@motionprep/contracts";
+import { isWorkspaceRevisionConflict } from "./workspaceConflict";
+import type { ApplicationCapabilities, ExportFormat } from "@motionprep/contracts";
 import {
   ApiError,
   applyGuidedRefinement,
@@ -79,13 +77,17 @@ import {
   splitPdfTextLayer,
   type LayerDocumentView,
   type ProjectSummary,
-  updateLayerDocument,
 } from "../../lib/api";
+import { useWorkspaceReviewAutosave } from "./useWorkspaceReviewAutosave";
 
 interface WorkspaceProps {
   mode: ProjectMode;
+  capabilities: ApplicationCapabilities;
   onModeChange: (mode: ProjectMode) => void;
   onBack: () => void;
+  onNavigationGuardChange: (
+    guard: (() => Promise<boolean>) | null,
+  ) => void;
   onNotify: (message: string) => void;
   authenticated: boolean;
   onRequireAuth: () => void;
@@ -100,10 +102,12 @@ interface WorkspaceProps {
 
 export function Workspace({
   mode,
+  capabilities,
   authenticated,
   onRequireAuth,
   onModeChange,
   onBack,
+  onNavigationGuardChange,
   onNotify,
   initialProject,
 }: WorkspaceProps) {
@@ -179,18 +183,10 @@ export function Workspace({
   const fileRef = useRef<HTMLInputElement>(null);
   const exportTriggerRef = useRef<HTMLButtonElement | null>(null);
   const commandSequenceRef = useRef(0);
-  const layerSaveTimerRef = useRef<number | null>(null);
   const layerAssetUrlsRef = useRef<string[]>([]);
-  const savedLayerReviewRef = useRef<LayerReviewSnapshot>(new Map());
-  const layerDocumentRevisionRef = useRef<number | undefined>(undefined);
-  const layersRef = useRef<Layer[]>([]);
-  const layerSavePromiseRef = useRef<Promise<number> | null>(null);
-  const saveInFlightRef = useRef(false);
   const { requestConfirmation, confirmationDialog } = useConfirmation();
 
   const layers = mode === "image" ? imageLayers : bookLayers;
-  layersRef.current = layers;
-  layerDocumentRevisionRef.current = layerDocumentRevision;
   const setLayers = mode === "image" ? setImageLayers : setBookLayers;
   const activeLayer = useMemo(() => layers.find((layer) => layer.id === activeLayerId) ?? layers[0], [activeLayerId, layers]);
   const pdfRegionOcrLayer = useMemo(
@@ -205,9 +201,66 @@ export function Workspace({
     [pdfPages, pdfRegionOcrLayer?.pageNumber],
   );
   const persistedSource = Boolean(projectId && sourceVersionId);
+  const handleRevisionConflict = useCallback(
+    async (error: unknown): Promise<void> => {
+      if (!isWorkspaceRevisionConflict(error)) return;
+      const reload = await requestConfirmation({
+        title: "توجد نسخة أحدث من المستند",
+        description:
+          "حُفظت تعديلات أخرى بعد فتح هذه الصفحة. أعد تحميل أحدث نسخة قبل متابعة التحرير؛ ستُستبدل التغييرات المحلية غير المحفوظة.",
+        confirmLabel: "تحميل أحدث نسخة",
+        cancelLabel: "البقاء للمراجعة",
+        tone: "danger",
+      });
+      if (reload) {
+        window.location.reload();
+        return;
+      }
+      onNotify(
+        "أُوقف الحفظ لحماية النسخة الأحدث. انسخ أي نص محلي مهم ثم أعد تحميل المشروع.",
+      );
+    },
+    [onNotify, requestConfirmation],
+  );
+  const {
+    flushLayerReview,
+    hasUnsavedReview,
+    saveInFlightRef,
+    adoptSavedReview,
+    resetSavedReview,
+  } = useWorkspaceReviewAutosave({
+    ...(projectId ? { projectId } : {}),
+    ...(sourceVersionId ? { sourceVersionId } : {}),
+    persistedSource,
+    ...(layerDocumentRevision === undefined
+      ? {}
+      : { revision: layerDocumentRevision }),
+    layers,
+    setRevision: setLayerDocumentRevision,
+    setSaveState,
+    onNotify,
+    onRevisionConflict: handleRevisionConflict,
+  });
+  const allowWorkspaceNavigation = useCallback(async () => {
+    if (!hasUnsavedReview()) return true;
+    try {
+      await flushLayerReview();
+      return true;
+    } catch {
+      onNotify(
+        "تعذر حفظ آخر تعديل؛ أُوقف التنقل لحماية عملك. أعد المحاولة بعد استقرار الاتصال.",
+      );
+      return false;
+    }
+  }, [flushLayerReview, hasUnsavedReview, onNotify]);
+
+  useEffect(() => {
+    onNavigationGuardChange(allowWorkspaceNavigation);
+    return () => onNavigationGuardChange(null);
+  }, [allowWorkspaceNavigation, onNavigationGuardChange]);
   const workspaceTools = useMemo(
-    () => getReadyWorkspaceTools(mode, persistedSource),
-    [mode, persistedSource],
+    () => getReadyWorkspaceTools(mode, persistedSource, capabilities.features),
+    [capabilities.features, mode, persistedSource],
   );
   const layerCheckSummary = useMemo(
     () => getLayerCheckSummary(mode, layers),
@@ -295,14 +348,10 @@ export function Workspace({
       applyPreparedDocument(result.document, preparedLayers);
       resetLayerSelection(preparedLayers);
       setSourcePreviewUrl(URL.createObjectURL(file));
-      layerDocumentRevisionRef.current = result.document.revision ?? 1;
-      setLayerDocumentRevision(layerDocumentRevisionRef.current);
+      adoptSavedReview(preparedLayers, result.document.revision ?? 1);
       setGuidanceRevision(
         result.document.guidance?.revision ?? 0,
       );
-      savedLayerReviewRef.current =
-        snapshotLayerReview(preparedLayers);
-      setSaveState("saved");
       setSourceVersion(result.sourceVersionNumber);
     },
     setSourceName,
@@ -313,7 +362,6 @@ export function Workspace({
   });
 
   useEffect(() => () => {
-    if (layerSaveTimerRef.current !== null) window.clearTimeout(layerSaveTimerRef.current);
     for (const url of layerAssetUrlsRef.current) URL.revokeObjectURL(url);
   }, []);
 
@@ -342,16 +390,13 @@ export function Workspace({
         if (controller.signal.aborted) return;
         replaceLayerAssetUrls(previewUrls);
         setSourceVersionId(document.sourceVersionId);
-        layerDocumentRevisionRef.current = document.revision ?? 1;
-        setLayerDocumentRevision(layerDocumentRevisionRef.current);
+        adoptSavedReview(preparedLayers, document.revision ?? 1);
         setGuidanceRevision(document.guidance?.revision ?? 0);
         setSourceVersion(initialProject.currentSourceVersionNumber ?? 1);
         setUploadState("ready");
         setUploadProgress(100);
-        setSaveState("saved");
         applyPreparedDocument(document, preparedLayers);
         resetLayerSelection(preparedLayers);
-        savedLayerReviewRef.current = snapshotLayerReview(preparedLayers);
       })
       .catch((caught: unknown) => {
         if (controller.signal.aborted) return;
@@ -367,6 +412,7 @@ export function Workspace({
     return () => controller.abort();
   }, [
     applyPreparedDocument,
+    adoptSavedReview,
     authenticated,
     initialProject,
     mode,
@@ -401,11 +447,8 @@ export function Workspace({
     setImageCanvasSize(undefined);
     setImagePreparation(undefined);
     setOcrReview(undefined);
-    layerDocumentRevisionRef.current = undefined;
-    setLayerDocumentRevision(undefined);
+    resetSavedReview();
     setGuidanceRevision(0);
-    setSaveState("idle");
-    savedLayerReviewRef.current = new Map();
     setPdfPageSize(undefined);
     setPdfPages([]);
     setActivePdfPage(1);
@@ -538,7 +581,8 @@ export function Workspace({
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.repeat || isEditableShortcutTarget(event.target)) return;
       const tool = workspaceTools.find(
-        (candidate) => candidate.available && isWorkspaceShortcut(candidate, event),
+        (candidate) =>
+          candidate.available && isWorkspaceShortcut(candidate, event),
       );
       if (!tool) return;
       event.preventDefault();
@@ -547,99 +591,6 @@ export function Workspace({
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [useTool, workspaceTools]);
-
-  const flushLayerReview = useCallback((): Promise<number> => {
-    if (layerSaveTimerRef.current !== null) {
-      window.clearTimeout(layerSaveTimerRef.current);
-      layerSaveTimerRef.current = null;
-    }
-    if (layerSavePromiseRef.current) return layerSavePromiseRef.current;
-
-    const drainLatestReview = async (): Promise<number> => {
-      while (true) {
-        const revision = layerDocumentRevisionRef.current;
-        if (!projectId || !sourceVersionId || revision === undefined) {
-          throw new Error("وثيقة الطبقات غير جاهزة للحفظ.");
-        }
-        const currentLayers = layersRef.current;
-        const updates = collectLayerReviewUpdates(
-          currentLayers,
-          savedLayerReviewRef.current,
-        );
-        if (updates.length === 0) {
-          setSaveState("saved");
-          return revision;
-        }
-
-        const submittedSnapshot = snapshotLayerReview(currentLayers);
-        setSaveState("saving");
-        let updated: LayerDocumentView;
-        try {
-          updated = await updateLayerDocument(
-            projectId,
-            sourceVersionId,
-            revision,
-            updates,
-          );
-        } catch (error) {
-          setSaveState("error");
-          throw error;
-        }
-        savedLayerReviewRef.current = submittedSnapshot;
-        layerDocumentRevisionRef.current = updated.revision;
-        setLayerDocumentRevision(updated.revision);
-      }
-    };
-
-    const operation = drainLatestReview();
-    layerSavePromiseRef.current = operation;
-    const clearOperation = () => {
-      if (layerSavePromiseRef.current === operation) {
-        layerSavePromiseRef.current = null;
-      }
-    };
-    void operation.then(clearOperation, clearOperation);
-    return operation;
-  }, [projectId, sourceVersionId]);
-
-  useEffect(() => {
-    if (
-      !persistedSource ||
-      layerDocumentRevision === undefined ||
-      saveInFlightRef.current
-    ) {
-      return;
-    }
-    const updates = collectLayerReviewUpdates(
-      layers,
-      savedLayerReviewRef.current,
-    );
-    if (updates.length === 0) return;
-    setSaveState("idle");
-    const timeout = window.setTimeout(() => {
-      layerSaveTimerRef.current = null;
-      void flushLayerReview().catch((caught: unknown) => {
-        onNotify(
-          caught instanceof ApiError
-            ? caught.message
-            : "تعذر حفظ مراجعة الطبقات تلقائيًا.",
-        );
-      });
-    }, 700);
-    layerSaveTimerRef.current = timeout;
-    return () => {
-      window.clearTimeout(timeout);
-      if (layerSaveTimerRef.current === timeout) {
-        layerSaveTimerRef.current = null;
-      }
-    };
-  }, [
-    flushLayerReview,
-    layerDocumentRevision,
-    layers,
-    onNotify,
-    persistedSource,
-  ]);
 
   const adoptGuidedDocument = async (
     document: LayerDocumentView,
@@ -660,10 +611,8 @@ export function Workspace({
       previewResult.previews,
     );
     applyPreparedDocument(document, preparedLayers, activePdfPage);
-    layerDocumentRevisionRef.current = document.revision ?? 1;
-    setLayerDocumentRevision(layerDocumentRevisionRef.current);
+    adoptSavedReview(preparedLayers, document.revision ?? 1);
     setGuidanceRevision(document.guidance?.revision ?? 0);
-    savedLayerReviewRef.current = snapshotLayerReview(preparedLayers);
     const nextActiveId =
       preferredLayerId &&
       preparedLayers.some((layer) => layer.id === preferredLayerId)
@@ -673,7 +622,6 @@ export function Workspace({
           : preparedLayers[0]?.id ?? "";
     setActiveLayerId(nextActiveId);
     setSelectedIds(nextActiveId ? [nextActiveId] : []);
-    setSaveState("saved");
   };
 
   const executeGuidedRefinement = async (
@@ -904,8 +852,8 @@ export function Workspace({
       <main className="pro-workspace-body">
         <WorkspaceToolRail
           mode={mode}
+          tools={workspaceTools}
           activeTool={activeTool}
-          hasSource={persistedSource}
           collapsed={toolCollapsed}
           onCollapsedChange={setToolCollapsed}
           onToolChange={useTool}
@@ -927,7 +875,25 @@ export function Workspace({
               onCancel={cancelUpload}
               onRetry={() => fileRef.current?.click()}
             />
-            <input ref={fileRef} className="sr-only" type="file" accept={mode === "image" ? ".png,.jpg,.jpeg,.webp,.avif,.tif,.tiff,.bmp" : ".pdf"} onChange={(event) => { void chooseSource(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+            <input
+              ref={fileRef}
+              className="sr-only"
+              type="file"
+              aria-label={
+                mode === "image"
+                  ? "اختيار ملف صورة للمشروع"
+                  : "اختيار ملف PDF للمشروع"
+              }
+              accept={
+                mode === "image"
+                  ? ".png,.jpg,.jpeg,.webp,.avif,.tif,.tiff,.bmp"
+                  : ".pdf"
+              }
+              onChange={(event) => {
+                void chooseSource(event.target.files?.[0]);
+                event.currentTarget.value = "";
+              }}
+            />
             {mode === "book" &&
             ocrReview?.pages.some(
               (page) => page.pageNumber === activePdfPage,
@@ -1138,18 +1104,13 @@ export function Workspace({
                 restored.preparedLayers,
               );
               resetLayerSelection(restored.preparedLayers);
-              layerDocumentRevisionRef.current =
-                restored.document.revision ?? 1;
-              setLayerDocumentRevision(
-                layerDocumentRevisionRef.current,
+              adoptSavedReview(
+                restored.preparedLayers,
+                restored.document.revision ?? 1,
               );
               setGuidanceRevision(
                 restored.document.guidance?.revision ?? 0,
               );
-              savedLayerReviewRef.current = snapshotLayerReview(
-                restored.preparedLayers,
-              );
-              setSaveState("saved");
               setUploadState("ready");
               setUploadProgress(100);
             } catch (error) {

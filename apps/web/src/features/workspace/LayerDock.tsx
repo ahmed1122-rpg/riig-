@@ -1,9 +1,13 @@
 import { memo, useEffect, useId, useMemo, useState } from "react";
 import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
+import { normalizeLayerName as normalizePresetLayerName } from "@motionprep/presets";
 import { Icon } from "../../shared/Icon";
 import type { Layer, ProjectMode } from "../../types";
 import { getLayerCheckSummary } from "./layerChecks";
-import { reindexLayerOrder } from "./layerReviewState";
+import {
+  moveEditableLayer,
+  reindexLayerOrder,
+} from "./layerReviewState";
 
 type LayerFilter = "all" | "visible" | "hidden" | "locked" | "warnings";
 type LayerDensity = "dense" | "comfortable";
@@ -28,7 +32,7 @@ interface LayerDockProps {
 
 function normalizeLayerName(value: string, fallback: string) {
   const clean = value.trim().replace(/^\++/, "").replace(/\s+/g, "_");
-  return `+${clean || fallback}`;
+  return normalizePresetLayerName(clean || fallback);
 }
 
 function hasWarning(layer: Layer) {
@@ -149,13 +153,10 @@ export function LayerDock({
 
   const moveLayer = (id: string, direction: -1 | 1) => {
     const from = layers.findIndex((layer) => layer.id === id);
-    const to = Math.max(0, Math.min(layers.length - 1, from + direction));
-    if (from < 0 || from === to || layers[from].kind === "page" || layers[to].kind === "page") return;
-    const next = [...layers];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    onLayersChange(reindexLayerOrder(next));
-    onNotify(`تم نقل ${moved.name} ${direction < 0 ? "لأعلى" : "لأسفل"}.`);
+    const result = moveEditableLayer(layers, id, from + direction);
+    if (!result) return;
+    onLayersChange(result.layers);
+    onNotify(`تم نقل ${result.moved.name} ${direction < 0 ? "لأعلى" : "لأسفل"}.`);
   };
 
   const moveLayerTo = (sourceId: string, targetId: string) => {
@@ -168,12 +169,11 @@ export function LayerDock({
       layers[from].kind === "page" ||
       layers[to].kind === "page"
     ) return;
-    const next = [...layers];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    onLayersChange(reindexLayerOrder(next));
-    onSelectionChange([moved.id], moved.id);
-    onNotify(`تم نقل ${moved.name} إلى موضع جديد.`);
+    const result = moveEditableLayer(layers, sourceId, to);
+    if (!result) return;
+    onLayersChange(result.layers);
+    onSelectionChange([result.moved.id], result.moved.id);
+    onNotify(`تم نقل ${result.moved.name} إلى موضع جديد.`);
   };
 
   const navigateLayer = (
@@ -301,6 +301,8 @@ export function LayerDock({
       <button
         className="pro-dock-resizer"
         type="button"
+        role="separator"
+        aria-orientation="vertical"
         aria-label="تغيير عرض رصيف الطبقات"
         aria-valuemin={260}
         aria-valuemax={430}

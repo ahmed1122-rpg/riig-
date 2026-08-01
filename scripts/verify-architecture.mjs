@@ -52,6 +52,15 @@ for (const rootName of sourceRoots) {
     }
 
     if (
+      normalized === "apps/api/src/exports/export-service.ts" &&
+      imports.includes("sharp")
+    ) {
+      violations.push(
+        `${normalized}: API export orchestration must not eagerly load sharp`,
+      );
+    }
+
+    if (
       normalized.includes("/routes") &&
       /new\s+InMemory[A-Za-z]+Repository/.test(content)
     ) {

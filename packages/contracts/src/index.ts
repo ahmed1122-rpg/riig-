@@ -2,6 +2,7 @@ export const MAX_UPLOAD_MEBIBYTES = 30;
 export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MEBIBYTES * 1024 * 1024;
 export const MAX_PDF_PAGES = 250;
 export const MAX_PDF_TEXT_ITEMS = 100_000;
+export const APPLICATION_CAPABILITIES_SCHEMA_VERSION = "1.0";
 export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_LENGTH = 128;
 
@@ -55,6 +56,22 @@ export const BILLING_PLAN_CATALOG = [
 export type BillingPlanCatalogItem =
   (typeof BILLING_PLAN_CATALOG)[number];
 export const MAX_IMAGE_LAYERS = 15;
+
+export interface ApplicationCapabilities {
+  schemaVersion: typeof APPLICATION_CAPABILITIES_SCHEMA_VERSION;
+  limits: {
+    maxUploadBytes: number;
+    maxPdfPages: number;
+    maxPdfTextItems: number;
+    maxImageLayers: number;
+  };
+  features: {
+    pdfRegionOcr: {
+      enabled: boolean;
+      unavailableReason: string | null;
+    };
+  };
+}
 
 export const acceptedSourceTypes = [
   "image/png",

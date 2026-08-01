@@ -3,6 +3,7 @@ import {
   type SubscriptionView,
 } from "@motionprep/contracts";
 import type { BillingRepository } from "./billing-repository.js";
+import { roundUsage } from "./usage-rounding.js";
 
 export type UsageMeterMode =
   | "off"
@@ -207,8 +208,4 @@ export function assertCanReserve(
       "وصلت إلى الحد الأقصى لدقائق المعالجة لهذه الفترة.",
     );
   }
-}
-
-function roundUsage(value: number): number {
-  return Math.round(value * 100) / 100;
 }

@@ -1,4 +1,5 @@
 import type { RetentionCleanupReport } from "./retention-cleanup.js";
+import { abortableDelay } from "../jobs/abortable-delay.js";
 
 export interface RetentionSchedulerOptions {
   intervalMilliseconds: number;
@@ -19,20 +20,4 @@ export async function runRetentionScheduler(
     }
     await abortableDelay(options.intervalMilliseconds, options.signal);
   }
-}
-
-function abortableDelay(
-  milliseconds: number,
-  signal: AbortSignal,
-): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timeout = setTimeout(done, milliseconds);
-    signal.addEventListener("abort", done, { once: true });
-    function done() {
-      clearTimeout(timeout);
-      signal.removeEventListener("abort", done);
-      resolve();
-    }
-  });
 }

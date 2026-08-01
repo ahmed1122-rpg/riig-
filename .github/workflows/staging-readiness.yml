@@ -38,6 +38,7 @@ jobs:
       OBJECT_STORAGE_SESSION_TOKEN: ${{ secrets.OBJECT_STORAGE_SESSION_TOKEN }}
       AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
       AWS_REGION: ${{ vars.AWS_REGION }}
+      PDF_REGION_OCR_ENABLED: ${{ vars.PDF_REGION_OCR_ENABLED }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -79,6 +80,9 @@ jobs:
         run: npm run verify:staging-dependencies --workspace @motionprep/api
       - name: Probe the deployment-owned object store
         run: npm run verify:object-storage
+      - name: Verify regional OCR release evidence when enabled
+        if: ${{ vars.PDF_REGION_OCR_ENABLED == 'true' }}
+        run: npm run verify:ocr-corpus
       - name: Publish staging readiness summary
         shell: bash
         run: |

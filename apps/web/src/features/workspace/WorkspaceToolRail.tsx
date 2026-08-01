@@ -1,7 +1,6 @@
 import { Icon } from "../../shared/Icon";
 import type { ProjectMode } from "../../types";
 import {
-  getReadyWorkspaceTools,
   type ResolvedWorkspaceTool,
   type WorkspaceToolGroup,
 } from "./workspaceToolRegistry";
@@ -14,8 +13,8 @@ const groupLabels: Record<WorkspaceToolGroup, string> = {
 
 interface WorkspaceToolRailProps {
   mode: ProjectMode;
+  tools: readonly ResolvedWorkspaceTool[];
   activeTool: string;
-  hasSource: boolean;
   collapsed: boolean;
   onCollapsedChange: (value: boolean) => void;
   onToolChange: (tool: ResolvedWorkspaceTool) => void;
@@ -23,13 +22,12 @@ interface WorkspaceToolRailProps {
 
 export function WorkspaceToolRail({
   mode,
+  tools,
   activeTool,
-  hasSource,
   collapsed,
   onCollapsedChange,
   onToolChange,
 }: WorkspaceToolRailProps) {
-  const tools = getReadyWorkspaceTools(mode, hasSource);
   const groups = (["prompts", "document", "history"] as const)
     .map((group) => ({ group, items: tools.filter((tool) => tool.group === group) }))
     .filter(({ items }) => items.length > 0);

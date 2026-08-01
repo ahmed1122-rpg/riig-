@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { degrees, PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { readFile, writeFile } from "node:fs/promises";
 
 const pdf = await PDFDocument.create();
@@ -51,6 +51,60 @@ scannedPage.drawImage(scan, {
 await writeFile(
   new URL("./motionprep-scanned-arabic.pdf", import.meta.url),
   await scannedPdf.save(),
+);
+
+const layoutPdf = await PDFDocument.create();
+stabilizeMetadata(layoutPdf);
+const layoutFont = await layoutPdf.embedFont(StandardFonts.Helvetica);
+const landscape = layoutPdf.addPage([720, 400]);
+landscape.drawRectangle({
+  x: 36,
+  y: 72,
+  width: 648,
+  height: 230,
+  color: rgb(0.12, 0.45, 0.82),
+  opacity: 0.35,
+});
+landscape.drawText("Landscape vector and transparency", {
+  x: 54,
+  y: 325,
+  size: 24,
+  font: layoutFont,
+});
+const rotated = layoutPdf.addPage([420, 720]);
+rotated.setRotation(degrees(90));
+rotated.setCropBox(20, 30, 380, 650);
+rotated.drawText("Rotated page with an explicit crop box", {
+  x: 48,
+  y: 640,
+  size: 18,
+  font: layoutFont,
+});
+const compact = layoutPdf.addPage([240, 240]);
+compact.drawText("Mixed page sizes and Latin 123", {
+  x: 18,
+  y: 180,
+  size: 12,
+  font: layoutFont,
+});
+await writeFile(
+  new URL("./motionprep-layout-matrix.pdf", import.meta.url),
+  await layoutPdf.save(),
+);
+
+const pageLimitPdf = await PDFDocument.create();
+stabilizeMetadata(pageLimitPdf);
+for (let pageNumber = 0; pageNumber < 251; pageNumber += 1) {
+  pageLimitPdf.addPage([10, 10]);
+}
+await writeFile(
+  new URL("./motionprep-page-limit.pdf", import.meta.url),
+  await pageLimitPdf.save(),
+);
+
+await writeFile(
+  new URL("./motionprep-invalid.pdf", import.meta.url),
+  Buffer.from("%PDF-1.7\ntruncated-without-xref\n", "ascii"),
 );
 
 function stabilizeMetadata(document) {

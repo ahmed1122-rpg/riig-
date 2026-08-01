@@ -12,6 +12,9 @@ import {
 } from "./ocr-holdout-policy.mjs";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const allowStaleImplementationWhenDisabled = process.argv.includes(
+  "--allow-stale-implementation-when-disabled",
+);
 const corpusDirectory = join(
   repositoryRoot,
   "artifacts",
@@ -25,6 +28,7 @@ const manifest = JSON.parse(
   await readFile(join(corpusDirectory, "manifest.json"), "utf8"),
 );
 const violations = [];
+let staleImplementationAccepted = false;
 const expectedQualityLabels = new Map([
   [3, "community-proofread"],
   [4, "community-validated"],
@@ -144,7 +148,26 @@ if (evaluationPolicy?.openedAt === null) {
       computeOcrHoldoutContentDigest(manifest),
     );
   } catch (error) {
-    violations.push(message(error));
+    const policyError = message(error);
+    if (
+      allowStaleImplementationWhenDisabled &&
+      policyError ===
+        "OCR implementation changed after the holdout was opened; rotate the holdout before benchmarking again."
+    ) {
+      const productionTemplate = await readFile(
+        join(repositoryRoot, ".env.production.example"),
+        "utf8",
+      );
+      if (/^PDF_REGION_OCR_ENABLED=false$/mu.test(productionTemplate)) {
+        staleImplementationAccepted = true;
+      } else {
+        violations.push(
+          "A stale OCR holdout may only be accepted while regional OCR is disabled in the production template.",
+        );
+      }
+    } else {
+      violations.push(policyError);
+    }
   }
   if (
     JSON.stringify(evaluationPolicy?.implementationFiles) !==
@@ -301,6 +324,11 @@ if (violations.length > 0) {
   process.stdout.write(
     `Arabic OCR corpus verified (${manifest.samples.length} samples, ${representedSources.size} public-domain books, ${representedDimensions.size} documented dimensions).\n`,
   );
+  if (staleImplementationAccepted) {
+    process.stdout.write(
+      "OCR release evidence is stale after implementation/dependency changes; regional OCR remains disabled and a new sealed holdout is required before re-enabling it.\n",
+    );
+  }
 }
 
 function digest(value) {

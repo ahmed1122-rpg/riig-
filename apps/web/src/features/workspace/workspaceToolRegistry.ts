@@ -1,5 +1,6 @@
 import type { IconName } from "../../shared/Icon";
 import type { ProjectMode } from "../../types";
+import type { ApplicationCapabilities } from "@motionprep/contracts";
 
 type WorkspaceToolId =
   | "image.keep"
@@ -293,6 +294,7 @@ const tools: readonly ReadyWorkspaceTool[] = [
 export function getReadyWorkspaceTools(
   mode: ProjectMode,
   hasSource: boolean,
+  features: ApplicationCapabilities["features"],
 ): ResolvedWorkspaceTool[] {
   return tools
     .filter(
@@ -304,6 +306,15 @@ export function getReadyWorkspaceTools(
         ...tool,
         available: false,
         unavailableReason: "ارفع مصدرًا وجهّزه أولًا لاستخدام هذه الأداة.",
+      };
+    }
+    if (tool.id === "pdf.region-ocr" && !features.pdfRegionOcr.enabled) {
+      return {
+        ...tool,
+        available: false,
+        unavailableReason:
+          features.pdfRegionOcr.unavailableReason ??
+          "إعادة OCR لمنطقة محددة غير متاحة في بيئة التشغيل الحالية.",
       };
     }
     return { ...tool, available: true };

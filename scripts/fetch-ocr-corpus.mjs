@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { normalizeArabic } from "./ocr-benchmark-utils.mjs";
 import { cleanProofreadWikitext } from "./ocr-corpus-wikitext.mjs";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -319,18 +320,6 @@ function pdfThumbnailUrl({ sampleId, pageTitle, sourcePdfUrl }) {
     "/wikipedia/commons/thumb",
   )}/${filename}/page${pageNumber}-960px-${filename}.jpg`;
   return url;
-}
-
-function normalizeArabic(value) {
-  return value
-    .normalize("NFKC")
-    .replace(/[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]/gu, "")
-    .replace(/\u0640/gu, "")
-    .replace(/[\u0622\u0623\u0625\u0671]/gu, "\u0627")
-    .replace(/\u0649/gu, "\u064a")
-    .replace(/[^\p{Script=Arabic}\p{Number}]+/gu, " ")
-    .trim()
-    .replace(/\s+/gu, " ");
 }
 
 function digest(value) {

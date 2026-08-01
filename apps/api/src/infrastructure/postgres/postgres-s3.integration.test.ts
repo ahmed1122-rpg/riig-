@@ -25,6 +25,10 @@ import {
 } from "./postgres-processing-repository.js";
 import { PostgresProjectRepository } from "./postgres-project-repository.js";
 import { PostgresSourceVersionRestoreCommand } from "./postgres-source-version-restore.js";
+import { PostgresUploadFinalizationCommand } from "./postgres-upload-finalization.js";
+import { PostgresUploadRepository } from "./postgres-upload-repository.js";
+import { PostgresAuthRepository } from "./postgres-auth-repository.js";
+import { PostgresEmailOutboxRepository } from "./postgres-email-outbox.js";
 
 const integrationEnvironment = {
   databaseUrl: requireEnvironment("INTEGRATION_DATABASE_URL"),
@@ -91,6 +95,77 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     expect(columns.rows).toHaveLength(8);
   });
 
+  it("atomically creates a password reset and durable email delivery", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const user = await pool.query<{ owner_user_id: string }>(
+      "SELECT owner_user_id FROM projects WHERE id = $1",
+      [fixture.projectId],
+    );
+    const userId = user.rows[0]!.owner_user_id;
+    const issuedAt = new Date();
+    const claimAt = new Date(issuedAt.getTime() + 1_000);
+    const record = {
+      tokenHash: "a".repeat(64),
+      userId,
+      expiresAt: new Date(issuedAt.getTime() + 30 * 60_000).toISOString(),
+    };
+    const delivery = {
+      recipient: "owner@example.com",
+      resetUrl: "https://studio.example.com/reset?token=secret",
+      expiresAt: record.expiresAt,
+    };
+    const failing = new PostgresAuthRepository(pool, {
+      async afterPasswordResetStored() {
+        throw new Error("injected outbox failure");
+      },
+    });
+
+    await expect(
+      failing.savePasswordReset(record, delivery),
+    ).rejects.toThrow("injected outbox failure");
+    expect(
+      await pool.query(
+        "SELECT token_hash FROM password_reset_tokens WHERE token_hash = $1",
+        [record.tokenHash],
+      ),
+    ).toMatchObject({ rowCount: 0 });
+
+    const repository = new PostgresAuthRepository(pool);
+    await expect(repository.savePasswordReset(record, delivery)).resolves.toBe(
+      "queued",
+    );
+    const outbox = new PostgresEmailOutboxRepository(pool);
+    const claimed = await outbox.claimNext(
+      "integration-email",
+      claimAt.toISOString(),
+      new Date(claimAt.getTime() + 60_000).toISOString(),
+    );
+    expect(claimed).toMatchObject({
+      attempt: 1,
+      message: delivery,
+    });
+    await expect(
+      outbox.markSent(
+        claimed!.id,
+        "integration-email",
+        new Date(claimAt.getTime() + 1_000).toISOString(),
+      ),
+    ).resolves.toBe(true);
+    const scrubbed = await pool.query<{
+      status: string;
+      recipient: string;
+      reset_url: string;
+    }>(
+      "SELECT status, recipient, reset_url FROM email_outbox WHERE id = $1",
+      [claimed!.id],
+    );
+    expect(scrubbed.rows[0]).toEqual({
+      status: "sent",
+      recipient: "",
+      reset_url: "",
+    });
+  });
+
   it("keeps release N and N+1 upload URL writes compatible", async () => {
     const fixture = await insertProjectFixture(pool, "image");
     const legacyUploadId = crypto.randomUUID();
@@ -136,6 +211,187 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     for (const row of rows.rows) {
       expect(row.demo_upload_url).toBe(row.upload_url);
     }
+  });
+
+  it("publishes verified upload metadata atomically and preserves progressed state on replay", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const uploadId = crypto.randomUUID();
+    const sourceVersionId = crypto.randomUUID();
+    const timestamp = "2026-08-01T12:00:00.000Z";
+    const sha256 = "a".repeat(64);
+    await pool.query(
+      "UPDATE projects SET status = 'uploading' WHERE id = $1",
+      [fixture.projectId],
+    );
+    await pool.query(
+      `
+        INSERT INTO source_versions (
+          id, project_id, upload_id, version_number, filename, content_type,
+          size_bytes, status, sha256, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, 1, 'atomic.png', 'image/png', 1,
+          'uploading', NULL, $4, $4
+        )
+      `,
+      [sourceVersionId, fixture.projectId, uploadId, timestamp],
+    );
+    await pool.query(
+      `
+        INSERT INTO upload_sessions (
+          upload_id, project_id, filename, content_type, expected_size_bytes,
+          status, source_version_id, sha256, object_key, expires_at, max_bytes,
+          upload_url, demo_upload_url, created_at, updated_at
+        ) VALUES (
+          $1, $2, 'atomic.png', 'image/png', 1, 'uploading', $3, NULL,
+          $4, $5, 31457280, $6, $6, $7, $7
+        )
+      `,
+      [
+        uploadId,
+        fixture.projectId,
+        sourceVersionId,
+        `sources/${fixture.projectId}/${uploadId}.png`,
+        "2026-08-01T12:10:00.000Z",
+        `/v1/uploads/${uploadId}/content`,
+        timestamp,
+      ],
+    );
+    const uploads = new PostgresUploadRepository(pool);
+    const session = await uploads.findById(uploadId);
+    if (!session) throw new Error("Atomic upload fixture was not inserted.");
+
+    const failing = new PostgresUploadFinalizationCommand(pool, {
+      afterUploadUpdated: async () => {
+        throw new Error("injected finalization failure");
+      },
+    });
+    await expect(failing.finalize({ session, sha256 })).rejects.toThrow(
+      "injected finalization failure",
+    );
+    const rolledBack = await pool.query<{
+      upload_status: string;
+      source_status: string;
+      project_status: string;
+      current_source_version_id: string | null;
+    }>(
+      `
+        SELECT upload.status AS upload_status,
+          source.status AS source_status,
+          project.status AS project_status,
+          project.current_source_version_id
+        FROM upload_sessions AS upload
+        JOIN source_versions AS source ON source.id = upload.source_version_id
+        JOIN projects AS project ON project.id = upload.project_id
+        WHERE upload.upload_id = $1
+      `,
+      [uploadId],
+    );
+    expect(rolledBack.rows[0]).toEqual({
+      upload_status: "uploading",
+      source_status: "uploading",
+      project_status: "uploading",
+      current_source_version_id: null,
+    });
+
+    const command = new PostgresUploadFinalizationCommand(pool);
+    const ready = await command.finalize({ session, sha256 });
+    expect(ready).toMatchObject({ status: "ready", sha256 });
+    await pool.query(
+      "UPDATE projects SET status = 'needs_review' WHERE id = $1",
+      [fixture.projectId],
+    );
+    await command.finalize({ session: ready, sha256 });
+    const published = await pool.query<{
+      upload_status: string;
+      source_status: string;
+      project_status: string;
+      current_source_version_id: string | null;
+    }>(
+      `
+        SELECT upload.status AS upload_status,
+          source.status AS source_status,
+          project.status AS project_status,
+          project.current_source_version_id
+        FROM upload_sessions AS upload
+        JOIN source_versions AS source ON source.id = upload.source_version_id
+        JOIN projects AS project ON project.id = upload.project_id
+        WHERE upload.upload_id = $1
+      `,
+      [uploadId],
+    );
+    expect(published.rows[0]).toEqual({
+      upload_status: "ready",
+      source_status: "ready",
+      project_status: "needs_review",
+      current_source_version_id: sourceVersionId,
+    });
+
+    const newerUploadId = crypto.randomUUID();
+    const newerSourceVersionId = crypto.randomUUID();
+    await pool.query(
+      `
+        INSERT INTO source_versions (
+          id, project_id, upload_id, version_number, filename, content_type,
+          size_bytes, status, sha256, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, 2, 'newer.png', 'image/png', 1,
+          'ready', $4, $5, $5
+        )
+      `,
+      [
+        newerSourceVersionId,
+        fixture.projectId,
+        newerUploadId,
+        "b".repeat(64),
+        timestamp,
+      ],
+    );
+    await pool.query(
+      `
+        INSERT INTO upload_sessions (
+          upload_id, project_id, filename, content_type, expected_size_bytes,
+          status, source_version_id, sha256, object_key, expires_at, max_bytes,
+          upload_url, demo_upload_url, created_at, updated_at
+        ) VALUES (
+          $1, $2, 'newer.png', 'image/png', 1, 'ready', $3, $4,
+          $5, $6, 31457280, $7, $7, $8, $8
+        )
+      `,
+      [
+        newerUploadId,
+        fixture.projectId,
+        newerSourceVersionId,
+        "b".repeat(64),
+        `sources/${fixture.projectId}/${newerUploadId}.png`,
+        "2026-08-01T12:10:00.000Z",
+        `/v1/uploads/${newerUploadId}/content`,
+        timestamp,
+      ],
+    );
+    await pool.query(
+      `UPDATE projects
+       SET current_source_version_id = $2, status = 'needs_review'
+       WHERE id = $1`,
+      [fixture.projectId, newerSourceVersionId],
+    );
+
+    await command.finalize({ session: ready, sha256 });
+    await expect(command.findCandidates(100)).resolves.not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ uploadId }),
+      ]),
+    );
+    const afterHistoricalReplay = await pool.query<{
+      current_source_version_id: string | null;
+      status: string;
+    }>(
+      "SELECT current_source_version_id, status FROM projects WHERE id = $1",
+      [fixture.projectId],
+    );
+    expect(afterHistoricalReplay.rows[0]).toEqual({
+      current_source_version_id: newerSourceVersionId,
+      status: "needs_review",
+    });
   });
 
   it("restores one source version atomically and deduplicates concurrent replay", async () => {

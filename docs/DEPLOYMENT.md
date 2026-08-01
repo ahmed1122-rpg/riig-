@@ -8,6 +8,14 @@ managed PostgreSQL, Redis, S3-compatible storage, and SMTP. Kubernetes is
 deliberately deferred until independent scaling or operational ownership makes
 it necessary.
 
+The API publishes its machine-readable OpenAPI 3.1 document at
+`/v1/openapi.json`. The document is public by design, contains no credentials,
+and is generated from the routes registered by the running release so clients
+can verify the deployed surface instead of relying on a stale checked-in copy.
+The web client also reads `/v1/capabilities` before enabling gated tools. A
+missing or malformed capability response disables those tools rather than
+assuming they are available.
+
 The `provider-readiness` GitHub environment is a release gate. Its protected
 workflow must pass against deployment-owned object storage and a completed
 isolated recovery manifest before production approval. Configure its
@@ -80,6 +88,14 @@ use Stripe Customer Portal.
     `sources/` or `derived/`.
 11. Store the completed environment in a secrets manager. Do not commit it.
 
+Password-reset tokens and their email deliveries are inserted in one database
+transaction. Each API replica may run the outbox dispatcher: rows are claimed
+with `FOR UPDATE SKIP LOCKED`, leased for a bounded period, and retried with
+backoff. SMTP delivery is therefore at-least-once. The recipient and reset URL
+are scrubbed immediately after success or terminal failure and old terminal
+rows are removed by retention maintenance. Alert on sustained queued age or
+repeated `email.delivery` retry/failure events; do not log reset URLs.
+
 When Stripe is enabled, configure:
 
 - `PAYMENT_MODE=live`
@@ -113,7 +129,10 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 ```
 
 The `migrate` service applies additive SQL migrations before the API and workers
-start. The web container exposes port 8080 and proxies `/v1` to the private API
+start. Migration 027 adds the durable email outbox. Upload publication is then
+committed atomically across the upload session, source version, and project;
+the API startup reconciler re-inspects S3 metadata before repairing an
+interrupted legacy state. The web container exposes port 8080 and proxies `/v1` to the private API
 service. Only the web port should be published.
 
 Verify:
@@ -185,6 +204,13 @@ restore history.
   no public access, and v1 emits no presigned object URLs.
 - Source, derived-raster, and artifact reads fail closed when their bytes, size,
   or content type do not match the metadata stored in PostgreSQL.
+- Authenticated API and internal responses default to `Cache-Control: no-store`.
+  A derived raster receives a one-year immutable policy only when its URL
+  contains the server-verified SHA-256; legacy mutable URLs remain private and
+  non-cacheable.
+- Production API replicas share rate-limit state in Redis. A Redis outage makes
+  dependency readiness fail and must not silently fall back to per-process
+  limits.
 - Artifact responses stream from object storage with backpressure and cancel
   the upstream read when the client disconnects. Metadata is checked before
   headers and SHA-256 is checked across the streamed bytes.

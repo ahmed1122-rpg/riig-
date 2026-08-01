@@ -57,17 +57,24 @@ export class WorkerDrainCoordinator<T> {
   }
 
   async #releaseActive(): Promise<void> {
-    await Promise.all(
-      [...this.#active.values()].map((item) => this.#release(item)),
-    );
-    this.#finish();
+    try {
+      await Promise.allSettled(
+        [...this.#active.values()].map((item) => this.#release(item)),
+      );
+    } finally {
+      this.#finish();
+    }
   }
 
   async #release(item: T): Promise<void> {
     try {
       await this.#options.release(item);
     } catch (error) {
-      this.#options.onReleaseError?.(error, item);
+      try {
+        this.#options.onReleaseError?.(error, item);
+      } catch {
+        // Shutdown completion must not depend on an observability callback.
+      }
     }
   }
 

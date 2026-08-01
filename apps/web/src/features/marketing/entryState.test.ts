@@ -101,7 +101,7 @@ describe("marketing entry state", () => {
 
   it("builds a shareable workspace URL and removes transient payment data", () => {
     const search = buildViewSearch(
-      "?payment=cancelled&session_id=secret",
+      "?payment=cancelled&checkout_id=local-checkout&session_id=secret",
       "workspace",
       {
         mode: "image",
@@ -118,6 +118,7 @@ describe("marketing entry state", () => {
     expect(search).toContain("projectId=project-1");
     expect(search).toContain("sourceVersion=3");
     expect(search).not.toContain("payment");
+    expect(search).not.toContain("checkout_id");
     expect(search).not.toContain("secret");
   });
 });

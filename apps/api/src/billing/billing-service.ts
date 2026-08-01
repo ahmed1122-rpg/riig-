@@ -61,6 +61,20 @@ export class BillingService {
     return subscription;
   }
 
+  async checkout(
+    checkoutId: string,
+    userId: string,
+  ): Promise<CheckoutSession> {
+    const checkout = await this.repository.findCheckout(checkoutId);
+    if (!checkout || checkout.userId !== userId) {
+      throw new BillingDomainError(
+        "CHECKOUT_NOT_FOUND",
+        "جلسة الدفع غير موجودة.",
+      );
+    }
+    return checkout;
+  }
+
   async createCheckout(input: {
     actor: UserSummary;
     providerId: PaymentProviderId;

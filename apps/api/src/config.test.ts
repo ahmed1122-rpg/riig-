@@ -114,6 +114,19 @@ describe("production configuration", () => {
     ).toThrow(/STARTTLS/u);
   });
 
+  it("accepts both PostgreSQL URL schemes when production TLS is explicit", () => {
+    for (const protocol of ["postgresql", "postgres"]) {
+      expect(() =>
+        loadConfig({
+          ...durableProductionEnvironment,
+          DATABASE_URL:
+            `${protocol}://motionprep:secret@db:5432/motionprep` +
+            "?sslmode=verify-full",
+        }),
+      ).not.toThrow();
+    }
+  });
+
   it("accepts the AWS default credential provider chain", () => {
     const config = loadConfig(durableProductionEnvironment);
 

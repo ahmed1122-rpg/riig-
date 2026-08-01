@@ -2,8 +2,11 @@ import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import swagger from "@fastify/swagger";
 import Fastify, { type FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
+import { isCookieMutationOriginAllowed } from "./http/cookie-mutation-origin.js";
 import {
   InMemoryProjectRepository,
   type ProjectRepository,
@@ -15,6 +18,10 @@ import {
   type UploadRepository,
 } from "./uploads/upload-repository.js";
 import { UploadService } from "./uploads/upload-service.js";
+import {
+  InMemoryUploadFinalizationCommand,
+  type UploadFinalizationCommand,
+} from "./uploads/upload-finalization.js";
 import {
   InMemoryExportRepository,
   type ExportRepository,
@@ -76,10 +83,18 @@ import {
   InMemorySourceVersionRestoreCommand,
   type SourceVersionRestoreCommand,
 } from "./sources/source-version-restore.js";
+import { registerCapabilityRoutes } from "./capabilities/capability-routes.js";
+import type { RateLimitStoreConstructor } from "./infrastructure/redis/redis-rate-limit-store.js";
+import {
+  registerOpenApiDefaults,
+  transformOpenApiDocumentation,
+} from "./http/openapi-defaults.js";
+import { UploadReconciler } from "./uploads/upload-reconciler.js";
 
 export interface AppDependencies {
   projects?: ProjectRepository;
   uploads?: UploadRepository;
+  uploadFinalization?: UploadFinalizationCommand;
   sourceVersions?: SourceVersionRepository;
   sourceVersionRestores?: SourceVersionRestoreCommand;
   exports?: ExportRepository;
@@ -99,6 +114,7 @@ export interface AppDependencies {
   adminAccess?: AdminAccessCommand;
   usageMeter?: UsageMeter;
   operationalStatus?: OperationalStatusProvider;
+  rateLimitStore?: RateLimitStoreConstructor;
 }
 
 export async function buildApp(
@@ -108,7 +124,8 @@ export async function buildApp(
   const app = Fastify({
     logger: config.NODE_ENV !== "test",
     bodyLimit: config.MAX_UPLOAD_BYTES,
-    requestIdHeader: "x-request-id",
+    requestIdHeader: false,
+    genReqId: () => randomUUID(),
     trustProxy: config.TRUST_PROXY_HOPS || false,
   });
 
@@ -132,12 +149,140 @@ export async function buildApp(
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
   await app.register(cookie);
+  app.addHook("onRequest", async (request, reply) => {
+    if (
+      !isCookieMutationOriginAllowed({
+        method: request.method,
+        hasSessionCookie: Boolean(request.cookies.motionprep_session),
+        ...(request.headers.origin
+          ? { origin: request.headers.origin }
+          : {}),
+        ...(request.headers.referer
+          ? { referer: request.headers.referer }
+          : {}),
+        allowedOrigins: allowedWebOrigins,
+        requireOrigin: config.NODE_ENV === "production",
+      })
+    ) {
+      return reply.status(403).send({
+        data: null,
+        error: {
+          code: "CROSS_ORIGIN_MUTATION_BLOCKED",
+          message: "رُفض الطلب لأن مصدره لا يطابق واجهة التطبيق الموثوقة.",
+          requestId: request.id,
+        },
+      });
+    }
+  });
   await app.register(rateLimit, {
     global: true,
     max: 300,
     timeWindow: "1 minute",
     skipOnError: false,
+    ...(dependencies.rateLimitStore
+      ? { store: dependencies.rateLimitStore }
+      : {}),
+    nameSpace: "motionprep:rate-limit:",
+    errorResponseBuilder: (request, context) => ({
+      data: null,
+      error: {
+        code: "RATE_LIMITED",
+        message: `تجاوزت حد الطلبات. أعد المحاولة بعد ${context.after}.`,
+        requestId: request.id,
+      },
+    }),
   });
+  app.addHook("onSend", async (request, reply, payload) => {
+    reply.header("x-request-id", request.id);
+    if (
+      !reply.hasHeader("cache-control") &&
+      (request.url.startsWith("/v1/") || request.url.startsWith("/internal/"))
+    ) {
+      reply.header("cache-control", "no-store");
+    }
+    return payload;
+  });
+  await app.register(swagger, {
+    transform: transformOpenApiDocumentation,
+    openapi: {
+      openapi: "3.1.0",
+      info: {
+        title: "MotionPrep Studio API",
+        description:
+          "HTTP API for authentication, source preparation, layered editing, exports, billing, and administration.",
+        version: "0.1.0",
+      },
+      servers: [{ url: new URL(config.WEB_ORIGIN).origin }],
+      tags: [
+        { name: "health" },
+        { name: "auth" },
+        { name: "projects" },
+        { name: "uploads" },
+        { name: "processing" },
+        { name: "exports" },
+        { name: "billing" },
+        { name: "admin" },
+        { name: "system" },
+      ],
+      components: {
+        securitySchemes: {
+          sessionCookie: {
+            type: "apiKey",
+            in: "cookie",
+            name: "motionprep_session",
+          },
+          providerSignature: {
+            type: "apiKey",
+            in: "header",
+            name: "stripe-signature",
+          },
+        },
+        schemas: {
+          ApiErrorEnvelope: {
+            type: "object",
+            required: ["data", "error"],
+            properties: {
+              data: { type: "null" },
+              error: {
+                type: "object",
+                required: ["code", "message", "requestId"],
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                  requestId: { type: "string" },
+                  fields: {
+                    type: "object",
+                    additionalProperties: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: Object.fromEntries(
+          [
+            ["BadRequest", "The request is invalid."],
+            ["Unauthorized", "Authentication is required."],
+            ["Forbidden", "The authenticated user is not authorized."],
+            ["Conflict", "The request conflicts with current state."],
+            ["RateLimited", "The request rate limit was exceeded."],
+            ["InternalError", "An unexpected server error occurred."],
+          ].map(([name, description]) => [
+            name,
+            {
+              description,
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/ApiErrorEnvelope" },
+                },
+              },
+            },
+          ]),
+        ),
+      },
+    },
+  });
+  registerOpenApiDefaults(app);
   await registerHttpMetrics(app, {
     ...(config.METRICS_BEARER_TOKEN
       ? { bearerToken: config.METRICS_BEARER_TOKEN }
@@ -163,13 +308,34 @@ export async function buildApp(
     );
   const objectStorage =
     dependencies.objectStorage ?? new InMemoryObjectStorage();
+  const uploadFinalization =
+    dependencies.uploadFinalization ??
+    new InMemoryUploadFinalizationCommand(
+      uploadRepository,
+      sourceVersionRepository,
+      projects,
+    );
   const uploadService = new UploadService(
     uploadRepository,
     () => new Date(),
     idempotency,
     objectStorage,
     sourceVersionRepository,
+    uploadFinalization,
   );
+  const uploadReconciler = new UploadReconciler(
+    uploadFinalization,
+    objectStorage,
+    (report) => {
+      if (report.inspected > 0) {
+        app.log.info(report, "upload.reconciliation_completed");
+      }
+    },
+  );
+  if (config.NODE_ENV === "production") {
+    app.addHook("onReady", async () => uploadReconciler.start());
+    app.addHook("onClose", async () => uploadReconciler.stop());
+  }
   const exportRepository =
     dependencies.exports ?? new InMemoryExportRepository();
   const layerDocumentRepository =
@@ -268,6 +434,16 @@ export async function buildApp(
         },
       });
     }
+  });
+  app.get(
+    "/v1/openapi.json",
+    { schema: { hide: true } },
+    async (_request, reply) => reply.type("application/json").send(app.swagger()),
+  );
+
+  await registerCapabilityRoutes(app, {
+    maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    pdfRegionOcrEnabled: config.PDF_REGION_OCR_ENABLED,
   });
 
   await registerAuthRoutes(app, authService, {

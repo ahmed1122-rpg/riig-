@@ -6,9 +6,21 @@ ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
 
 COPY package.json package-lock.json tsconfig.node.json ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/worker-document/package.json ./apps/worker-document/package.json
+COPY apps/worker-export/package.json ./apps/worker-export/package.json
+COPY apps/worker-media/package.json ./apps/worker-media/package.json
+COPY packages/contracts/package.json ./packages/contracts/package.json
+COPY packages/document-processing/package.json ./packages/document-processing/package.json
+COPY packages/export-adapters/package.json ./packages/export-adapters/package.json
+COPY packages/guidance/package.json ./packages/guidance/package.json
+COPY packages/media-processing/package.json ./packages/media-processing/package.json
+COPY packages/presets/package.json ./packages/presets/package.json
+RUN npm ci
+
 COPY apps ./apps
 COPY packages ./packages
-RUN npm ci
 RUN npm run build
 RUN npm prune --omit=dev
 COPY scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs

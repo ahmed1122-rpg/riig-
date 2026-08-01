@@ -82,6 +82,7 @@ export function buildViewSearch(
     "billingReturn",
     "sandbox_checkout",
     "payment",
+    "checkout_id",
     "provider",
     "session_id",
     "token",

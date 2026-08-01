@@ -336,7 +336,7 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  color: #75817d;
+  color: #87938f;
 }
 
 .guidance-workflow li:not(:last-child)::after {

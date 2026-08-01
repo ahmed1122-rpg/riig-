@@ -13,6 +13,7 @@ import {
   type SourceVersionRestoreCommand,
 } from "../../sources/source-version-restore.js";
 import { toIso } from "./database.js";
+import { mapPostgresProject } from "./postgres-project-mapper.js";
 
 interface ProjectRestoreRow {
   id: string;
@@ -153,7 +154,7 @@ export class PostgresSourceVersionRestoreCommand
       await client.query("COMMIT");
       const updated = requiredRow(updatedResult.rows[0]);
       return {
-        project: mapProject(updated, target.version_number),
+        project: mapPostgresProject(updated, target.version_number),
         event,
         replayed: false,
       };
@@ -226,7 +227,7 @@ async function findOwnedProject(
     "SELECT version_number FROM source_versions WHERE id = $1",
     [row.current_source_version_id],
   );
-  return mapProject(row, requiredRow(version.rows[0]).version_number);
+  return mapPostgresProject(row, requiredRow(version.rows[0]).version_number);
 }
 
 async function findEventByRequest(
@@ -244,22 +245,6 @@ async function findEventByRequest(
     [actorUserId, requestId],
   );
   return result.rows[0] ?? null;
-}
-
-function mapProject(
-  row: ProjectRestoreRow,
-  versionNumber: number,
-): ProjectSummary {
-  return {
-    id: row.id,
-    name: row.name,
-    kind: row.kind,
-    status: row.status,
-    currentSourceVersionId: row.current_source_version_id,
-    currentSourceVersionNumber: versionNumber,
-    createdAt: toIso(row.created_at),
-    updatedAt: toIso(row.updated_at),
-  };
 }
 
 function mapEvent(row: RestoreEventRow): SourceVersionRestoreEvent {

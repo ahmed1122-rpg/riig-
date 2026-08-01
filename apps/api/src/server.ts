@@ -8,6 +8,7 @@ import { AesGcmSecretProtector, decodeAuthEncryptionKey } from "./auth/secret-pr
 import { SmtpEmailSender } from "./infrastructure/email/smtp-email-sender.js";
 import { StripePaymentProvider } from "./billing/stripe-payment-provider.js";
 import { LocalArabicPdfOcrEngine } from "@motionprep/document-processing";
+import { EmailOutboxDispatcher } from "./infrastructure/email/email-outbox-dispatcher.js";
 
 const config = loadConfig();
 const persistence =
@@ -100,6 +101,25 @@ const ready = () =>
     emailSender?.ready(),
   ]).then(() => undefined);
 await ready();
+const emailOutboxDispatcher =
+  persistence && emailSender
+    ? new EmailOutboxDispatcher(
+        persistence.emailOutbox,
+        emailSender,
+        (event) => {
+          process.stdout.write(
+            `${JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: event.outcome === "failed" ? "error" : "info",
+              service: "motionprep-api",
+              message: `email.outbox_${event.outcome}`,
+              context: event,
+            })}\n`,
+          );
+        },
+      )
+    : null;
+emailOutboxDispatcher?.start();
 const app = await buildApp(config, {
   ...persistence?.repositories,
   ...(persistence ? { adminAccess: persistence.adminAccess } : {}),
@@ -108,6 +128,7 @@ const app = await buildApp(config, {
     ? { operationalStatus: persistence.operationalStatus }
     : {}),
   ...(security ? { loginAttempts: security.loginAttempts } : {}),
+  ...(security ? { rateLimitStore: security.rateLimitStore } : {}),
   ...(objectStorage ? { objectStorage } : {}),
   ...(secretProtector ? { secretProtector } : {}),
   ...(emailSender ? { emailSender } : {}),
@@ -121,6 +142,7 @@ if (persistence || security || objectStorage || emailSender || pdfOcrEngine) {
       persistence?.close(),
       security?.close(),
       pdfOcrEngine?.close(),
+      emailOutboxDispatcher?.stop(),
     ]);
     objectStorage?.destroy();
     emailSender?.close();

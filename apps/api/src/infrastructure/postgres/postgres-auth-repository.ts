@@ -1,5 +1,6 @@
 import type { UserRole, UserStatus } from "@motionprep/contracts";
 import type { Pool, PoolClient } from "pg";
+import type { PasswordResetMessage } from "../../auth/email-sender.js";
 import type {
   AuthRepository,
   MfaChallengeRecord,
@@ -45,8 +46,15 @@ interface TokenRow {
   expires_at: Date | string;
 }
 
+export interface PostgresAuthRepositoryHooks {
+  afterPasswordResetStored?(client: PoolClient): Promise<void>;
+}
+
 export class PostgresAuthRepository implements AuthRepository {
-  constructor(private readonly pool: Pool | PoolClient) {}
+  constructor(
+    private readonly pool: Pool | PoolClient,
+    private readonly hooks: PostgresAuthRepositoryHooks = {},
+  ) {}
 
   async findUserById(id: string): Promise<UserRecord | null> {
     const result = await this.pool.query<UserRow>(
@@ -298,17 +306,50 @@ export class PostgresAuthRepository implements AuthRepository {
     ]);
   }
 
-  async savePasswordReset(record: PasswordResetRecord): Promise<void> {
-    await this.pool.query(
-      `
-        INSERT INTO password_reset_tokens (token_hash, user_id, expires_at)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (token_hash) DO UPDATE SET
-          user_id = EXCLUDED.user_id,
-          expires_at = EXCLUDED.expires_at
-      `,
-      [record.tokenHash, record.userId, record.expiresAt],
-    );
+  async savePasswordReset(
+    record: PasswordResetRecord,
+    delivery?: PasswordResetMessage,
+  ): Promise<"queued" | "stored"> {
+    const ownsClient = "connect" in this.pool;
+    const client = ownsClient ? await this.pool.connect() : this.pool;
+    try {
+      if (ownsClient) await client.query("BEGIN");
+      await client.query(
+        `
+          INSERT INTO password_reset_tokens (token_hash, user_id, expires_at)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (token_hash) DO UPDATE SET
+            user_id = EXCLUDED.user_id,
+            expires_at = EXCLUDED.expires_at
+        `,
+        [record.tokenHash, record.userId, record.expiresAt],
+      );
+      await this.hooks.afterPasswordResetStored?.(client as PoolClient);
+      if (delivery) {
+        await client.query(
+          `
+            INSERT INTO email_outbox (
+              id, kind, recipient, reset_url, expires_at, status,
+              next_attempt_at, created_at, updated_at
+            )
+            VALUES ($1, 'password-reset', $2, $3, $4, 'queued', now(), now(), now())
+          `,
+          [
+            crypto.randomUUID(),
+            delivery.recipient,
+            delivery.resetUrl,
+            delivery.expiresAt,
+          ],
+        );
+      }
+      if (ownsClient) await client.query("COMMIT");
+      return delivery ? "queued" : "stored";
+    } catch (error) {
+      if (ownsClient) await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      if (ownsClient) (client as PoolClient).release();
+    }
   }
 
   async consumePasswordReset(

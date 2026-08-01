@@ -57,4 +57,26 @@ describe("WorkerDrainCoordinator", () => {
     expect(accepted).toBe(false);
     expect(released).toEqual(["late-job"]);
   });
+
+  it("finishes draining when release and its error callback both throw", async () => {
+    vi.useFakeTimers();
+    const onReleaseError = vi.fn(() => {
+      throw new Error("logger unavailable");
+    });
+    const drain = new WorkerDrainCoordinator<string>({
+      timeoutMilliseconds: 30_000,
+      release: async () => {
+        throw new Error("database unavailable");
+      },
+      onReleaseError,
+    });
+    await drain.register("slot-1", "job-1");
+
+    drain.requestShutdown();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(drain.waitForRelease()).resolves.toBeUndefined();
+
+    expect(onReleaseError).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
 });

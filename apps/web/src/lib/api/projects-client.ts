@@ -5,28 +5,32 @@ import {
   type ApiEnvelope,
 } from "./transport";
 import { waitForJob } from "./job-polling";
+import { getProjectLayerDocument } from "./layer-document-client";
+import { listSourceVersions } from "./source-versions-client";
 import type {
   LayerDocumentView,
-  LayerDocumentEditView,
   ProjectSummary,
-  SourceVersionRestoreEvent,
-  SourceVersionRestoreResult,
-  SourceVersionSummary,
   UploadResult,
 } from "./models";
 
+export {
+  applyGuidedRefinement,
+  getProjectLayerDocument,
+  mergeImageLayers,
+  mergePdfTextLayers,
+  navigateLayerDocumentHistory,
+  refineImageLayerEdges,
+  splitPdfTextLayer,
+  updateLayerDocument,
+} from "./layer-document-client";
+export {
+  listSourceVersionRestores,
+  listSourceVersions,
+  restoreSourceVersion,
+} from "./source-versions-client";
+
 export function listProjects(): Promise<ProjectSummary[]> {
   return request<ProjectSummary[]>("/v1/projects");
-}
-
-export function listSourceVersions(
-  projectId: string,
-  signal?: AbortSignal,
-): Promise<SourceVersionSummary[]> {
-  return request<SourceVersionSummary[]>(
-    `/v1/projects/${encodeURIComponent(projectId)}/source-versions`,
-    { signal },
-  );
 }
 
 function sourceContentType(file: File): string {
@@ -327,107 +331,6 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-export async function updateLayerDocument(
-  projectId: string,
-  sourceVersionId: string,
-  baseRevision: number,
-  layers: Array<{
-    id: string;
-    name: string;
-    visible: boolean;
-    locked: boolean;
-    opacity: number;
-    zIndex: number;
-    readingOrder?: number;
-  }>,
-): Promise<LayerDocumentView> {
-  return request<LayerDocumentView>(
-    `/v1/projects/${projectId}/layer-document`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        sourceVersionId,
-        baseRevision,
-        layers,
-      }),
-    },
-  );
-}
-
-export async function applyGuidedRefinement(
-  projectId: string,
-  input: {
-    sourceVersionId: string;
-    baseRevision: number;
-    mode: "automatic" | "manual" | "guided";
-    imageStrokes: Array<{
-      id: string;
-      targetLayerId: string | null;
-      kind: "include" | "exclude" | "separate";
-      brushSize: number;
-      points: Array<{ x: number; y: number }>;
-      createdAt: string;
-    }>;
-    pdfRegions: Array<{
-      id: string;
-      pageNumber: number;
-      kind: "heading" | "line" | "topic" | "ignore";
-      start: { x: number; y: number };
-      end: { x: number; y: number };
-      readingOrder: number | null;
-      createdAt: string;
-    }>;
-  },
-): Promise<{
-  document: LayerDocumentView;
-  affectedLayerIds: string[];
-  createdLayerIds: string[];
-  warnings: string[];
-}> {
-  return request(`/v1/projects/${encodeURIComponent(projectId)}/guided-refinements`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function splitPdfTextLayer(
-  projectId: string,
-  input: {
-    sourceVersionId: string;
-    baseRevision: number;
-    layerId: string;
-    offset: number;
-  },
-): Promise<LayerDocumentEditView> {
-  return request(
-    `/v1/projects/${encodeURIComponent(projectId)}/layer-document/text/split`,
-    {
-      method: "POST",
-      headers: { "x-idempotency-key": crypto.randomUUID() },
-      body: JSON.stringify(input),
-    },
-  );
-}
-
-export function mergePdfTextLayers(
-  projectId: string,
-  input: {
-    sourceVersionId: string;
-    baseRevision: number;
-    layerIds: string[];
-    separator: "space" | "newline";
-  },
-): Promise<LayerDocumentEditView> {
-  return request(
-    `/v1/projects/${encodeURIComponent(projectId)}/layer-document/text/merge`,
-    {
-      method: "POST",
-      headers: { "x-idempotency-key": crypto.randomUUID() },
-      body: JSON.stringify(input),
-    },
-  );
-}
-
 export async function runPdfRegionOcr(
   projectId: string,
   input: {
@@ -488,83 +391,16 @@ export async function runPdfRegionOcr(
   );
 }
 
-export function navigateLayerDocumentHistory(
-  projectId: string,
-  input: {
-    sourceVersionId: string;
-    baseRevision: number;
-    direction: "undo" | "redo";
-  },
-): Promise<LayerDocumentView> {
-  return request(
-    `/v1/projects/${encodeURIComponent(projectId)}/layer-document/history`,
-    {
-      method: "POST",
-      body: JSON.stringify(input),
-    },
-  );
-}
-
-export function refineImageLayerEdges(
-  projectId: string,
-  input: {
-    sourceVersionId: string;
-    baseRevision: number;
-    layerId: string;
-    radius: 1 | 2 | 3;
-    strength: number;
-  },
-): Promise<LayerDocumentEditView> {
-  return request(
-    `/v1/projects/${encodeURIComponent(projectId)}/layer-document/image/refine-edges`,
-    {
-      method: "POST",
-      headers: { "x-idempotency-key": crypto.randomUUID() },
-      body: JSON.stringify(input),
-    },
-  );
-}
-
-export function mergeImageLayers(
-  projectId: string,
-  input: {
-    sourceVersionId: string;
-    baseRevision: number;
-    layerIds: string[];
-  },
-): Promise<LayerDocumentEditView> {
-  return request(
-    `/v1/projects/${encodeURIComponent(projectId)}/layer-document/image/merge`,
-    {
-      method: "POST",
-      headers: { "x-idempotency-key": crypto.randomUUID() },
-      body: JSON.stringify(input),
-    },
-  );
-}
-
-export function getProjectLayerDocument(
-  projectId: string,
-  signal?: AbortSignal,
-  sourceVersionId?: string,
-): Promise<LayerDocumentView> {
-  const query = sourceVersionId
-    ? `?sourceVersionId=${encodeURIComponent(sourceVersionId)}`
-    : "";
-  return request<LayerDocumentView>(
-    `/v1/projects/${encodeURIComponent(projectId)}/layer-document${query}`,
-    { signal },
-  );
-}
-
 export async function getLayerRasterAsset(
   projectId: string,
   sourceVersionId: string,
   layerId: string,
+  assetSha256: string,
   signal?: AbortSignal,
 ): Promise<Blob> {
+  const query = new URLSearchParams({ sourceVersionId, assetSha256 });
   const response = await fetch(
-    `${API_ORIGIN}/v1/projects/${encodeURIComponent(projectId)}/layers/${encodeURIComponent(layerId)}/asset?sourceVersionId=${encodeURIComponent(sourceVersionId)}`,
+    `${API_ORIGIN}/v1/projects/${encodeURIComponent(projectId)}/layers/${encodeURIComponent(layerId)}/asset?${query.toString()}`,
     {
       cache: "force-cache",
       credentials: "include",
@@ -585,42 +421,6 @@ export async function getLayerRasterAsset(
     );
   }
   return response.blob();
-}
-
-export function listSourceVersionRestores(
-  projectId: string,
-  signal?: AbortSignal,
-): Promise<SourceVersionRestoreEvent[]> {
-  return request<SourceVersionRestoreEvent[]>(
-    `/v1/projects/${encodeURIComponent(projectId)}/source-version-restores`,
-    { signal },
-  );
-}
-
-export function restoreSourceVersion(
-  projectId: string,
-  versionId: string,
-  input: {
-    expectedCurrentSourceVersionId: string;
-    reason: string;
-    idempotencyKey?: string;
-  },
-): Promise<SourceVersionRestoreResult> {
-  return request<SourceVersionRestoreResult>(
-    `/v1/projects/${encodeURIComponent(projectId)}/source-versions/${encodeURIComponent(versionId)}/restore`,
-    {
-      method: "POST",
-      headers: {
-        "x-idempotency-key":
-          input.idempotencyKey ?? crypto.randomUUID(),
-      },
-      body: JSON.stringify({
-        expectedCurrentSourceVersionId:
-          input.expectedCurrentSourceVersionId,
-        reason: input.reason,
-      }),
-    },
-  );
 }
 
 function processingFailure(job: {

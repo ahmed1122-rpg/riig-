@@ -1,5 +1,9 @@
 import { request } from "./transport";
-import type { BillingConfiguration, SubscriptionSummary } from "./models";
+import type {
+  BillingConfiguration,
+  CheckoutSummary,
+  SubscriptionSummary,
+} from "./models";
 
 export function getSubscription(): Promise<SubscriptionSummary> {
   return request("/v1/billing/subscription");
@@ -7,6 +11,13 @@ export function getSubscription(): Promise<SubscriptionSummary> {
 
 export function getBillingConfiguration(): Promise<BillingConfiguration> {
   return request("/v1/billing/config");
+}
+
+export function getCheckout(
+  checkoutId: string,
+  signal?: AbortSignal,
+): Promise<CheckoutSummary> {
+  return request(`/v1/billing/checkouts/${checkoutId}`, { signal });
 }
 
 export function createHostedCheckout(input: {

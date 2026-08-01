@@ -9,19 +9,22 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "coverage": "vitest run --coverage --coverage.include=src/shared/AppShell.tsx --coverage.include=src/features/auth/AuthGateway.tsx --coverage.include=src/features/admin/AdminPanel.tsx --coverage.include=src/features/admin/UnauthorizedView.tsx --coverage.include=src/features/projects/ProjectsView.tsx --coverage.include=src/features/exports/ExportsView.tsx --coverage.include=src/features/workspace/exportFormatState.ts --coverage.include=src/features/workspace/layerChecks.ts --coverage.include=src/features/workspace/layerReviewState.ts --coverage.include=src/features/workspace/workspaceToolRegistry.ts --coverage.include=src/lib/api/transport.ts --coverage.include=src/lib/api/job-polling.ts --coverage.thresholds.statements=47 --coverage.thresholds.branches=45 --coverage.thresholds.functions=37 --coverage.thresholds.lines=49"
+    "coverage": "vitest run --coverage --coverage.include=src/**/*.{ts,tsx} --coverage.thresholds.statements=23 --coverage.thresholds.branches=26 --coverage.thresholds.functions=17 --coverage.thresholds.lines=23"
   },
   "dependencies": {
     "@motionprep/contracts": "*",
+    "@motionprep/presets": "*",
     "lucide-react": "^0.468.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "typescript": "5.6.3",
+    "jsdom": "^30.0.1",
+    "typescript": "^5.8.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
   }
