@@ -334,19 +334,24 @@ export class AuthService {
     const expiresAt = new Date(
       this.now().getTime() + 30 * 60_000,
     ).toISOString();
-    await this.repository.savePasswordReset({
-      tokenHash: this.hashToken(token),
-      userId: user.id,
-      expiresAt,
-    });
     const resetUrl = new URL(this.#passwordResetUrl);
     resetUrl.searchParams.set("token", token);
-    try {
-      await this.#emailSender.sendPasswordReset({
-        recipient: user.email,
-        resetUrl: resetUrl.toString(),
+    const message = {
+      recipient: user.email,
+      resetUrl: resetUrl.toString(),
+      expiresAt,
+    };
+    const delivery = await this.repository.savePasswordReset(
+      {
+        tokenHash: this.hashToken(token),
+        userId: user.id,
         expiresAt,
-      });
+      },
+      message,
+    );
+    if (delivery === "queued") return;
+    try {
+      await this.#emailSender.sendPasswordReset(message);
     } catch {
       // The route intentionally remains indistinguishable from an unknown
       // email response. Delivery failures are surfaced by SMTP monitoring.

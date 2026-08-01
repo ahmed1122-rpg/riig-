@@ -14,7 +14,7 @@ describe("StripePaymentProvider", () => {
     } as unknown as Stripe;
     const provider = new StripePaymentProvider(
       {
-        secretKey: "sk_test_motionprep",
+        secretKey: "test_stripe_key_motionprep",
         webhookSecret: "whsec_motionprep",
       },
       stripe,
@@ -37,6 +37,15 @@ describe("StripePaymentProvider", () => {
     expect(parameters.mode).toBe("subscription");
     expect(parameters.customer_email).toBe("creator@example.com");
     expect(parameters.line_items[0].price_data.unit_amount).toBe(1900);
+    expect(parameters.success_url).toContain(
+      "checkout_id=89a8e97e-a0a9-4a69-8d54-cb46ba9a36d0",
+    );
+    expect(parameters.success_url).toContain(
+      "session_id={CHECKOUT_SESSION_ID}",
+    );
+    expect(parameters.cancel_url).toContain(
+      "checkout_id=89a8e97e-a0a9-4a69-8d54-cb46ba9a36d0",
+    );
     expect(parameters.metadata.motionprep_checkout_id).toBe(
       "89a8e97e-a0a9-4a69-8d54-cb46ba9a36d0",
     );
@@ -46,10 +55,10 @@ describe("StripePaymentProvider", () => {
   });
 
   it("verifies a signed raw webhook and rejects an invalid signature", () => {
-    const stripe = new Stripe("sk_test_motionprep");
+    const stripe = new Stripe("test_stripe_key_motionprep");
     const webhookSecret = "whsec_motionprep_test_secret";
     const provider = new StripePaymentProvider(
-      { secretKey: "sk_test_motionprep", webhookSecret },
+      { secretKey: "test_stripe_key_motionprep", webhookSecret },
       stripe,
     );
     const payload = JSON.stringify({
@@ -93,7 +102,7 @@ describe("StripePaymentProvider", () => {
   });
 
   it("maps subscription lifecycle events and creates a hosted portal", async () => {
-    const stripeForSignature = new Stripe("sk_test_motionprep");
+    const stripeForSignature = new Stripe("test_stripe_key_motionprep");
     const webhookSecret = "whsec_motionprep_test_secret";
     const portalCreate = vi.fn().mockResolvedValue({
       url: "https://billing.stripe.com/p/session/test",
@@ -103,7 +112,7 @@ describe("StripePaymentProvider", () => {
       webhooks: stripeForSignature.webhooks,
     } as unknown as Stripe;
     const provider = new StripePaymentProvider(
-      { secretKey: "sk_test_motionprep", webhookSecret },
+      { secretKey: "test_stripe_key_motionprep", webhookSecret },
       stripe,
     );
     const payload = JSON.stringify({

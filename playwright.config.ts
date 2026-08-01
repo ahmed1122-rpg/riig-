@@ -34,7 +34,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "npm run dev --workspace @motionprep/api",
+      command: "npm run serve:e2e --workspace @motionprep/api",
       url: "http://127.0.0.1:4000/v1/health/live",
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,

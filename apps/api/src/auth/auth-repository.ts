@@ -1,4 +1,5 @@
 import type { UserRole, UserStatus, UserSummary } from "@motionprep/contracts";
+import type { PasswordResetMessage } from "./email-sender.js";
 
 export interface UserRecord extends UserSummary {
   passwordHash: string;
@@ -69,7 +70,10 @@ export interface AuthRepository {
   ): Promise<MfaChallengeRecord | null>;
   deleteMfaChallenge(tokenHash: string): Promise<void>;
   deleteMfaChallengesByUser(userId: string): Promise<void>;
-  savePasswordReset(record: PasswordResetRecord): Promise<void>;
+  savePasswordReset(
+    record: PasswordResetRecord,
+    delivery?: PasswordResetMessage,
+  ): Promise<"queued" | "stored">;
   consumePasswordReset(
     tokenHash: string,
     now: string,
@@ -199,8 +203,12 @@ export class InMemoryAuthRepository implements AuthRepository {
     }
   }
 
-  async savePasswordReset(record: PasswordResetRecord): Promise<void> {
+  async savePasswordReset(
+    record: PasswordResetRecord,
+    _delivery?: PasswordResetMessage,
+  ): Promise<"stored"> {
     this.#passwordResets.set(record.tokenHash, record);
+    return "stored";
   }
 
   async consumePasswordReset(

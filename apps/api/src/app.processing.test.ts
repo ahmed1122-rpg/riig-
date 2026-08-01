@@ -88,21 +88,45 @@ describe("API — المعالجة ووثائق الطبقات", () => {
     expect(document.json().data.layers[0].rasterAsset.sha256).toMatch(
       /^[a-f0-9]{64}$/,
     );
+    const assetSha256 = document.json().data.layers[0].rasterAsset.sha256 as string;
+    const assetUrl = `/v1/projects/${projectId}/layers/${document.json().data.layers[0].id}/asset?sourceVersionId=${sourceVersionId}&assetSha256=${assetSha256}`;
     const layerAsset = await app.inject({
       method: "GET",
-      url: `/v1/projects/${projectId}/layers/${document.json().data.layers[0].id}/asset?sourceVersionId=${sourceVersionId}`,
+      url: assetUrl,
       headers: { cookie },
     });
     expect(layerAsset.statusCode).toBe(200);
     expect(layerAsset.headers["content-type"]).toContain("image/png");
     expect(layerAsset.headers["cache-control"]).toContain("immutable");
+    expect(layerAsset.headers.etag).toBe(`"${assetSha256}"`);
     expect(layerAsset.rawPayload.subarray(1, 4).toString("ascii")).toBe(
       "PNG",
+    );
+    const notModified = await app.inject({
+      method: "GET",
+      url: assetUrl,
+      headers: { cookie, "if-none-match": `"${assetSha256}"` },
+    });
+    expect(notModified.statusCode).toBe(304);
+    const legacyAsset = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}/layers/${document.json().data.layers[0].id}/asset?sourceVersionId=${sourceVersionId}`,
+      headers: { cookie },
+    });
+    expect(legacyAsset.headers["cache-control"]).toBe("private, no-cache");
+    const mismatchedAsset = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}/layers/${document.json().data.layers[0].id}/asset?sourceVersionId=${sourceVersionId}&assetSha256=${"0".repeat(64)}`,
+      headers: { cookie },
+    });
+    expect(mismatchedAsset.statusCode).toBe(409);
+    expect(mismatchedAsset.json().error.code).toBe(
+      "LAYER_ASSET_VERSION_MISMATCH",
     );
     const otherCookie = await registerCreator(app, "other-layer@example.com");
     const crossAccountAsset = await app.inject({
       method: "GET",
-      url: `/v1/projects/${projectId}/layers/${document.json().data.layers[0].id}/asset?sourceVersionId=${sourceVersionId}`,
+      url: assetUrl,
       headers: { cookie: otherCookie },
     });
     expect(crossAccountAsset.statusCode).toBe(404);

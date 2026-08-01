@@ -28,18 +28,26 @@ function routeError(
   const authError = trySendAuthDomainError(error, request, reply);
   if (authError) return authError;
   if (error instanceof BillingDomainError) {
-    const status =
-      error.code === "CHECKOUT_NOT_FOUND"
-        ? 404
-        : error.code === "CHECKOUT_REQUEST_IN_PROGRESS"
-          ? 409
-          : error.code === "WEBHOOK_SIGNATURE_INVALID" ||
-              error.code === "WEBHOOK_EVENT_INVALID"
-            ? 400
-          : 400;
+    const status = billingErrorStatus(error.code);
     return sendApiError(reply, request.id, status, error.code, error.message);
   }
   throw error;
+}
+
+function billingErrorStatus(code: BillingDomainError["code"]): number {
+  switch (code) {
+    case "CHECKOUT_NOT_FOUND":
+      return 404;
+    case "CHECKOUT_NOT_COMPLETABLE":
+    case "CHECKOUT_REQUEST_IN_PROGRESS":
+    case "SUBSCRIPTION_NOT_MANAGEABLE":
+      return 409;
+    case "PAYMENT_PROVIDER_UNAVAILABLE":
+      return 503;
+    case "WEBHOOK_SIGNATURE_INVALID":
+    case "WEBHOOK_EVENT_INVALID":
+      return 400;
+  }
 }
 
 export async function registerBillingRoutes(
@@ -73,6 +81,28 @@ export async function registerBillingRoutes(
       const user = await requireUser(request, auth);
       return {
         data: await billing.subscription(user.id),
+        error: null,
+      };
+    } catch (error) {
+      return routeError(error, request, reply);
+    }
+  });
+
+  app.get("/v1/billing/checkouts/:checkoutId", async (request, reply) => {
+    const params = paramsSchema.safeParse(request.params);
+    if (!params.success) {
+      return sendApiError(
+        reply,
+        request.id,
+        404,
+        "CHECKOUT_NOT_FOUND",
+        "جلسة الدفع غير موجودة.",
+      );
+    }
+    try {
+      const user = await requireUser(request, auth);
+      return {
+        data: await billing.checkout(params.data.checkoutId, user.id),
         error: null,
       };
     } catch (error) {

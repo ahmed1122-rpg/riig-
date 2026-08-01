@@ -7,6 +7,7 @@ import { PostgresExportRepository } from "./postgres-export-repository.js";
 import { PostgresIdempotencyStore } from "./postgres-idempotency-store.js";
 import { PostgresProjectRepository } from "./postgres-project-repository.js";
 import { PostgresUploadRepository } from "./postgres-upload-repository.js";
+import { PostgresUploadFinalizationCommand } from "./postgres-upload-finalization.js";
 import { PostgresSourceVersionRepository } from "./postgres-source-version-repository.js";
 import {
   PostgresLayerDocumentRepository,
@@ -16,6 +17,7 @@ import { PostgresAdminAccessCommand } from "./postgres-admin-access-command.js";
 import { PostgresUsageMeter } from "./postgres-usage-meter.js";
 import { PostgresOperationalStatusProvider } from "./postgres-operational-status.js";
 import { PostgresSourceVersionRestoreCommand } from "./postgres-source-version-restore.js";
+import { PostgresEmailOutboxRepository } from "./postgres-email-outbox.js";
 
 export function createPostgresPersistence(config: AppConfig) {
   if (!config.DATABASE_URL) {
@@ -30,6 +32,7 @@ export function createPostgresPersistence(config: AppConfig) {
     repositories: {
       projects: new PostgresProjectRepository(database.pool),
       uploads: new PostgresUploadRepository(database.pool),
+      uploadFinalization: new PostgresUploadFinalizationCommand(database.pool),
       sourceVersions: new PostgresSourceVersionRepository(database.pool),
       sourceVersionRestores: new PostgresSourceVersionRestoreCommand(
         database.pool,
@@ -48,6 +51,7 @@ export function createPostgresPersistence(config: AppConfig) {
       config.USAGE_METERING_MODE,
     ),
     operationalStatus: new PostgresOperationalStatusProvider(database.pool),
+    emailOutbox: new PostgresEmailOutboxRepository(database.pool),
     ready: () => database.ready(),
     close: () => database.close(),
   };

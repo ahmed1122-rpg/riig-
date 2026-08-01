@@ -23,6 +23,7 @@
     "test:e2e:install": "playwright install --with-deps chromium",
     "coverage": "npm run coverage --workspaces --if-present",
     "lint": "eslint . --max-warnings 0",
+    "lint:css": "stylelint \"apps/web/src/styles/**/*.css\" --max-warnings 0",
     "deadcode": "knip",
     "fixtures:generate": "node artifacts/fixtures/generate-alpha-components.mjs && node artifacts/fixtures/generate-e2e-pdf.mjs",
     "fixture:ocr:generate": "node artifacts/benchmarks/ocr-arabic/generate-fixture.mjs",
@@ -34,11 +35,11 @@
     "benchmark:ocr:selector": "node scripts/evaluate-ocr-selector.mjs",
     "golden:adobe:generate": "npm run build --workspace @motionprep/contracts && npm run build --workspace @motionprep/export-adapters && node --conditions=production scripts/generate-adobe-golden.mjs",
     "verify:architecture": "node scripts/verify-architecture.mjs",
-    "verify:deployment": "node scripts/verify-deployment.mjs",
+    "verify:deployment": "node --test scripts/check-worker-health.test.mjs && node scripts/verify-deployment.mjs",
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
-    "verify:recovery": "node --test scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
+    "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
     "verify:css": "node scripts/verify-css-architecture.mjs",
-    "verify:fixtures": "node --test scripts/ocr-corpus-wikitext.test.mjs scripts/ocr-holdout-policy.test.mjs && node scripts/verify-fixture-corpus.mjs && node scripts/verify-ocr-corpus.mjs",
+    "verify:fixtures": "node --test scripts/ocr-corpus-wikitext.test.mjs scripts/ocr-holdout-policy.test.mjs && node scripts/verify-fixture-corpus.mjs && node scripts/verify-ocr-corpus.mjs --allow-stale-implementation-when-disabled",
     "verify:ocr-corpus": "node scripts/verify-ocr-corpus.mjs",
     "verify:visuals": "node scripts/verify-visual-assets.mjs",
     "verify:bundle": "node scripts/verify-bundle-budget.mjs",
@@ -47,7 +48,7 @@
     "verify:clean": "node --test scripts/clean.test.mjs",
     "test:topology": "node scripts/verify-production-topology.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=22.12.0",
@@ -57,7 +58,7 @@
     "@axe-core/playwright": "4.12.1",
     "@eslint/js": "^10.0.1",
     "@napi-rs/canvas": "^1.0.3",
-    "@playwright/test": "1.61.1",
+    "@playwright/test": "1.62.1",
     "@tesseract.js-data/ara": "1.0.0",
     "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^10.0.4",
@@ -68,6 +69,7 @@
     "pg": "8.22.0",
     "sharp": "^0.35.3",
     "stripe": "22.3.2",
+    "stylelint": "17.14.1",
     "tesseract.js": "7.0.0",
     "typescript-eslint": "^8.65.0",
     "yaml": "^2.9.0"

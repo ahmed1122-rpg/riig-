@@ -58,19 +58,6 @@ export async function registerUploadRoutes(
     const user = await requireUser(request, auth);
     await requireOwnedUpload(projects, uploads, user.id, uploadId);
   };
-  const persistReadyUpload = async (
-    operation: () => ReturnType<UploadService["receive"]>,
-  ) => {
-    const session = await operation();
-    await markSourceReady(
-      projects,
-      uploads,
-      session.projectId,
-      session.uploadId,
-    );
-    return session;
-  };
-
   app.addContentTypeParser(
     [...acceptedSourceTypes],
     { parseAs: "buffer", bodyLimit: MAX_UPLOAD_BYTES },
@@ -179,9 +166,7 @@ export async function registerUploadRoutes(
     }
     try {
       await requireRequestUpload(request, params.data.uploadId);
-      const session = await persistReadyUpload(() =>
-        uploads.receive(params.data.uploadId, content),
-      );
+      const session = await uploads.receive(params.data.uploadId, content);
       return { data: session, error: null };
     } catch (error) {
       return domainError(error, request, reply);
@@ -202,24 +187,6 @@ export async function registerUploadRoutes(
       onError: domainError,
     });
   });
-}
-
-async function markSourceReady(
-  projects: ProjectRepository,
-  uploads: UploadService,
-  projectId: string,
-  uploadId: string,
-): Promise<void> {
-  const sourceVersion = await uploads.findSourceVersion(uploadId);
-  if (!sourceVersion || sourceVersion.status !== "ready") {
-    throw new Error("Ready upload is missing its source version.");
-  }
-  await projects.updateCurrentSourceVersion(
-    projectId,
-    sourceVersion.id,
-    sourceVersion.versionNumber,
-  );
-  await projects.updateStatus(projectId, "queued");
 }
 
 async function requireOwnedUpload(

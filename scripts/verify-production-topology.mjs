@@ -196,7 +196,7 @@ async function verifyStripeWebhookIdempotency(targetUserId) {
       },
     },
   });
-  const stripe = new Stripe("sk_test_motionprep_topology_only");
+  const stripe = new Stripe("test_stripe_key_motionprep_topology_only");
   const signature = stripe.webhooks.generateTestHeaderString({
     payload,
     secret: webhookSecret,

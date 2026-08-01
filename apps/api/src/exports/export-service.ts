@@ -18,12 +18,12 @@ import {
 } from "@motionprep/export-adapters";
 import { validateProductionDocument } from "@motionprep/presets";
 import { strToU8, zipSync } from "fflate";
-import sharp from "sharp";
 import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
 import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
+import { renderSolidPng } from "./export-raster-renderer.js";
 import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import type {
   ObjectStorage,
@@ -766,16 +766,11 @@ export class ExportService {
           .toString()
           .padStart(3, "0")}_background.png`;
         entries[filename] = new Uint8Array(
-          await sharp({
-            create: {
-              width: Math.ceil(page.width),
-              height: Math.ceil(page.height),
-              channels: 4,
-              background: "#ffffff",
-            },
-          })
-            .png({ compressionLevel: 9 })
-            .toBuffer(),
+          await renderSolidPng({
+            width: Math.ceil(page.width),
+            height: Math.ceil(page.height),
+            background: "#ffffff",
+          }),
         );
         layerFiles.set(background.id, filename);
       }

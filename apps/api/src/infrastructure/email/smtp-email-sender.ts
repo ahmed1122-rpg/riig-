@@ -54,18 +54,54 @@ export class SmtpEmailSender implements EmailSender {
   }
 
   async sendPasswordReset(message: PasswordResetMessage): Promise<void> {
+    const content = passwordResetEmailContent(message);
     await this.#transport.sendMail({
       from: this.options.from,
       to: message.recipient,
-      subject: "إعادة تعيين كلمة مرور MotionPrep",
-      text: [
-        "وصلنا طلب لإعادة تعيين كلمة مرور حسابك في MotionPrep.",
-        "",
-        `افتح الرابط التالي قبل ${message.expiresAt}:`,
-        message.resetUrl,
-        "",
-        "إذا لم تطلب ذلك فتجاهل الرسالة، وستظل كلمة مرورك كما هي.",
-      ].join("\n"),
+      ...content,
     });
   }
+}
+
+export function passwordResetEmailContent(
+  message: PasswordResetMessage,
+): { subject: string; text: string; html: string } {
+  const expiresAt = new Intl.DateTimeFormat("ar-EG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(new Date(message.expiresAt));
+  const resetUrl = escapeHtml(message.resetUrl);
+  const subject = "إعادة تعيين كلمة مرور MotionPrep";
+  const text = [
+    "وصلنا طلبًا لإعادة تعيين كلمة مرور حسابك في MotionPrep.",
+    "",
+    `افتح الرابط التالي قبل ${expiresAt} بتوقيت UTC:`,
+    message.resetUrl,
+    "",
+    "إذا لم تطلب ذلك فتجاهل الرسالة، وستظل كلمة مرورك كما هي.",
+  ].join("\n");
+  const html = `<!doctype html>
+<html lang="ar" dir="rtl">
+  <body style="font-family:Arial,sans-serif;line-height:1.7;color:#172033;background:#f5f7fb;padding:24px">
+    <main style="max-width:560px;margin:auto;background:#fff;border-radius:12px;padding:28px">
+      <h1 style="font-size:22px;margin-top:0">إعادة تعيين كلمة المرور</h1>
+      <p>وصلنا طلبًا لإعادة تعيين كلمة مرور حسابك في MotionPrep.</p>
+      <p>استخدم الزر التالي قبل <strong>${escapeHtml(expiresAt)} بتوقيت UTC</strong>:</p>
+      <p><a href="${resetUrl}" style="display:inline-block;background:#2457d6;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px">إعادة تعيين كلمة المرور</a></p>
+      <p style="font-size:13px;color:#526079;overflow-wrap:anywhere">${resetUrl}</p>
+      <p>إذا لم تطلب ذلك فتجاهل الرسالة، وستظل كلمة مرورك كما هي.</p>
+    </main>
+  </body>
+</html>`;
+  return { subject, text, html };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }

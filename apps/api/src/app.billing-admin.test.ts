@@ -56,12 +56,39 @@ describe("API — الفوترة والإدارة", () => {
     expect(checkout.json().data.id).toBe(repeated.json().data.id);
     expect(checkout.json().data.checkoutUrl).toContain("sandbox_checkout");
 
+    const ownedCheckout = await app.inject({
+      method: "GET",
+      url: `/v1/billing/checkouts/${checkout.json().data.id}`,
+      headers: { cookie },
+    });
+    expect(ownedCheckout.statusCode).toBe(200);
+    expect(ownedCheckout.json().data.status).toBe("redirect_required");
+
+    const otherCookie = await registerCreator(
+      app,
+      "other-billing-owner@example.com",
+    );
+    const foreignCheckout = await app.inject({
+      method: "GET",
+      url: `/v1/billing/checkouts/${checkout.json().data.id}`,
+      headers: { cookie: otherCookie },
+    });
+    expect(foreignCheckout.statusCode).toBe(404);
+    expect(foreignCheckout.json().error.code).toBe("CHECKOUT_NOT_FOUND");
+
     const completed = await app.inject({
       method: "POST",
       url: `/v1/billing/checkouts/${checkout.json().data.id}/complete-sandbox`,
       headers: { cookie },
     });
     expect(completed.json().data.status).toBe("paid");
+
+    const paidCheckout = await app.inject({
+      method: "GET",
+      url: `/v1/billing/checkouts/${checkout.json().data.id}`,
+      headers: { cookie },
+    });
+    expect(paidCheckout.json().data.status).toBe("paid");
 
     const subscription = await app.inject({
       method: "GET",
@@ -71,13 +98,59 @@ describe("API — الفوترة والإدارة", () => {
     expect(subscription.json().data.planId).toBe("creator");
     expect(subscription.json().data.usage.jobLimit).toBe(100);
   });
+
+  it("returns service and state-aware billing error statuses", async () => {
+    const app = await harness.build(
+      loadConfig({
+        NODE_ENV: "test",
+        PAYMENT_MODE: "live",
+        STRIPE_SECRET_KEY: "test_stripe_key_motionprep",
+        STRIPE_WEBHOOK_SECRET: "whsec_motionprep",
+      }),
+      { paymentProviders: [] },
+    );
+    const cookie = await registerCreator(app, "billing-errors@example.com");
+
+    const unavailable = await app.inject({
+      method: "POST",
+      url: "/v1/billing/checkouts",
+      headers: {
+        cookie,
+        "x-idempotency-key": "provider-unavailable-001",
+      },
+      payload: {
+        providerId: "stripe",
+        planId: "creator",
+        currency: "USD",
+        returnUrl: "http://localhost:5173/billing/return",
+      },
+    });
+    expect(unavailable.statusCode).toBe(503);
+    expect(unavailable.json().error.code).toBe(
+      "PAYMENT_PROVIDER_UNAVAILABLE",
+    );
+
+    const notManageable = await app.inject({
+      method: "POST",
+      url: "/v1/billing/portal",
+      headers: { cookie },
+      payload: {
+        returnUrl: "http://localhost:5173/billing/return",
+      },
+    });
+    expect(notManageable.statusCode).toBe(409);
+    expect(notManageable.json().error.code).toBe(
+      "SUBSCRIPTION_NOT_MANAGEABLE",
+    );
+  });
+
   it("uses a signed live webhook as the payment source of truth", async () => {
     const provider = new FakeStripeProvider();
     const app = await harness.build(
       loadConfig({
         NODE_ENV: "test",
         PAYMENT_MODE: "live",
-        STRIPE_SECRET_KEY: "sk_test_motionprep",
+        STRIPE_SECRET_KEY: "test_stripe_key_motionprep",
         STRIPE_WEBHOOK_SECRET: "whsec_motionprep",
       }),
       { paymentProviders: [provider] },

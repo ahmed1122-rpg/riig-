@@ -32,6 +32,36 @@
       "risks": ["scanned Arabic OCR", "RTL positioning", "private offline processing"]
     },
     {
+      "id": "synthetic-pdf-layout-matrix",
+      "path": "artifacts/fixtures/motionprep-layout-matrix.pdf",
+      "sha256": "9604c1eda1e4ae20b04241d12c42c4b627c9917941230aacc871757898bdb4ba",
+      "source": "artifacts/fixtures/generate-e2e-pdf.mjs",
+      "owner": "MotionPrep test suite",
+      "license": "Internally generated; test-only redistribution permitted",
+      "expected": "Three pages preserve mixed dimensions, rotation, crop box, vector content, and transparency.",
+      "risks": ["mixed page sizes", "page rotation", "crop box", "vector transparency"]
+    },
+    {
+      "id": "synthetic-pdf-page-limit",
+      "path": "artifacts/fixtures/motionprep-page-limit.pdf",
+      "sha256": "d9c0c2d667e085c435f2f1e69a2fb4a44d0d6deeda1936463c81899b2a9152c6",
+      "source": "artifacts/fixtures/generate-e2e-pdf.mjs",
+      "owner": "MotionPrep test suite",
+      "license": "Internally generated; test-only redistribution permitted",
+      "expected": "A 251-page document is rejected before page processing with PDF_TOO_MANY_PAGES.",
+      "risks": ["page-count denial of service", "250-page product boundary"]
+    },
+    {
+      "id": "synthetic-pdf-truncated",
+      "path": "artifacts/fixtures/motionprep-invalid.pdf",
+      "sha256": "8273e02af4b57d3c214cbc52fe84a144bccf1a58b2369a477f9878acadc63079",
+      "source": "artifacts/fixtures/generate-e2e-pdf.mjs",
+      "owner": "MotionPrep test suite",
+      "license": "Internally generated; test-only redistribution permitted",
+      "expected": "A truncated PDF is rejected with the stable PDF_DECODE_FAILED code.",
+      "risks": ["truncated PDF", "missing xref", "stable error handling"]
+    },
+    {
       "id": "real-ocr-tuhfa-016-prose",
       "path": "artifacts/benchmarks/ocr-arabic-corpus/images/tuhfa-016-prose.jpg",
       "sha256": "53263f73b74ab4dffb294208c6484f6958583d07d431d70d5123d600da9db01f",

@@ -13,6 +13,7 @@ import type { UploadRepository } from "./upload-repository.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
 import { inspectSource } from "./source-inspection.js";
 import type { SourceVersionRepository } from "../sources/source-version-repository.js";
+import type { UploadFinalizationCommand } from "./upload-finalization.js";
 
 export class UploadDomainError extends Error {
   constructor(
@@ -52,11 +53,12 @@ export class UploadService {
       new InMemoryIdempotencyStore(),
     private readonly storage?: ObjectStorage,
     private readonly sourceVersions?: SourceVersionRepository,
+    private readonly finalization?: UploadFinalizationCommand,
   ) {}
 
   async receive(uploadId: string, bytes: Buffer): Promise<UploadSession> {
     const session = await this.requireSession(uploadId);
-    if (session.status === "ready") return session;
+    if (session.status === "ready") return this.reconcileReady(session);
     if (session.status !== "uploading") {
       throw new UploadDomainError(
         "UPLOAD_NOT_COMPLETABLE",
@@ -228,6 +230,9 @@ export class UploadService {
     session: UploadSession,
     sha256: string,
   ): Promise<UploadSession> {
+    if (this.finalization) {
+      return this.finalization.finalize({ session, sha256 });
+    }
     const verifying = this.updated(session, { status: "verifying" });
     await this.repository.save(verifying);
     if (!session.sourceVersionId) {
@@ -248,6 +253,30 @@ export class UploadService {
       sha256: ready.sha256,
     });
     return ready;
+  }
+
+  private async reconcileReady(session: UploadSession): Promise<UploadSession> {
+    if (!this.finalization) return session;
+    if (!this.storage || !session.sha256) {
+      throw new Error("Ready upload is missing durable verification metadata.");
+    }
+    const stored = await this.storage.inspect(session.objectKey);
+    if (
+      !stored ||
+      stored.contentType !== session.contentType ||
+      stored.sizeBytes !== session.expectedSizeBytes ||
+      stored.sha256 !== session.sha256
+    ) {
+      await this.fail(session);
+      throw new UploadDomainError(
+        "UPLOAD_STORAGE_MISMATCH",
+        "تعذر إثبات سلامة الملف المخزن عند استئناف إتمام الرفع. أعد رفع المصدر.",
+      );
+    }
+    return this.finalization.finalize({
+      session,
+      sha256: session.sha256,
+    });
   }
 
   async cancel(uploadId: string): Promise<UploadSession> {

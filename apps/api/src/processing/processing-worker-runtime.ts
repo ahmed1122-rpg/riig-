@@ -30,6 +30,10 @@ import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-me
 import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
 import { releaseProcessingJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
+import {
+  initialPollingDelay,
+  jitteredPollingDelay,
+} from "../jobs/polling-delay.js";
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
 import { updateProjectStatusForJob } from "../projects/project-job-status.js";
@@ -231,6 +235,7 @@ interface WorkerLoopContext {
 }
 
 async function workerLoop(context: WorkerLoopContext): Promise<void> {
+  await delay(initialPollingDelay(context.pollMilliseconds));
   while (context.isRunning()) {
     let registered = false;
     try {
@@ -241,7 +246,7 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
         context.leaseMilliseconds,
       );
       if (!job) {
-        await delay(context.pollMilliseconds);
+        await delay(jitteredPollingDelay(context.pollMilliseconds));
         continue;
       }
       registered = await context.onClaimed(job);
@@ -263,7 +268,7 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
         worker_id: context.workerId,
         error: error instanceof Error ? error.message : "unknown",
       });
-      await delay(context.pollMilliseconds);
+      await delay(jitteredPollingDelay(context.pollMilliseconds));
     } finally {
       if (registered) context.onSettled();
     }

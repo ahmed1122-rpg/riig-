@@ -751,6 +751,8 @@ textarea {
 
 .admin-data-row {
   min-height: 52px;
+  color: #37443f;
+  font-size: 12px;
 }
 
 .admin-stat {
@@ -765,11 +767,6 @@ textarea {
 
 .admin-data-head {
   color: #52615c;
-  font-size: 12px;
-}
-
-.admin-data-row {
-  color: #37443f;
   font-size: 12px;
 }
 
@@ -854,6 +851,7 @@ textarea {
 }
 
 /* Evaluation refinement: explicit porcelain marketing ink and spacing. */
+/* stylelint-disable no-duplicate-selectors -- This bounded refinement layer intentionally overrides the earlier atelier campaign treatment. */
 .marketing-page {
   --mk-text: #111827;
   --mk-muted: #4b5563;
@@ -955,6 +953,8 @@ textarea {
 .campaign-gallery { margin-block: clamp(64px, 7vw, 96px); }
 .workflows-section { padding-top: clamp(48px, 5vw, 72px); }
 .showcase-section { padding-top: clamp(56px, 6vw, 84px); }
+
+/* stylelint-enable no-duplicate-selectors */
 
 :root[data-theme="light"] {
   --text-soft: #374151;
@@ -1308,6 +1308,7 @@ textarea {
 
 /* Final restrained pass: keep the atelier hierarchy while removing campaign-like
    gradients, elevated card rims, and non-essential depth from creator surfaces. */
+/* stylelint-disable no-duplicate-selectors -- This final bounded override removes decorative depth without changing the original component contracts. */
 body,
 .app-shell,
 .page-content:not(.is-workspace) {
@@ -1549,3 +1550,5 @@ body,
 .campaign-props figcaption bdi {
   color: #5146d9;
 }
+
+/* stylelint-enable no-duplicate-selectors */

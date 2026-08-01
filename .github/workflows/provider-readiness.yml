@@ -31,6 +31,7 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
       WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
+      PDF_REGION_OCR_ENABLED: ${{ vars.PDF_REGION_OCR_ENABLED }}
       RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}
       RECOVERY_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.RECOVERY_SIGNING_PUBLIC_KEY_PEM }}
     steps:
@@ -75,9 +76,12 @@ jobs:
         run: |
           printf 'RUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\n' \
             "$RUNTIME_IMAGE_REF" "$WEB_IMAGE_REF" > provider-release.env
-          node scripts/verify-release-environment.mjs provider-release.env
+          node scripts/verify-release-environment.mjs provider-release.env --references-only
       - name: Probe the deployment-owned object store
         run: npm run verify:object-storage
+      - name: Verify regional OCR release evidence when enabled
+        if: ${{ vars.PDF_REGION_OCR_ENABLED == 'true' }}
+        run: npm run verify:ocr-corpus
       - name: Verify the latest isolated restore evidence
         shell: bash
         run: |
@@ -96,5 +100,6 @@ jobs:
             echo "- Immutable image references: verified"
             echo "- Object storage write/read/integrity/delete probe: verified"
             echo "- Versioning requirement: verified by application readiness"
+            echo "- Regional OCR evidence: $PDF_REGION_OCR_ENABLED"
             echo "- Latest RPO/RTO recovery manifest and Ed25519 signature: verified"
           } >> "$GITHUB_STEP_SUMMARY"

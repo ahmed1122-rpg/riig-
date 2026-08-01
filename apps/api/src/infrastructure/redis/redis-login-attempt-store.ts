@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createClient } from "redis";
 import type { LoginAttemptStore } from "../../auth/login-attempt-store.js";
+import { createRedisRateLimitStore } from "./redis-rate-limit-store.js";
 
 interface RedisCommands {
   exists(key: string): Promise<number>;
@@ -63,6 +64,7 @@ export function createRedisSecurity(
       options.windowSeconds,
       options.lockSeconds,
     ),
+    rateLimitStore: createRedisRateLimitStore(client),
     async ready() {
       if (!client.isOpen) await client.connect();
       await client.ping();

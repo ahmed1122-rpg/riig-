@@ -6,6 +6,7 @@ import {
   type UsageMeter,
   type UsageMeterMode,
 } from "../../billing/usage-meter.js";
+import { roundUsage } from "../../billing/usage-rounding.js";
 
 interface SubscriptionRow {
   id: string;
@@ -242,8 +243,4 @@ export class PostgresUsageMeter implements UsageMeter {
       client.release();
     }
   }
-}
-
-function roundUsage(value: number): number {
-  return Math.round(value * 100) / 100;
 }

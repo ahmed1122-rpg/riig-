@@ -6,8 +6,12 @@ import {
 } from "./workspaceToolRegistry";
 
 describe("workspace tool registry", () => {
+  const enabledFeatures = {
+    pdfRegionOcr: { enabled: true, unavailableReason: null },
+  };
+
   it("shows only implemented image commands in the primary rail", () => {
-    const tools = getReadyWorkspaceTools("image", true);
+    const tools = getReadyWorkspaceTools("image", true, enabledFeatures);
     expect(tools.map((tool) => tool.id)).toEqual([
       "image.keep",
       "image.exclude",
@@ -24,7 +28,7 @@ describe("workspace tool registry", () => {
 
 
   it("disables source commands with a truthful reason before upload", () => {
-    const tools = getReadyWorkspaceTools("book", false);
+    const tools = getReadyWorkspaceTools("book", false, enabledFeatures);
     expect(tools.every((tool) => !tool.available)).toBe(true);
     expect(tools.every((tool) => Boolean(tool.unavailableReason))).toBe(true);
     expect(resolveWorkspaceToolDispatch(tools[0]!)).toEqual({
@@ -34,7 +38,7 @@ describe("workspace tool registry", () => {
   });
 
   it("dispatches prompts, undo, redo, text operations, reading order, and source history", () => {
-    const tools = getReadyWorkspaceTools("book", true);
+    const tools = getReadyWorkspaceTools("book", true, enabledFeatures);
     expect(
       resolveWorkspaceToolDispatch(
         tools.find((tool) => tool.id === "pdf.line")!,
@@ -75,7 +79,7 @@ describe("workspace tool registry", () => {
         tools.find((tool) => tool.id === "pdf.region-ocr")!,
       ),
     ).toEqual({ kind: "pdf-region-ocr" });
-    const imageTools = getReadyWorkspaceTools("image", true);
+    const imageTools = getReadyWorkspaceTools("image", true, enabledFeatures);
     expect(
       resolveWorkspaceToolDispatch(
         imageTools.find((tool) => tool.id === "image.edge-refine")!,
@@ -89,7 +93,7 @@ describe("workspace tool registry", () => {
   });
 
   it("matches exactly the displayed shortcuts without H/R conflicts", () => {
-    const tools = getReadyWorkspaceTools("book", true);
+    const tools = getReadyWorkspaceTools("book", true, enabledFeatures);
     const event = {
       key: "h",
       altKey: false,
@@ -115,5 +119,24 @@ describe("workspace tool registry", () => {
         }),
       ).map((tool) => tool.id),
     ).toEqual(["pdf.redo"]);
+  });
+
+  it("disables regional OCR when the runtime capability is unavailable", () => {
+    const tools = getReadyWorkspaceTools("book", true, {
+      pdfRegionOcr: {
+        enabled: false,
+        unavailableReason: "الدليل الإنتاجي غير صالح بعد.",
+      },
+    });
+    const regionalOcr = tools.find((tool) => tool.id === "pdf.region-ocr");
+
+    expect(regionalOcr).toMatchObject({
+      available: false,
+      unavailableReason: "الدليل الإنتاجي غير صالح بعد.",
+    });
+    expect(resolveWorkspaceToolDispatch(regionalOcr!)).toEqual({
+      kind: "unavailable",
+      reason: "الدليل الإنتاجي غير صالح بعد.",
+    });
   });
 });

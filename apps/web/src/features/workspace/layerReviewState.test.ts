@@ -3,6 +3,7 @@ import type { Layer } from "../../types";
 import {
   arrangeLayersForReading,
   collectLayerReviewUpdates,
+  moveEditableLayer,
   reindexLayerOrder,
   snapshotLayerReview,
 } from "./layerReviewState";
@@ -103,6 +104,29 @@ describe("layer review persistence", () => {
       zIndex: 1,
       readingOrder: 1,
     });
+  });
+
+  it("moves an editable layer and reindexes the result", () => {
+    const second = { ...layer, id: "second", name: "+second" };
+    const result = moveEditableLayer([layer, second], "source", 1);
+
+    expect(result?.layers.map((item) => item.id)).toEqual([
+      "second",
+      "source",
+    ]);
+    expect(result?.layers.map((item) => item.zIndex)).toEqual([2, 1]);
+    expect(result?.moved).toBe(layer);
+  });
+
+  it("does not move editable layers across fixed page backgrounds", () => {
+    const page = {
+      ...layer,
+      id: "page",
+      kind: "page" as const,
+    };
+
+    expect(moveEditableLayer([layer, page], "source", 1)).toBeNull();
+    expect(moveEditableLayer([layer, page], "page", 0)).toBeNull();
   });
 
   it("arranges pages top-to-bottom and respects RTL horizontal order", () => {

@@ -42,6 +42,7 @@ export type LayerDocumentEditView = Omit<
 export type ExportSummary = ExportJob;
 
 export type SubscriptionSummary = Omit<SubscriptionView, "id" | "userId">;
+export type CheckoutSummary = CheckoutSession;
 
 export interface BillingConfiguration {
   mode: "disabled" | "sandbox" | "live";

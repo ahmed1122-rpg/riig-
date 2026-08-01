@@ -294,7 +294,7 @@
 .pro-quality-switch button.is-active { background: #2a3431; color: #72dcd3; }
 .pro-zoom-control { direction: ltr; }
 .pro-zoom-control input { width: 70px; accent-color: #5bd2c7; }
-.pro-zoom-control output { min-width: 32px; color: #d7e0dd; font: 7px/1 ui-monospace, monospace; text-align: center; }
+.pro-zoom-control output { min-width: 32px; padding: 2px; border-radius: 2px; background: #172136; color: #d7e0dd; font: 7px/1 ui-monospace, monospace; text-align: center; }
 .preview-swatch { width: 9px; height: 9px; border: 1px solid rgba(255,255,255,.3); border-radius: 2px; }
 .preview-swatch--dark { background: #202725; }
 .preview-swatch--white { background: #fff; }

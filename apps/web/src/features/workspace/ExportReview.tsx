@@ -8,7 +8,7 @@ import {
 import { Icon } from "../../shared/Icon";
 import type { Layer, ProjectMode } from "../../types";
 import { getExportFormatPresentation } from "../exports/exportPresentation";
-import { reindexLayerOrder } from "./layerReviewState";
+import { moveEditableLayer } from "./layerReviewState";
 import {
   selectExportFormat,
   selectExportScope,
@@ -250,13 +250,10 @@ export function ExportReview({
   const moveLayer = (direction: -1 | 1) => {
     if (!selected || fixedBackground) return;
     const from = layers.findIndex((layer) => layer.id === selected.id);
-    const to = Math.max(0, Math.min(layers.length - 1, from + direction));
-    if (from === to || layers[to]?.kind === "page") return;
-    const next = [...layers];
-    const [item] = next.splice(from, 1);
-    next.splice(to, 0, item);
+    const result = moveEditableLayer(layers, selected.id, from + direction);
+    if (!result) return;
     invalidateGeneratedExport();
-    onLayersChange(reindexLayerOrder(next));
+    onLayersChange(result.layers);
   };
 
   const mergeSelected = () => {

@@ -48,7 +48,7 @@ x-runtime: &runtime
     EXPORT_LEASE_MS: "60000"
     PAYMENT_MODE: live
     USAGE_METERING_MODE: shadow
-    STRIPE_SECRET_KEY: sk_test_motionprep_topology_only
+    STRIPE_SECRET_KEY: test_stripe_key_motionprep_topology_only
     STRIPE_WEBHOOK_SECRET: whsec_motionprep_topology_only
     RELEASE_VERSION: integration
   networks:

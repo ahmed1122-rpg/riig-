@@ -92,7 +92,7 @@ export function assertOpenedHoldoutPolicy(
   }
 }
 
-function canonicalJson(value) {
+export function canonicalJson(value) {
   if (Array.isArray(value)) {
     return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
   }

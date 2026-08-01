@@ -17,6 +17,7 @@ export interface RetentionDatabaseCounts {
   mfaEnrollments: number;
   mfaChallenges: number;
   passwordResetTokens: number;
+  emailOutbox: number;
   idempotencyKeys: number;
   checkoutSessionsCancelled: number;
   workerHeartbeats: number;
@@ -289,6 +290,15 @@ export class PostgresRetentionStore implements RetentionStore {
         `DELETE FROM password_reset_tokens WHERE ctid IN (
           SELECT ctid FROM password_reset_tokens
           WHERE expires_at <= $1 LIMIT $2
+        )`,
+        [now, config.RETENTION_BATCH_SIZE],
+      ),
+      emailOutbox: await count(
+        `DELETE FROM email_outbox WHERE ctid IN (
+          SELECT ctid FROM email_outbox
+          WHERE status IN ('sent', 'failed')
+            AND updated_at <= $1::timestamptz - interval '7 days'
+          LIMIT $2
         )`,
         [now, config.RETENTION_BATCH_SIZE],
       ),

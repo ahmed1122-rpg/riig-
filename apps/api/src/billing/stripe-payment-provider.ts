@@ -38,8 +38,11 @@ export class StripePaymentProvider implements PaymentProvider {
         customer_email: input.customerEmail,
         success_url:
           `${input.returnUrl}${separator}` +
-          "payment=success&session_id={CHECKOUT_SESSION_ID}",
-        cancel_url: `${input.returnUrl}${separator}payment=cancelled`,
+          `payment=success&checkout_id=${input.checkoutId}` +
+          "&session_id={CHECKOUT_SESSION_ID}",
+        cancel_url:
+          `${input.returnUrl}${separator}payment=cancelled` +
+          `&checkout_id=${input.checkoutId}`,
         line_items: [
           {
             quantity: 1,

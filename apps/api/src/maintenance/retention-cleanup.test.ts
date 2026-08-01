@@ -23,6 +23,7 @@ const emptyCounts: RetentionDatabaseCounts = {
   mfaEnrollments: 0,
   mfaChallenges: 0,
   passwordResetTokens: 0,
+  emailOutbox: 0,
   idempotencyKeys: 0,
   checkoutSessionsCancelled: 0,
   workerHeartbeats: 0,

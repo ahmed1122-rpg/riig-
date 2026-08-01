@@ -1,8 +1,18 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { AppShell } from "../shared/AppShell";
 import type { DemoState, ProjectMode, ViewId } from "../types";
 import {
+  getApplicationCapabilities,
   getSession,
+  unavailableApplicationCapabilities,
+  type ApplicationCapabilities,
   type ProjectSummary,
   type SessionUser,
 } from "../lib/api";
@@ -90,6 +100,9 @@ export function App() {
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [sessionPhase, setSessionPhase] =
     useState<SessionPhase>("checking");
+  const [capabilities, setCapabilities] = useState<ApplicationCapabilities>(
+    unavailableApplicationCapabilities,
+  );
   const [authOpen, setAuthOpen] = useState(entryIntent.passwordReset);
   const [guestStudioOpen, setGuestStudioOpen] = useState(false);
   const [projectMode, setProjectMode] = useState<ProjectMode>(
@@ -114,6 +127,21 @@ export function App() {
   });
   const [notice, setNotice] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_SHELL_QUERY).matches);
+  const workspaceNavigationGuardRef = useRef<
+    (() => Promise<boolean>) | null
+  >(null);
+  const navigationSequenceRef = useRef(0);
+  const viewRef = useRef(view);
+  const committedLocationRef = useRef(
+    `${window.location.pathname}${window.location.search}`,
+  );
+  viewRef.current = view;
+  const registerWorkspaceNavigationGuard = useCallback(
+    (guard: (() => Promise<boolean>) | null) => {
+      workspaceNavigationGuardRef.current = guard;
+    },
+    [],
+  );
   const openAuth = useCallback(() => {
     setMobileNavOpen(false);
     setAuthOpen(true);
@@ -129,6 +157,12 @@ export function App() {
         setNotice("تعذر التحقق من جلسة الخادم.");
         setSessionPhase("resolved");
       });
+  }, []);
+
+  useEffect(() => {
+    void getApplicationCapabilities()
+      .then(setCapabilities)
+      .catch(() => setCapabilities(unavailableApplicationCapabilities));
   }, []);
 
   useEffect(() => {
@@ -177,9 +211,36 @@ export function App() {
   useEffect(() => {
     const restoreLocation = () => {
       const intent = resolveEntryIntent(window.location.search);
-      setView(intent.initialView);
-      setProjectMode(intent.workspace.mode);
-      setWorkspaceProject(intent.workspace.project);
+      const requestedLocation =
+        `${window.location.pathname}${window.location.search}`;
+      const applyLocation = () => {
+        setView(intent.initialView);
+        viewRef.current = intent.initialView;
+        setProjectMode(intent.workspace.mode);
+        setWorkspaceProject(intent.workspace.project);
+        committedLocationRef.current = requestedLocation;
+      };
+      const guard =
+        viewRef.current === "workspace"
+          ? workspaceNavigationGuardRef.current
+          : null;
+      if (!guard) {
+        applyLocation();
+        return;
+      }
+      const sequence = ++navigationSequenceRef.current;
+      void guard().then((allowed) => {
+        if (sequence !== navigationSequenceRef.current) return;
+        if (allowed) {
+          applyLocation();
+          return;
+        }
+        window.history.pushState(
+          null,
+          "",
+          committedLocationRef.current,
+        );
+      });
     };
     window.addEventListener("popstate", restoreLocation);
     return () => window.removeEventListener("popstate", restoreLocation);
@@ -190,23 +251,45 @@ export function App() {
     workspace?: WorkspaceEntry,
     replace = false,
   ) => {
-    setView(nextView);
-    const search = buildViewSearch(
-      window.location.search,
-      nextView,
-      workspace ??
-        (nextView === "workspace"
-          ? { mode: projectMode, project: workspaceProject }
-          : undefined),
-    );
-    const nextUrl = `${window.location.pathname}${search}`;
-    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
-      window.history[replace ? "replaceState" : "pushState"](
-        null,
-        "",
-        nextUrl,
+    const commitNavigation = () => {
+      if (nextView === "workspace" && workspace) {
+        setProjectMode(workspace.mode);
+        setWorkspaceProject(workspace.project);
+      }
+      setView(nextView);
+      viewRef.current = nextView;
+      const search = buildViewSearch(
+        window.location.search,
+        nextView,
+        workspace ??
+          (nextView === "workspace"
+            ? { mode: projectMode, project: workspaceProject }
+            : undefined),
       );
+      const nextUrl = `${window.location.pathname}${search}`;
+      if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+        window.history[replace ? "replaceState" : "pushState"](
+          null,
+          "",
+          nextUrl,
+        );
+      }
+      committedLocationRef.current = nextUrl;
+    };
+    const guard =
+      viewRef.current === "workspace"
+        ? workspaceNavigationGuardRef.current
+        : null;
+    if (!guard) {
+      commitNavigation();
+      return;
     }
+    const sequence = ++navigationSequenceRef.current;
+    void guard().then((allowed) => {
+      if (allowed && sequence === navigationSequenceRef.current) {
+        commitNavigation();
+      }
+    });
   };
 
   const openWorkspace = (
@@ -219,8 +302,6 @@ export function App() {
       | "currentSourceVersionNumber"
     >,
   ) => {
-    setProjectMode(mode);
-    setWorkspaceProject(project ?? null);
     setDemoState("ready");
     navigateView("workspace", {
       mode,
@@ -337,11 +418,10 @@ export function App() {
       {view === "workspace" && (
         <Workspace
           mode={projectMode}
+          capabilities={capabilities}
           authenticated={authenticated}
           onRequireAuth={openAuth}
           onModeChange={(nextMode) => {
-            setWorkspaceProject(null);
-            setProjectMode(nextMode);
             navigateView(
               "workspace",
               { mode: nextMode, project: null },
@@ -350,6 +430,7 @@ export function App() {
           }}
           initialProject={workspaceProject}
           onBack={() => navigateView("dashboard")}
+          onNavigationGuardChange={registerWorkspaceNavigationGuard}
           onNotify={setNotice}
         />
       )}

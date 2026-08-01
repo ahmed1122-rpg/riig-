@@ -96,6 +96,7 @@ export async function loadRasterLayerPreviews(
       projectId,
       sourceVersionId,
       layer.id,
+      layer.rasterAsset!.sha256,
       signal,
     );
     if (signal?.aborted) return;

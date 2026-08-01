@@ -15,17 +15,13 @@ import type {
 } from "@motionprep/contracts";
 import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 import {
-  DocumentProcessingError,
-  preparePdfSource,
   type PdfOcrEngine,
 } from "@motionprep/document-processing";
 import {
   applyRasterGuidance,
   MediaProcessingError,
   mergeRasterLayers,
-  prepareImageSource,
   refineRasterEdges,
-  type PreparedRasterAsset,
 } from "@motionprep/media-processing";
 import {
   applyPdfMarkerRegions,
@@ -34,7 +30,6 @@ import {
   guidanceBounds,
 } from "@motionprep/guidance";
 import {
-  createPdfTextLayerName,
   normalizeLayerName,
   validateProductionDocument,
 } from "@motionprep/presets";
@@ -54,47 +49,18 @@ import type {
   ProcessingJobRepository,
 } from "./processing-repository.js";
 import type { UsageMeter } from "../billing/usage-meter.js";
+import { InlineProcessingRunner } from "./inline-processing-runner.js";
+import { ProcessingDomainError } from "./processing-errors.js";
 import {
-  applyPdfRegionOcr,
-  PdfRegionOcrError,
-} from "./pdf-region-ocr.js";
-
-type ProcessingDomainErrorCode =
-  | "PROCESSING_NOT_FOUND"
-  | "PROCESSING_IN_PROGRESS"
-  | "SOURCE_NOT_CURRENT"
-  | "SOURCE_NOT_READY"
-  | "SOURCE_INTEGRITY_FAILED"
-  | "DOCUMENT_NOT_FOUND"
-  | "DOCUMENT_REVISION_CONFLICT"
-  | "EDIT_HISTORY_UNAVAILABLE"
-  | "INVALID_DOCUMENT_OPERATION"
-  | "INVALID_LAYER_UPDATE"
-  | "LAYER_ASSET_NOT_FOUND"
-  | "LAYER_ASSET_INTEGRITY_FAILED"
-  | "OCR_REQUIRED"
-  | "OCR_FAILED"
-  | "PDF_DECODE_FAILED"
-  | "PDF_TOO_MANY_PAGES"
-  | "PDF_TEXT_LIMIT_EXCEEDED"
-  | "IMAGE_HAS_NO_VISIBLE_PIXELS"
-  | "IMAGE_LAYER_LIMIT_EXCEEDED"
-  | "GUIDANCE_INVALID"
-  | "GUIDANCE_DUPLICATE"
-  | "GUIDANCE_LAYER_UNAVAILABLE"
-  | "PROCESSING_FAILED";
-
-export class ProcessingDomainError extends Error {
-  constructor(
-    readonly code: ProcessingDomainErrorCode,
-    message: string,
-    readonly jobId?: string,
-  ) {
-    super(message);
-  }
-}
+  preparePdfTextMerge,
+  preparePdfTextSplit,
+} from "./pdf-text-operations.js";
+import { unionLayerBounds } from "./layer-operation-utils.js";
+export { ProcessingDomainError } from "./processing-errors.js";
 
 export class ProcessingService {
+  readonly #inlineRunner: InlineProcessingRunner;
+
   constructor(
     private readonly jobs: ProcessingJobRepository,
     private readonly documents: LayerDocumentRepository,
@@ -106,7 +72,16 @@ export class ProcessingService {
     private readonly executeInline = true,
     private readonly pdfOcrEngine?: PdfOcrEngine,
     private readonly usageMeter?: UsageMeter,
-  ) {}
+  ) {
+    this.#inlineRunner = new InlineProcessingRunner(
+      jobs,
+      documents,
+      uploads,
+      storage,
+      now,
+      pdfOcrEngine,
+    );
+  }
 
   async createAndRun(
     projectId: string,
@@ -203,7 +178,7 @@ export class ProcessingService {
     if (!this.executeInline) return job;
     const startedAt = Date.now();
     try {
-      return await this.run(job);
+      return await this.#inlineRunner.run(job);
     } finally {
       await this.usageMeter?.recordProcessingSeconds(
         job.id,
@@ -244,7 +219,7 @@ export class ProcessingService {
     projectId: string,
     sourceVersionId: string,
     layerId: string,
-  ): Promise<StoredObject> {
+  ): Promise<StoredObject & { sha256: string }> {
     const document = await this.findDocument(projectId, sourceVersionId);
     const reference = document.layers.find(
       (layer) => layer.id === layerId && layer.kind === "raster",
@@ -262,7 +237,7 @@ export class ProcessingService {
         "أصل طبقة الصورة غير متاح في التخزين.",
       );
     }
-    return object;
+    return { ...object, sha256: reference.sha256 };
   }
 
   async updateLayerStates(
@@ -566,97 +541,16 @@ export class ProcessingService {
     if ((document.revision ?? 1) !== input.baseRevision) {
       throw revisionConflict();
     }
-    if (!document.pages?.length) {
-      throw invalidDocumentOperation("تقسيم النص متاح لمستندات PDF فقط.");
-    }
-    const layer = document.layers.find(
-      (candidate) => candidate.id === input.layerId,
-    );
-    if (
-      !layer ||
-      layer.kind !== "text" ||
-      layer.fixed ||
-      layer.locked ||
-      layer.pageNumber === undefined ||
-      !layer.fullText ||
-      !layer.bounds
-    ) {
-      throw invalidDocumentOperation(
-        "اختر طبقة نصية غير مقفلة لها نص وحدود صالحة قبل التقسيم.",
-      );
-    }
-    const characters = Array.from(layer.fullText);
-    if (
-      !Number.isSafeInteger(input.offset) ||
-      input.offset <= 0 ||
-      input.offset >= characters.length
-    ) {
-      throw invalidDocumentOperation(
-        "يجب أن يقع موضع التقسيم بين أول وآخر حرف في الوحدة النصية.",
-      );
-    }
-    const firstText = characters.slice(0, input.offset).join("");
-    const secondText = characters.slice(input.offset).join("");
-    if (!firstText.trim() || !secondText.trim()) {
-      throw invalidDocumentOperation(
-        "لا يمكن إنشاء جزء نصي فارغ أو مكوّن من مسافات فقط.",
-      );
-    }
-    const ratio = input.offset / characters.length;
-    const firstWidth = layer.bounds.width * ratio;
-    const secondWidth = layer.bounds.width - firstWidth;
-    const rtl = layer.direction === "rtl";
-    const firstBounds = {
-      ...layer.bounds,
-      x: rtl ? layer.bounds.x + secondWidth : layer.bounds.x,
-      width: firstWidth,
-    };
-    const secondBounds = {
-      ...layer.bounds,
-      x: rtl ? layer.bounds.x : layer.bounds.x + firstWidth,
-      width: secondWidth,
-    };
-    const createdLayerId = crypto.randomUUID();
-    const first: LayerNode = {
-      ...layer,
-      name: createPdfTextLayerName(firstText, "sentence"),
-      fullText: firstText,
-      bounds: firstBounds,
-    };
-    const second: LayerNode = {
-      ...layer,
-      id: createdLayerId,
-      name: createPdfTextLayerName(secondText, "sentence"),
-      fullText: secondText,
-      bounds: secondBounds,
-      zIndex: layer.zIndex + 1,
-      readingOrder: (layer.readingOrder ?? 0) + 1,
-    };
-    const layers = document.layers.flatMap((candidate) =>
-      candidate.id === layer.id ? [first, second] : [candidate],
-    );
-    const changed = {
-      ...document,
-      layers: normalizePageReadingOrder(layers, layer.pageNumber),
-    };
+    const prepared = preparePdfTextSplit(document, input);
     const updated = await this.saveDocumentOperation(
       document,
-      changed,
+      prepared.changed,
       "pdf-split",
       input.actorUserId,
       input.operationId,
-      {
-        affectedLayerIds: [layer.id],
-        createdLayerIds: [createdLayerId],
-        removedLayerIds: [],
-      },
+      prepared.details,
     );
-    return {
-      document: updated,
-      affectedLayerIds: [layer.id],
-      createdLayerIds: [createdLayerId],
-      removedLayerIds: [],
-    };
+    return { document: updated, ...prepared.details };
   }
 
   async mergePdfTextLayers(input: {
@@ -689,96 +583,16 @@ export class ProcessingService {
     if ((document.revision ?? 1) !== input.baseRevision) {
       throw revisionConflict();
     }
-    if (!document.pages?.length) {
-      throw invalidDocumentOperation("دمج النص متاح لمستندات PDF فقط.");
-    }
-    const uniqueIds = [...new Set(input.layerIds)];
-    if (uniqueIds.length < 2 || uniqueIds.length > 50) {
-      throw invalidDocumentOperation(
-        "اختر من طبقتين إلى خمسين طبقة نصية للدمج.",
-      );
-    }
-    const selected = uniqueIds.map((id) =>
-      document.layers.find((layer) => layer.id === id),
-    );
-    if (
-      selected.some(
-        (layer) =>
-          !layer ||
-          layer.kind !== "text" ||
-          layer.fixed ||
-          layer.locked ||
-          layer.pageNumber === undefined ||
-          !layer.fullText ||
-          !layer.bounds,
-      )
-    ) {
-      throw invalidDocumentOperation(
-        "يجب أن تكون كل الوحدات المحددة طبقات نصية غير مقفلة ولها نص وحدود.",
-      );
-    }
-    const textLayers = selected as LayerNode[];
-    const pageNumber = textLayers[0]!.pageNumber!;
-    const parentId = textLayers[0]!.parentId;
-    const direction = textLayers[0]!.direction;
-    if (
-      textLayers.some(
-        (layer) =>
-          layer.pageNumber !== pageNumber ||
-          layer.parentId !== parentId ||
-          layer.direction !== direction,
-      )
-    ) {
-      throw invalidDocumentOperation(
-        "لا يمكن دمج نصوص من صفحات أو مجموعات أو اتجاهات كتابة مختلفة.",
-      );
-    }
-    const ordered = [...textLayers].sort(compareTextLayers);
-    const separator = input.separator === "newline" ? "\n" : " ";
-    const fullText = ordered.map((layer) => layer.fullText!.trim()).join(separator);
-    const mergedBounds = unionBounds(ordered.map((layer) => layer.bounds!));
-    const survivor = ordered[0]!;
-    const removedIds = new Set(ordered.slice(1).map((layer) => layer.id));
-    const readingOrders = ordered.flatMap((layer) =>
-      layer.readingOrder === undefined ? [] : [layer.readingOrder],
-    );
-    const merged: LayerNode = {
-      ...survivor,
-      name: createPdfTextLayerName(fullText, "sentence"),
-      fullText,
-      bounds: mergedBounds,
-      visible: ordered.some((layer) => layer.visible),
-      opacity: Math.max(...ordered.map((layer) => layer.opacity)),
-      zIndex: Math.min(...ordered.map((layer) => layer.zIndex)),
-      ...(readingOrders.length > 0
-        ? { readingOrder: Math.min(...readingOrders) }
-        : {}),
-    };
-    const layers = document.layers
-      .filter((layer) => !removedIds.has(layer.id))
-      .map((layer) => (layer.id === survivor.id ? merged : layer));
-    const changed = {
-      ...document,
-      layers: normalizePageReadingOrder(layers, pageNumber),
-    };
+    const prepared = preparePdfTextMerge(document, input);
     const updated = await this.saveDocumentOperation(
       document,
-      changed,
+      prepared.changed,
       "pdf-merge",
       input.actorUserId,
       input.operationId,
-      {
-        affectedLayerIds: uniqueIds,
-        createdLayerIds: [],
-        removedLayerIds: [...removedIds],
-      },
+      prepared.details,
     );
-    return {
-      document: updated,
-      affectedLayerIds: uniqueIds,
-      createdLayerIds: [],
-      removedLayerIds: [...removedIds],
-    };
+    return { document: updated, ...prepared.details };
   }
 
   async navigateEditHistory(input: {
@@ -1004,7 +818,7 @@ export class ProcessingService {
         return { layer, object };
       }),
     );
-    const bounds = unionBounds(rasterLayers.map((layer) => layer.bounds));
+    const bounds = unionLayerBounds(rasterLayers.map((layer) => layer.bounds));
     let mergedBody: Buffer;
     try {
       mergedBody = await mergeRasterLayers({
@@ -1400,202 +1214,6 @@ export class ProcessingService {
     return object;
   }
 
-  private async run(job: ProcessingJob): Promise<ProcessingJob> {
-    const upload = await this.uploads.findReadyBySourceVersion(
-      job.projectId,
-      job.sourceVersionId,
-    );
-    if (!upload) {
-      return this.fail(job, "SOURCE_NOT_READY", "نسخة المصدر غير جاهزة.");
-    }
-    let source: StoredObject | null;
-    try {
-      source = await this.storage.get(upload.objectKey, {
-        maxBytes: upload.expectedSizeBytes,
-      });
-    } catch (error) {
-      if (isObjectStorageIntegrityFailure(error)) {
-        return this.fail(
-          job,
-          "SOURCE_INTEGRITY_FAILED",
-          "فشل التحقق من سلامة ملف المصدر المخزن.",
-        );
-      }
-      throw error;
-    }
-    if (!source) {
-      return this.fail(job, "SOURCE_NOT_READY", "ملف المصدر غير متاح.");
-    }
-    if (
-      !upload.sha256 ||
-      !hasExpectedObjectIntegrity(source, {
-        contentType: upload.contentType,
-        sizeBytes: upload.expectedSizeBytes,
-        sha256: upload.sha256,
-      })
-    ) {
-      return this.fail(
-        job,
-        "SOURCE_INTEGRITY_FAILED",
-        "فشل التحقق من سلامة ملف المصدر المخزن.",
-      );
-    }
-
-    const processing = await this.transition(job, "processing", 25);
-    let storedRasterAssetKeys: string[] = [];
-    let documentSaved = false;
-    try {
-      let document: LayerDocument;
-      let expectedRevision: number | undefined;
-      if (job.projectKind === "book") {
-        if (job.options.pdfRegionOcr) {
-          if (!this.pdfOcrEngine) {
-            throw new PdfRegionOcrError(
-              "OCR_FAILED",
-              "محرك OCR الإقليمي غير متاح في بيئة المعالجة الحالية.",
-            );
-          }
-          const previous = await this.documents.findBySource(
-            job.projectId,
-            job.sourceVersionId,
-          );
-          if (!previous) {
-            throw new PdfRegionOcrError(
-              "INVALID_DOCUMENT_OPERATION",
-              "يجب تجهيز وثيقة PDF قبل تشغيل OCR الإقليمي.",
-            );
-          }
-          const result = await applyPdfRegionOcr({
-            source: source.body,
-            document: previous,
-            operation: job.options.pdfRegionOcr,
-            ocrEngine: this.pdfOcrEngine,
-            now: this.now,
-          });
-          document = result.document;
-          expectedRevision = job.options.pdfRegionOcr.baseRevision;
-        } else {
-          document = await preparePdfSource({
-              projectId: job.projectId,
-              sourceVersionId: job.sourceVersionId,
-              source: source.body,
-              separationMode: job.options.pdfSeparationMode ?? "sentence",
-              ...(this.pdfOcrEngine
-                ? { ocrEngine: this.pdfOcrEngine }
-                : {}),
-            });
-        }
-      } else {
-        const prepared = await prepareImageSource({
-          projectId: job.projectId,
-          sourceVersionId: job.sourceVersionId,
-          source: source.body,
-        });
-        storedRasterAssetKeys = await this.storeRasterAssets(
-          prepared.rasterAssets,
-        );
-        document = prepared.document;
-      }
-      if (expectedRevision === undefined) {
-        const previousDocument = await this.documents.findBySource(
-          job.projectId,
-          job.sourceVersionId,
-        );
-        document = {
-          ...document,
-          revision: (previousDocument?.revision ?? 0) + 1,
-        };
-      }
-      const verifying = await this.transition(processing, "verifying", 85);
-      if (expectedRevision === undefined) {
-        await this.documents.save(document);
-      } else {
-        const saved = await this.documents.saveIfRevision(
-          document,
-          expectedRevision,
-        );
-        if (!saved) throw revisionConflict();
-      }
-      documentSaved = true;
-      return this.transition(verifying, "ready", 100);
-    } catch (error) {
-      if (!documentSaved && storedRasterAssetKeys.length > 0) {
-        await Promise.allSettled(
-          storedRasterAssetKeys.map((key) => this.storage.delete(key)),
-        );
-      }
-      if (error instanceof DocumentProcessingError) {
-        return this.fail(processing, error.code, error.message);
-      }
-      if (error instanceof PdfRegionOcrError) {
-        return this.fail(processing, error.code, error.message);
-      }
-      if (error instanceof ProcessingDomainError) {
-        return this.fail(processing, error.code, error.message);
-      }
-      const code =
-        error instanceof MediaProcessingError
-          ? error.code
-          : "PROCESSING_FAILED";
-      return this.fail(
-        processing,
-        code,
-        "تعذر تجهيز وثيقة الطبقات.",
-      );
-    }
-  }
-
-  private async storeRasterAssets(
-    assets: readonly PreparedRasterAsset[],
-  ): Promise<string[]> {
-    const stored: string[] = [];
-    try {
-      for (const asset of assets) {
-        await this.storage.put({
-          key: asset.objectKey,
-          contentType: asset.contentType,
-          sizeBytes: asset.sizeBytes,
-          body: asset.body,
-        });
-        stored.push(asset.objectKey);
-      }
-      return stored;
-    } catch (error) {
-      await Promise.allSettled(
-        stored.map((key) => this.storage.delete(key)),
-      );
-      throw error;
-    }
-  }
-
-  private async transition(
-    job: ProcessingJob,
-    status: ProcessingJob["status"],
-    progress: number,
-  ): Promise<ProcessingJob> {
-    const updated = {
-      ...job,
-      status,
-      progress,
-      updatedAt: this.now().toISOString(),
-    };
-    await this.jobs.save(updated);
-    return updated;
-  }
-
-  private async fail(
-    job: ProcessingJob,
-    code: string,
-    message: string,
-  ): Promise<never> {
-    await this.jobs.save({
-      ...job,
-      status: "failed",
-      errorCode: code,
-      updatedAt: this.now().toISOString(),
-    });
-    throw new ProcessingDomainError(toDomainCode(code), message, job.id);
-  }
 }
 
 function isValidLayerName(name: string): name is `+${string}` {
@@ -1619,45 +1237,6 @@ function revisionConflict(): ProcessingDomainError {
   );
 }
 
-function compareTextLayers(left: LayerNode, right: LayerNode): number {
-  const order =
-    (left.readingOrder ?? Number.MAX_SAFE_INTEGER) -
-    (right.readingOrder ?? Number.MAX_SAFE_INTEGER);
-  if (order !== 0) return order;
-  const vertical = (left.bounds?.y ?? 0) - (right.bounds?.y ?? 0);
-  if (Math.abs(vertical) > 1) return vertical;
-  return left.direction === "rtl"
-    ? (right.bounds?.x ?? 0) - (left.bounds?.x ?? 0)
-    : (left.bounds?.x ?? 0) - (right.bounds?.x ?? 0);
-}
-
-function normalizePageReadingOrder(
-  layers: readonly LayerNode[],
-  pageNumber: number,
-): LayerNode[] {
-  const orderedIds = new Map(
-    layers
-      .filter(
-        (layer) =>
-          layer.kind === "text" && layer.pageNumber === pageNumber,
-      )
-      .sort(compareTextLayers)
-      .map((layer, index) => [layer.id, index]),
-  );
-  return layers.map((layer) => {
-    const readingOrder = orderedIds.get(layer.id);
-    return readingOrder === undefined ? layer : { ...layer, readingOrder };
-  });
-}
-
-function unionBounds(bounds: readonly NonNullable<LayerNode["bounds"]>[]) {
-  const left = Math.min(...bounds.map((value) => value.x));
-  const top = Math.min(...bounds.map((value) => value.y));
-  const right = Math.max(...bounds.map((value) => value.x + value.width));
-  const bottom = Math.max(...bounds.map((value) => value.y + value.height));
-  return { x: left, y: top, width: right - left, height: bottom - top };
-}
-
 function editReplayResult(replay: {
   document: LayerDocument;
   entry: NonNullable<LayerDocument["editTimeline"]>["entries"][number];
@@ -1668,22 +1247,4 @@ function editReplayResult(replay: {
     createdLayerIds: replay.entry.createdLayerIds ?? [],
     removedLayerIds: replay.entry.removedLayerIds ?? [],
   };
-}
-
-function toDomainCode(code: string): ProcessingDomainErrorCode {
-  switch (code) {
-    case "SOURCE_NOT_READY":
-    case "SOURCE_INTEGRITY_FAILED":
-    case "OCR_REQUIRED":
-    case "OCR_FAILED":
-    case "PDF_DECODE_FAILED":
-    case "PDF_TOO_MANY_PAGES":
-    case "PDF_TEXT_LIMIT_EXCEEDED":
-    case "IMAGE_HAS_NO_VISIBLE_PIXELS":
-    case "DOCUMENT_REVISION_CONFLICT":
-    case "INVALID_DOCUMENT_OPERATION":
-      return code;
-    default:
-      return "PROCESSING_FAILED";
-  }
 }

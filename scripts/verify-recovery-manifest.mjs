@@ -4,6 +4,7 @@ import {
 } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { canonicalJson } from "./ocr-holdout-policy.mjs";
 
 const digestReference = /^.+@sha256:[a-f0-9]{64}$/u;
 const requiredTextFields = [
@@ -231,22 +232,6 @@ async function main() {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   await main();
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value)
-      .sort()
-      .map(
-        (key) =>
-          `${JSON.stringify(key)}:${canonicalJson(value[key])}`,
-      )
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function message(error) {

@@ -74,6 +74,34 @@ export function reindexLayerOrder(layers: readonly Layer[]): Layer[] {
   });
 }
 
+export function moveEditableLayer(
+  layers: readonly Layer[],
+  sourceId: string,
+  targetIndex: number,
+): { layers: Layer[]; moved: Layer } | null {
+  const sourceIndex = layers.findIndex((layer) => layer.id === sourceId);
+  const boundedTargetIndex = Math.max(
+    0,
+    Math.min(layers.length - 1, targetIndex),
+  );
+  const source = layers[sourceIndex];
+  const target = layers[boundedTargetIndex];
+  if (
+    !source ||
+    !target ||
+    sourceIndex === boundedTargetIndex ||
+    source.kind === "page" ||
+    target.kind === "page"
+  ) {
+    return null;
+  }
+
+  const next = [...layers];
+  const [moved] = next.splice(sourceIndex, 1);
+  next.splice(boundedTargetIndex, 0, moved);
+  return { layers: reindexLayerOrder(next), moved };
+}
+
 export function arrangeLayersForReading(
   layers: readonly Layer[],
 ): Layer[] {

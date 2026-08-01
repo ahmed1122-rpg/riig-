@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   completeSandboxCheckout,
   createBillingPortal,
   createHostedCheckout,
   getBillingConfiguration,
+  getCheckout,
   getSubscription,
   type BillingConfiguration,
   type SubscriptionSummary,
@@ -16,8 +17,15 @@ import {
   type PaymentProviderAdapter,
 } from "./paymentProviders";
 import { BILLING_PLAN_CATALOG } from "@motionprep/contracts";
+import { waitForCheckoutResolution } from "./checkoutReturn";
 
-type CheckoutState = "summary" | "redirect" | "pending" | "success" | "failure";
+type CheckoutState =
+  | "summary"
+  | "redirect"
+  | "pending"
+  | "delayed"
+  | "success"
+  | "failure";
 type PlanId = "starter" | "creator" | "studio";
 
 interface BillingPortalProps {
@@ -65,6 +73,8 @@ export default function BillingPortal({
     useState<SubscriptionSummary | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [portalOpening, setPortalOpening] = useState(false);
+  const [returnedCheckoutId, setReturnedCheckoutId] = useState<string>();
+  const handledReturnRef = useRef<string | undefined>(undefined);
 
   const providers = useMemo(
     () => configuredPaymentProviders(configuration?.providers ?? []),
@@ -131,15 +141,40 @@ export default function BillingPortal({
     const paymentResult = query.get("payment");
     if (!sandboxCheckout && !paymentResult) return;
 
+    const checkoutId = sandboxCheckout ?? query.get("checkout_id");
+    const returnKey = `${sandboxCheckout ?? ""}:${paymentResult ?? ""}:${checkoutId ?? ""}`;
+    if (handledReturnRef.current === returnKey) return;
+    handledReturnRef.current = returnKey;
+    const controller = new AbortController();
+    let finished = false;
+
     setCheckoutOpen(true);
     setCheckoutState("pending");
+    setReturnedCheckoutId(checkoutId ?? undefined);
     const finalize = async () => {
+      if (paymentResult === "cancelled") {
+        await refreshBilling();
+        if (!controller.signal.aborted) setCheckoutState("failure");
+        return;
+      }
+      if (!checkoutId) {
+        await refreshBilling();
+        if (!controller.signal.aborted) setCheckoutState("delayed");
+        return;
+      }
       if (sandboxCheckout) await completeSandboxCheckout(sandboxCheckout);
+      const resolution = await waitForCheckoutResolution(checkoutId, {
+        getCheckout,
+        signal: controller.signal,
+      });
       await refreshBilling();
-      setCheckoutState(paymentResult === "cancelled" ? "failure" : "success");
+      if (!controller.signal.aborted) setCheckoutState(resolution);
+    };
+    const cleanReturnUrl = () => {
       query.delete("sandbox_checkout");
       query.delete("provider");
       query.delete("payment");
+      query.delete("checkout_id");
       query.delete("session_id");
       query.delete("billingReturn");
       const suffix = query.toString();
@@ -149,8 +184,44 @@ export default function BillingPortal({
         `${window.location.pathname}${suffix ? `?${suffix}` : ""}`,
       );
     };
-    void finalize().catch(() => setCheckoutState("failure"));
+    void finalize()
+      .catch(() => {
+        if (!controller.signal.aborted) setCheckoutState("failure");
+      })
+      .finally(() => {
+        if (controller.signal.aborted) return;
+        cleanReturnUrl();
+        finished = true;
+      });
+
+    return () => {
+      controller.abort();
+      if (!finished && handledReturnRef.current === returnKey) {
+        handledReturnRef.current = undefined;
+      }
+    };
   }, [authenticated]);
+
+  const retryCheckoutVerification = async () => {
+    if (!returnedCheckoutId) return;
+    setCheckoutState("pending");
+    setPageError(null);
+    try {
+      const resolution = await waitForCheckoutResolution(
+        returnedCheckoutId,
+        { getCheckout },
+      );
+      await refreshBilling();
+      setCheckoutState(resolution);
+    } catch (error) {
+      setPageError(
+        error instanceof Error
+          ? error.message
+          : "تعذر التحقق من جلسة الدفع.",
+      );
+      setCheckoutState("failure");
+    }
+  };
 
   const openCheckout = (planId: PlanId) => {
     if (!authenticated) {
@@ -488,7 +559,9 @@ export default function BillingPortal({
             </div>
           )}
 
-          {(checkoutState === "redirect" || checkoutState === "pending") && (
+          {(checkoutState === "redirect" ||
+            checkoutState === "pending" ||
+            checkoutState === "delayed") && (
             <div className="checkout-state" role="status">
               <span className="checkout-loader"><Icon name="external" size={23} /></span>
               <h3>
@@ -499,6 +572,23 @@ export default function BillingPortal({
               <p>
                 لن تتغير الخطة بمجرد العودة؛ Webhook الموقّع هو مصدر الحقيقة.
               </p>
+              {checkoutState === "delayed" && (
+                <>
+                  <p>
+                    لم نعرض نجاحًا غير مؤكد. قد يستغرق وصول التأكيد بضع
+                    لحظات؛ أعد التحقق بأمان.
+                  </p>
+                  {returnedCheckoutId && (
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => void retryCheckoutVerification()}
+                    >
+                      إعادة التحقق من الدفع
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
 
