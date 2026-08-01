@@ -404,7 +404,7 @@ export async function getLayerRasterAsset(
     {
       cache: "force-cache",
       credentials: "include",
-      signal,
+      ...(signal ? { signal } : {}),
     },
   );
   if (!response.ok) {

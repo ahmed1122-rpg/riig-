@@ -5,6 +5,7 @@ __pycache__/
 *.py[cod]
 *.tsbuildinfo
 tmp/
+.tmp/
 .env
 .env.*
 !.env.example

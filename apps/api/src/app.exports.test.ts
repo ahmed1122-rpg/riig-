@@ -175,6 +175,9 @@ describe("API — التصدير", () => {
     });
 
     expect(response.statusCode).toBe(202);
+    expect(response.json().data.correlationId).toBe(
+      response.headers["x-request-id"],
+    );
     expect(response.json().data).toMatchObject({
       status: "queued",
       progress: 0,

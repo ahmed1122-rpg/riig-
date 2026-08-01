@@ -91,6 +91,8 @@ import {
 } from "./http/openapi-defaults.js";
 import { UploadReconciler } from "./uploads/upload-reconciler.js";
 
+const APPLICATION_VERSION = "0.1.2";
+
 export interface AppDependencies {
   projects?: ProjectRepository;
   uploads?: UploadRepository;
@@ -210,7 +212,7 @@ export async function buildApp(
         title: "MotionPrep Studio API",
         description:
           "HTTP API for authentication, source preparation, layered editing, exports, billing, and administration.",
-        version: "0.1.0",
+        version: APPLICATION_VERSION,
       },
       servers: [{ url: new URL(config.WEB_ORIGIN).origin }],
       tags: [
@@ -410,14 +412,17 @@ export async function buildApp(
     data: {
       status: "ok",
       service: "motionprep-api",
+      version: APPLICATION_VERSION,
+      release: config.RELEASE_VERSION,
       timestamp: new Date().toISOString(),
     },
     error: null,
   });
 
-  app.get("/v1/health", async () => healthPayload());
-  app.get("/v1/health/live", async () => healthPayload());
-  app.get("/v1/health/ready", async (_request, reply) => {
+  const healthRouteOptions = { config: { rateLimit: false } } as const;
+  app.get("/v1/health", healthRouteOptions, async () => healthPayload());
+  app.get("/v1/health/live", healthRouteOptions, async () => healthPayload());
+  app.get("/v1/health/ready", healthRouteOptions, async (_request, reply) => {
     try {
       await dependencies.readiness?.();
       return healthPayload();
@@ -426,6 +431,8 @@ export async function buildApp(
         data: {
           status: "degraded",
           service: "motionprep-api",
+          version: APPLICATION_VERSION,
+          release: config.RELEASE_VERSION,
           timestamp: new Date().toISOString(),
         },
         error: {

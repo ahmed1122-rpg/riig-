@@ -31,6 +31,7 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
       WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
+      RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
       PDF_REGION_OCR_ENABLED: ${{ vars.PDF_REGION_OCR_ENABLED }}
       RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}
       RECOVERY_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.RECOVERY_SIGNING_PUBLIC_KEY_PEM }}
@@ -74,8 +75,8 @@ jobs:
       - name: Verify immutable release coordinates
         shell: bash
         run: |
-          printf 'RUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\n' \
-            "$RUNTIME_IMAGE_REF" "$WEB_IMAGE_REF" > provider-release.env
+          printf 'RELEASE_GIT_SHA=%s\nRUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\n' \
+            "$RELEASE_GIT_SHA" "$RUNTIME_IMAGE_REF" "$WEB_IMAGE_REF" > provider-release.env
           node scripts/verify-release-environment.mjs provider-release.env --references-only
       - name: Probe the deployment-owned object store
         run: npm run verify:object-storage

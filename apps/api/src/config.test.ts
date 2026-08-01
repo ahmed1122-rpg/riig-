@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 
 const durableProductionEnvironment = {
   NODE_ENV: "production",
+  RELEASE_VERSION: "a".repeat(40),
   PERSISTENCE_MODE: "postgres",
   DATABASE_URL:
     "postgresql://motionprep:secret@db:5432/motionprep?sslmode=require",
@@ -30,6 +31,19 @@ const durableProductionEnvironment = {
 } as const;
 
 describe("production configuration", () => {
+  it("requires an immutable Git SHA as the production release identity", () => {
+    expect(() =>
+      loadConfig({
+        ...durableProductionEnvironment,
+        RELEASE_VERSION: "development",
+      }),
+    ).toThrow(/40-character release Git SHA/u);
+
+    expect(loadConfig(durableProductionEnvironment).RELEASE_VERSION).toBe(
+      "a".repeat(40),
+    );
+  });
+
   it("rejects volatile storage, insecure cookies, and missing Redis", () => {
     expect(() =>
       loadConfig({
@@ -43,6 +57,7 @@ describe("production configuration", () => {
   it("accepts explicit durable production dependencies", () => {
     const config = loadConfig({
       NODE_ENV: "production",
+      RELEASE_VERSION: "a".repeat(40),
       PERSISTENCE_MODE: "postgres",
       DATABASE_URL:
         "postgresql://motionprep:secret@db:5432/motionprep?sslmode=require",

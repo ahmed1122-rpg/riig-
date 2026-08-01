@@ -48,7 +48,7 @@ function Harness({
     projectId: "project-1",
     sourceVersionId: "source-1",
     persistedSource: true,
-    revision,
+    ...(revision === undefined ? {} : { revision }),
     layers: [layer],
     setRevision,
     setSaveState,

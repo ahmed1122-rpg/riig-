@@ -1,10 +1,60 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 import { createAppTestHarness } from "./app-test-helpers.js";
+import type { RateLimitStoreConstructor } from "./infrastructure/redis/redis-rate-limit-store.js";
 
 const harness = createAppTestHarness();
 
 describe("API — البنية التحتية", () => {
+  it("exposes the application and immutable release identities in health", async () => {
+    const release = "b".repeat(40);
+    const app = await harness.build(
+      loadConfig({ NODE_ENV: "test", RELEASE_VERSION: release }),
+    );
+
+    const response = await app.inject({ method: "GET", url: "/v1/health" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      status: "ok",
+      service: "motionprep-api",
+      version: "0.1.2",
+      release,
+    });
+  });
+
+  it("keeps readiness independent from an unavailable distributed rate limiter", async () => {
+    class FailingRateLimitStore {
+      incr(
+        _key: string,
+        callback: (error: Error) => void,
+        _timeWindow: number,
+        _max: number,
+      ) {
+        callback(new Error("Redis unavailable"));
+      }
+
+      child() {
+        return this;
+      }
+    }
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      rateLimitStore:
+        FailingRateLimitStore as unknown as RateLimitStoreConstructor,
+      readiness: async () => {
+        throw new Error("Redis unavailable");
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/ready",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DEPENDENCY_UNAVAILABLE");
+  });
+
   it("exposes bounded internal HTTP metrics without raw request paths", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     await app.inject({

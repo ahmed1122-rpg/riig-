@@ -79,8 +79,8 @@ export function Dialog({
       if (event.key !== "Tab" || !dialog) return;
       const items = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
       if (items.length === 0) return;
-      const first = items[0];
-      const last = items[items.length - 1];
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();

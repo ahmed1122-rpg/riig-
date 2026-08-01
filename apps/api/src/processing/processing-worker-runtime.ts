@@ -13,13 +13,14 @@ import {
   prepareImageSource,
 } from "@motionprep/media-processing";
 import { hostname } from "node:os";
-import { Pool, type PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import sharp from "sharp";
 import { z } from "zod";
 import {
   mapProcessingRow,
   type ProcessingRow,
 } from "../infrastructure/postgres/processing-row.js";
+import { createDatabase } from "../infrastructure/postgres/database.js";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { createS3ObjectStorageOptions } from "../storage/object-storage-environment.js";
 import { isObjectStorageIntegrityFailure } from "../storage/object-storage.js";
@@ -73,11 +74,24 @@ export async function runProcessingWorker(
   options: ProcessingWorkerOptions,
 ): Promise<void> {
   const config = loadProcessingWorkerConfig(process.env);
-  const pool = new Pool({
-    connectionString: config.DATABASE_URL,
-    max: config.DATABASE_POOL_MAX,
-    application_name: options.serviceName,
-  });
+  const database = createDatabase(
+    config.DATABASE_URL,
+    config.DATABASE_POOL_MAX,
+    {
+      applicationName: options.serviceName,
+      onError: (error) => {
+        const errorCode =
+          "code" in error && typeof error.code === "string"
+            ? error.code
+            : "DATABASE_POOL_ERROR";
+        log(options.serviceName, "error", "database.pool_error", {
+          error_code: errorCode,
+          error_name: error.name,
+        });
+      },
+    },
+  );
+  const pool = database.pool;
   const storage = new S3ObjectStorage(createS3ObjectStorageOptions(config));
   const pdfOcrEngine =
     options.projectKind === "book" && config.PDF_OCR_MODE === "local"
@@ -181,6 +195,11 @@ export async function runProcessingWorker(
       workerType: options.projectKind === "image" ? "media" : "document",
       releaseVersion: process.env.RELEASE_VERSION ?? "development",
       concurrency,
+      onError: (error) => {
+        log(options.serviceName, "error", "worker.heartbeat_failed", {
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      },
     });
 
     try {
@@ -213,7 +232,7 @@ export async function runProcessingWorker(
     process.off("SIGINT", requestShutdown);
     process.off("SIGTERM", requestShutdown);
     if (!running) await drain.waitForRelease();
-    await pool.end();
+    await database.close();
     await pdfOcrEngine?.close();
     storage.destroy();
   }
@@ -253,6 +272,7 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
       if (!registered) continue;
       log(context.serviceName, "info", "processing.started", {
         job_id: job.id,
+        correlation_id: job.correlationId,
         project_id: job.projectId,
         attempt: job.attempt,
         max_attempts: job.maxAttempts,
@@ -260,6 +280,7 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
       await processClaimedJob(context, job);
       log(context.serviceName, "info", "processing.completed", {
         job_id: job.id,
+        correlation_id: job.correlationId,
         project_id: job.projectId,
         attempt: job.attempt,
       });
@@ -345,7 +366,7 @@ export async function claimNextProcessingJob(
          job.id, job.project_id, job.source_version_id, job.project_kind,
          job.options, job.status, job.progress, job.attempt, job.max_attempts,
          job.next_attempt_at, job.lease_owner, job.lease_expires_at,
-         job.error_code, job.created_at, job.updated_at`,
+         job.error_code, job.correlation_id, job.created_at, job.updated_at`,
       [projectKind, workerId, leaseMilliseconds],
     );
     if (result.rows[0]) {
@@ -630,6 +651,7 @@ async function processClaimedJob(
       }).catch(() => undefined);
       log(context.serviceName, "warning", "processing.lease_lost", {
         job_id: job.id,
+        correlation_id: job.correlationId,
         project_id: job.projectId,
         worker_id: context.workerId,
       });
@@ -659,6 +681,7 @@ async function processClaimedJob(
       result === "queued" ? "processing.retry_scheduled" : "processing.failed",
       {
         job_id: job.id,
+        correlation_id: job.correlationId,
         project_id: job.projectId,
         attempt: job.attempt,
         max_attempts: job.maxAttempts,

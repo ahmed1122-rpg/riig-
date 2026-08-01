@@ -11,6 +11,7 @@ export async function startWorkerHeartbeat(
     workerType: "media" | "document" | "export";
     releaseVersion: string;
     concurrency: number;
+    onError?: (error: unknown) => void;
   },
   intervalMs = 10_000,
 ): Promise<WorkerHeartbeat> {
@@ -42,7 +43,9 @@ export async function startWorkerHeartbeat(
     }
   };
   await write();
-  const timer = setInterval(() => void write(), intervalMs);
+  const timer = setInterval(() => {
+    void write().catch((error: unknown) => input.onError?.(error));
+  }, intervalMs);
   timer.unref();
   return {
     async stop() {

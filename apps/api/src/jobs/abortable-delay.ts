@@ -11,7 +11,8 @@ export function abortableDelay(
       resolve();
     };
     const timeout = setTimeout(done, milliseconds);
-    timeout.unref();
+    // This delay drives the export worker's long-running polling loop. It must
+    // keep the process alive even when a dependency outage closes every socket.
     signal?.addEventListener("abort", done, { once: true });
   });
 }

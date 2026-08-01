@@ -12,6 +12,7 @@ const environmentSchema = z
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    RELEASE_VERSION: z.string().trim().min(1).max(128).default("development"),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(4_000),
     WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
@@ -101,6 +102,17 @@ const environmentSchema = z
     ),
   })
   .superRefine((value, context) => {
+    if (
+      value.NODE_ENV === "production" &&
+      !/^[a-f0-9]{40}$/u.test(value.RELEASE_VERSION)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RELEASE_VERSION"],
+        message:
+          "Production RELEASE_VERSION must be the 40-character release Git SHA.",
+      });
+    }
     if (value.PERSISTENCE_MODE === "postgres" && !value.DATABASE_URL) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

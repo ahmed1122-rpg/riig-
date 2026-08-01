@@ -20,6 +20,21 @@ const security = config.REDIS_URL
       maxFailures: config.LOGIN_MAX_FAILURES,
       windowSeconds: config.LOGIN_ATTEMPT_WINDOW_SECONDS,
       lockSeconds: config.LOGIN_LOCK_SECONDS,
+      onError: (error) => {
+        const errorCode =
+          "code" in error && typeof error.code === "string"
+            ? error.code
+            : "REDIS_CLIENT_ERROR";
+        process.stderr.write(
+          `${JSON.stringify({
+            timestamp: new Date().toISOString(),
+            level: "error",
+            service: "motionprep-api",
+            message: "redis.client_error",
+            context: { error_code: errorCode, error_name: error.name },
+          })}\n`,
+        );
+      },
     })
   : null;
 const objectStorage =

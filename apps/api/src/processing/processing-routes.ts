@@ -219,6 +219,7 @@ export async function registerProcessingRoutes(
               { type: "processing", id: queuedJob.id },
             ),
           ),
+        request.id,
       );
       if (job.status === "ready") {
         await projects.finishJobStatus(

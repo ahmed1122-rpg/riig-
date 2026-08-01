@@ -107,6 +107,11 @@ function ImageStrokeOverlay({
     const current = currentRef.current;
     if (!pending || !current) return;
     const last = current.points[current.points.length - 1];
+    if (!last) {
+      currentRef.current = { ...current, points: [pending] };
+      forceRender((value) => value + 1);
+      return;
+    }
     if (Math.hypot(pending.x - last.x, pending.y - last.y) < .006) return;
     currentRef.current = { ...current, points: [...current.points, pending] };
     forceRender((value) => value + 1);
@@ -311,7 +316,7 @@ export function ImageGuidanceEditor({
               canvasHeight={canvasSize?.height ?? 1}
               selectedLayerId={selectedLayerId}
               hiddenLayerIds={hiddenLayers}
-              fallbackSourceUrl={sourcePreviewUrl}
+              {...(sourcePreviewUrl ? { fallbackSourceUrl: sourcePreviewUrl } : {})}
               label="معاينة طبقات الصورة الفعلية"
             />
           ) : (
@@ -423,4 +428,3 @@ export function ImageGuidanceEditor({
     </>
   );
 }
-

@@ -19,6 +19,10 @@ export function validateReleaseEnvironment(source) {
       violations.push(`${key} must be a registry reference pinned by sha256 digest.`);
     }
   }
+  const releaseGitSha = values.get("RELEASE_GIT_SHA") ?? "";
+  if (!/^[a-f0-9]{40}$/u.test(releaseGitSha)) {
+    violations.push("RELEASE_GIT_SHA must be the exact 40-character release Git SHA.");
+  }
   for (const forbidden of ["IMAGE_TAG", "RUNTIME_IMAGE", "WEB_IMAGE"]) {
     if (values.has(forbidden)) {
       violations.push(`${forbidden} is unsupported; use digest-qualified *_IMAGE_REF values.`);
@@ -35,6 +39,7 @@ export function validateProductionEnvironment(
   const violations = validateReleaseEnvironment(source);
   const required = [
     "NODE_ENV",
+    "RELEASE_GIT_SHA",
     "PERSISTENCE_MODE",
     "DATABASE_URL",
     "REDIS_URL",

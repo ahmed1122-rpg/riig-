@@ -49,7 +49,10 @@ export async function registerHttpMetrics(
     metrics.set(labels, current);
   });
 
-  app.get("/internal/metrics", async (request, reply) => {
+  app.get(
+    "/internal/metrics",
+    { config: { rateLimit: false } },
+    async (request, reply) => {
     if (
       options.bearerToken &&
       !validBearerToken(request.headers.authorization, options.bearerToken)
@@ -175,10 +178,11 @@ export async function registerHttpMetrics(
       `motionprep_process_cpu_seconds_total{mode="user"} ${(cpu.user / 1_000_000).toFixed(6)}`,
       `motionprep_process_cpu_seconds_total{mode="system"} ${(cpu.system / 1_000_000).toFixed(6)}`,
     );
-    return reply
-      .type("text/plain; version=0.0.4; charset=utf-8")
-      .send(`${lines.join("\n")}\n`);
-  });
+      return reply
+        .type("text/plain; version=0.0.4; charset=utf-8")
+        .send(`${lines.join("\n")}\n`);
+    },
+  );
 }
 
 function timestampSeconds(value: string | null | undefined): number {

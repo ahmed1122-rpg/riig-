@@ -31,6 +31,22 @@ try {
   run(process.execPath, ["scripts/verify-production-topology.mjs"], {
     label: "production topology verification",
   });
+  run(process.execPath, ["scripts/verify-runtime-fault-recovery.mjs"], {
+    label: "dependency fault and recovery verification",
+  });
+  run(process.execPath, ["scripts/load-pdf-workflow.mjs"], {
+    env: {
+      ...process.env,
+      LOAD_CONCURRENCY: "2",
+      LOAD_ITERATIONS: "1",
+      LOAD_REQUEST_ORIGIN: "http://127.0.0.1:5173",
+      LOAD_METRICS_URL: "http://127.0.0.1:54101/internal/metrics",
+      LOAD_METRICS_BEARER_TOKEN:
+        "metrics-integration-token-at-least-32-characters",
+      LOAD_REPORT_PATH: ".tmp/topology-pdf-load-report.json",
+    },
+    label: "concurrent PDF workflow smoke load",
+  });
   outcome = "passed";
 } catch (error) {
   process.stderr.write(

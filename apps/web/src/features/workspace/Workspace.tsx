@@ -868,8 +868,8 @@ export function Workspace({
               state={uploadState}
               progress={uploadProgress}
               detailsOpen={uploadDetailsOpen}
-              error={uploadError}
-              hash={sourceHash}
+              {...(uploadError ? { error: uploadError } : {})}
+              {...(sourceHash ? { hash: sourceHash } : {})}
               onChoose={() => fileRef.current?.click()}
               onToggleDetails={() => setUploadDetailsOpen((value) => !value)}
               onCancel={cancelUpload}
@@ -951,7 +951,7 @@ export function Workspace({
                 guidanceRevision={guidanceRevision}
                 onApply={applyImageGuide}
                 onHistoryNavigate={navigateDocumentHistory}
-                preparation={imagePreparation}
+                {...(imagePreparation ? { preparation: imagePreparation } : {})}
                 onToolSelect={selectEditorTool}
                 {...(editorCommand ? { toolCommand: editorCommand } : {})}
                 {...(imageCanvasSize ? { canvasSize: imageCanvasSize } : {})}
@@ -964,7 +964,7 @@ export function Workspace({
                 layers={bookLayers}
                 pageNumber={activePdfPage}
                 pageCount={pdfPageCount}
-                pageSize={pdfPageSize}
+                {...(pdfPageSize ? { pageSize: pdfPageSize } : {})}
                 onPageChange={(nextPage) => {
                   const page =
                     pdfPages.find(
@@ -1035,14 +1035,10 @@ export function Workspace({
         processing={processing}
         mode={mode}
         zoom={zoom}
-        activeLayerName={activeLayer?.name}
+        {...(activeLayer?.name ? { activeLayerName: activeLayer.name } : {})}
         {...(imageCanvasSize ? { imageCanvasSize } : {})}
-        {...(mode === "book"
-          ? {
-              pdfPageSize: pdfPages.find(
-                (item) => item.pageNumber === activePdfPage,
-              ),
-            }
+        {...(mode === "book" && pdfPageSize
+          ? { pdfPageSize }
           : {})}
       />
 

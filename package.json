@@ -1,6 +1,6 @@
 {
   "name": "motionprep-studio",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "description": "Prepare images and books as animation-ready layered assets.",
   "workspaces": [
@@ -21,6 +21,8 @@
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
+    "test:load:utils": "node --test scripts/load-test-utils.test.mjs",
+    "test:load:pdf": "node scripts/load-pdf-workflow.mjs",
     "coverage": "npm run coverage --workspaces --if-present",
     "lint": "eslint . --max-warnings 0",
     "lint:css": "stylelint \"apps/web/src/styles/**/*.css\" --max-warnings 0",
@@ -34,7 +36,7 @@
     "benchmark:ocr:holdout:open": "node scripts/open-ocr-holdout.mjs",
     "benchmark:ocr:selector": "node scripts/evaluate-ocr-selector.mjs",
     "golden:adobe:generate": "npm run build --workspace @motionprep/contracts && npm run build --workspace @motionprep/export-adapters && node --conditions=production scripts/generate-adobe-golden.mjs",
-    "verify:architecture": "node scripts/verify-architecture.mjs",
+    "verify:architecture": "node --test scripts/import-cycle-detector.test.mjs && node scripts/verify-architecture.mjs",
     "verify:deployment": "node --test scripts/check-worker-health.test.mjs && node scripts/verify-deployment.mjs",
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
     "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
@@ -44,11 +46,14 @@
     "verify:visuals": "node scripts/verify-visual-assets.mjs",
     "verify:bundle": "node scripts/verify-bundle-budget.mjs",
     "verify:release-env:test": "node --test scripts/verify-release-environment.test.mjs",
+    "verify:release-evidence:test": "node --test scripts/create-release-evidence.test.mjs",
     "verify:release-env": "node scripts/verify-release-environment.mjs",
+    "verify:staging-application": "node scripts/verify-staging-application.mjs",
     "verify:clean": "node --test scripts/clean.test.mjs",
     "test:topology": "node scripts/verify-production-topology.mjs",
+    "test:faults:topology": "node scripts/verify-runtime-fault-recovery.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=22.12.0",

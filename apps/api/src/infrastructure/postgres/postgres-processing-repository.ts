@@ -58,11 +58,11 @@ export class PostgresProcessingJobRepository
         INSERT INTO processing_jobs (
           id, project_id, source_version_id, project_kind, options, status,
           progress, attempt, max_attempts, next_attempt_at, lease_owner,
-          lease_expires_at, error_code, created_at, updated_at
+          lease_expires_at, error_code, correlation_id, created_at, updated_at
         )
         VALUES (
           $1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13,
-          $14, $15
+          $14, $15, $16
         )
         ON CONFLICT (id) DO UPDATE SET
           options = EXCLUDED.options,
@@ -74,6 +74,7 @@ export class PostgresProcessingJobRepository
           lease_owner = EXCLUDED.lease_owner,
           lease_expires_at = EXCLUDED.lease_expires_at,
           error_code = EXCLUDED.error_code,
+          correlation_id = COALESCE(EXCLUDED.correlation_id, processing_jobs.correlation_id),
           updated_at = EXCLUDED.updated_at
       `,
       [
@@ -90,6 +91,7 @@ export class PostgresProcessingJobRepository
         job.leaseOwner,
         job.leaseExpiresAt,
         job.errorCode,
+        job.correlationId ?? null,
         job.createdAt,
         job.updatedAt,
       ],
@@ -130,7 +132,7 @@ export class PostgresProcessingJobRepository
        RETURNING
          id, project_id, source_version_id, project_kind, options, status,
          progress, attempt, max_attempts, next_attempt_at, lease_owner,
-         lease_expires_at, error_code, created_at, updated_at`,
+         lease_expires_at, error_code, correlation_id, created_at, updated_at`,
       [id, retriedAt],
     );
     return result.rows[0] ? mapProcessingRow(result.rows[0]) : null;
@@ -372,6 +374,6 @@ const processingSelect = `
   SELECT
     id, project_id, source_version_id, project_kind, options, status, progress,
     attempt, max_attempts, next_attempt_at, lease_owner, lease_expires_at,
-    error_code, created_at, updated_at
+    error_code, correlation_id, created_at, updated_at
   FROM processing_jobs
 `;

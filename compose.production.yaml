@@ -4,6 +4,10 @@ x-runtime: &runtime
   image: ${RUNTIME_IMAGE_REF:?Set RUNTIME_IMAGE_REF to an immutable registry digest}
   env_file:
     - ${MOTIONPREP_ENV_FILE:-.env.production}
+  environment:
+    # The signed release manifest is authoritative; workers and API expose this
+    # revision in health, logs, heartbeats, and metrics.
+    RELEASE_VERSION: ${RELEASE_GIT_SHA:?Set RELEASE_GIT_SHA from the signed release manifest}
   networks:
     - application
   init: true
@@ -154,6 +158,8 @@ services:
     mem_limit: ${WEB_MEMORY_LIMIT:-256m}
     cpus: ${WEB_CPU_LIMIT:-0.5}
     restart: unless-stopped
+    # Dockerfile.web owns the /healthz image healthcheck. Compose deliberately
+    # inherits it so local, staging, and production use the same probe.
 
 networks:
   application:

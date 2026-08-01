@@ -72,3 +72,29 @@ groups:
         annotations:
           summary: A MotionPrep container is CPU-saturated
           runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepHttpErrorRateHigh
+        expr: |
+          sum(rate(motionprep_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(motionprep_http_requests_total[5m])), 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: MotionPrep HTTP 5xx ratio exceeds 5%
+          runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepApiLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(motionprep_http_request_duration_seconds_bucket[5m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: MotionPrep API p95 latency exceeds five seconds
+          runbook: docs/runbooks/processing-job-recovery.md
