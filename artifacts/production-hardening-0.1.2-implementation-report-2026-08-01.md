@@ -37,7 +37,7 @@
 
 ### 2. readiness حقيقية وفشل مغلق
 
-- استُثنيت health/readiness وmetrics فقط من محدد المعدل، حتى تبقى probes قابلة للتفسير عند فقد Redis.
+- بقي health/live بلا وصول إلى قاعدة البيانات، وأصبح readiness محدودًا 120/دقيقة وmetrics محدودًا 60/دقيقة. يستخدم المساران `skipOnError` كي يشخّصا Redis نفسه عند تعطل مخزن الحد المشترك بدل التحول إلى 500.
 - أضيفت listeners آمنة لأخطاء Redis وPostgreSQL مع سجلات منظمة لا تطبع connection strings أو أسرارًا.
 - أصبح Redis readiness يرفض حالة reconnecting ولا يستخدم offline queue لإخفاء الانقطاع.
 - قُيد فحص S3 بمهلة 5 ثوانٍ، وقُيد SMTP بمهل الاتصال والتحية والمقبس.

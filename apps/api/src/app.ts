@@ -420,9 +420,20 @@ export async function buildApp(
   });
 
   const healthRouteOptions = { config: { rateLimit: false } } as const;
+  const readinessRouteOptions = {
+    config: {
+      rateLimit: {
+        max: 120,
+        timeWindow: "1 minute",
+        groupId: "health-ready",
+        // Readiness must still diagnose Redis itself if the shared store fails.
+        skipOnError: true,
+      },
+    },
+  } as const;
   app.get("/v1/health", healthRouteOptions, async () => healthPayload());
   app.get("/v1/health/live", healthRouteOptions, async () => healthPayload());
-  app.get("/v1/health/ready", healthRouteOptions, async (_request, reply) => {
+  app.get("/v1/health/ready", readinessRouteOptions, async (_request, reply) => {
     try {
       await dependencies.readiness?.();
       return healthPayload();
