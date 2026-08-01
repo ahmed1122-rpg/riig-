@@ -53,6 +53,13 @@ describe("API — البنية التحتية", () => {
 
     expect(response.statusCode).toBe(503);
     expect(response.json().error.code).toBe("DEPENDENCY_UNAVAILABLE");
+
+    const metrics = await app.inject({
+      method: "GET",
+      url: "/internal/metrics",
+    });
+    expect(metrics.statusCode).toBe(200);
+    expect(metrics.body).toContain("motionprep_dependencies_ready 0");
   });
 
   it("exposes bounded internal HTTP metrics without raw request paths", async () => {

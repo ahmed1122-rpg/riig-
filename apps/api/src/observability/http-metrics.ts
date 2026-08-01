@@ -51,7 +51,18 @@ export async function registerHttpMetrics(
 
   app.get(
     "/internal/metrics",
-    { config: { rateLimit: false } },
+    {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: "1 minute",
+          groupId: "internal-metrics",
+          // Keep this private, bearer-protected scrape observable while Redis
+          // is the dependency being diagnosed.
+          skipOnError: true,
+        },
+      },
+    },
     async (request, reply) => {
     if (
       options.bearerToken &&
