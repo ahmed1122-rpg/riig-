@@ -4,11 +4,15 @@
 
 1. Confirm CI is green, the database backup is current, and the signed release
    artifact contains digest-qualified `RUNTIME_IMAGE_REF` and `WEB_IMAGE_REF`
-   values. Production does not accept image tags.
+   values, exact `RELEASE_GIT_SHA`, and `release-evidence.json`. Production does
+   not accept image tags or a release SHA that differs from the image manifest.
 2. Review pending migrations. Production migrations must remain additive-first.
 3. Confirm queue depth is stable and no export backlog is growing.
 4. Save the current two digest-qualified image references as the rollback
    manifest. Keep this manifest outside the deployment host.
+5. Require protected provider dependency, staging application, and performance
+   evidence for the same release SHA. Require a signed recovery drill within
+   policy and a documented rollback rehearsal before approving production.
 
 ## Release
 
@@ -29,9 +33,12 @@ docker compose --env-file .env.production -f compose.production.yaml pull
 docker compose --env-file .env.production -f compose.production.yaml up -d
 ```
 
-Check `/healthz`, `/v1/health/live`, and `/v1/health/ready`. Inspect structured
-API and worker logs for error rate and processing duration. Complete the upload
-and export smoke journey.
+Check `/healthz`, `/v1/health/live`, and `/v1/health/ready`; readiness must report
+the expected application version and `RELEASE_GIT_SHA`. Inspect structured API
+and worker logs using the returned request ID/correlation ID for error rate and
+processing duration. Run `staging-application-readiness` to complete the
+authenticated PDF upload, processing, export, and download journey, then retain
+its JSON evidence beside the immutable release bundle.
 
 ## Rollback
 
@@ -43,6 +50,8 @@ If health or the core journey fails:
 3. Re-run health and smoke checks.
 4. Do not reverse an additive migration during the incident. Roll application
    code back first; create a forward repair migration after service is stable.
+5. Record start/end timestamps, restored digests, readiness release identity,
+   queue recovery, and the post-rollback PDF journey in the rollback evidence.
 
 If a migration is destructive or not backward compatible, stop the release
 before deployment. It does not meet the production migration policy.

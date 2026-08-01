@@ -62,31 +62,34 @@ use Stripe Customer Portal.
 
 1. Copy `.env.production.example` to `.env.production`.
 2. Replace every `CHANGE_ME` or `REPLACE_WITH` value.
-3. Generate `AUTH_ENCRYPTION_KEY` using `openssl rand -base64 32`.
-4. Set `WEB_ORIGIN` and `PASSWORD_RESET_URL` to the public HTTPS origin.
-5. Keep `PAYMENT_MODE=disabled` until the Stripe webhook is registered.
-6. Keep `PDF_OCR_MODE=local`; the bundled Arabic model performs OCR inside the
+3. Set `RELEASE_GIT_SHA` to the exact 40-character commit SHA recorded in the
+   signed release artifact. Readiness publishes this identity so staging can
+   prove that the tested source is the deployed source.
+4. Generate `AUTH_ENCRYPTION_KEY` using `openssl rand -base64 32`.
+5. Set `WEB_ORIGIN` and `PASSWORD_RESET_URL` to the public HTTPS origin.
+6. Keep `PAYMENT_MODE=disabled` until the Stripe webhook is registered.
+7. Keep `PDF_OCR_MODE=local`; the bundled Arabic model performs OCR inside the
    document worker and does not call an external document service. Keep
    `PDF_REGION_OCR_ENABLED=false` until a newly sealed independent holdout
    reaches CER <= 25%. Ordinary PDF ingestion, page tools, and export remain
    available while regional OCR is disabled.
-7. Set `OBJECT_STORAGE_ENCRYPTION_MODE=sse-s3` when the provider accepts an
+8. Set `OBJECT_STORAGE_ENCRYPTION_MODE=sse-s3` when the provider accepts an
    explicit `AES256` request, or `bucket-default` when encryption is enforced
    by bucket policy. Both modes are verified after every write; an object that
    does not satisfy the configured mode is deleted and the operation fails.
    `none` is rejected in production and exists only for local MinIO without a
    KMS.
-8. Prefer the cloud platform workload identity. On AWS, leave the three
+9. Prefer the cloud platform workload identity. On AWS, leave the three
    credential fields blank to use the SDK default provider chain. A custom
    S3-compatible endpoint requires both static keys and may include a session
    token.
-9. Use no custom endpoint for AWS S3. Any custom production endpoint must be
+10. Use no custom endpoint for AWS S3. Any custom production endpoint must be
    HTTPS.
-10. Apply the private-bucket permissions and lifecycle requirements in
+11. Apply the private-bucket permissions and lifecycle requirements in
     [`OBJECT_STORAGE.md`](OBJECT_STORAGE.md). In particular, expire
     `artifacts/` after no more than two days and never blindly expire live
     `sources/` or `derived/`.
-11. Store the completed environment in a secrets manager. Do not commit it.
+12. Store the completed environment in a secrets manager. Do not commit it.
 
 Password-reset tokens and their email deliveries are inserted in one database
 transaction. Each API replica may run the outbox dispatcher: rows are claimed
@@ -116,8 +119,9 @@ gate succeeds.
 
 The workflow then builds each image once, publishes it to GHCR,
 generates SBOM/provenance, scans it, signs the resulting digest with Cosign,
-and uploads `release.env`. Copy its digest-qualified `RUNTIME_IMAGE_REF` and
-`WEB_IMAGE_REF` values into the deployment environment. Production Compose
+and uploads `release.env` plus `release-evidence.json`. Copy its
+digest-qualified `RUNTIME_IMAGE_REF` and `WEB_IMAGE_REF` values and exact
+`RELEASE_GIT_SHA` into the deployment environment. Production Compose
 rejects missing references and does not contain build directives or tag
 fallbacks.
 
@@ -129,7 +133,8 @@ docker compose --env-file .env.production -f compose.production.yaml ps
 ```
 
 The `migrate` service applies additive SQL migrations before the API and workers
-start. Migration 027 adds the durable email outbox. Upload publication is then
+start. Migration 027 adds the durable email outbox, and migration 028 retains
+the request correlation identifier on processing and export jobs. Upload publication is then
 committed atomically across the upload session, source version, and project;
 the API startup reconciler re-inspects S3 metadata before repairing an
 interrupted legacy state. The web container exposes port 8080 and proxies `/v1` to the private API
@@ -143,6 +148,16 @@ curl --fail https://<public-host>/v1/health/live
 curl --fail https://<public-host>/v1/health/ready
 npm run verify:object-storage
 ```
+
+After deployment, run the protected `staging-application-readiness` workflow.
+It proves public web/API health, application version, exact release SHA, the
+capability contract, and one authenticated PDF upload/process/export/download
+journey. Run `performance-readiness` separately with representative concurrency
+and set `REPRESENTATIVE_PDF_PATH` to an approved near-limit PDF corpus item; the
+small repository smoke fixtures are not performance evidence. Configure a p95
+limit and the protected metrics endpoint so the retained report includes
+p50/p95/p99, RSS, heap, CPU, and queue snapshots. Neither workflow turns a
+local smoke test into a provider or capacity attestation.
 
 The protected pre-release dependency probe is equivalent to running the
 following two commands from a staging task with the deployment workload
@@ -243,8 +258,11 @@ network. It exposes HTTP and job-duration histograms, queue depth/age, recent
 retry and lease-loss counts, worker heartbeat gauges, and aggregate dependency
 readiness. It also exposes the latest retention success/failure timestamps and
 `motionprep_maintenance_stale`; the administrator system view reports the same
-durable state. Load `deploy/prometheus-alerts.yml` into the monitoring system. The
-CPU/RAM alerts in that file consume the standard container runtime/cAdvisor
+durable state. Start from `deploy/prometheus-scrape.example.yml`, load
+`deploy/grafana/dashboards/motionprep-overview.json`, and load
+`deploy/prometheus-alerts.yml` into the monitoring system. Keep the bearer token
+in the referenced secret file rather than the configuration. The CPU/RAM alerts
+in that file consume the standard container runtime/cAdvisor
 series and compare usage with the Compose ceilings. The public Nginx
 configuration deliberately exposes no `/internal` location.
 

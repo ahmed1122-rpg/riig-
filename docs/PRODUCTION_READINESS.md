@@ -1,8 +1,15 @@
 # Production readiness
 
-Status on 2026-08-01: release `v0.1.1` was reviewed in PR #14, merged at `3f29087cc22e604e9cca66455a3ef9d359a5d85c`, and published as signed digest-qualified runtime and web images after the protected exact-SHA release workflow passed. Regional OCR remains disabled because its independent holdout evidence is stale and the historical generation failed its holdout target. Application deployment approval remains withheld until the protected provider/staging workflows pass against real managed services and the published digests complete staging and rollback exercises. Recovery, licensed Adobe-version validation, and representative load/memory exercises remain explicit launch gates.
+Status on 2026-08-01: release `v0.1.1` was reviewed in PR #14, merged at `3f29087cc22e604e9cca66455a3ef9d359a5d85c`, and published as signed digest-qualified runtime and web images after the protected exact-SHA release workflow passed. Version `0.1.2` is an unreleased hardening candidate: it must not be described as published until its branch is merged and a new protected tag workflow signs new image digests. Regional OCR remains disabled because its independent holdout evidence is stale and the historical generation failed its holdout target. Application deployment approval remains withheld until the protected provider/staging workflows pass against real managed services and the chosen signed digests complete staging and rollback exercises. Recovery, licensed Adobe-version validation, and representative load/memory exercises remain explicit launch gates.
 
 The production-readiness work adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful billing/export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology against the exact checkout SHA before publication. These changes are represented by `v0.1.1`; the historical `v0.1.0` digests must not be used for this release.
+
+The `0.1.2` candidate adds release identity to readiness, durable request-to-job
+correlation, stricter TypeScript checks, import-cycle enforcement, deterministic
+dependency fault/recovery checks, concurrent PDF workflow load evidence,
+staging application verification, release evidence JSON, and maintained
+Prometheus/Grafana configuration. These controls are implemented in source;
+their hosted results remain evidence gates rather than assumptions.
 
 ## Implemented locally
 
@@ -66,15 +73,15 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 ## Local evidence
 
 - `npm run quality`: passed on 2026-08-01 after the final remediation.
-- API tests: 189/189 across 49 files; web tests: 87/87 across 19 files; document-processing tests: 41/41 across 4 files. All configured coverage gates passed. Complete-source API coverage is 65.56% statements, 58.71% branches, 68.13% functions, and 67.20% lines; complete-source web coverage is 23.71%, 27.15%, 17.89%, and 24.24% respectively.
+- API tests: 199/199 across 52 files; web tests: 87/87 across 19 files; document-processing tests: 41/41 across 4 files. All configured coverage gates passed. Complete-source API coverage is 66.31% statements, 58.75% branches, 68.94% functions, and 67.88% lines; complete-source web coverage is 23.69%, 27.05%, 17.91%, and 24.24% respectively.
 - Playwright E2E: 8/8 across desktop and mobile Chromium, including Axe checks on authenticated pages, workspace, and export review.
-- Web bundle: 143.0 KiB JavaScript and 36.8 KiB CSS, gzip.
+- Web bundle: 143.1 KiB JavaScript and 36.8 KiB CSS, gzip.
 - `npm audit --omit=dev --audit-level=high`: 0 known production vulnerabilities.
 - Fixture verification after opening: 91 OCR samples, 20 books, 136 dimensions. The holdout-content digest still matches; the implementation digest is intentionally stale after later dependency and application changes, so the release gate remains disabled.
 - Executable TODO/FIXME/HACK/NotImplemented scan: zero findings.
-- `node scripts/verify-concurrent-migrations.mjs`: passed after migrations 001-027, including two simultaneous runners and an idempotent replay.
+- `node scripts/verify-concurrent-migrations.mjs`: candidate 0.1.2 passed with two concurrent runners and idempotent replay after migrations 001-028. This is local candidate evidence and is not retroactively attributed to the hosted v0.1.1 release.
 - Durable PostgreSQL/S3 suite: 14/14, including injected rollback/replay for atomic upload publication and atomic password-reset/outbox creation, in addition to source restoration, lease reclamation, active-job exclusivity, ordered billing events, reference-safe retention, object round trips, and a real export worker.
-- `npm run test:topology:full`: passed from a clean image build with two API replicas, PostgreSQL, shared Redis rate limits, versioned MinIO, Mailpit/outbox delivery, all three workers, restart recovery, export, metrics, and a signed Stripe webhook.
+- `npm run test:topology:full`: passed from a clean image build with two API replicas, PostgreSQL, shared Redis rate limits, versioned MinIO, Mailpit/outbox delivery, all three workers, restart recovery, export, metrics, and a signed Stripe webhook. The same run injected and recovered Redis, MinIO, Mailpit, and PostgreSQL outages, then completed 2/2 concurrent PDF smoke journeys with a 0% error rate. The 1,278-byte fixture is workflow evidence, not representative capacity evidence.
 - Docker runtime and web images build from digest-pinned bases. The web image passed a read-only, non-root, `cap-drop ALL`, `no-new-privileges` health smoke.
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
 - Historical only: a local OCI release was published from source commit `0a2103addf1c71ed6402d955a9a59d8da0d17485`, and tag `v0.1.0` was published from `48bdfd9b53b0c955a93f5a121660ea9b3e546df4`. Their retained verification records remain useful evidence for the signing mechanism, but their digests do **not** contain this candidate and must not be deployed as its release.
@@ -99,10 +106,10 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 ## Evidence still required
 
 1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
-2. Deployment of the published `v0.1.1` signed digests to staging and rollback without rebuilding.
+2. Deployment of the selected signed release digests to staging and rollback without rebuilding. Candidate 0.1.2 requires new digests after merge; v0.1.1 digests do not contain these hardening changes.
 3. A signed isolated recovery drill proving RPO ≤15 minutes and RTO ≤4 hours (deferred by product decision).
 4. Golden PSD/After Effects validation in licensed target Adobe versions (deferred by product decision).
-5. Representative load and memory validation against the configured container ceilings (deferred by product decision).
+5. Representative load and memory validation against the configured container ceilings. The automated PDF workflow and evidence format exist, but local smoke evidence is not a representative managed-staging capacity result.
 
 The OCR scope gate is resolved for the current candidate by keeping
 `PDF_REGION_OCR_ENABLED=false`. Re-enabling it requires a newly sealed holdout
@@ -114,6 +121,6 @@ current provider attestation and must be rechecked by the protected workflows;
 no paid or account-owned staging resource should be inferred or created from
 the local evidence alone.
 
-Current remediation evidence is in `artifacts/final-remediation-implementation-report-2026-08-01.md`. Historical release and OCR evidence remains in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
+Candidate 0.1.2 evidence is in `artifacts/production-hardening-0.1.2-implementation-report-2026-08-01.md`. The earlier remediation report is in `artifacts/final-remediation-implementation-report-2026-08-01.md`. Historical release and OCR evidence remains in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
 
 The current completion matrix, remaining priorities, acceptance criteria, and PDF fixture inventory are in `artifacts/completion-audit-and-execution-plan-2026-07-31.md`.

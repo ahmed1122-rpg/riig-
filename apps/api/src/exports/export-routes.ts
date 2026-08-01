@@ -138,6 +138,7 @@ export async function registerExportRoutes(
               { type: "export", id: queuedJob.id },
             ),
           ),
+        request.id,
       );
       if (job.status === "ready") {
         await projects.finishJobStatus(

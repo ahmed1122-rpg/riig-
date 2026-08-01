@@ -197,8 +197,8 @@ export function ExportReview({
         return;
       }
 
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
       const active = document.activeElement;
       if (!dialog.contains(active)) {
         event.preventDefault();
@@ -418,7 +418,7 @@ export function ExportReview({
                     selectedLayerId={selectedLayerId}
                     safeBounds={safeBounds}
                     page={page}
-                    pages={pdfPages}
+                    {...(pdfPages ? { pages: pdfPages } : {})}
                   />
                 )}
               </div>
@@ -654,7 +654,7 @@ export function ExportCharacterPreview({
           canvasWidth={canvasWidth}
           canvasHeight={canvasHeight}
           selectedLayerId={selectedLayerId}
-          fallbackSourceUrl={sourcePreviewUrl}
+          {...(sourcePreviewUrl ? { fallbackSourceUrl: sourcePreviewUrl } : {})}
           label="معاينة المصدر الحقيقي قبل التصدير"
           className="export-source-image"
         />

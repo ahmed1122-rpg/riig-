@@ -9,6 +9,22 @@ interface RedisCommands {
   del(keys: string[]): Promise<number>;
 }
 
+interface RedisSecurityClient extends RedisCommands {
+  readonly isOpen: boolean;
+  readonly isReady: boolean;
+  connect(): Promise<unknown>;
+  ping(): Promise<unknown>;
+  close(): Promise<void>;
+  on(event: "error", listener: (error: Error) => void): unknown;
+}
+
+interface RedisSecurityOptions {
+  maxFailures: number;
+  windowSeconds: number;
+  lockSeconds: number;
+  onError?: (error: Error) => void;
+}
+
 class RedisLoginAttemptStore implements LoginAttemptStore {
   constructor(
     private readonly client: RedisCommands,
@@ -50,13 +66,17 @@ class RedisLoginAttemptStore implements LoginAttemptStore {
 
 export function createRedisSecurity(
   url: string,
-  options: {
-    maxFailures: number;
-    windowSeconds: number;
-    lockSeconds: number;
-  },
+  options: RedisSecurityOptions,
 ) {
-  const client = createClient({ url });
+  const client = createClient({ url, disableOfflineQueue: true });
+  return createRedisSecurityWithClient(client, options);
+}
+
+export function createRedisSecurityWithClient(
+  client: RedisSecurityClient,
+  options: RedisSecurityOptions,
+) {
+  client.on("error", (error) => options.onError?.(error));
   return {
     loginAttempts: new RedisLoginAttemptStore(
       client,
@@ -67,10 +87,13 @@ export function createRedisSecurity(
     rateLimitStore: createRedisRateLimitStore(client),
     async ready() {
       if (!client.isOpen) await client.connect();
+      if (!client.isReady) {
+        throw new Error("Redis is reconnecting and is not ready.");
+      }
       await client.ping();
     },
     async close() {
-      if (client.isOpen) await client.quit();
+      if (client.isOpen) await client.close();
     },
   };
 }

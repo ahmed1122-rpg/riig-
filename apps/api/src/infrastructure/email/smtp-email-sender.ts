@@ -31,6 +31,9 @@ export class SmtpEmailSender implements EmailSender {
       },
       disableFileAccess: true,
       disableUrlAccess: true,
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
+      socketTimeout: 5_000,
     });
   }
 

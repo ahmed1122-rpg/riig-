@@ -61,10 +61,11 @@ export class ApiError extends Error {
   }
 }
 
-export interface RequestOptions extends RequestInit {
+export type RequestOptions = Omit<RequestInit, "signal"> & {
+  signal?: AbortSignal | null | undefined;
   timeoutMs?: number;
   retries?: number;
-}
+};
 
 export async function request<T>(
   path: string,
@@ -72,9 +73,15 @@ export async function request<T>(
 ): Promise<T> {
   const {
     timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
-    retries = defaultRetryCount(options),
-    ...init
+    retries: configuredRetries,
+    signal,
+    ...requestInit
   } = options;
+  const init: RequestInit = {
+    ...requestInit,
+    ...(signal ? { signal } : {}),
+  };
+  const retries = configuredRetries ?? defaultRetryCount(init);
   const url = `${API_ORIGIN}${path}`;
   let attempt = 0;
 

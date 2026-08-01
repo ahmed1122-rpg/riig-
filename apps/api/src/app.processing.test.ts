@@ -78,6 +78,9 @@ describe("API — المعالجة ووثائق الطبقات", () => {
     expect(processed.statusCode).toBe(202);
     expect(repeated.json().data.id).toBe(processed.json().data.id);
     expect(processed.json().data.status).toBe("ready");
+    expect(processed.json().data.correlationId).toBe(
+      processed.headers["x-request-id"],
+    );
     expect(subscription.json().data.usage.jobs).toBe(1);
     expect(subscription.json().data.usage.processingMinutes).toBeGreaterThan(0);
     expect(document.statusCode).toBe(200);

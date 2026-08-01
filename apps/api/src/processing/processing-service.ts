@@ -70,7 +70,7 @@ export class ProcessingService {
     private readonly idempotency: IdempotencyStore =
       new InMemoryIdempotencyStore(),
     private readonly executeInline = true,
-    private readonly pdfOcrEngine?: PdfOcrEngine,
+    pdfOcrEngine?: PdfOcrEngine,
     private readonly usageMeter?: UsageMeter,
   ) {
     this.#inlineRunner = new InlineProcessingRunner(
@@ -91,6 +91,7 @@ export class ProcessingService {
     idempotencyKey: string,
     ownerUserId?: string,
     onQueued?: (job: ProcessingJob) => Promise<boolean>,
+    correlationId?: string,
   ): Promise<ProcessingJob> {
     const source = await this.uploads.findReadyBySourceVersion(
       projectId,
@@ -135,6 +136,7 @@ export class ProcessingService {
     const timestamp = this.now().toISOString();
     const job: ProcessingJob = {
       id,
+      ...(correlationId ? { correlationId } : {}),
       projectId,
       sourceVersionId,
       projectKind,

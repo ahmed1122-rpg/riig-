@@ -48,7 +48,28 @@ export async function runExportWorker(
     onLog?: (entry: ExportWorkerLog) => void;
   } = {},
 ): Promise<void> {
-  const database = createDatabase(config.databaseUrl, config.databasePoolMax);
+  const log = (
+    level: ExportWorkerLog["level"],
+    message: string,
+    context: Record<string, unknown>,
+  ) => options.onLog?.({ level, message, context });
+  const database = createDatabase(
+    config.databaseUrl,
+    config.databasePoolMax,
+    {
+      applicationName: "motionprep-worker-export",
+      onError: (error) => {
+        const errorCode =
+          "code" in error && typeof error.code === "string"
+            ? error.code
+            : "DATABASE_POOL_ERROR";
+        log("error", "database.pool_error", {
+          error_code: errorCode,
+          error_name: error.name,
+        });
+      },
+    },
+  );
   const storage = new S3ObjectStorage(config.objectStorage);
   const repository = new PostgresExportRepository(database.pool);
   const service = new ExportService(
@@ -99,11 +120,6 @@ export async function runExportWorker(
     items: Math.max(16, config.concurrency * 8),
   });
   sharp.concurrency(config.sharpConcurrency);
-  const log = (
-    level: ExportWorkerLog["level"],
-    message: string,
-    context: Record<string, unknown>,
-  ) => options.onLog?.({ level, message, context });
   const requestDrain = () => {
     log("info", "worker.drain_started", {
       active_jobs: drain.activeCount,
@@ -127,6 +143,11 @@ export async function runExportWorker(
     workerType: "export",
     releaseVersion: process.env.RELEASE_VERSION ?? "development",
     concurrency: config.concurrency,
+    onError: (error) => {
+      log("error", "worker.heartbeat_failed", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    },
   });
 
   try {
@@ -215,6 +236,7 @@ export async function runExportWorker(
         log("info", "export.cycle_completed", {
           slot,
           job_id: job.id,
+          correlation_id: job.correlationId,
           project_id: job.projectId,
           status: job.status,
           attempt: job.attempt,

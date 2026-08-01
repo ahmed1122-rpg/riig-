@@ -342,6 +342,7 @@ export interface ExportRequest {
 
 export interface ExportJob {
   id: string;
+  correlationId?: string;
   projectId: string;
   sourceVersionId: string;
   documentRevision?: number;
@@ -372,6 +373,7 @@ export interface ExportJob {
 
 export interface ProcessingJob {
   id: string;
+  correlationId?: string;
   projectId: string;
   sourceVersionId: string;
   projectKind: ProjectKind;

@@ -106,6 +106,26 @@ describe("S3ObjectStorage", () => {
     expect(commands[2]).toBeInstanceOf(HeadBucketCommand);
   });
 
+  it("bounds readiness when the provider does not respond", async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const storage = storageWith(
+      (_command, options) =>
+        new Promise((_resolve, reject) => {
+          receivedSignal = options?.abortSignal;
+          receivedSignal?.addEventListener(
+            "abort",
+            () => reject(receivedSignal?.reason),
+            { once: true },
+          );
+        }),
+    );
+
+    await expect(storage.ready(false, 10)).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    expect(receivedSignal?.aborted).toBe(true);
+  });
+
   it("requires an enabled versioning state when configured", async () => {
     const commands: object[] = [];
     const storage = new S3ObjectStorage(

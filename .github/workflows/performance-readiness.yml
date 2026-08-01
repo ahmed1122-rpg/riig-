@@ -1,0 +1,63 @@
+name: performance-readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      concurrency:
+        description: Concurrent authenticated PDF workflows
+        required: true
+        default: "2"
+      iterations:
+        description: Iterations per concurrent user
+        required: true
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-readiness
+  cancel-in-progress: false
+
+jobs:
+  pdf-workflow-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production-readiness
+    env:
+      LOAD_TARGET_ORIGIN: ${{ vars.STAGING_ORIGIN }}
+      LOAD_EXPECTED_HOST: ${{ vars.STAGING_HOST }}
+      LOAD_CONCURRENCY: ${{ inputs.concurrency }}
+      LOAD_ITERATIONS: ${{ inputs.iterations }}
+      LOAD_MAX_ERROR_RATE: "0"
+      LOAD_MAX_WORKFLOW_P95_MS: ${{ vars.LOAD_MAX_WORKFLOW_P95_MS }}
+      LOAD_PDF_PATH: ${{ vars.REPRESENTATIVE_PDF_PATH }}
+      LOAD_METRICS_URL: ${{ vars.STAGING_METRICS_URL }}
+      LOAD_METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
+      LOAD_REQUIRE_METRICS: "true"
+      LOAD_REPORT_PATH: .tmp/pdf-load-report.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - name: Require explicit representative-load policy
+        shell: bash
+        run: |
+          test -n "$LOAD_PDF_PATH" || { echo "REPRESENTATIVE_PDF_PATH is required"; exit 1; }
+          test -f "$LOAD_PDF_PATH" || { echo "Representative PDF fixture is unavailable"; exit 1; }
+          test -n "$LOAD_MAX_WORKFLOW_P95_MS" || { echo "LOAD_MAX_WORKFLOW_P95_MS is required"; exit 1; }
+          test -n "$LOAD_METRICS_URL" || { echo "STAGING_METRICS_URL is required"; exit 1; }
+          test -n "$LOAD_METRICS_BEARER_TOKEN" || { echo "METRICS_BEARER_TOKEN is required"; exit 1; }
+      - name: Run concurrent PDF upload, processing, export, and download
+        run: npm run test:load:pdf
+      - name: Retain performance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pdf-load-evidence-${{ github.sha }}
+          path: .tmp/pdf-load-report.json
+          if-no-files-found: error
+          retention-days: 90

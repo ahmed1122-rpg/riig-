@@ -14,6 +14,7 @@ import {
 
 interface ExportRow extends QueuedJobRow<ExportJobStatus> {
   id: string;
+  correlation_id: string | null;
   project_id: string;
   source_version_id: string;
   document_revision: number;
@@ -64,11 +65,11 @@ export class PostgresExportRepository implements ExportRepository {
           document_revision, selected_page, scale, color_profile,
           naming_preset_id, status,
           progress, attempt, max_attempts, next_attempt_at, lease_owner,
-          lease_expires_at, error_code, artifact, created_at, updated_at
+          lease_expires_at, error_code, artifact, correlation_id, created_at, updated_at
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-          $15, $16, $17, $18, $19, $20, $21, $22
+          $15, $16, $17, $18, $19, $20, $21, $22, $23
         )
         ON CONFLICT (id) DO UPDATE SET
           status = EXCLUDED.status,
@@ -80,6 +81,7 @@ export class PostgresExportRepository implements ExportRepository {
           lease_expires_at = EXCLUDED.lease_expires_at,
           error_code = EXCLUDED.error_code,
           artifact = EXCLUDED.artifact,
+          correlation_id = COALESCE(EXCLUDED.correlation_id, export_jobs.correlation_id),
           updated_at = EXCLUDED.updated_at
       `,
       [
@@ -103,6 +105,7 @@ export class PostgresExportRepository implements ExportRepository {
         job.leaseExpiresAt,
         job.errorCode,
         job.artifact ? JSON.stringify(job.artifact) : null,
+        job.correlationId ?? null,
         job.createdAt,
         job.updatedAt,
       ],
@@ -281,7 +284,7 @@ const exportReturningColumns = `
   job.scope, job.document_revision, job.selected_page, job.scale, job.color_profile,
   job.naming_preset_id, job.status, job.progress, job.attempt,
   job.max_attempts, job.next_attempt_at, job.lease_owner,
-  job.lease_expires_at, job.error_code, job.artifact, job.created_at,
+  job.lease_expires_at, job.error_code, job.artifact, job.correlation_id, job.created_at,
   job.updated_at
 `;
 
@@ -290,6 +293,7 @@ const exportSelect = `SELECT ${exportColumns} FROM export_jobs`;
 function mapExport(row: ExportRow): ExportJob {
   return {
     id: row.id,
+    ...(row.correlation_id ? { correlationId: row.correlation_id } : {}),
     projectId: row.project_id,
     sourceVersionId: row.source_version_id,
     documentRevision: row.document_revision,

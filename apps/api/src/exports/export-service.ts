@@ -105,6 +105,7 @@ export class ExportService {
     projectKind: ProjectKind,
     idempotencyKey: string,
     onQueued?: (job: ExportJob) => Promise<boolean>,
+    correlationId?: string,
   ): Promise<ExportJob> {
     if (input.scale !== 1 || input.colorProfile !== "sRGB") {
       throw new ExportDomainError(
@@ -183,6 +184,7 @@ export class ExportService {
       input.documentRevision ?? requestedDocument?.revision ?? 1;
     const job: ExportJob = {
       id: exportId,
+      ...(correlationId ? { correlationId } : {}),
       projectId: input.projectId,
       sourceVersionId: input.sourceVersionId,
       documentRevision,

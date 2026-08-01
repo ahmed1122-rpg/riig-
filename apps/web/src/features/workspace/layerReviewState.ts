@@ -98,6 +98,7 @@ export function moveEditableLayer(
 
   const next = [...layers];
   const [moved] = next.splice(sourceIndex, 1);
+  if (!moved) return null;
   next.splice(boundedTargetIndex, 0, moved);
   return { layers: reindexLayerOrder(next), moved };
 }

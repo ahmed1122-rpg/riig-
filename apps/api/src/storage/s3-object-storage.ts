@@ -78,23 +78,33 @@ export class S3ObjectStorage implements ObjectStorage {
       });
   }
 
-  async ready(createIfMissing = false): Promise<void> {
+  async ready(
+    createIfMissing = false,
+    timeoutMilliseconds = 5_000,
+  ): Promise<void> {
+    const requestOptions = {
+      abortSignal: AbortSignal.timeout(timeoutMilliseconds),
+    };
     try {
       await this.#client.send(
         new HeadBucketCommand({ Bucket: this.options.bucket }),
+        requestOptions,
       );
     } catch (error) {
       if (!createIfMissing || !isMissing(error)) throw error;
       await this.#client.send(
         new CreateBucketCommand({ Bucket: this.options.bucket }),
+        requestOptions,
       );
       await this.#client.send(
         new HeadBucketCommand({ Bucket: this.options.bucket }),
+        requestOptions,
       );
     }
     if (this.options.requireVersioning) {
       const versioning = await this.#client.send(
         new GetBucketVersioningCommand({ Bucket: this.options.bucket }),
+        requestOptions,
       );
       if (versioning.Status !== "Enabled") {
         throw new ObjectStorageVersioningError(this.options.bucket);

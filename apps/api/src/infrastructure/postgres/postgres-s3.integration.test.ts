@@ -85,14 +85,17 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
        FROM information_schema.columns
        WHERE table_schema = 'public'
          AND table_name IN ('processing_jobs', 'export_jobs')
-         AND column_name IN ('attempt', 'max_attempts', 'lease_owner', 'lease_expires_at')
+         AND column_name IN (
+           'attempt', 'max_attempts', 'lease_owner', 'lease_expires_at',
+           'correlation_id'
+         )
        ORDER BY table_name, column_name`,
     );
 
     expect(applied.rows.map((row) => row.filename)).toEqual(
       expectedMigrations,
     );
-    expect(columns.rows).toHaveLength(8);
+    expect(columns.rows).toHaveLength(10);
   });
 
   it("atomically creates a password reset and durable email delivery", async () => {
@@ -520,6 +523,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       maxAttempts: 3,
       leaseOwner: "document-a",
       leaseExpiresAt: "2020-01-01T00:00:00.000Z",
+      correlationId: crypto.randomUUID(),
     });
     await repository.save(expiredJob);
 
@@ -535,6 +539,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       id: expiredJob.id,
       status: "processing",
       attempt: 2,
+      correlationId: expiredJob.correlationId,
     });
 
     const exhaustedJob = createProcessingJob(

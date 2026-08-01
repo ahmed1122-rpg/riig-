@@ -1,0 +1,9 @@
+# Default ownership and security-sensitive production boundaries.
+* @ahmed1122-rpg
+/apps/api/src/auth/ @ahmed1122-rpg
+/apps/api/src/billing/ @ahmed1122-rpg
+/apps/api/src/infrastructure/ @ahmed1122-rpg
+/.github/workflows/ @ahmed1122-rpg
+/compose.production.yaml @ahmed1122-rpg
+/deploy/ @ahmed1122-rpg
+/docs/runbooks/ @ahmed1122-rpg

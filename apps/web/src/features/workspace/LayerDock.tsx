@@ -134,7 +134,13 @@ export function LayerDock({
     if (event.shiftKey) {
       const anchorIndex = layers.findIndex((layer) => layer.id === anchorId);
       const targetIndex = layers.findIndex((layer) => layer.id === id);
-      const [start, end] = [anchorIndex, targetIndex].sort((a, b) => a - b);
+      if (anchorIndex < 0 || targetIndex < 0) {
+        onSelectionChange([id], id);
+        setAnchorId(id);
+        return;
+      }
+      const start = Math.min(anchorIndex, targetIndex);
+      const end = Math.max(anchorIndex, targetIndex);
       const range = layers.slice(Math.max(0, start), end + 1).map((layer) => layer.id);
       onSelectionChange(range, id);
       return;
@@ -166,8 +172,8 @@ export function LayerDock({
       from < 0 ||
       to < 0 ||
       from === to ||
-      layers[from].kind === "page" ||
-      layers[to].kind === "page"
+      layers[from]?.kind === "page" ||
+      layers[to]?.kind === "page"
     ) return;
     const result = moveEditableLayer(layers, sourceId, to);
     if (!result) return;
@@ -280,7 +286,9 @@ export function LayerDock({
     if (event.key === "End") nextIndex = tabs.length - 1;
     if (nextIndex === undefined) return;
     event.preventDefault();
-    setTab(tabs[nextIndex]);
+    const nextTab = tabs[nextIndex];
+    if (!nextTab) return;
+    setTab(nextTab);
     const tabButtons = event.currentTarget.parentElement
       ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     tabButtons?.[nextIndex]?.focus();

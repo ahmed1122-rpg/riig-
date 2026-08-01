@@ -2,6 +2,12 @@
   "compilerOptions": {
     "composite": true,
     "noEmit": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "Bundler"

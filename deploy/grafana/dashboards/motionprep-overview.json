@@ -1,0 +1,105 @@
+{
+  "annotations": { "list": [] },
+  "description": "Release, request, queue, worker, dependency, and process saturation signals for MotionPrep Studio.",
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [{ "expr": "sum(rate(motionprep_http_requests_total[5m]))", "refId": "A" }],
+      "title": "HTTP request rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, route) (rate(motionprep_http_request_duration_seconds_bucket[5m])))", "legendFormat": "{{route}}", "refId": "A" }],
+      "title": "API latency p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "targets": [{ "expr": "sum(rate(motionprep_http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(motionprep_http_requests_total[5m])), 0.001)", "refId": "A" }],
+      "title": "HTTP 5xx ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 4,
+      "targets": [
+        { "expr": "motionprep_queue_jobs{state=\"queued\"}", "legendFormat": "{{queue}} depth", "refId": "A" },
+        { "expr": "motionprep_queue_oldest_queued_seconds", "legendFormat": "{{queue}} oldest seconds", "refId": "B" }
+      ],
+      "title": "Queue depth and age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 5,
+      "targets": [{ "expr": "motionprep_worker_up", "legendFormat": "{{worker_type}} {{instance}} {{release}}", "refId": "A" }],
+      "title": "Worker availability and release",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "id": 6,
+      "targets": [{ "expr": "motionprep_dependencies_ready", "refId": "A" }],
+      "title": "Dependency readiness",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 7,
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, queue) (rate(motionprep_job_duration_seconds_bucket[10m])))", "legendFormat": "{{queue}}", "refId": "A" }],
+      "title": "Job duration p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 8,
+      "targets": [{ "expr": "motionprep_process_resident_memory_bytes", "refId": "A" }],
+      "title": "API resident memory",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["motionprep", "production"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "label": "Prometheus",
+        "name": "datasource",
+        "query": "prometheus",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "MotionPrep production overview",
+  "uid": "motionprep-production-overview",
+  "version": 1
+}

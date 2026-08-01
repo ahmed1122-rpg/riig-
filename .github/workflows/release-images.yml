@@ -222,11 +222,19 @@ jobs:
             echo "RELEASE_GIT_SHA=${GITHUB_SHA}"
           } > release.env
 
+      - name: Write machine-readable release evidence bundle
+        env:
+          RUNTIME_IMAGE_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
+          WEB_IMAGE_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
+        run: node scripts/create-release-evidence.mjs release-evidence.json
+
       - name: Upload immutable deployment manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ github.sha }}
-          path: release.env
+          path: |
+            release.env
+            release-evidence.json
           if-no-files-found: error
           retention-days: 90
 

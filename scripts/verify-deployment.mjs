@@ -14,6 +14,8 @@ const requiredFiles = [
   ".env.production.example",
   "deploy/nginx.conf",
   "deploy/prometheus-alerts.yml",
+  "deploy/prometheus-scrape.example.yml",
+  "deploy/grafana/dashboards/motionprep-overview.json",
   "docs/DEPLOYMENT.md",
   "docs/OBJECT_STORAGE.md",
   "docs/PRODUCTION_READINESS.md",
@@ -23,9 +25,13 @@ const requiredFiles = [
   "docs/runbooks/production-release-and-rollback.md",
   "docs/runbooks/processing-job-recovery.md",
   "docs/runbooks/disaster-recovery.md",
+  "docs/runbooks/failure-mode-matrix.md",
   "docs/runbooks/recovery-manifest.example.json",
   "scripts/verify-recovery-manifest.mjs",
   "scripts/verify-production-topology.mjs",
+  "scripts/verify-runtime-fault-recovery.mjs",
+  "scripts/load-pdf-workflow.mjs",
+  "scripts/verify-staging-application.mjs",
   "scripts/verify-bundle-budget.mjs",
   "scripts/verify-release-environment.mjs",
   "apps/api/migrations/012_processing_worker_leases.sql",
@@ -37,12 +43,16 @@ const requiredFiles = [
   "apps/api/migrations/024_billing_webhook_ordering.sql",
   "apps/api/migrations/025_retention_reference_indexes.sql",
   "apps/api/migrations/026_maintenance_status.sql",
+  "apps/api/migrations/028_job_correlation.sql",
   ".github/workflows/ci.yml",
   ".github/workflows/release-images.yml",
   ".github/workflows/codeql.yml",
   ".github/workflows/provider-readiness.yml",
   ".github/workflows/staging-readiness.yml",
+  ".github/workflows/performance-readiness.yml",
+  ".github/workflows/staging-application-readiness.yml",
   ".github/dependabot.yml",
+  ".github/CODEOWNERS",
 ];
 const violations = [];
 
@@ -108,6 +118,8 @@ const workflowSources = await Promise.all(
     ".github/workflows/codeql.yml",
     ".github/workflows/provider-readiness.yml",
     ".github/workflows/staging-readiness.yml",
+    ".github/workflows/performance-readiness.yml",
+    ".github/workflows/staging-application-readiness.yml",
   ].map((file) => readFile(join(root, file), "utf8")),
 );
 const alertSource = await readFile(
@@ -129,6 +141,8 @@ try {
     "MotionPrepRetentionMaintenanceOverdue",
     "MotionPrepContainerMemoryPressure",
     "MotionPrepContainerCpuSaturation",
+    "MotionPrepHttpErrorRateHigh",
+    "MotionPrepApiLatencyHigh",
   ]) {
     if (!alertNames.has(alert)) {
       violations.push(`Prometheus alert contract is missing ${alert}.`);
@@ -137,6 +151,31 @@ try {
 } catch (error) {
   violations.push(
     `Prometheus alert rules are invalid YAML: ${error instanceof Error ? error.message : "unknown error"}`,
+  );
+}
+
+try {
+  const dashboard = JSON.parse(
+    await readFile(
+      join(root, "deploy/grafana/dashboards/motionprep-overview.json"),
+      "utf8",
+    ),
+  );
+  const expressions = JSON.stringify(dashboard.panels ?? []);
+  for (const metric of [
+    "motionprep_http_request_duration_seconds_bucket",
+    "motionprep_queue_jobs",
+    "motionprep_worker_up",
+    "motionprep_dependencies_ready",
+    "motionprep_process_resident_memory_bytes",
+  ]) {
+    if (!expressions.includes(metric)) {
+      violations.push(`Grafana dashboard is missing metric ${metric}.`);
+    }
+  }
+} catch (error) {
+  violations.push(
+    `Grafana dashboard is not valid JSON: ${error instanceof Error ? error.message : "unknown error"}`,
   );
 }
 for (const [index, workflow] of workflowSources.entries()) {
@@ -458,6 +497,7 @@ for (const [name, entry] of [
 
 for (const key of [
   "DATABASE_URL",
+  "RELEASE_GIT_SHA",
   "REDIS_URL",
   "AUTH_ENCRYPTION_KEY",
   "SMTP_PASSWORD",

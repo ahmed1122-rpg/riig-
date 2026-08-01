@@ -215,6 +215,17 @@ jobs:
       - name: Start the production-shaped integration topology
         run: docker compose -f compose.integration.yaml up --detach --build --wait
       - run: npm run test:topology
+      - name: Prove dependency outages fail closed and recover
+        run: npm run test:faults:topology
+      - name: Run concurrent PDF workflow smoke load
+        env:
+          LOAD_CONCURRENCY: "2"
+          LOAD_ITERATIONS: "1"
+          LOAD_REQUEST_ORIGIN: http://127.0.0.1:5173
+          LOAD_METRICS_URL: http://127.0.0.1:54101/internal/metrics
+          LOAD_METRICS_BEARER_TOKEN: metrics-integration-token-at-least-32-characters
+          LOAD_REPORT_PATH: .tmp/topology-pdf-load-report.json
+        run: npm run test:load:pdf
       - name: Capture topology diagnostics
         if: always()
         run: |
@@ -225,7 +236,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: production-topology-evidence
-          path: topology.log
+          path: |
+            topology.log
+            .tmp/topology-pdf-load-report.json
           if-no-files-found: error
           retention-days: 14
       - name: Stop topology
