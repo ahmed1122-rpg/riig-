@@ -155,7 +155,6 @@ if (persistence || security || objectStorage || emailSender || pdfOcrEngine) {
   // Fastify's onClose lifecycle hook is invoked only during application
   // shutdown and cannot receive an HTTP request. CodeQL otherwise models this
   // generic hook registration as an unthrottled request handler.
-  // codeql[js/missing-rate-limiting]
   app.addHook("onClose", async () => {
     await Promise.all([
       persistence?.close(),
