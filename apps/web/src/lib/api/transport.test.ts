@@ -256,6 +256,19 @@ describe("request", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("does not replay a non-idempotent mutation after a network failure", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      request("/v1/project", { method: "POST" }),
+    ).rejects.toMatchObject({
+      code: "NETWORK_ERROR",
+      retryable: true,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("turns an attempt timeout into a retryable API error", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(

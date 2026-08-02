@@ -162,6 +162,8 @@ describe("API — التصدير", () => {
       headers: {
         cookie,
         "x-idempotency-key": "worker-export-001",
+        traceparent:
+          "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
       },
       payload: {
         projectId,
@@ -178,6 +180,10 @@ describe("API — التصدير", () => {
     expect(response.json().data.correlationId).toBe(
       response.headers["x-request-id"],
     );
+    expect(response.json().data.traceContext).toEqual({
+      traceparent:
+        "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+    });
     expect(response.json().data).toMatchObject({
       status: "queued",
       progress: 0,

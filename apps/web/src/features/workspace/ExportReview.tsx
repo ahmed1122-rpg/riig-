@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   exportFormatsByProjectKind,
   MAX_IMAGE_LAYERS,
-  MAX_UPLOAD_MEBIBYTES,
+  MAX_UPLOAD_BYTES,
   type ExportFormat,
 } from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
@@ -14,6 +14,7 @@ import {
   selectExportScope,
   type ExportGenerationState,
 } from "./exportFormatState";
+import { ExportQualitySummary } from "./ExportQualitySummary";
 import { RasterLayerPreview } from "./RasterLayerPreview";
 
 type PreviewBackground = "white" | "transparent" | "checker";
@@ -21,6 +22,7 @@ type PdfScope = "document" | "pages" | "selected";
 
 interface ExportReviewProps {
   mode: ProjectMode;
+  maxUploadBytes?: number;
   layers: Layer[];
   selectedLayerId: string;
   onSelectedLayerChange: (id: string) => void;
@@ -61,6 +63,7 @@ interface FormatOption {
 
 export function ExportReview({
   mode,
+  maxUploadBytes = MAX_UPLOAD_BYTES,
   layers,
   selectedLayerId,
   onSelectedLayerChange,
@@ -511,7 +514,11 @@ export function ExportReview({
           </aside>
 
           <aside className="export-setup-panel" aria-label="إعداد التصدير">
-            <QualitySummary mode={mode} imageLayerCount={layers.length} />
+            <ExportQualitySummary
+              mode={mode}
+              imageLayerCount={layers.length}
+              maxUploadBytes={maxUploadBytes}
+            />
 
             <div className="export-setup">
               <div className="review-section-heading"><div><strong>إعداد التصدير</strong><small>الخيارات الأساسية فقط</small></div></div>
@@ -601,29 +608,6 @@ export function ExportReview({
         </div>
       </section>
     </div>
-  );
-}
-
-function QualitySummary({ mode, imageLayerCount }: { mode: ProjectMode; imageLayerCount: number }) {
-  return (
-    <section className="quality-summary">
-      <div className="quality-summary__heading">
-        <span><Icon name="packageCheck" size={18} /></span>
-        <div><strong>فحص ما قبل التصدير</strong><small>يعيد الخادم التحقق من الوثيقة قبل الإنشاء</small></div>
-      </div>
-      <ul>
-        <li className="is-ok"><Icon name="check" size={14} /><span>أسماء الطبقات تبدأ بـ + واحدة</span></li>
-        {mode === "image" ? (
-          <li className={imageLayerCount <= MAX_IMAGE_LAYERS ? "is-ok" : "is-blocker"}><Icon name={imageLayerCount <= MAX_IMAGE_LAYERS ? "check" : "warning"} size={14} /><span>{imageLayerCount} / {MAX_IMAGE_LAYERS} طبقة للصور</span></li>
-        ) : (
-          <>
-            <li className="is-ok"><Icon name="check" size={14} /><span>الخلفية البيضاء الثابتة مطلوبة لكل صفحة</span></li>
-            <li className="is-unlimited"><Icon name="info" size={14} /><span>حد المصدر {MAX_UPLOAD_MEBIBYTES} MiB · لا يوجد حد ثابت لعدد طبقات PDF</span></li>
-          </>
-        )}
-            <li className="is-warning"><Icon name="warning" size={14} /><span>{mode === "image" ? "PSD حقيقي، لكن ادعاء توافق Adobe الكامل مؤجل لاختبارات Golden" : "PSD فعلي بطبقات Raster؛ النصوص قابلة للتحريك كطبقات وليست قابلة للتحرير كنص داخل Photoshop"}</span></li>
-      </ul>
-    </section>
   );
 }
 

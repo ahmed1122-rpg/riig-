@@ -52,6 +52,8 @@ describe("API — المعالجة ووثائق الطبقات", () => {
       headers: {
         cookie,
         "x-idempotency-key": "process-image-001",
+        traceparent:
+          "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
       },
       payload: { projectId, sourceVersionId },
     });
@@ -81,6 +83,10 @@ describe("API — المعالجة ووثائق الطبقات", () => {
     expect(processed.json().data.correlationId).toBe(
       processed.headers["x-request-id"],
     );
+    expect(processed.json().data.traceContext).toEqual({
+      traceparent:
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+    });
     expect(subscription.json().data.usage.jobs).toBe(1);
     expect(subscription.json().data.usage.processingMinutes).toBeGreaterThan(0);
     expect(document.statusCode).toBe(200);

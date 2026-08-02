@@ -2,7 +2,9 @@
 
 This matrix defines the required behavior for production-critical workflows.
 The automated dependency cases run against the production-shaped Docker
-topology with `npm run test:faults:topology`. Provider rows remain staging
+topology with `npm run test:faults:topology`. The retained fault report proves
+both aggregate readiness and the provider-specific readiness metric failed
+closed and recovered. Provider rows remain staging
 gates because local emulators cannot prove managed-service behavior.
 
 | Workflow | Injected failure | Required invariant | Automated evidence |

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_UPLOAD_BYTES } from "@motionprep/contracts";
 import {
   applicationObjectStorageFields,
   blankToUndefined,
@@ -6,6 +7,7 @@ import {
   optionalUrl,
   validateObjectStorageEnvironment,
 } from "./storage/object-storage-environment.js";
+import { isValidAuthEncryptionKey } from "./auth/secret-protector.js";
 
 const environmentSchema = z
   .object({
@@ -20,7 +22,8 @@ const environmentSchema = z
       .number()
       .int()
       .positive()
-      .default(30 * 1024 * 1024),
+      .max(MAX_UPLOAD_BYTES)
+      .default(MAX_UPLOAD_BYTES),
     SESSION_TTL_SECONDS: z.coerce
       .number()
       .int()
@@ -73,8 +76,8 @@ const environmentSchema = z
       z
         .string()
         .refine(
-          (value) => Buffer.from(value, "base64").length === 32,
-          "AUTH_ENCRYPTION_KEY must decode to exactly 32 bytes.",
+          isValidAuthEncryptionKey,
+          "AUTH_ENCRYPTION_KEY must be canonical Base64 for exactly 32 bytes.",
         )
         .optional(),
     ),

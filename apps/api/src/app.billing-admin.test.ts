@@ -1,3 +1,4 @@
+import type { LayerDocument } from "@motionprep/contracts";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 import {
@@ -10,7 +11,11 @@ import { InMemoryAuthRepository } from "./auth/auth-repository.js";
 import { AuthService } from "./auth/auth-service.js";
 import { InMemoryProjectRepository } from "./projects/project-repository.js";
 import { InMemoryUploadRepository } from "./uploads/upload-repository.js";
-import { InMemoryProcessingJobRepository } from "./processing/processing-repository.js";
+import {
+  InMemoryLayerDocumentRepository,
+  InMemoryProcessingJobRepository,
+} from "./processing/processing-repository.js";
+import { InMemoryExportRepository } from "./exports/export-repository.js";
 
 const harness = createAppTestHarness();
 
@@ -460,6 +465,122 @@ describe("API — الفوترة والإدارة", () => {
     });
     expect(audit.json().data[0]).toMatchObject({
       action: "admin.processing.retry_requested",
+      targetId: jobId,
+    });
+  });
+
+  it("retries a failed export only with its retained source and revision", async () => {
+    const authRepository = new InMemoryAuthRepository();
+    const seed = new AuthService(authRepository);
+    const admin = await seed.seedUser({
+      name: "Export administrator",
+      email: "export-admin@example.com",
+      password: "AdminPass123",
+      role: "admin",
+    });
+    const projects = new InMemoryProjectRepository();
+    const uploads = new InMemoryUploadRepository();
+    const exports = new InMemoryExportRepository();
+    const layerDocuments = new InMemoryLayerDocumentRepository();
+    const project = await projects.create(admin.id, {
+      name: "Export recovery",
+      kind: "book",
+    });
+    const sourceVersionId = crypto.randomUUID();
+    const uploadId = crypto.randomUUID();
+    const jobId = crypto.randomUUID();
+    await projects.updateCurrentSourceVersion(project.id, sourceVersionId, 1);
+    await uploads.save({
+      uploadId,
+      projectId: project.id,
+      filename: "retry.pdf",
+      contentType: "application/pdf",
+      expectedSizeBytes: 4,
+      status: "ready",
+      sourceVersionId,
+      sha256: "b".repeat(64),
+      objectKey: `sources/${project.id}/${uploadId}/retry.pdf`,
+      expiresAt: "2026-08-03T00:00:00.000Z",
+      maxBytes: 31_457_280,
+      uploadUrl: `/v1/uploads/${uploadId}/content`,
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    });
+    const document: LayerDocument = {
+      schemaVersion: "1.0",
+      projectId: project.id,
+      sourceVersionId,
+      revision: 1,
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      width: 100,
+      height: 100,
+      colorSpace: "sRGB",
+      pages: [{ pageNumber: 1, width: 100, height: 100 }],
+      layers: [],
+    };
+    await layerDocuments.save(document);
+    await exports.save({
+      id: jobId,
+      projectId: project.id,
+      sourceVersionId,
+      documentRevision: 1,
+      projectKind: "book",
+      format: "json",
+      scope: "full-document",
+      scale: 1,
+      colorProfile: "sRGB",
+      namingPresetId: "kinetic-words",
+      status: "failed",
+      progress: 70,
+      attempt: 3,
+      maxAttempts: 3,
+      nextAttemptAt: "2026-08-01T00:00:00.000Z",
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      errorCode: "EXPORT_WORKER_FAILED",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    });
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      auth: authRepository,
+      projects,
+      uploads,
+      exports,
+      layerDocuments,
+    });
+    const login = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        email: "export-admin@example.com",
+        password: "AdminPass123",
+      },
+    });
+    const cookie = sessionCookie(login.headers["set-cookie"]);
+
+    const retried = await app.inject({
+      method: "POST",
+      url: `/v1/admin/exports/${jobId}/retry`,
+      headers: { cookie },
+      payload: {
+        reason: "Provider storage recovered and the source revision was verified",
+      },
+    });
+
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json().data).toMatchObject({
+      status: "queued",
+      progress: 0,
+      attempt: 0,
+      errorCode: null,
+    });
+    const audit = await app.inject({
+      method: "GET",
+      url: "/v1/admin/audit",
+      headers: { cookie },
+    });
+    expect(audit.json().data[0]).toMatchObject({
+      action: "admin.export.retry_requested",
       targetId: jobId,
     });
   });

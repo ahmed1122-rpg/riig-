@@ -13,6 +13,10 @@ interface WorkerRow {
   worker_type: WorkerStatus["workerType"];
   release_version: string;
   concurrency: number;
+  resident_memory_bytes: string | number;
+  heap_used_bytes: string | number;
+  cpu_user_microseconds: string | number;
+  cpu_system_microseconds: string | number;
   last_seen_at: Date | string;
   stale: boolean;
 }
@@ -47,17 +51,34 @@ interface MaintenanceRow {
   stale: boolean;
 }
 
+interface EmailOutboxRow {
+  queued: string | number;
+  sending: string | number;
+  failed: string | number;
+  oldest_queued_seconds: string | number | null;
+  retries_last_hour: string | number;
+  failures_last_hour: string | number;
+}
+
 export class PostgresOperationalStatusProvider
   implements OperationalStatusProvider
 {
   constructor(private readonly pool: Pool) {}
 
   async snapshot(): Promise<OperationalStatusSnapshot> {
-    const [workers, queues, recentWorkerEvents, durationMetrics, maintenance] =
-      await Promise.all([
+    const [
+      workers,
+      queues,
+      recentWorkerEvents,
+      durationMetrics,
+      maintenance,
+      emailOutbox,
+    ] = await Promise.all([
         this.pool.query<WorkerRow>(
           `SELECT
            instance_id, worker_type, release_version, concurrency,
+           resident_memory_bytes, heap_used_bytes,
+           cpu_user_microseconds, cpu_system_microseconds,
            last_seen_at,
            last_seen_at < now() - interval '45 seconds' AS stale
          FROM worker_heartbeats
@@ -133,12 +154,37 @@ export class PostgresOperationalStatusProvider
            FROM maintenance_status
            WHERE task = 'retention'`,
         ),
+        this.pool.query<EmailOutboxRow>(
+          `SELECT
+             count(*) FILTER (WHERE status = 'queued') AS queued,
+             count(*) FILTER (WHERE status = 'sending') AS sending,
+             count(*) FILTER (WHERE status = 'failed') AS failed,
+             COALESCE(
+               extract(epoch FROM now() - min(created_at) FILTER (
+                 WHERE status IN ('queued', 'sending')
+               )),
+               0
+             ) AS oldest_queued_seconds,
+             count(*) FILTER (
+               WHERE attempt > 1
+                 AND updated_at > now() - interval '1 hour'
+             ) AS retries_last_hour,
+             count(*) FILTER (
+               WHERE status = 'failed'
+                 AND updated_at > now() - interval '1 hour'
+             ) AS failures_last_hour
+           FROM email_outbox`,
+        ),
       ]);
     const mappedWorkers = workers.rows.map((row): WorkerStatus => ({
       instanceId: row.instance_id,
       workerType: row.worker_type,
       releaseVersion: row.release_version,
       concurrency: row.concurrency,
+      residentMemoryBytes: Number(row.resident_memory_bytes),
+      heapUsedBytes: Number(row.heap_used_bytes),
+      cpuUserSeconds: Number(row.cpu_user_microseconds) / 1_000_000,
+      cpuSystemSeconds: Number(row.cpu_system_microseconds) / 1_000_000,
       lastSeenAt: toIso(row.last_seen_at),
       stale: row.stale,
     }));
@@ -168,6 +214,8 @@ export class PostgresOperationalStatusProvider
           Number(row.oldest_queued_seconds ?? 0),
         ),
         retriesLastHour: Number(event("retry")?.count ?? 0),
+        failuresLastHour: Number(event("failed")?.count ?? 0),
+        completionsLastHour: Number(event("completed")?.count ?? 0),
         leaseLossesLastHour: Number(event("lease_lost")?.count ?? 0),
         duration: {
           count: Number(completed?.completed_count ?? 0),
@@ -194,6 +242,20 @@ export class PostgresOperationalStatusProvider
           stale: maintenanceRow.stale,
         }
       : null;
+    const emailOutboxRow = emailOutbox.rows[0];
+    const mappedEmailOutbox = emailOutboxRow
+      ? {
+          queued: Number(emailOutboxRow.queued),
+          sending: Number(emailOutboxRow.sending),
+          failed: Number(emailOutboxRow.failed),
+          oldestQueuedSeconds: Math.max(
+            0,
+            Number(emailOutboxRow.oldest_queued_seconds ?? 0),
+          ),
+          retriesLastHour: Number(emailOutboxRow.retries_last_hour),
+          failuresLastHour: Number(emailOutboxRow.failures_last_hour),
+        }
+      : null;
     return {
       status:
         mappedWorkers.some((worker) => worker.stale) ||
@@ -204,6 +266,7 @@ export class PostgresOperationalStatusProvider
           : "ready",
       workers: mappedWorkers,
       queues: mappedQueues,
+      emailOutbox: mappedEmailOutbox,
       maintenance: mappedMaintenance,
       checkedAt: new Date().toISOString(),
     };

@@ -39,8 +39,10 @@ For `WORKER_LEASE_EXHAUSTED`:
 1. Preserve logs and the job row.
 2. Verify whether each attempt was a crash, timeout, or dependency failure.
 3. Fix the dependency or deploy the repaired worker.
-4. Create a new processing job through the API after confirming no active job
-   exists. Never change `failed` to `ready` manually.
+4. Use the audited administrator retry endpoint only after confirming no active
+   job exists and the immutable ready source remains current. Export retries
+   must also retain the exact document revision. Never change `failed` to
+   `queued` or `ready` manually.
 
 For derived raster corruption, quarantine the referenced objects and rerun the
 same source version. Delete old derived objects only after the replacement

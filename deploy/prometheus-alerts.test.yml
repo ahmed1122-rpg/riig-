@@ -1,0 +1,87 @@
+rule_files:
+  - prometheus-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: provider readiness and outbox failures page operators
+    interval: 1m
+    input_series:
+      - series: 'motionprep_dependency_ready{dependency="object_storage"}'
+        values: '0x10'
+      - series: 'motionprep_dependency_ready{dependency="smtp"}'
+        values: '0x10'
+      - series: 'motionprep_email_outbox_events_last_hour{event="failed"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MotionPrepObjectStorageUnavailable
+        exp_alerts:
+          - exp_labels:
+              dependency: object_storage
+              severity: critical
+            exp_annotations:
+              summary: MotionPrep object storage readiness is failing
+              runbook: docs/runbooks/production-dependency-recovery.md
+      - eval_time: 6m
+        alertname: MotionPrepSmtpUnavailable
+        exp_alerts:
+          - exp_labels:
+              dependency: smtp
+              severity: warning
+            exp_annotations:
+              summary: MotionPrep SMTP readiness is failing
+              runbook: docs/runbooks/production-dependency-recovery.md
+      - eval_time: 6m
+        alertname: MotionPrepEmailOutboxFailures
+        exp_alerts:
+          - exp_labels:
+              event: failed
+              severity: critical
+            exp_annotations:
+              summary: MotionPrep email delivery reached terminal failure
+              runbook: docs/runbooks/production-dependency-recovery.md
+
+  - name: retry storm and terminal failures retain queue identity
+    interval: 1m
+    input_series:
+      - series: 'motionprep_worker_events_last_hour{queue="export",event="retry"}'
+        values: '12x15'
+      - series: 'motionprep_worker_events_last_hour{queue="export",event="completed"}'
+        values: '100x15'
+      - series: 'motionprep_worker_events_last_hour{queue="export",event="failed"}'
+        values: '6x15'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: MotionPrepRetryStorm
+        exp_alerts:
+          - exp_labels:
+              queue: export
+              severity: warning
+            exp_annotations:
+              summary: MotionPrep worker retries exceed the allowed ratio
+              runbook: docs/runbooks/processing-job-recovery.md
+      - eval_time: 11m
+        alertname: MotionPrepTerminalJobFailuresHigh
+        exp_alerts:
+          - exp_labels:
+              queue: export
+              severity: critical
+            exp_annotations:
+              summary: MotionPrep terminal job failures are elevated
+              runbook: docs/runbooks/processing-job-recovery.md
+
+  - name: sustained authentication rejection rate alerts
+    interval: 1m
+    input_series:
+      - series: 'motionprep_http_requests_total{route="/v1/auth/login",status="400"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: MotionPrepAuthenticationRejectionsHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: MotionPrep authentication rejection rate is elevated
+              runbook: docs/runbooks/production-dependency-recovery.md

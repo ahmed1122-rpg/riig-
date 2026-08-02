@@ -1,6 +1,5 @@
 import {
   MAX_UPLOAD_BYTES,
-  MAX_UPLOAD_MEBIBYTES,
   type SourceType,
   type UploadIntentInput,
   type UploadSession,
@@ -14,6 +13,10 @@ import type { ObjectStorage } from "../storage/object-storage.js";
 import { inspectSource } from "./source-inspection.js";
 import type { SourceVersionRepository } from "../sources/source-version-repository.js";
 import type { UploadFinalizationCommand } from "./upload-finalization.js";
+import {
+  assertUploadLimit,
+  formatUploadMebibytes,
+} from "./upload-limits.js";
 
 export class UploadDomainError extends Error {
   constructor(
@@ -54,7 +57,10 @@ export class UploadService {
     private readonly storage?: ObjectStorage,
     private readonly sourceVersions?: SourceVersionRepository,
     private readonly finalization?: UploadFinalizationCommand,
-  ) {}
+    private readonly maxUploadBytes = MAX_UPLOAD_BYTES,
+  ) {
+    assertUploadLimit(maxUploadBytes);
+  }
 
   async receive(uploadId: string, bytes: Buffer): Promise<UploadSession> {
     const session = await this.requireSession(uploadId);
@@ -82,7 +88,7 @@ export class UploadService {
     if (
       inspection.contentType !== session.contentType ||
       inspection.sizeBytes !== session.expectedSizeBytes ||
-      inspection.sizeBytes > MAX_UPLOAD_BYTES
+      inspection.sizeBytes > this.maxUploadBytes
     ) {
       await this.fail(session);
       throw new UploadDomainError(
@@ -91,7 +97,7 @@ export class UploadService {
           : "UPLOAD_SIZE_MISMATCH",
         inspection.contentType !== session.contentType
           ? "نوع الملف الفعلي لا يطابق النوع المعلن."
-          : `حجم الملف المرفوع لا يطابق الحجم المتوقع أو يتجاوز ${MAX_UPLOAD_MEBIBYTES} MiB.`,
+          : `حجم الملف المرفوع لا يطابق الحجم المتوقع أو يتجاوز ${formatUploadMebibytes(this.maxUploadBytes)} MiB.`,
       );
     }
 
@@ -125,6 +131,12 @@ export class UploadService {
     input: UploadIntentInput,
     idempotencyKey: string,
   ): Promise<UploadSession> {
+    if (input.sizeBytes > this.maxUploadBytes) {
+      throw new UploadDomainError(
+        "UPLOAD_SIZE_MISMATCH",
+        `يتجاوز الملف حد الرفع الحالي ${formatUploadMebibytes(this.maxUploadBytes)} MiB.`,
+      );
+    }
     if (!this.sourceVersions) {
       throw new Error("Source version persistence is required for uploads.");
     }
@@ -204,7 +216,7 @@ export class UploadService {
       sha256: null,
       objectKey: `sources/${input.projectId}/${uploadId}.${safeExtension(input.contentType)}`,
       expiresAt,
-      maxBytes: MAX_UPLOAD_BYTES,
+      maxBytes: this.maxUploadBytes,
       uploadUrl: `/v1/uploads/${uploadId}/content`,
       createdAt: timestamp.toISOString(),
       updatedAt: timestamp.toISOString(),

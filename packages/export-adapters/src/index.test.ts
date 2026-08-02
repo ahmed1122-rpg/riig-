@@ -462,4 +462,58 @@ describe("createPdfDocumentPsd", () => {
       code: "INVALID_DOCUMENT_DIMENSIONS",
     } satisfies Partial<ExportAdapterError>);
   });
+
+  it("rejects an oversized stacked document before allocating page rasters", async () => {
+    const pages = Array.from({ length: 31 }, (_, index) => ({
+      pageNumber: index + 1,
+      width: 1,
+      height: 1_000,
+    }));
+    await expect(
+      createPdfDocumentPsd({
+        ...document,
+        width: 1,
+        height: 1_000,
+        pages,
+        layers: [],
+      }),
+    ).rejects.toMatchObject({
+      code: "PSD_DIMENSION_LIMIT_EXCEEDED",
+    } satisfies Partial<ExportAdapterError>);
+  });
+
+  it("rejects PDF layer rasters that exceed the aggregate memory budget", async () => {
+    const page = { pageNumber: 1, width: 1_000, height: 1_000 };
+    const background: LayerNode = {
+      ...layer,
+      id: "background-1",
+      name: "+page_001_background",
+      locked: true,
+      fixed: true,
+      pageNumber: 1,
+      bounds: { x: 0, y: 0, width: 1_000, height: 1_000 },
+      fillColor: "#ffffff",
+    };
+    const textLayers: LayerNode[] = Array.from({ length: 50 }, (_, index) => ({
+      ...layer,
+      id: `text-${index}`,
+      kind: "text" as const,
+      name: `+text_${index}` as `+${string}`,
+      pageNumber: 1,
+      fullText: "text",
+      bounds: { x: 0, y: 0, width: 1_000, height: 1_000 },
+    }));
+
+    await expect(
+      createPdfDocumentPsd({
+        ...document,
+        width: 1_000,
+        height: 1_000,
+        pages: [page],
+        layers: [background, ...textLayers],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_DOCUMENT_DIMENSIONS",
+    } satisfies Partial<ExportAdapterError>);
+  });
 });

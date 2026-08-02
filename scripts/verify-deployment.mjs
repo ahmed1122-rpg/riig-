@@ -2,6 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { verifyObservabilityArtifacts } from "./verify-observability-artifacts.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const requiredFiles = [
@@ -14,6 +15,7 @@ const requiredFiles = [
   ".env.production.example",
   "deploy/nginx.conf",
   "deploy/prometheus-alerts.yml",
+  "deploy/prometheus-alerts.test.yml",
   "deploy/prometheus-scrape.example.yml",
   "deploy/grafana/dashboards/motionprep-overview.json",
   "docs/DEPLOYMENT.md",
@@ -24,6 +26,7 @@ const requiredFiles = [
   "apps/api/scripts/verify-staging-dependencies.node-test.mjs",
   "docs/runbooks/production-release-and-rollback.md",
   "docs/runbooks/processing-job-recovery.md",
+  "docs/runbooks/production-dependency-recovery.md",
   "docs/runbooks/disaster-recovery.md",
   "docs/runbooks/failure-mode-matrix.md",
   "docs/runbooks/recovery-manifest.example.json",
@@ -31,6 +34,9 @@ const requiredFiles = [
   "scripts/verify-production-topology.mjs",
   "scripts/verify-runtime-fault-recovery.mjs",
   "scripts/load-pdf-workflow.mjs",
+  "scripts/load-pdf-config.mjs",
+  "scripts/load-test-metrics.mjs",
+  "scripts/verify-prometheus-rules.mjs",
   "scripts/verify-staging-application.mjs",
   "scripts/verify-bundle-budget.mjs",
   "scripts/verify-release-environment.mjs",
@@ -44,6 +50,7 @@ const requiredFiles = [
   "apps/api/migrations/025_retention_reference_indexes.sql",
   "apps/api/migrations/026_maintenance_status.sql",
   "apps/api/migrations/028_job_correlation.sql",
+  "apps/api/migrations/030_worker_resource_metrics.sql",
   ".github/workflows/ci.yml",
   ".github/workflows/release-images.yml",
   ".github/workflows/codeql.yml",
@@ -122,62 +129,7 @@ const workflowSources = await Promise.all(
     ".github/workflows/staging-application-readiness.yml",
   ].map((file) => readFile(join(root, file), "utf8")),
 );
-const alertSource = await readFile(
-  join(root, "deploy/prometheus-alerts.yml"),
-  "utf8",
-);
-try {
-  const alertDocument = parse(alertSource);
-  const alertNames = new Set(
-    (alertDocument?.groups ?? []).flatMap((group) =>
-      (group.rules ?? []).map((rule) => rule.alert),
-    ),
-  );
-  for (const alert of [
-    "MotionPrepDependencyUnavailable",
-    "MotionPrepWorkerMissing",
-    "MotionPrepQueueTooOld",
-    "MotionPrepLeaseLoss",
-    "MotionPrepRetentionMaintenanceOverdue",
-    "MotionPrepContainerMemoryPressure",
-    "MotionPrepContainerCpuSaturation",
-    "MotionPrepHttpErrorRateHigh",
-    "MotionPrepApiLatencyHigh",
-  ]) {
-    if (!alertNames.has(alert)) {
-      violations.push(`Prometheus alert contract is missing ${alert}.`);
-    }
-  }
-} catch (error) {
-  violations.push(
-    `Prometheus alert rules are invalid YAML: ${error instanceof Error ? error.message : "unknown error"}`,
-  );
-}
-
-try {
-  const dashboard = JSON.parse(
-    await readFile(
-      join(root, "deploy/grafana/dashboards/motionprep-overview.json"),
-      "utf8",
-    ),
-  );
-  const expressions = JSON.stringify(dashboard.panels ?? []);
-  for (const metric of [
-    "motionprep_http_request_duration_seconds_bucket",
-    "motionprep_queue_jobs",
-    "motionprep_worker_up",
-    "motionprep_dependencies_ready",
-    "motionprep_process_resident_memory_bytes",
-  ]) {
-    if (!expressions.includes(metric)) {
-      violations.push(`Grafana dashboard is missing metric ${metric}.`);
-    }
-  }
-} catch (error) {
-  violations.push(
-    `Grafana dashboard is not valid JSON: ${error instanceof Error ? error.message : "unknown error"}`,
-  );
-}
+violations.push(...(await verifyObservabilityArtifacts(root)));
 for (const [index, workflow] of workflowSources.entries()) {
   try {
     parse(workflow);
@@ -221,6 +173,9 @@ try {
       "The CI hardened web smoke must provide the API hostname expected by nginx.",
     );
   }
+  if (!ciWorkflow.includes("npm run verify:alerts")) {
+    violations.push("CI container build must exercise Prometheus alert rules.");
+  }
   if (
     !ciWorkflow.includes(
       "npm run verify:staging-dependencies:test --workspace @motionprep/api",
@@ -251,7 +206,11 @@ for (const token of [
   "needs: verify-source",
   "environment: production-release",
   "npm run quality",
+  "npm run verify:alerts",
   "npm run test:topology:full",
+  "release-source-evidence-${{ github.sha }}",
+  "release-source-evidence/fault-recovery-report.json",
+  "release-source-evidence/topology-pdf-load-report.json",
   "cosign sign --yes",
   "Verify repository-bound signatures",
   "--certificate-identity \"${identity}\"",
@@ -294,6 +253,8 @@ for (const token of [
   "RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}",
   "RECOVERY_SIGNING_PUBLIC_KEY_PEM",
   "--public-key recovery-public-key.pem",
+  "provider-readiness-evidence-${{ github.sha }}",
+  ".tmp/provider-object-storage-evidence.json",
 ]) {
   if (!providerWorkflow.includes(token)) {
     violations.push(
@@ -311,9 +272,23 @@ for (const token of [
   "npm run verify:staging-dependencies --workspace @motionprep/api",
   "npm run verify:object-storage",
   "Recovery evidence: intentionally remains in the production provider gate",
+  "staging-dependency-evidence-${{ github.sha }}",
+  ".tmp/staging-dependency-evidence.json",
+  ".tmp/staging-object-storage-evidence.json",
 ]) {
   if (!stagingWorkflow.includes(token)) {
     violations.push(`Staging-readiness workflow is missing token: ${token}`);
+  }
+}
+const performanceWorkflow = workflowSources[5];
+for (const token of [
+  'LOAD_MIN_CONCURRENCY: "4"', 'LOAD_MIN_TOTAL_JOURNEYS: "12"',
+  "LOAD_MAX_API_RSS_GROWTH_BYTES", "LOAD_MAX_WORKER_RSS_GROWTH_BYTES",
+  "LOAD_MAX_QUEUE_AGE_SECONDS", 'LOAD_MAX_FINAL_QUEUE_DEPTH: "0"',
+  'LOAD_REQUIRE_METRICS: "true"',
+]) {
+  if (!performanceWorkflow.includes(token)) {
+    violations.push(`Performance-readiness workflow is missing token: ${token}`);
   }
 }
 

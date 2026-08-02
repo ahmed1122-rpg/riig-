@@ -21,8 +21,10 @@
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "test:load:utils": "node --test scripts/load-test-utils.test.mjs",
+    "test:load:utils": "node --test scripts/load-test-utils.test.mjs scripts/load-pdf-config.test.mjs scripts/load-test-metrics.test.mjs",
     "test:load:pdf": "node scripts/load-pdf-workflow.mjs",
+    "fetch:representative-pdf": "node scripts/fetch-representative-pdf.mjs",
+    "test:representative-pdf": "node --test scripts/fetch-representative-pdf.test.mjs",
     "coverage": "npm run coverage --workspaces --if-present",
     "lint": "eslint . --max-warnings 0",
     "lint:css": "stylelint \"apps/web/src/styles/**/*.css\" --max-warnings 0",
@@ -37,7 +39,9 @@
     "benchmark:ocr:selector": "node scripts/evaluate-ocr-selector.mjs",
     "golden:adobe:generate": "npm run build --workspace @motionprep/contracts && npm run build --workspace @motionprep/export-adapters && node --conditions=production scripts/generate-adobe-golden.mjs",
     "verify:architecture": "node --test scripts/import-cycle-detector.test.mjs && node scripts/verify-architecture.mjs",
+    "verify:maintainability": "node --test scripts/verify-maintainability.test.mjs && node scripts/verify-maintainability.mjs",
     "verify:deployment": "node --test scripts/check-worker-health.test.mjs && node scripts/verify-deployment.mjs",
+    "verify:alerts": "node scripts/verify-prometheus-rules.mjs",
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
     "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
     "verify:css": "node scripts/verify-css-architecture.mjs",
@@ -53,7 +57,7 @@
     "test:topology": "node scripts/verify-production-topology.mjs",
     "test:faults:topology": "node scripts/verify-runtime-fault-recovery.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=22.12.0",

@@ -1,5 +1,8 @@
+/** @vitest-environment jsdom */
+
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Layer } from "../../types";
 import {
   ExportCharacterPreview,
@@ -16,6 +19,11 @@ const sourceLayer: Layer = {
   opacity: 75,
   color: "#3bb3a9",
 };
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("ExportCharacterPreview", () => {
   it("renders the uploaded source instead of demo artwork", () => {
@@ -49,6 +57,54 @@ describe("ExportCharacterPreview", () => {
 });
 
 describe("ExportReview production editing policy", () => {
+  it("keeps export retryable after a transient failure", async () => {
+    const onCreateExport = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("network unavailable"))
+      .mockResolvedValueOnce(undefined);
+    const onNotify = vi.fn();
+    const view = render(
+      <ExportReview
+        mode="image"
+        layers={[sourceLayer]}
+        selectedLayerId="source"
+        onSelectedLayerChange={() => undefined}
+        onLayersChange={() => undefined}
+        onClose={() => undefined}
+        onNotify={onNotify}
+        returnFocusTo={null}
+        canExport
+        sourcePreviewUrl="blob:http://localhost/source"
+        onCreateExport={onCreateExport}
+      />,
+    );
+    const createButton = view.container.querySelector<HTMLButtonElement>(
+      ".create-export-button",
+    );
+    expect(createButton).not.toBeNull();
+
+    fireEvent.click(createButton!);
+    await waitFor(() => expect(onCreateExport).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(".export-generation-message")?.textContent,
+      ).toContain("network unavailable"),
+    );
+    expect(createButton?.disabled).toBe(false);
+
+    fireEvent.click(createButton!);
+    await waitFor(() => expect(onCreateExport).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(createButton?.classList.contains("is-done")).toBe(true),
+    );
+    expect(onCreateExport).toHaveBeenLastCalledWith("psd", {
+      scale: 1,
+      colorProfile: "sRGB",
+      namingPresetId: "character-basic",
+    });
+    expect(onNotify).toHaveBeenCalledTimes(2);
+  });
+
   it("allows persisted ordering without exposing unsupported merge operations", () => {
     const markup = renderToStaticMarkup(
       <ExportReview

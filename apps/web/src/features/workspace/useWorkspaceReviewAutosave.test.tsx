@@ -69,6 +69,37 @@ afterEach(() => {
 });
 
 describe("workspace review autosave", () => {
+  it("keeps failed changes dirty and saves them on an explicit retry", async () => {
+    vi.mocked(updateLayerDocument)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ revision: 2 } as LayerDocumentView);
+    const controls = { current: null } as MutableRefObject<AutosaveControls | null>;
+    const view = render(<Harness layer={baseline} controls={controls} />);
+    view.rerender(
+      <Harness
+        layer={{ ...baseline, opacity: 60 }}
+        controls={controls}
+      />,
+    );
+
+    await act(async () => {
+      await expect(controls.current?.flushLayerReview()).rejects.toThrow(
+        "offline",
+      );
+    });
+    expect(controls.current?.hasUnsavedReview()).toBe(true);
+    const failedUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(failedUnload);
+    expect(failedUnload.defaultPrevented).toBe(true);
+
+    await act(async () => {
+      await Promise.resolve();
+      await controls.current?.flushLayerReview();
+    });
+    expect(updateLayerDocument).toHaveBeenCalledTimes(2);
+    expect(controls.current?.hasUnsavedReview()).toBe(false);
+  });
+
   it("warns before unload while dirty and clears the warning after flush", async () => {
     vi.mocked(updateLayerDocument).mockResolvedValue({
       revision: 2,

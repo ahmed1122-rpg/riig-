@@ -7,6 +7,7 @@ import { AuthDomainError, type AuthService } from "../auth/auth-service.js";
 import type { ExportRepository } from "../exports/export-repository.js";
 import type { BillingRepository } from "../billing/billing-repository.js";
 import type { ProcessingJobRepository } from "../processing/processing-repository.js";
+import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
 import type { AdminAccessCommand } from "./admin-access-command.js";
 import type { OperationalStatusProvider } from "../observability/operational-status.js";
@@ -51,6 +52,7 @@ export async function registerAdminRoutes(
     uploads: UploadRepository;
     exports: ExportRepository;
     processingJobs: ProcessingJobRepository;
+    layerDocuments: LayerDocumentRepository;
     billing: BillingRepository;
     access?: AdminAccessCommand;
     operationalStatus?: OperationalStatusProvider;
@@ -236,6 +238,114 @@ export async function registerAdminRoutes(
     }
   });
 
+  app.post("/v1/admin/exports/:jobId/retry", async (request, reply) => {
+    const params = processingParamsSchema.safeParse(request.params);
+    const body = retryProcessingSchema.safeParse(request.body);
+    if (!params.success || !body.success) {
+      return reply.status(400).send({
+        data: null,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "A valid export job and a retry reason are required.",
+          requestId: request.id,
+        },
+      });
+    }
+    try {
+      const actor = await requireRole(request, dependencies.auth, ["admin"]);
+      const job = await dependencies.exports.findById(params.data.jobId);
+      if (!job) {
+        return reply.status(404).send({
+          data: null,
+          error: {
+            code: "EXPORT_JOB_NOT_FOUND",
+            message: "Export job not found.",
+            requestId: request.id,
+          },
+        });
+      }
+      const [source, document] = await Promise.all([
+        dependencies.uploads.findReadyBySourceVersion(
+          job.projectId,
+          job.sourceVersionId,
+        ),
+        dependencies.layerDocuments.findRevision(
+          job.projectId,
+          job.sourceVersionId,
+          job.documentRevision ?? 1,
+        ),
+      ]);
+      if (job.status !== "failed" || !source || !document) {
+        return reply.status(409).send({
+          data: null,
+          error: {
+            code: "EXPORT_JOB_NOT_RETRYABLE",
+            message:
+              "The export must be failed and retain its ready source and document revision.",
+            requestId: request.id,
+          },
+        });
+      }
+      const activated = await dependencies.projects.updateStatusForSource(
+        job.projectId,
+        job.sourceVersionId,
+        "exporting",
+        { type: "export", id: job.id },
+      );
+      if (!activated) {
+        return reply.status(409).send({
+          data: null,
+          error: {
+            code: "EXPORT_SOURCE_NOT_CURRENT",
+            message: "The export source is no longer the project's current source.",
+            requestId: request.id,
+          },
+        });
+      }
+      const retried = await dependencies.exports.retryFailed(
+        job.id,
+        new Date().toISOString(),
+      );
+      if (!retried) {
+        const concurrentlyRetried = await dependencies.exports.findById(job.id);
+        if (
+          concurrentlyRetried &&
+          ["queued", "generating", "verifying", "ready"].includes(
+            concurrentlyRetried.status,
+          )
+        ) {
+          return { data: concurrentlyRetried, error: null };
+        }
+        await dependencies.projects.finishJobStatus(
+          job.projectId,
+          job.sourceVersionId,
+          { type: "export", id: job.id },
+          "failed",
+        );
+        return reply.status(409).send({
+          data: null,
+          error: {
+            code: "EXPORT_JOB_NOT_RETRYABLE",
+            message: "The export state changed before the retry was committed.",
+            requestId: request.id,
+          },
+        });
+      }
+      await dependencies.audit.record({
+        actorUserId: actor.id,
+        action: "admin.export.retry_requested",
+        targetType: "export_job",
+        targetId: retried.id,
+        outcome: "success",
+        reason: body.data.reason,
+        requestId: request.id,
+      });
+      return { data: retried, error: null };
+    } catch (error) {
+      return adminError(error, request, reply);
+    }
+  });
+
   app.get("/v1/admin/system", async (request, reply) => {
     try {
       await requireRole(request, dependencies.auth, ["support", "admin"]);
@@ -245,6 +355,7 @@ export async function registerAdminRoutes(
             status: "degraded" as const,
             workers: [],
             queues: [],
+            emailOutbox: null,
             maintenance: null,
             checkedAt: new Date().toISOString(),
           },

@@ -10,6 +10,7 @@ import {
 import { createDomainErrorResponder } from "../http/domain-route-error.js";
 import { requestIdempotencyKey } from "../http/request-metadata.js";
 import { runResourceRoute } from "../http/resource-route.js";
+import { requestTraceContext } from "../observability/tracing.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import {
   ExportDomainError,
@@ -139,6 +140,7 @@ export async function registerExportRoutes(
             ),
           ),
         request.id,
+        requestTraceContext(request),
       );
       if (job.status === "ready") {
         await projects.finishJobStatus(

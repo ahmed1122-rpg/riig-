@@ -58,6 +58,53 @@ describe("API — الرفع وإصدارات المصدر", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("UPLOAD_REJECTED");
   });
+  it("enforces and reports a lower runtime upload policy consistently", async () => {
+    const app = await harness.build(
+      loadConfig({ NODE_ENV: "test", MAX_UPLOAD_BYTES: "1024" }),
+    );
+    const cookie = await registerCreator(app);
+    const projectResponse = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      headers: { cookie },
+      payload: { name: "Small policy", kind: "book" },
+    });
+    const projectId = projectResponse.json().data.id as string;
+
+    const capabilities = await app.inject({
+      method: "GET",
+      url: "/v1/capabilities",
+    });
+    expect(capabilities.json().data.limits.maxUploadBytes).toBe(1024);
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: { cookie },
+      payload: {
+        projectId,
+        filename: "large.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 1025,
+      },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json().error.code).toBe("UPLOAD_REJECTED");
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: { cookie },
+      payload: {
+        projectId,
+        filename: "small.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 1024,
+      },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json().data.maxBytes).toBe(1024);
+  });
   it("allows only one active upload per project and reuses an idempotent request", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     const cookie = await registerCreator(app);

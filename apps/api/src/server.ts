@@ -9,8 +9,10 @@ import { SmtpEmailSender } from "./infrastructure/email/smtp-email-sender.js";
 import { StripePaymentProvider } from "./billing/stripe-payment-provider.js";
 import { LocalArabicPdfOcrEngine } from "@motionprep/document-processing";
 import { EmailOutboxDispatcher } from "./infrastructure/email/email-outbox-dispatcher.js";
+import { initializeTracing } from "./observability/tracing.js";
 
 const config = loadConfig();
+const tracing = initializeTracing("motionprep-api", process.env);
 const persistence =
   config.PERSISTENCE_MODE === "postgres"
     ? createPostgresPersistence(config)
@@ -108,13 +110,21 @@ const pdfOcrEngine =
         },
       })
     : null;
+const dependencyReadiness: Record<string, () => Promise<void>> = {
+  ...(persistence ? { database: () => persistence.ready() } : {}),
+  ...(security ? { redis: () => security.ready() } : {}),
+  ...(objectStorage
+    ? {
+        object_storage: () =>
+          objectStorage.ready(config.NODE_ENV !== "production"),
+      }
+    : {}),
+  ...(emailSender ? { smtp: () => emailSender.ready() } : {}),
+};
 const ready = () =>
-  Promise.all([
-    persistence?.ready(),
-    security?.ready(),
-    objectStorage?.ready(config.NODE_ENV !== "production"),
-    emailSender?.ready(),
-  ]).then(() => undefined);
+  Promise.all(Object.values(dependencyReadiness).map((check) => check())).then(
+    () => undefined,
+  );
 await ready();
 const emailOutboxDispatcher =
   persistence && emailSender
@@ -150,7 +160,9 @@ const app = await buildApp(config, {
   ...(paymentProviders ? { paymentProviders } : {}),
   ...(pdfOcrEngine ? { pdfOcrEngine } : {}),
   readiness: ready,
+  dependencyReadiness,
 });
+app.addHook("onClose", async () => tracing.shutdown());
 if (persistence || security || objectStorage || emailSender || pdfOcrEngine) {
   // Fastify's onClose lifecycle hook is invoked only during application
   // shutdown and cannot receive an HTTP request. CodeQL otherwise models this

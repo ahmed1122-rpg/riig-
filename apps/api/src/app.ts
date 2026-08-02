@@ -7,6 +7,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
 import { isCookieMutationOriginAllowed } from "./http/cookie-mutation-origin.js";
+import { registerHealthRoutes } from "./http/health-routes.js";
 import {
   InMemoryProjectRepository,
   type ProjectRepository,
@@ -90,6 +91,8 @@ import {
   transformOpenApiDocumentation,
 } from "./http/openapi-defaults.js";
 import { UploadReconciler } from "./uploads/upload-reconciler.js";
+import { registerHttpErrorHandler } from "./http/error-handler.js";
+import { registerHttpTracing } from "./observability/tracing.js";
 
 const APPLICATION_VERSION = "0.1.2";
 
@@ -113,6 +116,7 @@ export interface AppDependencies {
   paymentProviders?: PaymentProvider[];
   pdfOcrEngine?: PdfOcrEngine;
   readiness?: () => Promise<void>;
+  dependencyReadiness?: Readonly<Record<string, () => Promise<void>>>;
   adminAccess?: AdminAccessCommand;
   usageMeter?: UsageMeter;
   operationalStatus?: OperationalStatusProvider;
@@ -130,6 +134,7 @@ export async function buildApp(
     genReqId: () => randomUUID(),
     trustProxy: config.TRUST_PROXY_HOPS || false,
   });
+  registerHttpTracing(app);
 
   await app.register(helmet, {
     hsts:
@@ -293,6 +298,13 @@ export async function buildApp(
       ? { operationalStatus: dependencies.operationalStatus }
       : {}),
     ...(dependencies.readiness ? { readiness: dependencies.readiness } : {}),
+    ...(dependencies.dependencyReadiness
+      ? { dependencyReadiness: dependencies.dependencyReadiness }
+      : {}),
+    buildInfo: {
+      version: APPLICATION_VERSION,
+      release: process.env.RELEASE_VERSION ?? "development",
+    },
   });
 
   const projects = dependencies.projects ?? new InMemoryProjectRepository();
@@ -324,6 +336,7 @@ export async function buildApp(
     objectStorage,
     sourceVersionRepository,
     uploadFinalization,
+    config.MAX_UPLOAD_BYTES,
   );
   const uploadReconciler = new UploadReconciler(
     uploadFinalization,
@@ -408,50 +421,10 @@ export async function buildApp(
     idempotency,
   );
 
-  const healthPayload = () => ({
-    data: {
-      status: "ok",
-      service: "motionprep-api",
-      version: APPLICATION_VERSION,
-      release: config.RELEASE_VERSION,
-      timestamp: new Date().toISOString(),
-    },
-    error: null,
-  });
-
-  const healthRouteOptions = { config: { rateLimit: false } } as const;
-  const readinessRouteOptions = {
-    config: {
-      rateLimit: {
-        max: 120,
-        timeWindow: "1 minute",
-        groupId: "health-ready",
-        // Readiness must still diagnose Redis itself if the shared store fails.
-        skipOnError: true,
-      },
-    },
-  } as const;
-  app.get("/v1/health", healthRouteOptions, async () => healthPayload());
-  app.get("/v1/health/live", healthRouteOptions, async () => healthPayload());
-  app.get("/v1/health/ready", readinessRouteOptions, async (_request, reply) => {
-    try {
-      await dependencies.readiness?.();
-      return healthPayload();
-    } catch {
-      return reply.status(503).send({
-        data: {
-          status: "degraded",
-          service: "motionprep-api",
-          version: APPLICATION_VERSION,
-          release: config.RELEASE_VERSION,
-          timestamp: new Date().toISOString(),
-        },
-        error: {
-          code: "DEPENDENCY_UNAVAILABLE",
-          message: "إحدى خدمات التخزين المطلوبة غير جاهزة.",
-        },
-      });
-    }
+  registerHealthRoutes(app, {
+    applicationVersion: APPLICATION_VERSION,
+    release: config.RELEASE_VERSION,
+    readiness: dependencies.readiness,
   });
   app.get(
     "/v1/openapi.json",
@@ -475,7 +448,9 @@ export async function buildApp(
     sourceVersionRepository,
     sourceVersionRestores,
   );
-  await registerUploadRoutes(app, projects, uploadService, authService);
+  await registerUploadRoutes(app, projects, uploadService, authService, {
+    maxUploadBytes: config.MAX_UPLOAD_BYTES,
+  });
   await registerExportRoutes(app, projects, exportService, authService);
   await registerProcessingRoutes(
     app,
@@ -495,6 +470,7 @@ export async function buildApp(
     uploads: uploadRepository,
     exports: exportRepository,
     processingJobs: processingJobRepository,
+    layerDocuments: layerDocumentRepository,
     billing: billingRepository,
     projects,
     ...(dependencies.adminAccess ? { access: dependencies.adminAccess } : {}),
@@ -502,6 +478,8 @@ export async function buildApp(
       ? { operationalStatus: dependencies.operationalStatus }
       : {}),
   });
+
+  registerHttpErrorHandler(app);
 
   app.setNotFoundHandler((request, reply) =>
     reply.status(404).send({

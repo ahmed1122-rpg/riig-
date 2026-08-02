@@ -68,11 +68,17 @@ export class AesGcmSecretProtector implements SecretProtector {
 }
 
 export function decodeAuthEncryptionKey(value: string): Buffer {
-  const key = Buffer.from(value, "base64");
-  if (key.length !== 32) {
-    throw new Error("AUTH_ENCRYPTION_KEY must be Base64 for exactly 32 bytes.");
+  if (!isValidAuthEncryptionKey(value)) {
+    throw new Error("AUTH_ENCRYPTION_KEY must be canonical Base64 for exactly 32 bytes.");
   }
+  const key = Buffer.from(value, "base64");
   return key;
+}
+
+export function isValidAuthEncryptionKey(value: string): boolean {
+  if (!/^[A-Za-z0-9+/]{43}=$/u.test(value)) return false;
+  const key = Buffer.from(value, "base64");
+  return key.length === 32 && key.toString("base64") === value;
 }
 
 export function createEphemeralSecretProtector(): SecretProtector {

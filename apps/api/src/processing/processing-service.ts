@@ -12,6 +12,7 @@ import type {
   ProcessingMode,
   ProjectKind,
   RasterAssetReference,
+  TraceContext,
 } from "@motionprep/contracts";
 import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 import {
@@ -92,6 +93,7 @@ export class ProcessingService {
     ownerUserId?: string,
     onQueued?: (job: ProcessingJob) => Promise<boolean>,
     correlationId?: string,
+    traceContext?: TraceContext,
   ): Promise<ProcessingJob> {
     const source = await this.uploads.findReadyBySourceVersion(
       projectId,
@@ -137,6 +139,7 @@ export class ProcessingService {
     const job: ProcessingJob = {
       id,
       ...(correlationId ? { correlationId } : {}),
+      ...(traceContext ? { traceContext } : {}),
       projectId,
       sourceVersionId,
       projectKind,

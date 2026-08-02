@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { hasExpectedObjectIntegrity } from "../apps/api/dist/storage/object-integrity.js";
 import { S3ObjectStorage } from "../apps/api/dist/storage/s3-object-storage.js";
 
@@ -84,16 +86,26 @@ try {
   if (await storage.get(key)) {
     throw new Error("Object-storage provider did not delete the probe.");
   }
-  process.stdout.write(
-    `${JSON.stringify({
-      verified: true,
-      region,
-      endpoint: endpoint ? new URL(endpoint).origin : "aws-default",
-      bucket,
-      encryptionMode,
-      credentialMode: accessKeyId ? "explicit" : "default-provider-chain",
-    })}\n`,
-  );
+  const evidence = {
+    schemaVersion: 1,
+    verified: true,
+    completedAt: new Date().toISOString(),
+    releaseGitSha: optional("RELEASE_GIT_SHA") ?? null,
+    region,
+    endpoint: endpoint ? new URL(endpoint).origin : "aws-default",
+    bucket,
+    encryptionMode,
+    versioningRequired: requireVersioning,
+    credentialMode: accessKeyId ? "explicit" : "default-provider-chain",
+    checks: ["readiness", "write", "integrity", "read", "delete"],
+  };
+  const evidencePath = optional("OBJECT_STORAGE_EVIDENCE_PATH");
+  if (evidencePath) {
+    const filename = resolve(evidencePath);
+    await mkdir(dirname(filename), { recursive: true });
+    await writeFile(filename, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+  }
+  process.stdout.write(`${JSON.stringify(evidence)}\n`);
 } finally {
   if (stored) await storage.delete(key);
   storage.destroy();

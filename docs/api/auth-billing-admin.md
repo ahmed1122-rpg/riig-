@@ -23,6 +23,15 @@ The sandbox completion route is unavailable when `PAYMENT_MODE=live`. Live provi
 - `GET /v1/admin/users`
 - `PATCH /v1/admin/users/:id/access`
 - `GET /v1/admin/audit`
+- `GET /v1/admin/processing`
+- `POST /v1/admin/processing/:jobId/retry`
+- `POST /v1/admin/exports/:jobId/retry`
+- `GET /v1/admin/system`
 
 Access changes require an admin session and a reason of at least 10 characters. Creator requests receive `403`.
 
+Terminal processing and export retries require an admin session and an audited
+reason. A retry is accepted only while the job is `failed`, its immutable ready
+source remains current, and—when exporting—the exact document revision is still
+retained. The repository resets bounded attempt and lease state atomically; API
+clients must never edit queue rows directly.

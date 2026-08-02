@@ -23,6 +23,7 @@ export interface ExportRepository {
     nextAttemptAt: string,
     updatedAt: string,
   ): Promise<ExportJob | null>;
+  retryFailed(id: string, retriedAt: string): Promise<ExportJob | null>;
   requestCancel(id: string, updatedAt: string): Promise<ExportJob | null>;
 }
 
@@ -127,6 +128,28 @@ export class InMemoryExportRepository implements ExportRepository {
     };
     this.#jobs.set(id, updated);
     return updated;
+  }
+
+  async retryFailed(
+    id: string,
+    retriedAt: string,
+  ): Promise<ExportJob | null> {
+    const job = this.#jobs.get(id);
+    if (!job || job.status !== "failed") return null;
+    const { artifact: _artifact, ...withoutArtifact } = job;
+    const retried: ExportJob = {
+      ...withoutArtifact,
+      status: "queued",
+      progress: 0,
+      attempt: 0,
+      nextAttemptAt: retriedAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      errorCode: null,
+      updatedAt: retriedAt,
+    };
+    this.#jobs.set(id, retried);
+    return retried;
   }
 
   async requestCancel(

@@ -5,6 +5,7 @@ import type {
   ExportRequest,
   LayerDocument,
   ProjectKind,
+  TraceContext,
   UploadSession,
 } from "@motionprep/contracts";
 import {
@@ -17,7 +18,7 @@ import {
   type RasterLayerAsset,
 } from "@motionprep/export-adapters";
 import { validateProductionDocument } from "@motionprep/presets";
-import { strToU8, zipSync } from "fflate";
+import { strToU8 } from "fflate";
 import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
@@ -43,40 +44,10 @@ import {
   sourceExtension,
   type GeneratedArtifact,
 } from "./export-artifact-helpers.js";
+import { createZipArchive } from "./export-archive.js";
+import { ExportDomainError, ExportExecutionError } from "./export-errors.js";
 
-export class ExportDomainError extends Error {
-  constructor(
-    readonly code:
-      | "EXPORT_NOT_FOUND"
-      | "EXPORT_FORMAT_UNSUPPORTED"
-      | "EXPORT_OPTION_UNSUPPORTED"
-      | "EXPORT_SCOPE_UNSUPPORTED"
-      | "EXPORT_NOT_CANCELLABLE"
-      | "EXPORT_SOURCE_NOT_READY"
-      | "EXPORT_SOURCE_NOT_CURRENT"
-      | "EXPORT_SOURCE_INTEGRITY_FAILED"
-      | "EXPORT_ARTIFACT_NOT_READY"
-      | "EXPORT_ARTIFACT_INTEGRITY_FAILED"
-      | "EXPORT_DOCUMENT_NOT_READY"
-      | "EXPORT_DOCUMENT_REVISION_CONFLICT"
-      | "EXPORT_PREFLIGHT_FAILED"
-      | "EXPORT_REQUEST_IN_PROGRESS",
-    message: string,
-    readonly jobId?: string,
-  ) {
-    super(message);
-  }
-}
-
-export class ExportExecutionError extends Error {
-  constructor(
-    message: string,
-    readonly jobId: string,
-    cause?: unknown,
-  ) {
-    super(message, { cause });
-  }
-}
+export { ExportDomainError, ExportExecutionError } from "./export-errors.js";
 
 interface ReadySource {
   upload: UploadSession;
@@ -86,6 +57,10 @@ interface ReadySource {
 export interface ExportClaimLifecycle {
   onClaimed?: (job: ExportJob) => Promise<boolean>;
   onSettled?: (job: ExportJob) => void;
+  runClaimed?: (
+    job: ExportJob,
+    run: () => Promise<ExportJob>,
+  ) => Promise<ExportJob>;
 }
 
 export class ExportService {
@@ -106,6 +81,7 @@ export class ExportService {
     idempotencyKey: string,
     onQueued?: (job: ExportJob) => Promise<boolean>,
     correlationId?: string,
+    traceContext?: TraceContext,
   ): Promise<ExportJob> {
     if (input.scale !== 1 || input.colorProfile !== "sRGB") {
       throw new ExportDomainError(
@@ -185,6 +161,7 @@ export class ExportService {
     const job: ExportJob = {
       id: exportId,
       ...(correlationId ? { correlationId } : {}),
+      ...(traceContext ? { traceContext } : {}),
       projectId: input.projectId,
       sourceVersionId: input.sourceVersionId,
       documentRevision,
@@ -402,12 +379,16 @@ export class ExportService {
       return Boolean(updated);
     }, leaseMilliseconds);
     try {
-      const completed = await this.generateArtifact(
-        job,
-        job.projectKind,
-        job.namingPresetId,
-        workerId,
-      );
+      const run = () =>
+        this.generateArtifact(
+          job,
+          job.projectKind,
+          job.namingPresetId,
+          workerId,
+        );
+      const completed = lifecycle.runClaimed
+        ? await lifecycle.runClaimed(job, run)
+        : await run();
       if (heartbeat.leaseLost() && completed.status !== "ready") {
         throw new ExportLeaseLostError();
       }
@@ -682,7 +663,7 @@ export class ExportService {
       ),
     );
     return {
-      body: Buffer.from(zipSync(entries, { level: 6 })),
+      body: await createZipArchive(entries),
       filename: `motionprep-${job.projectId}-pages-psd.zip`,
       contentType: "application/zip",
     };
@@ -725,7 +706,7 @@ export class ExportService {
     );
 
     return {
-      body: Buffer.from(zipSync(entries, { level: 6 })),
+      body: await createZipArchive(entries),
       filename: `motionprep-${job.projectId}-transparent-pngs.zip`,
       contentType: "application/zip",
     };
@@ -788,7 +769,7 @@ export class ExportService {
     );
     entries["manifest.json"] = strToU8(JSON.stringify(manifest, null, 2));
     return {
-      body: Buffer.from(zipSync(entries, { level: 6 })),
+      body: await createZipArchive(entries),
       filename: `motionprep-${job.projectId}.zip`,
       contentType: "application/zip",
     };

@@ -5,10 +5,6 @@ import {
   type SetStateAction,
 } from "react";
 import {
-  MAX_UPLOAD_BYTES,
-  MAX_UPLOAD_MEBIBYTES,
-} from "@motionprep/contracts";
-import {
   ApiError,
   createAndUploadSource,
 } from "../../lib/api";
@@ -20,6 +16,7 @@ import {
   loadRasterLayerPreviews,
   toWorkspaceLayers,
 } from "./workspaceDocument";
+import { uploadLimitLabel } from "./uploadLimit";
 
 type UploadResult = Awaited<
   ReturnType<typeof createAndUploadSource>
@@ -27,6 +24,7 @@ type UploadResult = Awaited<
 
 interface WorkspaceUploadOptions {
   mode: ProjectMode;
+  maxUploadBytes: number;
   authenticated: boolean;
   persistedSource: boolean;
   sourceName: string;
@@ -55,12 +53,16 @@ interface WorkspaceUploadOptions {
 function fileValidationError(
   file: File,
   mode: ProjectMode,
+  maxUploadBytes: number,
 ): string | undefined {
+  if (!Number.isFinite(maxUploadBytes) || maxUploadBytes <= 0) {
+    return "تعذر التحقق من حد الرفع الحالي. أعد الاتصال بالخادم ثم حاول مجددًا.";
+  }
   if (file.size === 0) {
     return "الملف فارغ. اختر ملفًا يحتوي على بيانات.";
   }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return `حجم ${file.name} أكبر من ${MAX_UPLOAD_MEBIBYTES} MiB. اختر ملفًا أصغر ثم أعد المحاولة.`;
+  if (file.size > maxUploadBytes) {
+    return `حجم ${file.name} أكبر من ${uploadLimitLabel(maxUploadBytes)}. اختر ملفًا أصغر ثم أعد المحاولة.`;
   }
   if (!isAcceptedFile(file, mode)) {
     return mode === "image"
@@ -105,7 +107,11 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
       options.onRequireAuth();
       return;
     }
-    const validationError = fileValidationError(file, options.mode);
+    const validationError = fileValidationError(
+      file,
+      options.mode,
+      options.maxUploadBytes,
+    );
     if (validationError) {
       options.setUploadState("error");
       options.setUploadError(validationError);
