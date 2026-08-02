@@ -139,6 +139,19 @@ licensed external applications:
    retention, and alert links in staging if distributed tracing is enabled.
 4. Perform and attest an isolated restore and rollback drill using the exact
    release image digests.
+
+### Signed-image rollback rehearsal added after the initial report
+
+The repository now includes `release-rollback-drill`, which verifies the exact
+candidate and previous-release signatures, deploys the candidate digests on the
+production-shaped topology, completes a PDF upload/process/export/download
+journey, and then recreates only the application services on the previous
+digests. It deliberately retains forward additive migrations instead of
+starting an older migration image. The local rehearsal from `v0.1.3-rc.1` to
+`v0.1.2` passed both release-identity checks, both web health checks, and both
+PDF journeys; `.tmp/release-rollback-evidence.json` records the result. The
+protected GitHub workflow remains the authoritative retained evidence once it
+passes on a clean runner with Cosign installed.
 5. Run Adobe Golden validation in a licensed Photoshop environment and attach
    the evidence. No Adobe license was fabricated or bypassed.
 6. Re-seal the Arabic OCR holdout after the current implementation/dependency

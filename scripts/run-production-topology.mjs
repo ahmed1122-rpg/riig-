@@ -1,20 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { createDockerWorkspace } from "./docker-workspace.mjs";
 
 const compose = ["compose", "-f", "compose.integration.yaml"];
 const sourceWorkingDirectory = process.cwd();
-const unicodeWindowsPath =
-  process.platform === "win32" &&
-  /[^\u0020-\u007e]/u.test(sourceWorkingDirectory);
 const dockerWorkspace = createDockerWorkspace(sourceWorkingDirectory);
 const buildEnvironment = {
   ...process.env,
   // Compose Bake cannot encode a non-ASCII Windows context in its gRPC header.
   // The temporary junction supplies an ASCII context; disabling Bake also
   // keeps the local path compatible across current Docker Desktop releases.
-  ...(unicodeWindowsPath
+  ...(dockerWorkspace.unicodeWindowsPath
     ? { DOCKER_BUILDKIT: "1", COMPOSE_BAKE: "false" }
     : {}),
 };
@@ -96,33 +91,4 @@ function run(command, args, options = {}) {
     );
   }
   return result.status ?? 1;
-}
-
-function createDockerWorkspace(sourceDirectory) {
-  if (!unicodeWindowsPath) {
-    return { cwd: sourceDirectory, cleanup() {} };
-  }
-
-  const temporaryDirectory = resolve(tmpdir());
-  if (/[^\u0020-\u007e]/u.test(temporaryDirectory)) {
-    throw new Error(
-      `Docker requires an ASCII temporary path; received ${temporaryDirectory}.`,
-    );
-  }
-
-  const root = mkdtempSync(join(temporaryDirectory, "motionprep-docker-"));
-  const workspace = join(root, "workspace");
-  symlinkSync(sourceDirectory, workspace, "junction");
-  process.stdout.write(`Using temporary Docker workspace ${workspace}.\n`);
-
-  return {
-    cwd: workspace,
-    cleanup() {
-      const allowedPrefix = `${temporaryDirectory}${sep}`;
-      if (!resolve(root).startsWith(allowedPrefix)) {
-        throw new Error(`Refusing to clean an unexpected path: ${root}.`);
-      }
-      rmSync(root, { force: true, recursive: true });
-    },
-  };
 }

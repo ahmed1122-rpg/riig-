@@ -45,13 +45,47 @@ its JSON evidence beside the immutable release bundle.
 If health or the core journey fails:
 
 1. Restore both digest-qualified references from the saved rollback manifest.
-2. Pull those exact digests and run
-   `docker compose --env-file .env.production -f compose.production.yaml up -d`.
+2. Pull those exact digests. If the candidate ran any additive migration, do
+   **not** start the older `migrate` image: it correctly rejects migration files
+   introduced after that image was built. Recreate only the application layer:
+
+   ```bash
+   docker compose --env-file .env.production -f compose.production.yaml pull \
+     api worker-media worker-document worker-export web maintenance-scheduler
+   docker compose --env-file .env.production -f compose.production.yaml up -d \
+     --no-deps --force-recreate \
+     api worker-media worker-document worker-export web maintenance-scheduler
+   ```
+
+   This is safe only because production migrations are additive-first and the
+   previous application release has been proven compatible with the retained
+   schema. Never run a reverse migration during incident rollback.
 3. Re-run health and smoke checks.
 4. Do not reverse an additive migration during the incident. Roll application
    code back first; create a forward repair migration after service is stable.
 5. Record start/end timestamps, restored digests, readiness release identity,
    queue recovery, and the post-rollback PDF journey in the rollback evidence.
+
+Before production approval, rehearse the exact candidate and rollback digests:
+
+```bash
+npm run test:release-rollback -- candidate-release.env rollback-release.env \
+  --repository <owner>/<repo> \
+  --candidate-tag <candidate-tag> \
+  --rollback-tag <previous-release-tag>
+```
+
+The command verifies repository-bound signatures, starts the candidate, runs a
+PDF upload/process/export/download journey, performs an application-only
+rollback without re-running migrations, repeats readiness/web/PDF checks, and
+writes `.tmp/release-rollback-evidence.json`.
+
+If Cosign cannot be installed on an operator workstation, the local drill may
+set `CANDIDATE_SIGNATURE_EVIDENCE_URI` and
+`ROLLBACK_SIGNATURE_EVIDENCE_URI` to the exact successful GitHub Actions release
+run URLs. This is recorded as external evidence, not treated as a local
+verification. The protected `release-rollback-drill` workflow always installs
+Cosign and repeats repository-bound verification itself.
 
 If a migration is destructive or not backward compatible, stop the release
 before deployment. It does not meet the production migration policy.

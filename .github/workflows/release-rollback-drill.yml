@@ -1,0 +1,75 @@
+name: release-rollback-drill
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: release-rollback-drill
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production-readiness
+    env:
+      CANDIDATE_RELEASE_TAG: ${{ vars.RELEASE_TAG }}
+      CANDIDATE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
+      CANDIDATE_RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
+      CANDIDATE_WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
+      ROLLBACK_RELEASE_TAG: ${{ vars.ROLLBACK_RELEASE_TAG }}
+      ROLLBACK_GIT_SHA: ${{ vars.ROLLBACK_GIT_SHA }}
+      ROLLBACK_RUNTIME_IMAGE_REF: ${{ vars.ROLLBACK_RUNTIME_IMAGE_REF }}
+      ROLLBACK_WEB_IMAGE_REF: ${{ vars.ROLLBACK_WEB_IMAGE_REF }}
+      ROLLBACK_EVIDENCE_PATH: .tmp/release-rollback-evidence.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+      - run: npm ci
+      - name: Require candidate and rollback coordinates
+        shell: bash
+        run: |
+          for name in \
+            CANDIDATE_RELEASE_TAG CANDIDATE_GIT_SHA \
+            CANDIDATE_RUNTIME_IMAGE_REF CANDIDATE_WEB_IMAGE_REF \
+            ROLLBACK_RELEASE_TAG ROLLBACK_GIT_SHA \
+            ROLLBACK_RUNTIME_IMAGE_REF ROLLBACK_WEB_IMAGE_REF; do
+            test -n "${!name}" || { echo "$name is required" >&2; exit 1; }
+          done
+          {
+            echo "RELEASE_GIT_SHA=$CANDIDATE_GIT_SHA"
+            echo "RUNTIME_IMAGE_REF=$CANDIDATE_RUNTIME_IMAGE_REF"
+            echo "WEB_IMAGE_REF=$CANDIDATE_WEB_IMAGE_REF"
+          } > candidate-release.env
+          {
+            echo "RELEASE_GIT_SHA=$ROLLBACK_GIT_SHA"
+            echo "RUNTIME_IMAGE_REF=$ROLLBACK_RUNTIME_IMAGE_REF"
+            echo "WEB_IMAGE_REF=$ROLLBACK_WEB_IMAGE_REF"
+          } > rollback-release.env
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Rehearse signed candidate and application-only rollback
+        run: >-
+          npm run test:release-rollback --
+          candidate-release.env rollback-release.env
+          --repository "${{ github.repository }}"
+          --candidate-tag "$CANDIDATE_RELEASE_TAG"
+          --rollback-tag "$ROLLBACK_RELEASE_TAG"
+      - name: Retain rollback evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-rollback-evidence-${{ github.sha }}
+          path: |
+            .tmp/release-rollback-evidence.json
+            .tmp/release-drill-candidate-pdf.json
+            .tmp/release-drill-rollback-pdf.json
+          if-no-files-found: error
+          retention-days: 90
