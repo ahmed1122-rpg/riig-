@@ -10,6 +10,33 @@ groups:
           summary: MotionPrep dependency readiness is failing
           runbook: docs/runbooks/processing-job-recovery.md
 
+      - alert: MotionPrepObjectStorageUnavailable
+        expr: motionprep_dependency_ready{dependency="object_storage"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: MotionPrep object storage readiness is failing
+          runbook: docs/runbooks/production-dependency-recovery.md
+
+      - alert: MotionPrepSmtpUnavailable
+        expr: motionprep_dependency_ready{dependency="smtp"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: MotionPrep SMTP readiness is failing
+          runbook: docs/runbooks/production-dependency-recovery.md
+
+      - alert: MotionPrepOperationalMetricsUnavailable
+        expr: motionprep_operational_snapshot_success == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: MotionPrep cannot collect durable operational metrics
+          runbook: docs/runbooks/production-dependency-recovery.md
+
       - alert: MotionPrepWorkerMissing
         expr: max by (worker_type) (motionprep_worker_up) < 1
         for: 2m
@@ -36,6 +63,61 @@ groups:
         annotations:
           summary: A MotionPrep worker lost a job lease
           runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepRetryStorm
+        expr: |
+          sum by (queue) (
+            motionprep_worker_events_last_hour{event="retry"}
+          ) > 10
+          and on (queue)
+          (
+            sum by (queue) (
+              motionprep_worker_events_last_hour{event="retry"}
+            )
+            /
+            clamp_min(
+              sum by (queue) (
+                motionprep_worker_events_last_hour{event=~"completed|failed"}
+              ),
+              1
+            )
+          ) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: MotionPrep worker retries exceed the allowed ratio
+          runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepTerminalJobFailuresHigh
+        expr: |
+          sum by (queue) (
+            motionprep_worker_events_last_hour{event="failed"}
+          ) > 5
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: MotionPrep terminal job failures are elevated
+          runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepEmailOutboxBacklog
+        expr: motionprep_email_outbox_oldest_queued_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: MotionPrep email delivery backlog exceeds five minutes
+          runbook: docs/runbooks/production-dependency-recovery.md
+
+      - alert: MotionPrepEmailOutboxFailures
+        expr: motionprep_email_outbox_events_last_hour{event="failed"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: MotionPrep email delivery reached terminal failure
+          runbook: docs/runbooks/production-dependency-recovery.md
 
       - alert: MotionPrepRetentionMaintenanceOverdue
         expr: motionprep_maintenance_stale{task="retention"} == 1
@@ -85,6 +167,23 @@ groups:
         annotations:
           summary: MotionPrep HTTP 5xx ratio exceeds 5%
           runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepAuthenticationRejectionsHigh
+        expr: |
+          sum(
+            rate(
+              motionprep_http_requests_total{
+                route=~"/v1/auth/.*",
+                status=~"4.."
+              }[5m]
+            )
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: MotionPrep authentication rejection rate is elevated
+          runbook: docs/runbooks/production-dependency-recovery.md
 
       - alert: MotionPrepApiLatencyHigh
         expr: |

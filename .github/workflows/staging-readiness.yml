@@ -39,6 +39,11 @@ jobs:
       AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
       AWS_REGION: ${{ vars.AWS_REGION }}
       PDF_REGION_OCR_ENABLED: ${{ vars.PDF_REGION_OCR_ENABLED }}
+      RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
+      RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
+      WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
+      STAGING_DEPENDENCY_EVIDENCE_PATH: ../../.tmp/staging-dependency-evidence.json
+      OBJECT_STORAGE_EVIDENCE_PATH: .tmp/staging-object-storage-evidence.json
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -78,6 +83,12 @@ jobs:
           role-session-name: MotionPrepStagingReadiness-${{ github.run_id }}
       - name: Probe TLS-protected PostgreSQL, Redis, and SMTP
         run: npm run verify:staging-dependencies --workspace @motionprep/api
+      - name: Verify immutable release coordinates
+        shell: bash
+        run: |
+          printf 'RELEASE_GIT_SHA=%s\nRUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\n' \
+            "$RELEASE_GIT_SHA" "$RUNTIME_IMAGE_REF" "$WEB_IMAGE_REF" > staging-release.env
+          node scripts/verify-release-environment.mjs staging-release.env --references-only
       - name: Probe the deployment-owned object store
         run: npm run verify:object-storage
       - name: Verify regional OCR release evidence when enabled
@@ -95,3 +106,13 @@ jobs:
             echo "- Object storage write/read/integrity/delete: verified"
             echo "- Recovery evidence: intentionally remains in the production provider gate"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain managed dependency evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-dependency-evidence-${{ github.sha }}
+          path: |
+            staging-release.env
+            .tmp/staging-dependency-evidence.json
+            .tmp/staging-object-storage-evidence.json
+          if-no-files-found: error
+          retention-days: 90

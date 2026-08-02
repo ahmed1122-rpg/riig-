@@ -35,6 +35,7 @@ jobs:
       PDF_REGION_OCR_ENABLED: ${{ vars.PDF_REGION_OCR_ENABLED }}
       RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}
       RECOVERY_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.RECOVERY_SIGNING_PUBLIC_KEY_PEM }}
+      OBJECT_STORAGE_EVIDENCE_PATH: .tmp/provider-object-storage-evidence.json
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -104,3 +105,14 @@ jobs:
             echo "- Regional OCR evidence: $PDF_REGION_OCR_ENABLED"
             echo "- Latest RPO/RTO recovery manifest and Ed25519 signature: verified"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain provider and signed recovery evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: provider-readiness-evidence-${{ github.sha }}
+          path: |
+            provider-release.env
+            .tmp/provider-object-storage-evidence.json
+            recovery-manifest.json
+            recovery-public-key.pem
+          if-no-files-found: error
+          retention-days: 90

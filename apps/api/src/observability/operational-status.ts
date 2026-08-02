@@ -3,6 +3,10 @@ export interface WorkerStatus {
   workerType: "media" | "document" | "export";
   releaseVersion: string;
   concurrency: number;
+  residentMemoryBytes: number;
+  heapUsedBytes: number;
+  cpuUserSeconds: number;
+  cpuSystemSeconds: number;
   lastSeenAt: string;
   stale: boolean;
 }
@@ -14,6 +18,8 @@ export interface QueueStatus {
   failed: number;
   oldestQueuedSeconds: number;
   retriesLastHour: number;
+  failuresLastHour: number;
+  completionsLastHour: number;
   leaseLossesLastHour: number;
   duration: {
     count: number;
@@ -28,6 +34,14 @@ export interface OperationalStatusSnapshot {
   status: "ready" | "degraded";
   workers: WorkerStatus[];
   queues: QueueStatus[];
+  emailOutbox: {
+    queued: number;
+    sending: number;
+    failed: number;
+    oldestQueuedSeconds: number;
+    retriesLastHour: number;
+    failuresLastHour: number;
+  } | null;
   maintenance: {
     task: "retention";
     lastStartedAt: string | null;

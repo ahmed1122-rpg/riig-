@@ -80,6 +80,84 @@
       "targets": [{ "expr": "motionprep_process_resident_memory_bytes", "refId": "A" }],
       "title": "API resident memory",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "id": 9,
+      "targets": [
+        { "expr": "motionprep_worker_events_last_hour{event=\"retry\"}", "legendFormat": "{{queue}} retries", "refId": "A" },
+        { "expr": "motionprep_worker_events_last_hour{event=\"failed\"}", "legendFormat": "{{queue}} failed", "refId": "B" },
+        { "expr": "motionprep_worker_events_last_hour{event=\"lease_lost\"}", "legendFormat": "{{queue}} lease loss", "refId": "C" }
+      ],
+      "title": "Worker retry and failure signals",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "id": 10,
+      "targets": [
+        { "expr": "motionprep_email_outbox_messages", "legendFormat": "{{status}}", "refId": "A" },
+        { "expr": "motionprep_email_outbox_oldest_queued_seconds", "legendFormat": "oldest seconds", "refId": "B" },
+        { "expr": "motionprep_email_outbox_events_last_hour", "legendFormat": "{{event}} last hour", "refId": "C" }
+      ],
+      "title": "Email outbox health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "id": 11,
+      "targets": [{ "expr": "motionprep_dependency_ready", "legendFormat": "{{dependency}}", "refId": "A" }],
+      "title": "Dependency readiness by provider",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
+      "id": 12,
+      "targets": [{ "expr": "sum(rate(motionprep_http_requests_total{route=~\"/v1/auth/.*\",status=~\"4..\"}[5m]))", "refId": "A" }],
+      "title": "Authentication rejection rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 },
+      "id": 13,
+      "targets": [
+        { "expr": "motionprep_process_heap_used_bytes", "legendFormat": "heap bytes", "refId": "A" },
+        { "expr": "rate(motionprep_process_cpu_seconds_total[5m])", "legendFormat": "CPU {{mode}}", "refId": "B" }
+      ],
+      "title": "API heap and CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
+      "id": 14,
+      "targets": [{ "expr": "motionprep_build_info", "legendFormat": "{{version}} {{release}}", "refId": "A" }],
+      "title": "Deployed API release",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "id": 15,
+      "targets": [
+        { "expr": "motionprep_worker_resident_memory_bytes", "legendFormat": "{{worker_type}} {{instance}} RSS", "refId": "A" },
+        { "expr": "motionprep_worker_heap_used_bytes", "legendFormat": "{{worker_type}} {{instance}} heap", "refId": "B" },
+        { "expr": "rate(motionprep_worker_cpu_seconds_total[5m])", "legendFormat": "{{worker_type}} {{instance}} CPU {{mode}}", "refId": "C" }
+      ],
+      "title": "Worker memory and CPU",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -101,5 +179,5 @@
   "timezone": "browser",
   "title": "MotionPrep production overview",
   "uid": "motionprep-production-overview",
-  "version": 1
+  "version": 3
 }

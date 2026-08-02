@@ -6,11 +6,11 @@ on:
       concurrency:
         description: Concurrent authenticated PDF workflows
         required: true
-        default: "2"
+        default: "4"
       iterations:
         description: Iterations per concurrent user
         required: true
-        default: "1"
+        default: "3"
 
 permissions:
   contents: read
@@ -29,8 +29,15 @@ jobs:
       LOAD_EXPECTED_HOST: ${{ vars.STAGING_HOST }}
       LOAD_CONCURRENCY: ${{ inputs.concurrency }}
       LOAD_ITERATIONS: ${{ inputs.iterations }}
+      LOAD_MIN_CONCURRENCY: "4"
+      LOAD_MIN_TOTAL_JOURNEYS: "12"
       LOAD_MAX_ERROR_RATE: "0"
       LOAD_MAX_WORKFLOW_P95_MS: ${{ vars.LOAD_MAX_WORKFLOW_P95_MS }}
+      LOAD_MAX_API_RSS_GROWTH_BYTES: ${{ vars.LOAD_MAX_API_RSS_GROWTH_BYTES }}
+      LOAD_MAX_WORKER_RSS_GROWTH_BYTES: ${{ vars.LOAD_MAX_WORKER_RSS_GROWTH_BYTES }}
+      LOAD_MAX_QUEUE_AGE_SECONDS: ${{ vars.LOAD_MAX_QUEUE_AGE_SECONDS }}
+      LOAD_MAX_FINAL_QUEUE_DEPTH: "0"
+      LOAD_METRICS_SAMPLE_INTERVAL_MS: "2000"
       LOAD_PDF_PATH: .tmp/representative-load.pdf
       REPRESENTATIVE_PDF_URL: ${{ secrets.REPRESENTATIVE_PDF_URL }}
       REPRESENTATIVE_PDF_SHA256: ${{ vars.REPRESENTATIVE_PDF_SHA256 }}
@@ -53,6 +60,9 @@ jobs:
         run: |
           test -f "$LOAD_PDF_PATH" || { echo "Representative PDF fixture is unavailable"; exit 1; }
           test -n "$LOAD_MAX_WORKFLOW_P95_MS" || { echo "LOAD_MAX_WORKFLOW_P95_MS is required"; exit 1; }
+          test -n "$LOAD_MAX_API_RSS_GROWTH_BYTES" || { echo "LOAD_MAX_API_RSS_GROWTH_BYTES is required"; exit 1; }
+          test -n "$LOAD_MAX_WORKER_RSS_GROWTH_BYTES" || { echo "LOAD_MAX_WORKER_RSS_GROWTH_BYTES is required"; exit 1; }
+          test -n "$LOAD_MAX_QUEUE_AGE_SECONDS" || { echo "LOAD_MAX_QUEUE_AGE_SECONDS is required"; exit 1; }
           test -n "$LOAD_METRICS_URL" || { echo "STAGING_METRICS_URL is required"; exit 1; }
           test -n "$LOAD_METRICS_BEARER_TOKEN" || { echo "METRICS_BEARER_TOKEN is required"; exit 1; }
       - name: Run concurrent PDF upload, processing, export, and download

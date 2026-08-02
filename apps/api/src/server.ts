@@ -110,13 +110,21 @@ const pdfOcrEngine =
         },
       })
     : null;
+const dependencyReadiness: Record<string, () => Promise<void>> = {
+  ...(persistence ? { database: () => persistence.ready() } : {}),
+  ...(security ? { redis: () => security.ready() } : {}),
+  ...(objectStorage
+    ? {
+        object_storage: () =>
+          objectStorage.ready(config.NODE_ENV !== "production"),
+      }
+    : {}),
+  ...(emailSender ? { smtp: () => emailSender.ready() } : {}),
+};
 const ready = () =>
-  Promise.all([
-    persistence?.ready(),
-    security?.ready(),
-    objectStorage?.ready(config.NODE_ENV !== "production"),
-    emailSender?.ready(),
-  ]).then(() => undefined);
+  Promise.all(Object.values(dependencyReadiness).map((check) => check())).then(
+    () => undefined,
+  );
 await ready();
 const emailOutboxDispatcher =
   persistence && emailSender
@@ -152,6 +160,7 @@ const app = await buildApp(config, {
   ...(paymentProviders ? { paymentProviders } : {}),
   ...(pdfOcrEngine ? { pdfOcrEngine } : {}),
   readiness: ready,
+  dependencyReadiness,
 });
 app.addHook("onClose", async () => tracing.shutdown());
 if (persistence || security || objectStorage || emailSender || pdfOcrEngine) {

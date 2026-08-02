@@ -2,6 +2,18 @@
 
 Status on 2026-08-01: release `v0.1.1` was reviewed in PR #14, merged at `3f29087cc22e604e9cca66455a3ef9d359a5d85c`, and published as signed digest-qualified runtime and web images after the protected exact-SHA release workflow passed. Version `0.1.2` is an unreleased hardening candidate: it must not be described as published until its branch is merged and a new protected tag workflow signs new image digests. Regional OCR remains disabled because its independent holdout evidence is stale and the historical generation failed its holdout target. Application deployment approval remains withheld until the protected provider/staging workflows pass against real managed services and the chosen signed digests complete staging and rollback exercises. Recovery, licensed Adobe-version validation, and representative load/memory exercises remain explicit launch gates.
 
+The 2026-08-02 guidance-hardening pass adds provider-specific readiness,
+durable email-outbox metrics, API/worker RSS/heap/CPU evidence, release identity
+metrics, Prometheus rule simulations, audited export replay fenced to the exact
+ready source and document revision, and retained managed-provider/fault/load
+evidence artifacts. The protected performance gate now refuses smoke-sized
+runs below four concurrent users and twelve complete workflows, requires
+explicit p95/memory/queue ceilings, samples resource peaks during the run, and
+requires the final queue to drain. The production-shaped local topology passed
+Redis, S3, SMTP, and PostgreSQL outage/recovery probes plus two post-recovery PDF
+journeys with zero failures and zero final queue depth. This remains local
+evidence and does not replace the external launch gates above.
+
 The production-readiness work adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful billing/export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology against the exact checkout SHA before publication. These changes are represented by `v0.1.1`; the historical `v0.1.0` digests must not be used for this release.
 
 The `0.1.2` candidate adds release identity to readiness, durable request-to-job

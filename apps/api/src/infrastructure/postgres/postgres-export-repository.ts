@@ -255,6 +255,51 @@ export class PostgresExportRepository implements ExportRepository {
     return result.rows[0] ? mapExport(result.rows[0]) : null;
   }
 
+  async retryFailed(
+    id: string,
+    retriedAt: string,
+  ): Promise<ExportJob | null> {
+    const result = await this.pool.query<ExportRow>(
+      `UPDATE export_jobs AS job
+       SET status = 'queued',
+           progress = 0,
+           attempt = 0,
+           next_attempt_at = $2,
+           lease_owner = NULL,
+           lease_expires_at = NULL,
+           error_code = NULL,
+           artifact = NULL,
+           updated_at = $2
+       WHERE job.id = $1
+         AND job.status = 'failed'
+         AND EXISTS (
+           SELECT 1
+           FROM projects AS project
+           WHERE project.id = job.project_id
+             AND project.current_source_version_id = job.source_version_id
+             AND project.active_job_type = 'export'
+             AND project.active_job_id = job.id
+         )
+         AND EXISTS (
+           SELECT 1
+           FROM upload_sessions AS upload
+           WHERE upload.project_id = job.project_id
+             AND upload.source_version_id = job.source_version_id
+             AND upload.status = 'ready'
+         )
+         AND EXISTS (
+           SELECT 1
+           FROM layer_document_revisions AS revision
+           WHERE revision.project_id = job.project_id
+             AND revision.source_version_id = job.source_version_id
+             AND revision.revision = job.document_revision
+         )
+       RETURNING ${exportReturningColumns}`,
+      [id, retriedAt],
+    );
+    return result.rows[0] ? mapExport(result.rows[0]) : null;
+  }
+
   async requestCancel(
     id: string,
     updatedAt: string,

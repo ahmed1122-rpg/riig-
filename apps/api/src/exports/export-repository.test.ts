@@ -110,4 +110,40 @@ describe("InMemoryExportRepository leases", () => {
     expect(cancelled?.status).toBe("cancelled");
     expect(lateWorkerUpdate).toBeNull();
   });
+
+  it("requeues only terminal failures and clears stale artifact state", async () => {
+    const repository = new InMemoryExportRepository();
+    const failed: ExportJob = {
+      ...queuedJob("2026-07-28T08:00:00.000Z"),
+      status: "failed",
+      progress: 80,
+      attempt: 3,
+      errorCode: "STORAGE_UNAVAILABLE",
+      artifact: {
+        filename: "partial.zip",
+        sizeBytes: 10,
+        sha256: "a".repeat(64),
+        expiresAt: "2026-07-29T08:00:00.000Z",
+      },
+    };
+    await repository.save(failed);
+
+    const retried = await repository.retryFailed(
+      failed.id,
+      "2026-07-28T09:00:00.000Z",
+    );
+
+    expect(retried).toMatchObject({
+      status: "queued",
+      progress: 0,
+      attempt: 0,
+      errorCode: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    });
+    expect(retried).not.toHaveProperty("artifact");
+    await expect(
+      repository.retryFailed(failed.id, "2026-07-28T09:01:00.000Z"),
+    ).resolves.toBeNull();
+  });
 });

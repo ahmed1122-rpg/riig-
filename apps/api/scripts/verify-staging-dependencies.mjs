@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const acceptedPostgresTlsModes = new Set([
@@ -168,6 +169,26 @@ const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).hr
 if (invokedPath === import.meta.url) {
   try {
     const verified = await verifyStagingDependencies();
+    const evidencePath = process.env.STAGING_DEPENDENCY_EVIDENCE_PATH?.trim();
+    if (evidencePath) {
+      const filename = resolve(evidencePath);
+      await mkdir(dirname(filename), { recursive: true });
+      await writeFile(
+        filename,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            verified: true,
+            completedAt: new Date().toISOString(),
+            releaseGitSha: process.env.RELEASE_GIT_SHA?.trim() || null,
+            dependencies: verified.map((name) => ({ name, tls: "verified" })),
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+    }
     process.stdout.write(
       `Staging dependencies verified: ${verified.join(", ")}.\n`,
     );

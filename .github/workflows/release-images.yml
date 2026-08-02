@@ -55,6 +55,8 @@ jobs:
       - run: npm ci
       - name: Re-run the complete source quality gate on the release SHA
         run: npm run quality
+      - name: Validate and exercise Prometheus alert rules
+        run: npm run verify:alerts
       - run: npm audit --omit=dev --audit-level=high
       - name: Re-run browser journeys on the release SHA
         run: |
@@ -79,6 +81,15 @@ jobs:
         run: docker rm --force motionprep-minio-release || true
       - name: Verify the production-shaped topology on the release SHA
         run: npm run test:topology:full
+      - name: Retain exact-SHA topology and fault evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-source-evidence-${{ github.sha }}
+          path: |
+            .tmp/topology-pdf-load-report.json
+            .tmp/fault-recovery-report.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Upload exact-SHA failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -228,6 +239,12 @@ jobs:
           WEB_IMAGE_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
         run: node scripts/create-release-evidence.mjs release-evidence.json
 
+      - name: Download exact-SHA topology and fault evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-source-evidence-${{ github.sha }}
+          path: release-source-evidence
+
       - name: Upload immutable deployment manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -235,6 +252,8 @@ jobs:
           path: |
             release.env
             release-evidence.json
+            release-source-evidence/topology-pdf-load-report.json
+            release-source-evidence/fault-recovery-report.json
           if-no-files-found: error
           retention-days: 90
 

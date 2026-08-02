@@ -159,10 +159,14 @@ Store a short-lived HTTPS URL for an approved near-limit corpus item in the
 `REPRESENTATIVE_PDF_MIN_BYTES`. The workflow downloads the source without
 logging the URL, rejects redirects outside HTTPS, verifies the digest, PDF
 signature, and the configured upload ceiling, then deletes it with the runner.
-The small repository smoke fixtures are not performance evidence. Configure a p95
-limit and the protected metrics endpoint so the retained report includes
-p50/p95/p99, RSS, heap, CPU, and queue snapshots. Neither workflow turns a
-local smoke test into a provider or capacity attestation.
+The small repository smoke fixtures are not performance evidence. The protected
+policy requires at least four concurrent users and twelve complete journeys.
+Configure explicit p95, API RSS growth, aggregate worker RSS growth, and queue
+age ceilings; the final queue depth must return to zero. The private metrics
+endpoint is sampled throughout the run so the retained report includes
+p50/p95/p99, API and worker RSS/heap/CPU peaks, queue peaks, final drain state,
+and every acceptance decision. Neither workflow turns a local smoke test into
+a provider or capacity attestation.
 
 The protected pre-release dependency probe is equivalent to running the
 following two commands from a staging task with the deployment workload
@@ -260,8 +264,10 @@ larger than the drain timeout; the production Compose profile uses 45 seconds.
 
 Scrape `http://api:4000/internal/metrics` only from the private application
 network. It exposes HTTP and job-duration histograms, queue depth/age, recent
-retry and lease-loss counts, worker heartbeat gauges, and aggregate dependency
-readiness. It also exposes the latest retention success/failure timestamps and
+retry, terminal-failure, and lease-loss counts, worker heartbeat gauges,
+aggregate readiness, and provider-specific readiness for PostgreSQL, Redis,
+object storage, and SMTP. It also exposes durable email-outbox state, immutable
+release identity, the latest retention success/failure timestamps, and
 `motionprep_maintenance_stale`; the administrator system view reports the same
 durable state. Start from `deploy/prometheus-scrape.example.yml`, load
 `deploy/grafana/dashboards/motionprep-overview.json`, and load
@@ -270,6 +276,9 @@ in the referenced secret file rather than the configuration. The CPU/RAM alerts
 in that file consume the standard container runtime/cAdvisor
 series and compare usage with the Compose ceilings. The public Nginx
 configuration deliberately exposes no `/internal` location.
+Route object-storage, SMTP/outbox, authentication anomaly, retry-storm, and
+terminal-failure alerts through Alertmanager and use
+`docs/runbooks/production-dependency-recovery.md` for provider recovery.
 
 Distributed tracing is opt-in. Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the
 collector's full OTLP/HTTP traces endpoint (normally ending in `/v1/traces`).

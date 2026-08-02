@@ -54,6 +54,10 @@ describe("migration integrity", () => {
       path.join(directory, "022_layer_document_revisions.sql"),
       "utf8",
     );
+    const workerResourceMigration = await readFile(
+      path.join(directory, "030_worker_resource_metrics.sql"),
+      "utf8",
+    );
 
     expect(() => assertMigrationNames(files)).not.toThrow();
     expect(sourceVersionMigration).not.toMatch(
@@ -83,6 +87,10 @@ describe("migration integrity", () => {
     );
     expect(documentRevisionMigration).toContain(
       "PRIMARY KEY (project_id, source_version_id, revision)",
+    );
+    expect(workerResourceMigration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
+    expect(workerResourceMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS resident_memory_bytes",
     );
   });
 });

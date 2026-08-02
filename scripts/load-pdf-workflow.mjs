@@ -1,16 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
+import { loadPdfConfiguration } from "./load-pdf-config.mjs";
 import {
-  parseNonNegativeNumber,
-  parsePositiveInteger,
-  parseRate,
-  prometheusMetricValues,
   runWithConcurrency,
   summarizeDurations,
 } from "./load-test-utils.mjs";
+import {
+  growthFromBaseline,
+  isCompleteMetricsSample,
+  readLoadMetrics,
+  summarizeMetricPeaks,
+  withCaptureTime,
+} from "./load-test-metrics.mjs";
 
-const config = loadConfiguration(process.env);
+const config = loadPdfConfiguration(process.env);
 const fixture = await readFile(config.pdfPath);
 const sourceSha256 = createHash("sha256").update(fixture).digest("hex");
 const runId = randomUUID();
@@ -20,19 +24,68 @@ const attempts = Array.from(
   { length: config.concurrency * config.iterationsPerUser },
   (_, index) => index,
 );
-const metricsBefore = await readMetrics(config);
-
-const results = await runWithConcurrency(
-  attempts,
-  config.concurrency,
-  async (_, index) => executeJourney(index),
-);
-const metricsAfter = await readMetrics(config);
+const metricsBefore = await readLoadMetrics(config);
+const metricSamples = metricsBefore
+  ? [withCaptureTime(metricsBefore, startedAt)]
+  : [];
+let sampling = true;
+let metricsSamplingError = null;
+const metricsSampler = sampleMetricsWhileRunning().catch((error) => {
+  metricsSamplingError =
+    error instanceof Error ? error.message : "Metrics sampling failed.";
+});
+let results;
+try {
+  results = await runWithConcurrency(
+    attempts,
+    config.concurrency,
+    async (_, index) => executeJourney(index),
+  );
+} finally {
+  sampling = false;
+  await metricsSampler;
+}
+const metricsAfter = await readLoadMetrics(config);
+if (metricsAfter) metricSamples.push(withCaptureTime(metricsAfter, new Date()));
 const failures = results.filter((result) => !result.ok);
 const errorRate = failures.length / Math.max(1, results.length);
 const summary = summarizeDurations(timings);
+const metricsComplete =
+  !config.requireMetrics ||
+  (metricSamples.length >= 2 && metricSamples.every(isCompleteMetricsSample));
+const peakMetrics = summarizeMetricPeaks(metricSamples);
+const apiResidentMemoryPeakDeltaBytes = growthFromBaseline(
+  metricsBefore?.apiResidentMemoryBytes,
+  peakMetrics.apiResidentMemoryBytes,
+);
+const workerResidentMemoryPeakDeltaBytes = growthFromBaseline(
+  metricsBefore?.workerResidentMemoryBytes,
+  peakMetrics.workerResidentMemoryBytes,
+);
+const acceptanceChecks = {
+  errorRate: errorRate <= config.maxErrorRate,
+  workflowP95:
+    config.maxWorkflowP95Ms === 0 ||
+    (summary.workflow?.p95Ms ?? Infinity) <= config.maxWorkflowP95Ms,
+  metrics: metricsComplete && metricsSamplingError === null,
+  apiMemory:
+    config.maxApiRssGrowthBytes === 0 ||
+    (apiResidentMemoryPeakDeltaBytes ?? Infinity) <=
+      config.maxApiRssGrowthBytes,
+  workerMemory:
+    config.maxWorkerRssGrowthBytes === 0 ||
+    (workerResidentMemoryPeakDeltaBytes ?? Infinity) <=
+      config.maxWorkerRssGrowthBytes,
+  queueAge:
+    config.maxQueueAgeSeconds === 0 ||
+    (peakMetrics.oldestQueuedSeconds ?? Infinity) <=
+      config.maxQueueAgeSeconds,
+  queueDrained:
+    config.maxFinalQueueDepth === null ||
+    (metricsAfter?.queueDepth ?? Infinity) <= config.maxFinalQueueDepth,
+};
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   runId,
   startedAt: startedAt.toISOString(),
   completedAt: new Date().toISOString(),
@@ -51,25 +104,34 @@ const report = {
   acceptance: {
     maxErrorRate: config.maxErrorRate,
     maxWorkflowP95Ms: config.maxWorkflowP95Ms || null,
+    minConcurrency: config.minConcurrency,
+    minTotalJourneys: config.minTotalJourneys,
+    maxApiRssGrowthBytes: config.maxApiRssGrowthBytes || null,
+    maxWorkerRssGrowthBytes: config.maxWorkerRssGrowthBytes || null,
+    maxQueueAgeSeconds: config.maxQueueAgeSeconds || null,
+    maxFinalQueueDepth: config.maxFinalQueueDepth,
   },
   outcome: {
-    passed:
-      errorRate <= config.maxErrorRate &&
-      (config.maxWorkflowP95Ms === 0 ||
-        (summary.workflow?.p95Ms ?? Infinity) <= config.maxWorkflowP95Ms),
+    passed: Object.values(acceptanceChecks).every(Boolean),
     successes: results.length - failures.length,
     failures: failures.length,
     errorRate,
+    checks: acceptanceChecks,
   },
   durations: summary,
   metrics: {
     before: metricsBefore,
     after: metricsAfter,
+    samples: metricSamples,
+    samplingError: metricsSamplingError,
+    peak: peakMetrics,
     apiResidentMemoryDeltaBytes:
       metricsBefore?.apiResidentMemoryBytes !== undefined &&
       metricsAfter?.apiResidentMemoryBytes !== undefined
         ? metricsAfter.apiResidentMemoryBytes - metricsBefore.apiResidentMemoryBytes
         : null,
+    apiResidentMemoryPeakDeltaBytes,
+    workerResidentMemoryPeakDeltaBytes,
     apiHeapUsedDeltaBytes:
       metricsBefore?.apiHeapUsedBytes !== undefined &&
       metricsAfter?.apiHeapUsedBytes !== undefined
@@ -253,86 +315,14 @@ async function measure(stage, operation) {
   }
 }
 
-async function readMetrics(targetConfig) {
-  if (!targetConfig.metricsUrl || !targetConfig.metricsToken) return null;
-  const response = await fetch(targetConfig.metricsUrl, {
-    headers: { authorization: `Bearer ${targetConfig.metricsToken}` },
-    signal: AbortSignal.timeout(targetConfig.requestTimeoutMs),
-  });
-  if (!response.ok) throw new Error(`Metrics endpoint returned ${response.status}.`);
-  const body = await response.text();
-  const queueDepthValues = prometheusMetricValues(
-    body,
-    "motionprep_queue_jobs",
-    { state: "queued" },
-  );
-  const queueAgeValues = prometheusMetricValues(
-    body,
-    "motionprep_queue_oldest_queued_seconds",
-  );
-  const cpuValues = prometheusMetricValues(
-    body,
-    "motionprep_process_cpu_seconds_total",
-  );
-  return {
-    apiResidentMemoryBytes: prometheusMetricValues(
-      body,
-      "motionprep_process_resident_memory_bytes",
-    )[0],
-    apiHeapUsedBytes: prometheusMetricValues(
-      body,
-      "motionprep_process_heap_used_bytes",
-    )[0],
-    apiCpuSeconds: cpuValues.length
-      ? cpuValues.reduce((total, value) => total + value, 0)
-      : undefined,
-    queueDepth: queueDepthValues.length
-      ? queueDepthValues.reduce((total, value) => total + value, 0)
-      : undefined,
-    oldestQueuedSeconds: queueAgeValues.length
-      ? Math.max(...queueAgeValues)
-      : undefined,
-  };
-}
-
-function loadConfiguration(environment) {
-  const targetOrigin = new URL(
-    environment.LOAD_TARGET_ORIGIN ?? "http://127.0.0.1:54101",
-  ).origin;
-  if (
-    environment.LOAD_EXPECTED_HOST &&
-    new URL(targetOrigin).hostname !== environment.LOAD_EXPECTED_HOST
-  ) {
-    throw new Error("LOAD_TARGET_ORIGIN does not match LOAD_EXPECTED_HOST.");
-  }
-  const metricsUrl = environment.LOAD_METRICS_URL?.trim() || null;
-  const metricsToken = environment.LOAD_METRICS_BEARER_TOKEN?.trim() || null;
-  if (Boolean(metricsUrl) !== Boolean(metricsToken)) {
-    throw new Error(
-      "LOAD_METRICS_URL and LOAD_METRICS_BEARER_TOKEN must be configured together.",
+async function sampleMetricsWhileRunning() {
+  if (!config.metricsUrl || !config.metricsToken) return;
+  while (sampling) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, config.metricsSampleIntervalMs),
     );
+    if (!sampling) return;
+    const sample = await readLoadMetrics(config);
+    if (sample) metricSamples.push(withCaptureTime(sample, new Date()));
   }
-  if (environment.LOAD_REQUIRE_METRICS === "true" && !metricsUrl) {
-    throw new Error("LOAD_REQUIRE_METRICS requires the protected metrics endpoint.");
-  }
-  return {
-    targetOrigin,
-    requestOrigin: new URL(
-      environment.LOAD_REQUEST_ORIGIN ?? targetOrigin,
-    ).origin,
-    pdfPath: resolve(
-      environment.LOAD_PDF_PATH?.trim() ||
-        "artifacts/fixtures/motionprep-e2e.pdf",
-    ),
-    reportPath: resolve(environment.LOAD_REPORT_PATH ?? ".tmp/pdf-load-report.json"),
-    concurrency: parsePositiveInteger(environment.LOAD_CONCURRENCY, 1, "LOAD_CONCURRENCY", 16),
-    iterationsPerUser: parsePositiveInteger(environment.LOAD_ITERATIONS, 1, "LOAD_ITERATIONS", 20),
-    requestTimeoutMs: parsePositiveInteger(environment.LOAD_REQUEST_TIMEOUT_MS, 30_000, "LOAD_REQUEST_TIMEOUT_MS", 300_000),
-    jobTimeoutMs: parsePositiveInteger(environment.LOAD_JOB_TIMEOUT_MS, 180_000, "LOAD_JOB_TIMEOUT_MS", 900_000),
-    pollIntervalMs: parsePositiveInteger(environment.LOAD_POLL_INTERVAL_MS, 500, "LOAD_POLL_INTERVAL_MS", 10_000),
-    maxErrorRate: parseRate(environment.LOAD_MAX_ERROR_RATE, 0, "LOAD_MAX_ERROR_RATE"),
-    maxWorkflowP95Ms: parseNonNegativeNumber(environment.LOAD_MAX_WORKFLOW_P95_MS, 0, "LOAD_MAX_WORKFLOW_P95_MS"),
-    metricsUrl,
-    metricsToken,
-  };
 }

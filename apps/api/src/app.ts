@@ -116,6 +116,7 @@ export interface AppDependencies {
   paymentProviders?: PaymentProvider[];
   pdfOcrEngine?: PdfOcrEngine;
   readiness?: () => Promise<void>;
+  dependencyReadiness?: Readonly<Record<string, () => Promise<void>>>;
   adminAccess?: AdminAccessCommand;
   usageMeter?: UsageMeter;
   operationalStatus?: OperationalStatusProvider;
@@ -297,6 +298,13 @@ export async function buildApp(
       ? { operationalStatus: dependencies.operationalStatus }
       : {}),
     ...(dependencies.readiness ? { readiness: dependencies.readiness } : {}),
+    ...(dependencies.dependencyReadiness
+      ? { dependencyReadiness: dependencies.dependencyReadiness }
+      : {}),
+    buildInfo: {
+      version: APPLICATION_VERSION,
+      release: process.env.RELEASE_VERSION ?? "development",
+    },
   });
 
   const projects = dependencies.projects ?? new InMemoryProjectRepository();
@@ -462,6 +470,7 @@ export async function buildApp(
     uploads: uploadRepository,
     exports: exportRepository,
     processingJobs: processingJobRepository,
+    layerDocuments: layerDocumentRepository,
     billing: billingRepository,
     projects,
     ...(dependencies.adminAccess ? { access: dependencies.adminAccess } : {}),

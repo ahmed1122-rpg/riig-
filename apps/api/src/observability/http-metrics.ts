@@ -21,6 +21,8 @@ export async function registerHttpMetrics(
     bearerToken?: string;
     operationalStatus?: OperationalStatusProvider;
     readiness?: () => Promise<void>;
+    dependencyReadiness?: Readonly<Record<string, () => Promise<void>>>;
+    buildInfo?: { version: string; release: string };
   } = {},
 ): Promise<void> {
   const startedAt = new WeakMap<FastifyRequest, bigint>();
@@ -95,12 +97,24 @@ export async function registerHttpMetrics(
           "# TYPE motionprep_job_duration_seconds histogram",
           "# HELP motionprep_worker_up Whether a required worker instance has a fresh heartbeat.",
           "# TYPE motionprep_worker_up gauge",
+          "# HELP motionprep_worker_resident_memory_bytes Resident memory used by worker processes.",
+          "# TYPE motionprep_worker_resident_memory_bytes gauge",
+          "# HELP motionprep_worker_heap_used_bytes JavaScript heap used by worker processes.",
+          "# TYPE motionprep_worker_heap_used_bytes gauge",
+          "# HELP motionprep_worker_cpu_seconds_total CPU time consumed by worker processes.",
+          "# TYPE motionprep_worker_cpu_seconds_total counter",
           "# HELP motionprep_maintenance_stale Whether scheduled maintenance is missing or overdue.",
           "# TYPE motionprep_maintenance_stale gauge",
           "# HELP motionprep_maintenance_last_success_timestamp_seconds Unix time of the latest successful maintenance run.",
           "# TYPE motionprep_maintenance_last_success_timestamp_seconds gauge",
           "# HELP motionprep_maintenance_last_failure_timestamp_seconds Unix time of the latest failed maintenance run.",
           "# TYPE motionprep_maintenance_last_failure_timestamp_seconds gauge",
+          "# HELP motionprep_email_outbox_messages Current email outbox messages by state.",
+          "# TYPE motionprep_email_outbox_messages gauge",
+          "# HELP motionprep_email_outbox_oldest_queued_seconds Age of the oldest queued or sending email.",
+          "# TYPE motionprep_email_outbox_oldest_queued_seconds gauge",
+          "# HELP motionprep_email_outbox_events_last_hour Recent email retries and terminal failures.",
+          "# TYPE motionprep_email_outbox_events_last_hour gauge",
         );
         for (const queue of snapshot.queues) {
           for (const [state, value] of [
@@ -115,6 +129,8 @@ export async function registerHttpMetrics(
           lines.push(
             `motionprep_queue_oldest_queued_seconds{queue="${escapeLabel(queue.queue)}"} ${queue.oldestQueuedSeconds.toFixed(3)}`,
             `motionprep_worker_events_last_hour{queue="${escapeLabel(queue.queue)}",event="retry"} ${queue.retriesLastHour}`,
+            `motionprep_worker_events_last_hour{queue="${escapeLabel(queue.queue)}",event="failed"} ${queue.failuresLastHour}`,
+            `motionprep_worker_events_last_hour{queue="${escapeLabel(queue.queue)}",event="completed"} ${queue.completionsLastHour}`,
             `motionprep_worker_events_last_hour{queue="${escapeLabel(queue.queue)}",event="lease_lost"} ${queue.leaseLossesLastHour}`,
           );
           jobDurationBuckets.forEach((bucket, index) => {
@@ -133,6 +149,10 @@ export async function registerHttpMetrics(
           missingWorkerTypes.delete(worker.workerType);
           lines.push(
             `motionprep_worker_up{worker_type="${worker.workerType}",instance="${escapeLabel(worker.instanceId)}",release="${escapeLabel(worker.releaseVersion)}"} ${worker.stale ? 0 : 1}`,
+            `motionprep_worker_resident_memory_bytes{worker_type="${worker.workerType}",instance="${escapeLabel(worker.instanceId)}"} ${worker.residentMemoryBytes}`,
+            `motionprep_worker_heap_used_bytes{worker_type="${worker.workerType}",instance="${escapeLabel(worker.instanceId)}"} ${worker.heapUsedBytes}`,
+            `motionprep_worker_cpu_seconds_total{worker_type="${worker.workerType}",instance="${escapeLabel(worker.instanceId)}",mode="user"} ${worker.cpuUserSeconds.toFixed(6)}`,
+            `motionprep_worker_cpu_seconds_total{worker_type="${worker.workerType}",instance="${escapeLabel(worker.instanceId)}",mode="system"} ${worker.cpuSystemSeconds.toFixed(6)}`,
           );
         }
         for (const workerType of missingWorkerTypes) {
@@ -146,6 +166,17 @@ export async function registerHttpMetrics(
           `motionprep_maintenance_last_success_timestamp_seconds{task="retention"} ${timestampSeconds(maintenance?.lastSucceededAt)}`,
           `motionprep_maintenance_last_failure_timestamp_seconds{task="retention"} ${timestampSeconds(maintenance?.lastFailedAt)}`,
         );
+        const outbox = snapshot.emailOutbox;
+        if (outbox) {
+          lines.push(
+            `motionprep_email_outbox_messages{status="queued"} ${outbox.queued}`,
+            `motionprep_email_outbox_messages{status="sending"} ${outbox.sending}`,
+            `motionprep_email_outbox_messages{status="failed"} ${outbox.failed}`,
+            `motionprep_email_outbox_oldest_queued_seconds ${outbox.oldestQueuedSeconds.toFixed(3)}`,
+            `motionprep_email_outbox_events_last_hour{event="retry"} ${outbox.retriesLastHour}`,
+            `motionprep_email_outbox_events_last_hour{event="failed"} ${outbox.failuresLastHour}`,
+          );
+        }
       } catch {
         lines.push(
           "# HELP motionprep_operational_snapshot_success Whether operational metrics were collected.",
@@ -153,6 +184,21 @@ export async function registerHttpMetrics(
           "motionprep_operational_snapshot_success 0",
         );
       }
+    }
+    if (options.dependencyReadiness) {
+      lines.push(
+        "# HELP motionprep_dependency_ready Whether an individual configured dependency is ready.",
+        "# TYPE motionprep_dependency_ready gauge",
+      );
+      const checks = Object.entries(options.dependencyReadiness);
+      const outcomes = await Promise.allSettled(
+        checks.map(([, check]) => check()),
+      );
+      checks.forEach(([dependency], index) => {
+        lines.push(
+          `motionprep_dependency_ready{dependency="${escapeLabel(dependency)}"} ${outcomes[index]?.status === "fulfilled" ? 1 : 0}`,
+        );
+      });
     }
     if (options.readiness) {
       try {
@@ -171,6 +217,9 @@ export async function registerHttpMetrics(
       }
     }
     lines.push(
+      "# HELP motionprep_build_info Application build and immutable release identity.",
+      "# TYPE motionprep_build_info gauge",
+      `motionprep_build_info{version="${escapeLabel(options.buildInfo?.version ?? "unknown")}",release="${escapeLabel(options.buildInfo?.release ?? "development")}"} 1`,
       "# HELP motionprep_process_uptime_seconds Process uptime.",
       "# TYPE motionprep_process_uptime_seconds gauge",
       `motionprep_process_uptime_seconds ${process.uptime().toFixed(3)}`,

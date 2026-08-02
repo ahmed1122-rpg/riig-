@@ -125,6 +125,10 @@ describe("API — البنية التحتية", () => {
                 workerType: "media" as const,
                 releaseVersion: "sha-test",
                 concurrency: 2,
+                residentMemoryBytes: 1_000,
+                heapUsedBytes: 500,
+                cpuUserSeconds: 1.5,
+                cpuSystemSeconds: 0.5,
                 lastSeenAt: "2026-07-29T00:00:00.000Z",
                 stale: false,
               },
@@ -137,6 +141,8 @@ describe("API — البنية التحتية", () => {
                 failed: 2,
                 oldestQueuedSeconds: 301,
                 retriesLastHour: 4,
+                failuresLastHour: 2,
+                completionsLastHour: 10,
                 leaseLossesLastHour: 1,
                 duration: {
                   count: 5,
@@ -145,6 +151,14 @@ describe("API — البنية التحتية", () => {
                 },
               },
             ],
+            emailOutbox: {
+              queued: 2,
+              sending: 1,
+              failed: 1,
+              oldestQueuedSeconds: 65,
+              retriesLastHour: 3,
+              failuresLastHour: 1,
+            },
             maintenance: {
               task: "retention" as const,
               lastStartedAt: "2026-07-29T00:00:00.000Z",
@@ -171,10 +185,25 @@ describe("API — البنية التحتية", () => {
       'motionprep_worker_events_last_hour{queue="processing-media",event="lease_lost"} 1',
     );
     expect(response.body).toContain(
+      'motionprep_worker_events_last_hour{queue="processing-media",event="failed"} 2',
+    );
+    expect(response.body).toContain(
+      'motionprep_email_outbox_messages{status="queued"} 2',
+    );
+    expect(response.body).toContain(
+      'motionprep_email_outbox_events_last_hour{event="failed"} 1',
+    );
+    expect(response.body).toContain(
       'motionprep_job_duration_seconds_bucket{queue="processing-media",le="15"} 4',
     );
     expect(response.body).toContain(
       'motionprep_worker_up{worker_type="media",instance="media-1",release="sha-test"} 1',
+    );
+    expect(response.body).toContain(
+      'motionprep_worker_resident_memory_bytes{worker_type="media",instance="media-1"} 1000',
+    );
+    expect(response.body).toContain(
+      'motionprep_worker_cpu_seconds_total{worker_type="media",instance="media-1",mode="user"} 1.500000',
     );
     expect(response.body).toContain(
       'motionprep_worker_up{worker_type="document",instance="missing",release="unknown"} 0',
@@ -188,6 +217,37 @@ describe("API — البنية التحتية", () => {
     );
     expect(response.body).toContain("motionprep_process_resident_memory_bytes");
     expect(response.body).toContain("motionprep_process_cpu_seconds_total");
+    expect(response.body).toContain(
+      'motionprep_build_info{version="0.1.2",release="development"} 1',
+    );
+  });
+
+  it("publishes individual dependency readiness without failing the scrape", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      dependencyReadiness: {
+        database: async () => undefined,
+        object_storage: async () => {
+          throw new Error("storage unavailable");
+        },
+        smtp: async () => undefined,
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/internal/metrics",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(
+      'motionprep_dependency_ready{dependency="database"} 1',
+    );
+    expect(response.body).toContain(
+      'motionprep_dependency_ready{dependency="object_storage"} 0',
+    );
+    expect(response.body).toContain(
+      'motionprep_dependency_ready{dependency="smtp"} 1',
+    );
   });
 
   it("reports dependency readiness failure without failing metrics", async () => {

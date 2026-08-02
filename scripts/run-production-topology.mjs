@@ -43,6 +43,7 @@ try {
       LOAD_METRICS_URL: "http://127.0.0.1:54101/internal/metrics",
       LOAD_METRICS_BEARER_TOKEN:
         "metrics-integration-token-at-least-32-characters",
+      LOAD_METRICS_SAMPLE_INTERVAL_MS: "1000",
       LOAD_REPORT_PATH: ".tmp/topology-pdf-load-report.json",
     },
     label: "concurrent PDF workflow smoke load",
