@@ -7,7 +7,7 @@ const releaseGitSha = requiredMatch(
   process.env.RELEASE_GIT_SHA,
   /^[a-f0-9]{40}$/u,
 );
-const applicationVersion = process.env.EXPECTED_APPLICATION_VERSION ?? "0.1.2";
+const applicationVersion = process.env.EXPECTED_APPLICATION_VERSION ?? "0.1.3";
 const reportPath = resolve(
   process.env.STAGING_EVIDENCE_PATH ?? ".tmp/staging-application-evidence.json",
 );

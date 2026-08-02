@@ -1,6 +1,17 @@
 # Production readiness
 
-Status on 2026-08-01: release `v0.1.1` was reviewed in PR #14, merged at `3f29087cc22e604e9cca66455a3ef9d359a5d85c`, and published as signed digest-qualified runtime and web images after the protected exact-SHA release workflow passed. Version `0.1.2` is an unreleased hardening candidate: it must not be described as published until its branch is merged and a new protected tag workflow signs new image digests. Regional OCR remains disabled because its independent holdout evidence is stale and the historical generation failed its holdout target. Application deployment approval remains withheld until the protected provider/staging workflows pass against real managed services and the chosen signed digests complete staging and rollback exercises. Recovery, licensed Adobe-version validation, and representative load/memory exercises remain explicit launch gates.
+Status on 2026-08-02: releases `v0.1.1` and `v0.1.2` were published as
+signed digest-qualified runtime and web images after their protected exact-SHA
+release workflows passed. The production-observability and recovery changes
+merged from PR #18 at `bc03e7d4f9647235f9d78ecc7019579807cebb1c`
+post-date `v0.1.2`; they are therefore versioned as the unreleased `0.1.3`
+candidate and require newly signed image digests. Regional OCR remains disabled
+because its independent holdout evidence is stale and the historical generation
+failed its holdout target. Application deployment approval remains withheld
+until the protected provider/staging workflows pass against real managed
+services and the selected `0.1.3` candidate digests complete staging and
+rollback exercises. Recovery, licensed Adobe-version validation, and
+representative load/memory exercises remain explicit launch gates.
 
 The 2026-08-02 guidance-hardening pass adds provider-specific readiness,
 durable email-outbox metrics, API/worker RSS/heap/CPU evidence, release identity
@@ -16,7 +27,7 @@ evidence and does not replace the external launch gates above.
 
 The production-readiness work adds server-authoritative upload verification, source/job fencing, ordered Stripe webhook application, bounded worker drain and lease requeue, scheduled retention with operational status, audited administrator retry, truthful billing/export controls, accessible layer reordering, and a release workflow that re-runs source quality and production topology against the exact checkout SHA before publication. These changes are represented by `v0.1.1`; the historical `v0.1.0` digests must not be used for this release.
 
-The `0.1.2` candidate adds release identity to readiness, durable request-to-job
+The changes first published in `0.1.2` add release identity to readiness, durable request-to-job
 correlation, stricter TypeScript checks, import-cycle enforcement, deterministic
 dependency fault/recovery checks, concurrent PDF workflow load evidence,
 staging application verification, release evidence JSON, and maintained
@@ -118,7 +129,7 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 ## Evidence still required
 
 1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
-2. Deployment of the selected signed release digests to staging and rollback without rebuilding. Candidate 0.1.2 requires new digests after merge; v0.1.1 digests do not contain these hardening changes.
+2. Deployment of the selected signed release digests to staging and rollback without rebuilding. Candidate 0.1.3 requires new digests after the PR #18 merge; v0.1.2 digests do not contain the latest observability and recovery changes.
 3. A signed isolated recovery drill proving RPO ≤15 minutes and RTO ≤4 hours (deferred by product decision).
 4. Golden PSD/After Effects validation in licensed target Adobe versions (deferred by product decision).
 5. Representative load and memory validation against the configured container ceilings. The automated PDF workflow and evidence format exist, but local smoke evidence is not a representative managed-staging capacity result.
@@ -133,6 +144,6 @@ current provider attestation and must be rechecked by the protected workflows;
 no paid or account-owned staging resource should be inferred or created from
 the local evidence alone.
 
-Candidate 0.1.2 evidence is in `artifacts/production-hardening-0.1.2-implementation-report-2026-08-01.md`. The earlier remediation report is in `artifacts/final-remediation-implementation-report-2026-08-01.md`. Historical release and OCR evidence remains in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
+Historical 0.1.2 evidence is in `artifacts/production-hardening-0.1.2-implementation-report-2026-08-01.md`; the current 0.1.3 candidate controls and local evidence are documented in this file and the retained topology/fault reports. The earlier remediation report is in `artifacts/final-remediation-implementation-report-2026-08-01.md`. Historical release and OCR evidence remains in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
 
 The current completion matrix, remaining priorities, acceptance criteria, and PDF fixture inventory are in `artifacts/completion-audit-and-execution-plan-2026-07-31.md`.

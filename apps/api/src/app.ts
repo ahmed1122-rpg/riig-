@@ -94,7 +94,7 @@ import { UploadReconciler } from "./uploads/upload-reconciler.js";
 import { registerHttpErrorHandler } from "./http/error-handler.js";
 import { registerHttpTracing } from "./observability/tracing.js";
 
-const APPLICATION_VERSION = "0.1.2";
+const APPLICATION_VERSION = "0.1.3";
 
 export interface AppDependencies {
   projects?: ProjectRepository;

@@ -18,7 +18,7 @@ describe("API — البنية التحتية", () => {
     expect(response.json().data).toMatchObject({
       status: "ok",
       service: "motionprep-api",
-      version: "0.1.2",
+      version: "0.1.3",
       release,
     });
   });
@@ -218,7 +218,7 @@ describe("API — البنية التحتية", () => {
     expect(response.body).toContain("motionprep_process_resident_memory_bytes");
     expect(response.body).toContain("motionprep_process_cpu_seconds_total");
     expect(response.body).toContain(
-      'motionprep_build_info{version="0.1.2",release="development"} 1',
+      'motionprep_build_info{version="0.1.3",release="development"} 1',
     );
   });
 
