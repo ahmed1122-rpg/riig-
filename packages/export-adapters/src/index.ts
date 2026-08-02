@@ -1,7 +1,4 @@
-import type {
-  LayerDocument,
-  LayerNode,
-} from "@motionprep/contracts";
+import type { LayerDocument, LayerNode } from "@motionprep/contracts";
 import {
   writePsdBuffer,
   type Layer as PsdLayer,
@@ -10,9 +7,19 @@ import {
 } from "ag-psd";
 import sharp from "sharp";
 
-const MAX_DECODED_PIXELS = 25_000_000;
-const PSD_MAX_DIMENSION = 30_000;
+import { mapWithConcurrency } from "./concurrency.js";
+import {
+  assertDocumentDimensions,
+  MAX_DECODED_PIXELS,
+} from "./document-dimensions.js";
+import { ExportAdapterError } from "./export-adapter-error.js";
+import { preflightPdfPages } from "./pdf-psd-preflight.js";
+
+export { ExportAdapterError } from "./export-adapter-error.js";
+
 const TIFF_TOTAL_PIXEL_BUDGET = 32_000_000;
+const PDF_PAGE_RENDER_CONCURRENCY = 2;
+const PDF_TEXT_RENDER_CONCURRENCY = 4;
 
 export interface RasterLayerAsset {
   layer: LayerNode;
@@ -32,21 +39,6 @@ interface PreparedPdfText {
   height: number;
   left: number;
   top: number;
-}
-
-export class ExportAdapterError extends Error {
-  constructor(
-    readonly code:
-      | "INVALID_DOCUMENT_DIMENSIONS"
-      | "PSD_DIMENSION_LIMIT_EXCEEDED"
-      | "TIFF_PIXEL_BUDGET_EXCEEDED"
-      | "RASTER_LAYER_REQUIRED"
-      | "RASTER_ASSET_MISMATCH"
-      | "RASTER_DECODE_FAILED",
-    message: string,
-  ) {
-    super(message);
-  }
 }
 
 interface PreparedRaster {
@@ -213,8 +205,11 @@ async function createPdfPsd(
   pageNumbers: readonly number[],
   groupPages: boolean,
 ): Promise<Buffer> {
-  const preparedPages = await Promise.all(
-    pageNumbers.map((pageNumber) => preparePdfPage(document, pageNumber)),
+  const selectedPages = preflightPdfPages(document, pageNumbers);
+  const preparedPages = await mapWithConcurrency(
+    selectedPages,
+    PDF_PAGE_RENDER_CONCURRENCY,
+    (page) => preparePdfPage(document, page.pageNumber),
   );
   const width = Math.max(...preparedPages.map((page) => page.width));
   const height = preparedPages.reduce((sum, page) => sum + page.height, 0);
@@ -434,8 +429,10 @@ async function preparePdfPage(
     height,
     background,
     backgroundPixels: Buffer.alloc(width * height * 4, 255),
-    rendered: await Promise.all(
-      textLayers.map((layer) => renderPdfTextLayer(layer, width, height)),
+    rendered: await mapWithConcurrency(
+      textLayers,
+      PDF_TEXT_RENDER_CONCURRENCY,
+      (layer) => renderPdfTextLayer(layer, width, height),
     ),
   };
 }
@@ -714,34 +711,6 @@ function withScaledAlpha(pixels: Buffer, opacity: number): Buffer {
 
 function clampOpacity(opacity: number): number {
   return Math.min(1, Math.max(0, Number.isFinite(opacity) ? opacity : 1));
-}
-
-function assertDocumentDimensions(
-  document: LayerDocument,
-  enforcePsdLimit: boolean,
-): void {
-  const { width, height } = document;
-  if (
-    !Number.isSafeInteger(width) ||
-    !Number.isSafeInteger(height) ||
-    width <= 0 ||
-    height <= 0 ||
-    width * height > MAX_DECODED_PIXELS
-  ) {
-    throw new ExportAdapterError(
-      "INVALID_DOCUMENT_DIMENSIONS",
-      "أبعاد وثيقة الطبقات غير صالحة أو تتجاوز ميزانية الذاكرة الآمنة.",
-    );
-  }
-  if (
-    enforcePsdLimit &&
-    (width > PSD_MAX_DIMENSION || height > PSD_MAX_DIMENSION)
-  ) {
-    throw new ExportAdapterError(
-      "PSD_DIMENSION_LIMIT_EXCEEDED",
-      `PSD القياسي يدعم أبعادًا حتى ${PSD_MAX_DIMENSION}px لكل محور.`,
-    );
-  }
 }
 
 function safeFilename(name: string): string {

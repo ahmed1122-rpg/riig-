@@ -53,6 +53,9 @@ describe("API — البنية التحتية", () => {
 
     expect(response.statusCode).toBe(503);
     expect(response.json().error.code).toBe("DEPENDENCY_UNAVAILABLE");
+    expect(response.json().error.requestId).toBe(
+      response.headers["x-request-id"],
+    );
 
     const metrics = await app.inject({
       method: "GET",

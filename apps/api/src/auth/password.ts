@@ -1,6 +1,8 @@
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 
 const KEY_LENGTH = 64;
+const SALT_HEX_PATTERN = /^[a-f0-9]{32}$/u;
+const KEY_HEX_PATTERN = new RegExp(`^[a-f0-9]{${KEY_LENGTH * 2}}$`, "u");
 
 function derive(password: string, salt: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -26,7 +28,8 @@ export async function verifyPassword(
     algorithm !== "scrypt" ||
     !saltHex ||
     !expectedHex ||
-    expectedHex.length !== KEY_LENGTH * 2
+    !SALT_HEX_PATTERN.test(saltHex) ||
+    !KEY_HEX_PATTERN.test(expectedHex)
   ) {
     return false;
   }
@@ -35,4 +38,3 @@ export async function verifyPassword(
   const expected = Buffer.from(expectedHex, "hex");
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
-

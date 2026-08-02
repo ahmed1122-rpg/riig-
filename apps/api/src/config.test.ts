@@ -108,6 +108,19 @@ describe("production configuration", () => {
     expect(config.PDF_REGION_OCR_ENABLED).toBe(true);
   });
 
+  it("allows a lower runtime upload policy but rejects values above the product contract", () => {
+    expect(
+      loadConfig({ NODE_ENV: "test", MAX_UPLOAD_BYTES: "1048576" })
+        .MAX_UPLOAD_BYTES,
+    ).toBe(1_048_576);
+    expect(() =>
+      loadConfig({
+        NODE_ENV: "test",
+        MAX_UPLOAD_BYTES: String(30 * 1024 * 1024 + 1),
+      }),
+    ).toThrow();
+  });
+
   it("rejects plaintext production database, Redis, and SMTP transports", () => {
     expect(() =>
       loadConfig({
@@ -237,5 +250,16 @@ describe("production configuration", () => {
     expect(config.SMTP_HOST).toBeUndefined();
     expect(config.PASSWORD_RESET_URL).toBeUndefined();
     expect(config.OBJECT_STORAGE_ENDPOINT).toBeUndefined();
+  });
+
+  it("rejects non-canonical Base64 authentication keys", () => {
+    const valid = Buffer.alloc(32, 1).toString("base64");
+    expect(
+      loadConfig({ NODE_ENV: "test", AUTH_ENCRYPTION_KEY: valid })
+        .AUTH_ENCRYPTION_KEY,
+    ).toBe(valid);
+    expect(() =>
+      loadConfig({ NODE_ENV: "test", AUTH_ENCRYPTION_KEY: `!${valid}` }),
+    ).toThrow(/canonical Base64/u);
   });
 });

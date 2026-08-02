@@ -17,6 +17,30 @@ class MismatchedObjectStorage extends InMemoryObjectStorage {
 }
 
 describe("UploadService", () => {
+  it("enforces the configured limit even when called outside the HTTP route", async () => {
+    const service = new UploadService(
+      new InMemoryUploadRepository(),
+      () => new Date("2026-07-28T08:00:00.000Z"),
+      new InMemoryIdempotencyStore(),
+      new InMemoryObjectStorage(),
+      new InMemorySourceVersionRepository(),
+      undefined,
+      1024,
+    );
+
+    await expect(
+      service.createIntent(
+        {
+          projectId: crypto.randomUUID(),
+          filename: "large.pdf",
+          contentType: "application/pdf",
+          sizeBytes: 1025,
+        },
+        "oversized-direct-call",
+      ),
+    ).rejects.toMatchObject({ code: "UPLOAD_SIZE_MISMATCH" });
+  });
+
   it("expires stale sessions before creating the next source version", async () => {
     const uploads = new InMemoryUploadRepository();
     const sourceVersions = new InMemorySourceVersionRepository();

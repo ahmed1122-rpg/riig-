@@ -63,7 +63,7 @@ import {
   getWorkspacePipeline,
 } from "./workspacePresentation";
 import { isWorkspaceRevisionConflict } from "./workspaceConflict";
-import type { ApplicationCapabilities, ExportFormat } from "@motionprep/contracts";
+import type { ExportFormat } from "@motionprep/contracts";
 import {
   ApiError,
   applyGuidedRefinement,
@@ -76,29 +76,9 @@ import {
   runPdfRegionOcr,
   splitPdfTextLayer,
   type LayerDocumentView,
-  type ProjectSummary,
 } from "../../lib/api";
 import { useWorkspaceReviewAutosave } from "./useWorkspaceReviewAutosave";
-
-interface WorkspaceProps {
-  mode: ProjectMode;
-  capabilities: ApplicationCapabilities;
-  onModeChange: (mode: ProjectMode) => void;
-  onBack: () => void;
-  onNavigationGuardChange: (
-    guard: (() => Promise<boolean>) | null,
-  ) => void;
-  onNotify: (message: string) => void;
-  authenticated: boolean;
-  onRequireAuth: () => void;
-  initialProject: Pick<
-    ProjectSummary,
-    | "id"
-    | "name"
-    | "currentSourceVersionId"
-    | "currentSourceVersionNumber"
-  > | null;
-}
+import type { WorkspaceProps } from "./Workspace.types";
 
 export function Workspace({
   mode,
@@ -332,6 +312,7 @@ export function Workspace({
   );
   const { chooseSource, cancelUpload } = useWorkspaceUpload({
     mode,
+    maxUploadBytes: capabilities.limits.maxUploadBytes,
     authenticated,
     persistedSource,
     sourceName,
@@ -863,6 +844,7 @@ export function Workspace({
           <div className="pro-source-row">
             <SourceUploadStatus
               mode={mode}
+              maxUploadBytes={capabilities.limits.maxUploadBytes}
               fileName={sourceName}
               version={sourceVersion}
               state={uploadState}
@@ -939,6 +921,7 @@ export function Workspace({
             {!persistedSource ? (
               <EmptySourcePreview
                 mode={mode}
+                maxUploadBytes={capabilities.limits.maxUploadBytes}
                 onChoose={() => fileRef.current?.click()}
               />
             ) : mode === "image" ? (
@@ -1320,6 +1303,7 @@ export function Workspace({
       {exportOpen && (
         <ExportReview
           mode={mode}
+          maxUploadBytes={capabilities.limits.maxUploadBytes}
           layers={layers}
           selectedLayerId={activeLayerId}
           onSelectedLayerChange={(id) => { setActiveLayerId(id); setSelectedIds([id]); }}

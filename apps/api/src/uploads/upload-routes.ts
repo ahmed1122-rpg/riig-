@@ -1,6 +1,5 @@
 import {
   MAX_UPLOAD_BYTES,
-  MAX_UPLOAD_MEBIBYTES,
   acceptedSourceTypes,
 } from "@motionprep/contracts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -16,14 +15,10 @@ import { requestIdempotencyKey } from "../http/request-metadata.js";
 import { runResourceRoute } from "../http/resource-route.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import { UploadDomainError, type UploadService } from "./upload-service.js";
-
-const uploadIntentSchema = z.object({
-  projectId: z.string().uuid(),
-  filename: z.string().trim().min(1).max(255),
-  contentType: z.enum(acceptedSourceTypes),
-  sizeBytes: z.number().int().positive().max(MAX_UPLOAD_BYTES),
-  replaceSourceVersion: z.boolean().optional(),
-});
+import {
+  assertUploadLimit,
+  formatUploadMebibytes,
+} from "./upload-limits.js";
 
 const uploadParamsSchema = z.object({ uploadId: z.string().uuid() });
 
@@ -50,7 +45,18 @@ export async function registerUploadRoutes(
   projects: ProjectRepository,
   uploads: UploadService,
   auth: AuthService,
+  options: { maxUploadBytes?: number } = {},
 ): Promise<void> {
+  const maxUploadBytes = options.maxUploadBytes ?? MAX_UPLOAD_BYTES;
+  assertUploadLimit(maxUploadBytes);
+  const maxUploadMebibytes = formatUploadMebibytes(maxUploadBytes);
+  const uploadIntentSchema = z.object({
+    projectId: z.string().uuid(),
+    filename: z.string().trim().min(1).max(255),
+    contentType: z.enum(acceptedSourceTypes),
+    sizeBytes: z.number().int().positive().max(maxUploadBytes),
+    replaceSourceVersion: z.boolean().optional(),
+  });
   const requireRequestUpload = async (
     request: FastifyRequest,
     uploadId: string,
@@ -60,7 +66,7 @@ export async function registerUploadRoutes(
   };
   app.addContentTypeParser(
     [...acceptedSourceTypes],
-    { parseAs: "buffer", bodyLimit: MAX_UPLOAD_BYTES },
+    { parseAs: "buffer", bodyLimit: maxUploadBytes },
     (_request, body, done) => done(null, body),
   );
 
@@ -79,7 +85,7 @@ export async function registerUploadRoutes(
         request.id,
         400,
         "UPLOAD_REJECTED",
-        `الملف غير مدعوم أو يتجاوز الحد الأقصى ${MAX_UPLOAD_MEBIBYTES} MiB.`,
+        `الملف غير مدعوم أو يتجاوز الحد الأقصى ${maxUploadMebibytes} MiB.`,
       );
     }
 

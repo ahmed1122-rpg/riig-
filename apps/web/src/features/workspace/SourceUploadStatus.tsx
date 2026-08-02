@@ -3,13 +3,15 @@ import type { ProjectMode } from "../../types";
 import {
   MAX_IMAGE_LAYERS,
   MAX_PDF_PAGES,
-  MAX_UPLOAD_MEBIBYTES,
+  MAX_UPLOAD_BYTES,
 } from "@motionprep/contracts";
+import { uploadLimitLabel } from "./uploadLimit";
 
 export type UploadState = "empty" | "validating" | "uploading" | "verifying" | "ready" | "error";
 
 interface SourceUploadStatusProps {
   mode: ProjectMode;
+  maxUploadBytes?: number;
   fileName: string;
   version: number;
   state: UploadState;
@@ -34,6 +36,7 @@ const labels: Record<UploadState, string> = {
 
 export function SourceUploadStatus({
   mode,
+  maxUploadBytes = MAX_UPLOAD_BYTES,
   fileName,
   version,
   state,
@@ -47,6 +50,7 @@ export function SourceUploadStatus({
   onRetry,
 }: SourceUploadStatusProps) {
   const active = !["empty", "ready", "error"].includes(state);
+  const uploadLimit = uploadLimitLabel(maxUploadBytes);
 
   return (
     <div className="pro-source-status">
@@ -54,7 +58,7 @@ export function SourceUploadStatus({
         <span className="source-icon"><Icon name={mode === "image" ? "image" : "scan"} size={17} /></span>
         <span>
           <strong dir="ltr">{fileName}</strong>
-          <small>{mode === "image" ? `ملف واحد · ${MAX_UPLOAD_MEBIBYTES} MiB · حتى ${MAX_IMAGE_LAYERS} طبقة` : `ملف PDF واحد · ${MAX_UPLOAD_MEBIBYTES} MiB · حتى ${MAX_PDF_PAGES} صفحة`}</small>
+          <small>{mode === "image" ? `ملف واحد · ${uploadLimit} · حتى ${MAX_IMAGE_LAYERS} طبقة` : `ملف PDF واحد · ${uploadLimit} · حتى ${MAX_PDF_PAGES} صفحة`}</small>
         </span>
         {version > 0 && <span className="pro-source-version">v{version}</span>}
         <span className="replace-source">{state === "empty" ? "اختيار" : "استبدال"}</span>
