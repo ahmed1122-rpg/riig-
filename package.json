@@ -51,13 +51,15 @@
     "verify:bundle": "node scripts/verify-bundle-budget.mjs",
     "verify:release-env:test": "node --test scripts/verify-release-environment.test.mjs",
     "verify:release-evidence:test": "node --test scripts/create-release-evidence.test.mjs",
+    "test:release-drill:utils": "node --test scripts/release-drill-config.test.mjs",
+    "test:release-rollback": "node scripts/run-release-rollback-drill.mjs",
     "verify:release-env": "node scripts/verify-release-environment.mjs",
     "verify:staging-application": "node scripts/verify-staging-application.mjs",
     "verify:clean": "node --test scripts/clean.test.mjs",
     "test:topology": "node scripts/verify-production-topology.mjs",
     "test:faults:topology": "node scripts/verify-runtime-fault-recovery.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=22.12.0",

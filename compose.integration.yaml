@@ -1,7 +1,10 @@
 name: motionprep-integration
 
 x-runtime: &runtime
-  image: motionprep-runtime:integration
+  # The default keeps the ordinary CI build unchanged. Release/rollback drills
+  # inject an already-published digest and use --no-build so the tested bytes
+  # are exactly the bytes approved by the release workflow.
+  image: ${INTEGRATION_RUNTIME_IMAGE_REF:-motionprep-runtime:integration}
   build:
     context: .
     dockerfile: Dockerfile
@@ -50,7 +53,7 @@ x-runtime: &runtime
     USAGE_METERING_MODE: shadow
     STRIPE_SECRET_KEY: test_stripe_key_motionprep_topology_only
     STRIPE_WEBHOOK_SECRET: whsec_motionprep_topology_only
-    RELEASE_VERSION: integration
+    RELEASE_VERSION: ${INTEGRATION_RELEASE_VERSION:-integration}
   networks:
     - integration
   init: true
@@ -152,6 +155,10 @@ services:
         condition: service_healthy
     ports:
       - "54101:4000"
+    networks:
+      integration:
+        aliases:
+          - api
     healthcheck: &api-healthcheck
       test:
         - CMD
@@ -204,6 +211,33 @@ services:
       - apps/worker-export/dist/index.js
     healthcheck:
       test: ["CMD", "node", "scripts/check-worker-health.mjs", "export"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  release-web:
+    image: ${INTEGRATION_WEB_IMAGE_REF:-motionprep-web:integration}
+    profiles:
+      - release-drill
+    depends_on:
+      api-a:
+        condition: service_healthy
+    networks:
+      - integration
+    ports:
+      - "${RELEASE_WEB_PORT:-58080}:8080"
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /var/cache/nginx:size=32m,mode=1777
+      - /var/run:size=1m,mode=1777
+      - /tmp:size=16m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 3s
       timeout: 3s
       retries: 20

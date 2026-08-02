@@ -40,6 +40,8 @@ const requiredFiles = [
   "scripts/verify-staging-application.mjs",
   "scripts/verify-bundle-budget.mjs",
   "scripts/verify-release-environment.mjs",
+  "scripts/run-release-rollback-drill.mjs",
+  "scripts/release-drill-config.mjs",
   "apps/api/migrations/012_processing_worker_leases.sql",
   "apps/api/migrations/016_retention_cleanup.sql",
   "apps/api/migrations/018_worker_events.sql",
@@ -58,6 +60,7 @@ const requiredFiles = [
   ".github/workflows/staging-readiness.yml",
   ".github/workflows/performance-readiness.yml",
   ".github/workflows/staging-application-readiness.yml",
+  ".github/workflows/release-rollback-drill.yml",
   ".github/dependabot.yml",
   ".github/CODEOWNERS",
 ];
@@ -127,6 +130,7 @@ const workflowSources = await Promise.all(
     ".github/workflows/staging-readiness.yml",
     ".github/workflows/performance-readiness.yml",
     ".github/workflows/staging-application-readiness.yml",
+    ".github/workflows/release-rollback-drill.yml",
   ].map((file) => readFile(join(root, file), "utf8")),
 );
 violations.push(...(await verifyObservabilityArtifacts(root)));
@@ -289,6 +293,21 @@ for (const token of [
 ]) {
   if (!performanceWorkflow.includes(token)) {
     violations.push(`Performance-readiness workflow is missing token: ${token}`);
+  }
+}
+const rollbackWorkflow = workflowSources[7];
+for (const token of [
+  "environment: production-readiness",
+  "ROLLBACK_RUNTIME_IMAGE_REF",
+  "ROLLBACK_WEB_IMAGE_REF",
+  "Install Cosign",
+  "npm run test:release-rollback",
+  "release-rollback-evidence-${{ github.sha }}",
+  ".tmp/release-rollback-evidence.json",
+  ".tmp/release-drill-rollback-pdf.json",
+]) {
+  if (!rollbackWorkflow.includes(token)) {
+    violations.push(`Release rollback workflow is missing token: ${token}`);
   }
 }
 
