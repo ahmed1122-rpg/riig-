@@ -4,8 +4,17 @@ import { createDockerWorkspace } from "./docker-workspace.mjs";
 const compose = ["compose", "-f", "compose.integration.yaml"];
 const sourceWorkingDirectory = process.cwd();
 const dockerWorkspace = createDockerWorkspace(sourceWorkingDirectory);
-const buildEnvironment = {
+const releaseVersion =
+  process.env.RELEASE_VERSION ??
+  process.env.INTEGRATION_RELEASE_VERSION ??
+  "integration";
+const topologyEnvironment = {
   ...process.env,
+  RELEASE_VERSION: releaseVersion,
+  INTEGRATION_RELEASE_VERSION: releaseVersion,
+};
+const buildEnvironment = {
+  ...topologyEnvironment,
   // Compose Bake cannot encode a non-ASCII Windows context in its gRPC header.
   // The temporary junction supplies an ASCII context; disabling Bake also
   // keeps the local path compatible across current Docker Desktop releases.
@@ -21,17 +30,20 @@ try {
     label: "integration runtime image build",
   });
   runDocker([...compose, "up", "--detach", "--no-build", "--wait"], {
+    env: topologyEnvironment,
     label: "production-shaped topology startup",
   });
   run(process.execPath, ["scripts/verify-production-topology.mjs"], {
+    env: topologyEnvironment,
     label: "production topology verification",
   });
   run(process.execPath, ["scripts/verify-runtime-fault-recovery.mjs"], {
+    env: topologyEnvironment,
     label: "dependency fault and recovery verification",
   });
   run(process.execPath, ["scripts/load-pdf-workflow.mjs"], {
     env: {
-      ...process.env,
+      ...topologyEnvironment,
       LOAD_CONCURRENCY: "2",
       LOAD_ITERATIONS: "1",
       LOAD_REQUEST_ORIGIN: "http://127.0.0.1:5173",
@@ -50,16 +62,19 @@ try {
   );
   runDocker([...compose, "ps", "--all"], {
     allowFailure: true,
+    env: topologyEnvironment,
     label: "topology status diagnostics",
   });
   runDocker([...compose, "logs", "--no-color"], {
     allowFailure: true,
+    env: topologyEnvironment,
     label: "topology log diagnostics",
   });
 } finally {
   try {
     runDocker([...compose, "down", "--volumes"], {
       allowFailure: true,
+      env: topologyEnvironment,
       label: "topology cleanup",
     });
   } finally {
