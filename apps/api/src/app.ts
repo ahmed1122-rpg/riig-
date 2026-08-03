@@ -117,6 +117,7 @@ export interface AppDependencies {
   pdfOcrEngine?: PdfOcrEngine;
   readiness?: () => Promise<void>;
   dependencyReadiness?: Readonly<Record<string, () => Promise<void>>>;
+  metricsProbeTimeoutMs?: number;
   adminAccess?: AdminAccessCommand;
   usageMeter?: UsageMeter;
   operationalStatus?: OperationalStatusProvider;
@@ -300,6 +301,9 @@ export async function buildApp(
     ...(dependencies.readiness ? { readiness: dependencies.readiness } : {}),
     ...(dependencies.dependencyReadiness
       ? { dependencyReadiness: dependencies.dependencyReadiness }
+      : {}),
+    ...(dependencies.metricsProbeTimeoutMs
+      ? { probeTimeoutMs: dependencies.metricsProbeTimeoutMs }
       : {}),
     buildInfo: {
       version: APPLICATION_VERSION,

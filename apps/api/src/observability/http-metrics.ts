@@ -8,6 +8,7 @@ import type { OperationalStatusProvider } from "./operational-status.js";
 import { jobDurationBuckets } from "./operational-status.js";
 
 const durationBuckets = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
+const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
 
 interface HttpMetric {
   count: number;
@@ -23,6 +24,7 @@ export async function registerHttpMetrics(
     readiness?: () => Promise<void>;
     dependencyReadiness?: Readonly<Record<string, () => Promise<void>>>;
     buildInfo?: { version: string; release: string };
+    probeTimeoutMs?: number;
   } = {},
 ): Promise<void> {
   const startedAt = new WeakMap<FastifyRequest, bigint>();
@@ -79,10 +81,29 @@ export async function registerHttpMetrics(
         },
       });
     }
+    const probeTimeoutMs = Math.max(
+      1,
+      options.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS,
+    );
+    const operationalStatus = options.operationalStatus;
+    const operationalSnapshotProbe = operationalStatus
+      ? settleProbe(() => operationalStatus.snapshot(), probeTimeoutMs)
+      : null;
+    const dependencyChecks = Object.entries(options.dependencyReadiness ?? {});
+    const dependencyProbes = dependencyChecks.map(([, check]) =>
+      settleProbe(check, probeTimeoutMs),
+    );
+    const readinessProbe = options.readiness
+      ? settleProbe(options.readiness, probeTimeoutMs)
+      : null;
     const lines = renderHttpMetrics(metrics);
-    if (options.operationalStatus) {
+    if (operationalSnapshotProbe) {
       try {
-        const snapshot = await options.operationalStatus.snapshot();
+        const snapshotOutcome = await operationalSnapshotProbe;
+        if (snapshotOutcome.status === "rejected") {
+          throw snapshotOutcome.reason;
+        }
+        const snapshot = snapshotOutcome.value;
         lines.push(
           "# HELP motionprep_operational_snapshot_success Whether operational metrics were collected.",
           "# TYPE motionprep_operational_snapshot_success gauge",
@@ -185,24 +206,24 @@ export async function registerHttpMetrics(
         );
       }
     }
-    if (options.dependencyReadiness) {
+    if (dependencyChecks.length > 0) {
       lines.push(
         "# HELP motionprep_dependency_ready Whether an individual configured dependency is ready.",
         "# TYPE motionprep_dependency_ready gauge",
       );
-      const checks = Object.entries(options.dependencyReadiness);
-      const outcomes = await Promise.allSettled(
-        checks.map(([, check]) => check()),
-      );
-      checks.forEach(([dependency], index) => {
+      const outcomes = await Promise.all(dependencyProbes);
+      dependencyChecks.forEach(([dependency], index) => {
         lines.push(
           `motionprep_dependency_ready{dependency="${escapeLabel(dependency)}"} ${outcomes[index]?.status === "fulfilled" ? 1 : 0}`,
         );
       });
     }
-    if (options.readiness) {
+    if (readinessProbe) {
       try {
-        await options.readiness();
+        const readinessOutcome = await readinessProbe;
+        if (readinessOutcome.status === "rejected") {
+          throw readinessOutcome.reason;
+        }
         lines.push(
           "# HELP motionprep_dependencies_ready Whether all configured dependencies are ready.",
           "# TYPE motionprep_dependencies_ready gauge",
@@ -243,6 +264,34 @@ export async function registerHttpMetrics(
         .send(`${lines.join("\n")}\n`);
     },
   );
+}
+
+type ProbeOutcome<T> =
+  | { status: "fulfilled"; value: T }
+  | { status: "rejected"; reason: unknown };
+
+async function settleProbe<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+): Promise<ProbeOutcome<T>> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const value = await Promise.race([
+      operation(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Metrics dependency probe timed out.")),
+          timeoutMs,
+        );
+        timer.unref();
+      }),
+    ]);
+    return { status: "fulfilled", value };
+  } catch (reason) {
+    return { status: "rejected", reason };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function timestampSeconds(value: string | null | undefined): number {
