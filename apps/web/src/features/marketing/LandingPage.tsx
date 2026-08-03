@@ -107,7 +107,7 @@ export default function LandingPage({
             تسجيل الدخول
           </button>
           <button type="button" className="marketing-studio-button" onClick={onOpenGuest}>
-            فتح الاستوديو كضيف
+            استكشف الاستوديو كضيف
             <Icon name="arrow" size={16} />
           </button>
         </div>
@@ -135,7 +135,7 @@ export default function LandingPage({
                 onClick={onOpenGuest}
               >
                 <Icon name="spark" size={19} />
-                جرّب مساحة التجهيز
+                استكشف مساحة التجهيز
               </button>
               <button
                 type="button"
@@ -435,10 +435,10 @@ export default function LandingPage({
           <div>
             <span>ابدأ من الملف الحقيقي</span>
             <h2>دع كل طبقة تصل باسمها الصحيح.</h2>
-            <p>جرّب الاستوديو كضيف، ثم سجّل الدخول عندما تريد حفظ مشاريعك وتتبّع التصديرات.</p>
+            <p>استكشف الأدوات كضيف؛ يلزم تسجيل الدخول قبل اختيار ملف أو بدء الرفع والحفظ والتصدير.</p>
           </div>
           <button type="button" className="marketing-primary-cta" onClick={onOpenGuest}>
-            فتح الاستوديو كضيف
+            استكشف الاستوديو كضيف
             <Icon name="arrow" size={18} />
           </button>
         </section>

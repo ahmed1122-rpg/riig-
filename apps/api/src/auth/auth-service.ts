@@ -24,10 +24,11 @@ import {
   type SecretProtector,
 } from "./secret-protector.js";
 import {
-  createOtpAuthUri,
+  createOtpAuthUri, formatRecoveryCode,
   generateTotpSecret,
   verifyTotpCode,
 } from "./totp.js";
+import { AuthPasswordCoordinator } from "./auth-password-coordinator.js";
 
 export const SESSION_COOKIE_NAME = "motionprep_session";
 
@@ -79,6 +80,7 @@ export class AuthService {
   readonly #emailSender: EmailSender;
   readonly #passwordResetUrl: string;
   readonly #totpIssuer: string;
+  readonly #passwordCoordinator: AuthPasswordCoordinator;
 
   constructor(
     readonly repository: AuthRepository,
@@ -94,6 +96,16 @@ export class AuthService {
     this.#passwordResetUrl =
       security.passwordResetUrl ?? "http://localhost:5173/auth/reset";
     this.#totpIssuer = security.totpIssuer ?? "MotionPrep";
+    this.#passwordCoordinator = new AuthPasswordCoordinator({
+      repository: this.repository,
+      now: this.now,
+      emailSender: this.#emailSender,
+      passwordResetUrl: this.#passwordResetUrl,
+      randomToken: () => this.randomToken(),
+      hashToken: (token) => this.hashToken(token),
+      requireActiveUser: (userId) => this.requireActiveUser(userId),
+      domainError: (code, message) => new AuthDomainError(code, message),
+    });
   }
 
   async register(input: {
@@ -326,64 +338,14 @@ export class AuthService {
   }
 
   async requestPasswordReset(emailInput: string): Promise<void> {
-    const email = emailInput.trim().toLowerCase();
-    const user = await this.repository.findUserByEmail(email);
-    if (!user || user.status !== "active") return;
-
-    const token = this.randomToken();
-    const expiresAt = new Date(
-      this.now().getTime() + 30 * 60_000,
-    ).toISOString();
-    const resetUrl = new URL(this.#passwordResetUrl);
-    resetUrl.searchParams.set("token", token);
-    const message = {
-      recipient: user.email,
-      resetUrl: resetUrl.toString(),
-      expiresAt,
-    };
-    const delivery = await this.repository.savePasswordReset(
-      {
-        tokenHash: this.hashToken(token),
-        userId: user.id,
-        expiresAt,
-      },
-      message,
-    );
-    if (delivery === "queued") return;
-    try {
-      await this.#emailSender.sendPasswordReset(message);
-    } catch {
-      // The route intentionally remains indistinguishable from an unknown
-      // email response. Delivery failures are surfaced by SMTP monitoring.
-    }
+    return this.#passwordCoordinator.requestReset(emailInput);
   }
 
   async resetPassword(input: {
     token: string;
     newPassword: string;
   }): Promise<void> {
-    const reset = await this.repository.consumePasswordReset(
-      this.hashToken(input.token),
-      this.now().toISOString(),
-    );
-    if (!reset) {
-      throw new AuthDomainError(
-        "PASSWORD_RESET_INVALID",
-        "رابط إعادة التعيين منتهي أو مستخدم.",
-      );
-    }
-    const updated = await this.repository.updateSecurity(reset.userId, {
-      passwordHash: await hashPassword(input.newPassword),
-    });
-    if (!updated) {
-      throw new AuthDomainError(
-        "PASSWORD_RESET_INVALID",
-        "رابط إعادة التعيين غير صالح.",
-      );
-    }
-    await this.repository.deleteSessionsByUser(reset.userId);
-    await this.repository.deleteMfaChallengesByUser(reset.userId);
-    await this.repository.deletePasswordResetsByUser(reset.userId);
+    return this.#passwordCoordinator.reset(input);
   }
 
   async changePassword(input: {
@@ -391,19 +353,7 @@ export class AuthService {
     currentPassword: string;
     newPassword: string;
   }): Promise<void> {
-    const user = await this.requireActiveUser(input.userId);
-    if (!(await verifyPassword(input.currentPassword, user.passwordHash))) {
-      throw new AuthDomainError(
-        "CURRENT_PASSWORD_INVALID",
-        "كلمة المرور الحالية غير صحيحة.",
-      );
-    }
-    await this.repository.updateSecurity(user.id, {
-      passwordHash: await hashPassword(input.newPassword),
-    });
-    await this.repository.deleteSessionsByUser(user.id);
-    await this.repository.deleteMfaChallengesByUser(user.id);
-    await this.repository.deletePasswordResetsByUser(user.id);
+    return this.#passwordCoordinator.change(input);
   }
 
   private async finishLogin(
@@ -581,9 +531,4 @@ export class AuthService {
     return randomBytes(32).toString("base64url");
   }
 
-}
-
-function formatRecoveryCode(value: string): string {
-  const normalized = value.toUpperCase();
-  return `${normalized.slice(0, 5)}-${normalized.slice(5)}`;
 }

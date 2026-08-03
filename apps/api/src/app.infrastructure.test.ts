@@ -266,6 +266,30 @@ describe("API — البنية التحتية", () => {
     expect(response.body).toContain("motionprep_dependencies_ready 0");
   });
 
+  it("bounds metrics probes when infrastructure checks never settle", async () => {
+    const never = () => new Promise<never>(() => undefined);
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      metricsProbeTimeoutMs: 20,
+      readiness: never,
+      dependencyReadiness: { database: never },
+      operationalStatus: { snapshot: never },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/internal/metrics",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(
+      "motionprep_operational_snapshot_success 0",
+    );
+    expect(response.body).toContain(
+      'motionprep_dependency_ready{dependency="database"} 0',
+    );
+    expect(response.body).toContain("motionprep_dependencies_ready 0");
+  });
+
   it("allows the browser upload method from a configured development origin", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     const response = await app.inject({

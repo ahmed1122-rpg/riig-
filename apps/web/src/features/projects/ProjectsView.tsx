@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { useDebounce } from "../../shared/hooks/useDebounce";
 import { DataState } from "../../shared/DataState";
 import { formatBytes, formatDateTime } from "../../shared/formatters";
 import { Icon } from "../../shared/Icon";
@@ -87,14 +88,15 @@ export function ProjectsView({
     };
   }, [authenticated, onRequireAuth, reloadVersion]);
 
+  const debouncedQuery = useDebounce(query, 250);
   const filtered = useMemo(
     () =>
       items.filter(
         (project) =>
           (filter === "all" || project.kind === filter) &&
-          project.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+          project.name.toLocaleLowerCase().includes(debouncedQuery.toLocaleLowerCase()),
       ),
-    [filter, items, query],
+    [filter, items, debouncedQuery],
   );
 
   const loadVersions = async (projectId: string) => {

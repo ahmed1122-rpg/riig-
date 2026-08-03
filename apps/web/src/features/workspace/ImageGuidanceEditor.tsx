@@ -3,10 +3,6 @@ import { Icon } from "../../shared/Icon";
 import type { Layer } from "../../types";
 import { RasterLayerPreview } from "./RasterLayerPreview";
 import {
-  type ReadyWorkspaceToolId,
-  type WorkspaceEditorCommand,
-} from "./workspaceToolRegistry";
-import {
   createGuidancePromptTools,
   GuidanceHistoryActions,
   GuidanceReview,
@@ -17,7 +13,9 @@ import {
   WorkflowStrip,
   type Point,
   type ProcessingMode,
+  type ReadyWorkspaceToolId,
   type SharedEditorProps,
+  type WorkspaceEditorCommand,
 } from "./GuidanceEditorShared";
 
 type ImagePrompt = "keep" | "exclude" | "separate" | "erase";
@@ -300,13 +298,6 @@ export function ImageGuidanceEditor({
   return (
     <>
       <div className="stage guidance-stage">
-        <p id="image-guidance-instruction" className="guidance-instruction">
-          <Icon name="brush" size={14} />
-          <span>
-            <strong>ارسم فوق الطبقة الفعلية.</strong>{" "}
-            قلم ملء/احتفظ يصلح الشفافية موضعيًا، والاستبعاد يمسح، والفصل ينشئ طبقة Raster ويملأ مكانها تلقائيًا للمراجعة.
-          </span>
-        </p>
         <div className="image-artboard image-artboard--guided">
           <div className="artboard-grid" />
           {sourcePreviewUrl || layers.some((layer) => layer.previewUrl) ? (
@@ -350,6 +341,13 @@ export function ImageGuidanceEditor({
       </div>
 
       <section className="guidance-context image-guidance-context" aria-label="أدوات إرشاد تقطيع الصورة">
+        <p id="image-guidance-instruction" className="guidance-instruction">
+          <Icon name="brush" size={14} />
+          <span>
+            <strong>ارسم فوق الطبقة الفعلية.</strong>{" "}
+            قلم ملء/احتفظ يصلح الشفافية موضعيًا، والاستبعاد يمسح، والفصل ينشئ طبقة Raster ويملأ مكانها تلقائيًا للمراجعة.
+          </span>
+        </p>
         <div className="guidance-primary">
           <ProcessingModeControl
             value={processingMode}

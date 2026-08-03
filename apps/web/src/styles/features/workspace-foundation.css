@@ -149,11 +149,6 @@
   .demo-select { padding: 0 7px; }
   .page-content { min-height: calc(100vh - var(--topbar-height)); padding: 22px 16px 84px; }
   .page-content.is-workspace { height: calc(100dvh - var(--topbar-height)); min-height: 0; padding: 0; overflow: hidden; }
-  .mobile-bottom-nav { position: fixed; z-index: 32; inset-inline: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); min-height: 62px; padding-bottom: env(safe-area-inset-bottom); border-top: 1px solid var(--line); background: var(--surface); direction: rtl; }
-  .mobile-bottom-nav .nav-item { min-height: 58px; justify-content: center; flex-direction: column; gap: 4px; border-radius: 0; }
-  .mobile-bottom-nav .nav-item span { display: block; font-size: 7px; }
-  .mobile-bottom-nav .nav-item::after { inset-inline: 30%; inset-block: auto 0; width: auto; height: 2px; }
-
   .dashboard-hero { gap: 16px; margin-bottom: 30px; }
   .hero-copy { padding-top: 5px; }
   .hero-copy h1 { font-size: 28px; }

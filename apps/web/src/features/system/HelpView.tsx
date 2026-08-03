@@ -42,7 +42,7 @@ export function HelpView() {
           width="1024"
           height="1024"
           alt="مجموعة أوضاع لشخصية ثلاثية الأبعاد توضح الاستعداد للحركة"
-          loading="lazy"
+          loading="eager"
           decoding="async"
         />
       </section>

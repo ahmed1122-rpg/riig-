@@ -3,6 +3,7 @@ import {
   builtInPresets,
   createPdfBackgroundLayerName,
   createPdfTextLayerName,
+  getRecommendedPreset,
   normalizeLayerName,
   validateProductionDocument,
 } from "./index.js";
@@ -22,6 +23,11 @@ describe("normalizeLayerName", () => {
 });
 
 describe("production presets", () => {
+  it("selects the matching motion preset for images and books", () => {
+    expect(getRecommendedPreset("image").id).toBe("cinematic-parallax");
+    expect(getRecommendedPreset("book").id).toBe("book-page-flip");
+  });
+
   it("caps image assets at 15 layers", () => {
     expect(builtInPresets.characterBasic.maxLayers).toBe(15);
   });

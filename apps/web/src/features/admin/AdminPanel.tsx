@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useDebounce } from "../../shared/hooks/useDebounce";
+import { useMediaQuery } from "../../shared/hooks/useMediaQuery";
+import { useModalDrawer } from "../../shared/hooks/useModalDrawer";
 import {
   ApiError,
   getAdminAudit,
@@ -39,6 +42,12 @@ const roleLabels: Record<UserRole, string> = {
   support: "دعم",
   finance: "مالية",
   admin: "مدير",
+};
+
+const accountStatusLabels: Record<AdminUser["status"], string> = {
+  active: "نشط",
+  pending_verification: "بانتظار التحقق",
+  suspended: "موقوف",
 };
 
 const navigation: AdminNavItem[] = [
@@ -92,6 +101,11 @@ export function outcomeTone(outcome: AdminAuditEvent["outcome"]): Tone {
 }
 
 export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) {
+  const drawerId = useId();
+  const drawerRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileNavigation = useMediaQuery("(max-width: 800px)");
   const allowedNavigation = navigation.filter((item) => item.roles.includes(role));
   const [activeView, setActiveView] = useState<AdminView>(allowedNavigation[0]?.id ?? "overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -118,9 +132,38 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
   const currentAllowed = allowedNavigation.some((item) => item.id === activeView);
   const effectiveView = currentAllowed ? activeView : allowedNavigation[0]?.id ?? "overview";
 
+  useModalDrawer({
+    active: mobileNavigation && mobileNavOpen,
+    dialogRef: drawerRef,
+    backgroundRef: mainRef,
+    triggerRef: menuButtonRef,
+    onClose: () => setMobileNavOpen(false),
+  });
+
+  useEffect(() => {
+    if (!mobileNavigation) setMobileNavOpen(false);
+  }, [mobileNavigation]);
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const hasCachedData =
+      effectiveView === "overview"
+        ? overview !== null
+        : effectiveView === "processing"
+          ? jobs.length > 0
+          : effectiveView === "users"
+            ? users.length > 0
+            : effectiveView === "billing"
+              ? billing !== null
+              : effectiveView === "audit"
+                ? audit.length > 0
+                : effectiveView === "system"
+                  ? system !== null
+                  : false;
+
+    if (!hasCachedData) {
+      setLoading(true);
+    }
     setError(null);
     const operation =
       effectiveView === "overview"
@@ -218,9 +261,17 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
 
   return (
     <div className="admin-shell" dir="rtl">
-      {mobileNavOpen && <button type="button" className="nav-scrim" aria-label="إغلاق قائمة الإدارة" onClick={() => setMobileNavOpen(false)} />}
-      <aside className={`admin-sidebar ${mobileNavOpen ? "is-open" : ""}`}>
-        <header className="admin-brand"><span className="brand-mark"><Icon name="layers" size={19} /></span><div><strong>MotionPrep</strong><small>CONTROL ROOM</small></div><em>ADMIN</em></header>
+      {mobileNavigation && mobileNavOpen && <button type="button" className="nav-scrim" tabIndex={-1} aria-label="إغلاق قائمة الإدارة" aria-hidden="true" onClick={() => setMobileNavOpen(false)} />}
+      {(!mobileNavigation || mobileNavOpen) && <aside
+        ref={drawerRef}
+        id={drawerId}
+        className={`admin-sidebar ${mobileNavOpen ? "is-open" : ""}`}
+        aria-label="التنقل الإداري"
+        role={mobileNavigation ? "dialog" : undefined}
+        aria-modal={mobileNavigation ? true : undefined}
+        tabIndex={mobileNavigation ? -1 : undefined}
+      >
+        <header className="admin-brand"><span className="brand-mark"><Icon name="layers" size={19} /></span><div><strong>MotionPrep</strong><small>CONTROL ROOM</small></div><em>ADMIN</em><button type="button" className="icon-button admin-sidebar-close" aria-label="إغلاق قائمة الإدارة" onClick={() => setMobileNavOpen(false)} data-drawer-initial-focus><Icon name="close" size={18} /></button></header>
         <nav aria-label="التنقل الإداري">
           {allowedNavigation.map((item) => (
             <button type="button" className={effectiveView === item.id ? "is-active" : ""} key={item.id} onClick={() => { setActiveView(item.id); setQuery(""); setMobileNavOpen(false); }}>
@@ -230,11 +281,11 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
         </nav>
         <div className="admin-sidebar__scope"><Icon name="shieldCheck" size={16} /><span><strong>نطاق الصلاحية</strong><small>{roleLabels[role]} · مفروض من الخادم</small></span></div>
         <button type="button" className="admin-exit" onClick={onExit}><Icon name="arrow" size={16} /> العودة إلى الاستوديو</button>
-      </aside>
+      </aside>}
 
-      <div className="admin-main">
+      <div ref={mainRef} className="admin-main">
         <header className="admin-topbar">
-          <div className="admin-topbar__leading"><button type="button" className="icon-button admin-mobile-menu" aria-label="فتح قائمة الإدارة" onClick={() => setMobileNavOpen(true)}><Icon name="menu" size={18} /></button><span className={`admin-connection ${error ? "is-error" : loading ? "is-checking" : "is-connected"}`}><i /> {error ? "تعذر الاتصال" : loading ? "جارٍ التحقق" : `متصل · ${lastSuccessfulAt?.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }) ?? "الآن"}`}</span><b>مركز الإدارة</b></div>
+          <div className="admin-topbar__leading"><button ref={menuButtonRef} type="button" className="icon-button admin-mobile-menu" aria-label="فتح قائمة الإدارة" aria-expanded={mobileNavOpen} aria-controls={drawerId} onClick={() => setMobileNavOpen(true)}><Icon name="menu" size={18} /></button><span className={`admin-connection ${error ? "is-error" : loading ? "is-checking" : "is-connected"}`}><i /> {error ? "تعذر الاتصال" : loading ? "جارٍ التحقق" : `متصل · ${lastSuccessfulAt?.toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }) ?? "الآن"}`}</span><b>مركز الإدارة</b></div>
           <div className="admin-topbar__actions"><button type="button" className="secondary-button" onClick={retry}><Icon name="refresh" size={15} /> تحديث</button><span className="admin-avatar">{roleLabels[role].slice(0, 1)}</span></div>
         </header>
         <main className="admin-content">
@@ -291,13 +342,27 @@ function Overview({ data, loading, error, onRetry }: { data: AdminOverviewData |
       <section className="operational-rail">
         <header className="operational-rail__head"><div><strong>سلامة التشغيل</strong><small>مستخلص من الرفع والمعالجة والتصدير</small></div><Status tone={failures > 0 ? "danger" : "ready"}>{failures > 0 ? `${failures} حالات فشل` : "لا توجد حالات فشل"}</Status></header>
       </section>
-      <AuditTable rows={data.audit} />
+      <div className="admin-overview-details">
+        <section className="admin-insight-panel" aria-labelledby="pipeline-summary-title">
+          <header><div><span className="eyebrow">الحمل الحالي</span><h2 id="pipeline-summary-title">حركة خط الإنتاج</h2></div><Status tone={failures > 0 ? "danger" : "ready"}>{failures > 0 ? `${failures} فشل` : "مستقر"}</Status></header>
+          <dl className="admin-pipeline-metrics">
+            <div><dt>الرفع</dt><dd><strong>{data.uploads.active}</strong><span>نشط من {data.uploads.total}</span></dd></div>
+            <div><dt>المعالجة</dt><dd><strong>{data.processing.active}</strong><span>نشط من {data.processing.total}</span></dd></div>
+            <div><dt>التصدير</dt><dd><strong>{data.exports.queued}</strong><span>منتظر من {data.exports.total}</span></dd></div>
+          </dl>
+        </section>
+        <section className="admin-insight-panel" aria-labelledby="recent-audit-title">
+          <header><div><span className="eyebrow">قابلية التتبع</span><h2 id="recent-audit-title">أحدث النشاط الإداري</h2></div><span className="bounded-note">{data.audit.length} إجراء</span></header>
+          {data.audit.length > 0 ? <div className="admin-recent-audit">{data.audit.slice(0, 4).map((event) => <article key={event.id}><span><strong>{event.action}</strong><small>{formatDate(event.createdAt)}</small></span><Status tone={outcomeTone(event.outcome)}>{event.outcome}</Status></article>)}</div> : <div className="admin-empty admin-empty--compact"><Icon name="history" size={24} /><strong>لا توجد إجراءات إدارية مسجلة</strong><span>سيظهر هنا أحدث نشاط موثق مع بدء التشغيل.</span></div>}
+        </section>
+      </div>
     </section>
   );
 }
 
 export function Processing({ jobs, query, onQuery, loading, error, onRetry, canRetry, onRetryJob }: { jobs: AdminProcessingJob[]; query: string; onQuery: (value: string) => void; loading: boolean; error: string | null; onRetry: () => void; canRetry: boolean; onRetryJob: (job: AdminProcessingJob) => void }) {
-  const visible = jobs.filter((job) => `${job.id} ${job.projectId} ${job.status} ${job.errorCode ?? ""}`.toLowerCase().includes(query.toLowerCase()));
+  const debouncedQuery = useDebounce(query, 250);
+  const visible = jobs.filter((job) => `${job.id} ${job.projectId} ${job.status} ${job.errorCode ?? ""}`.toLowerCase().includes(debouncedQuery.toLowerCase()));
   return (
     <section className="admin-view page-enter">
       <header className="admin-page-heading"><div><span className="eyebrow">طابور المعالجة</span><h1>المعالجة</h1><p>قراءة مباشرة للحالة؛ المدير فقط يستطيع إعادة مهمة فاشلة ذات مصدر حالي جاهز مع سبب مدقق.</p></div></header>
@@ -330,7 +395,8 @@ export function Processing({ jobs, query, onQuery, loading, error, onRetry, canR
 }
 
 function Users({ users, query, onQuery, canEdit, onOpen, loading, error, onRetry }: { users: AdminUser[]; query: string; onQuery: (value: string) => void; canEdit: boolean; onOpen: (user: AdminUser) => void; loading: boolean; error: string | null; onRetry: () => void }) {
-  const visible = users.filter((user) => `${user.name} ${user.email} ${user.role} ${user.status}`.toLowerCase().includes(query.toLowerCase()));
+  const debouncedQuery = useDebounce(query, 250);
+  const visible = users.filter((user) => `${user.name} ${user.email} ${user.role} ${user.status}`.toLowerCase().includes(debouncedQuery.toLowerCase()));
   return (
     <section className="admin-view page-enter">
       <header className="admin-page-heading"><div><span className="eyebrow">الحسابات والصلاحيات</span><h1>المستخدمون</h1><p>الدعم يقرأ البيانات، والمدير فقط يستطيع تعديل الوصول بسبب مسجل.</p></div><span className="bounded-note">{users.length} حساب</span></header>
@@ -347,12 +413,12 @@ function Users({ users, query, onQuery, canEdit, onOpen, loading, error, onRetry
             <span role="columnheader" aria-label="إدارة الوصول" />
           </div>
           {visible.map((user) => (
-            <button type="button" className="admin-data-row" role="row" key={user.id} disabled={!canEdit} onClick={() => onOpen(user)} title={canEdit ? "إدارة الوصول" : "وصول الدعم للقراءة فقط"}>
-              <span className="user-cell" role="cell"><i>{user.name.slice(0, 1)}</i><span><strong>{user.name}</strong><small>{user.email}</small></span></span>
-              <span role="cell">{roleLabels[user.role]}</span>
-              <span role="cell">{user.mfaEnabled ? "مفعّل" : "غير مفعّل"}</span>
-              <span role="cell">{formatDate(user.lastLoginAt)}</span>
-              <span role="cell"><Status tone={user.status === "active" ? "ready" : user.status === "suspended" ? "danger" : "review"}>{user.status}</Status></span>
+            <button type="button" className="admin-data-row" role="row" key={user.id} disabled={!canEdit} onClick={() => onOpen(user)} title={canEdit ? `إدارة وصول ${user.name} (${user.email})` : `وصول للقراءة فقط: ${user.name} (${user.email})`}>
+              <span className="user-cell" role="cell"><i>{user.name.slice(0, 1)}</i><span><strong>{user.name}</strong><small title={user.email}>{user.email}</small></span></span>
+              <span role="cell" data-label="الدور">{roleLabels[user.role]}</span>
+              <span role="cell" data-label="المصادقة">{user.mfaEnabled ? "مفعّلة" : "غير مفعّلة"}</span>
+              <span role="cell" data-label="آخر دخول">{formatDate(user.lastLoginAt)}</span>
+              <span role="cell" data-label="الحالة"><Status tone={user.status === "active" ? "ready" : user.status === "suspended" ? "danger" : "review"}>{accountStatusLabels[user.status]}</Status></span>
               <span role="cell"><Icon name={canEdit ? "chevron" : "lock"} size={15} /></span>
             </button>
           ))}
@@ -375,7 +441,8 @@ function Billing({ data, loading, error, onRetry }: { data: AdminBillingData | n
 }
 
 function Audit({ rows, query, onQuery, onNotify, loading, error, onRetry }: { rows: AdminAuditEvent[]; query: string; onQuery: (value: string) => void; onNotify: (message: string) => void; loading: boolean; error: string | null; onRetry: () => void }) {
-  const visible = rows.filter((row) => `${row.actorUserId} ${row.action} ${row.targetId} ${row.requestId}`.toLowerCase().includes(query.toLowerCase()));
+  const debouncedQuery = useDebounce(query, 250);
+  const visible = rows.filter((row) => `${row.actorUserId} ${row.action} ${row.targetId} ${row.requestId}`.toLowerCase().includes(debouncedQuery.toLowerCase()));
   const download = () => {
     const cells = [["created_at", "actor_user_id", "action", "target_type", "target_id", "outcome", "reason", "request_id"], ...visible.map((row) => [row.createdAt, row.actorUserId, row.action, row.targetType, row.targetId, row.outcome, row.reason ?? "", row.requestId])];
     const csv = cells.map((line) => line.map((cell) => `"${cell.replace(/"/g, "\"\"")}"`).join(",")).join("\n");

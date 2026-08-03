@@ -4,30 +4,25 @@
 }
 
 .guidance-instruction {
-  position: absolute;
-  z-index: 20;
-  inset-inline: 50% auto;
-  top: 11px;
   display: flex;
-  max-width: calc(100% - 120px);
-  min-height: 31px;
+  min-width: 0;
+  min-height: 40px;
+  grid-column: 1 / -1;
   align-items: center;
   gap: 7px;
   padding: 6px 9px;
   border: 1px solid rgba(255, 255, 255, .13);
   border-radius: 5px;
   background: rgba(18, 24, 22, .92);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
+  box-shadow: none;
   color: #aebbb7;
-  font-size: 8px;
+  font-size: 12px;
   line-height: 1.5;
   text-align: start;
-  transform: translateX(50%);
-  pointer-events: none;
 }
 
 .guidance-instruction svg { flex: 0 0 auto; color: #6ed9d0; }
-.guidance-instruction strong { color: #e9efed; font-size: 9px; }
+.guidance-instruction strong { color: #e9efed; font-size: 12px; }
 .image-artboard--guided { cursor: crosshair; }
 .image-artboard--guided .character { z-index: 2; }
 
@@ -117,7 +112,8 @@
   background: #171d1b;
   color: #dce5e2;
   direction: rtl;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .guidance-primary {
@@ -528,12 +524,11 @@
 @media (max-width: 760px) {
   .guidance-stage { min-height: 0; }
   .guidance-instruction {
-    max-width: calc(100% - 24px);
-    top: 7px;
-    padding-block: 5px;
-    font-size: 7px;
+    min-height: 44px;
+    padding-block: 7px;
+    font-size: 11px;
   }
-  .guidance-instruction strong { font-size: 8px; }
+  .guidance-instruction strong { font-size: 11px; }
   .image-artboard--guided { width: 88%; height: 78%; min-height: 230px; }
   .overlay-legend { top: auto; bottom: 8px; }
   .pdf-artboard--guided { width: 94%; height: 88%; min-height: 270px; }
@@ -547,12 +542,13 @@
   .guidance-context,
   .pdf-guidance-context {
     display: grid;
-    max-height: 140px;
-    min-height: 132px;
+    max-height: none;
+    min-height: 196px;
     grid-template-columns: 1fr;
     gap: 4px;
     padding: 6px 8px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     box-shadow: 0 -8px 22px rgba(0, 0, 0, .2);
   }
   .guidance-primary { display: block; }
@@ -565,15 +561,17 @@
   .guidance-tools,
   .pdf-marker-tools {
     flex-wrap: nowrap;
-    justify-content: center;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
   .guidance-tools button {
-    min-width: 0;
-    min-height: 27px;
-    flex: 1;
-    padding: 0 4px;
+    min-width: 82px;
+    min-height: 44px;
+    flex: 0 0 auto;
+    padding: 0 7px;
   }
-  .guidance-tools button span { font-size: 7px; }
+  .guidance-tools button span { font-size: 11px; }
   .guidance-review {
     grid-column: auto;
     flex-wrap: nowrap;
@@ -589,16 +587,47 @@
   .refinement-summary strong { font-size: 6.5px; }
   .refinement-summary small { display: none; }
   .refine-button,
-  .accept-refinement { min-height: 28px; padding-inline: 7px; font-size: 7px; }
+  .accept-refinement { min-height: 44px; padding-inline: 9px; font-size: 11px; }
   .warning-clear { display: none; }
   .review-actions > button:first-child { display: none; }
   .accepted-state { min-height: 25px; }
 }
 
 @media (max-width: 430px) {
-  .guidance-context,
-  .pdf-guidance-context { min-height: 130px; max-height: 136px; }
   .guidance-tools button svg { display: none; }
   .guidance-tools button > i { width: 6px; height: 6px; }
   .image-artboard--guided { height: 74%; }
+}
+
+@container workspace-preview (max-width: 1000px) {
+  .image-guidance-context {
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.25fr) minmax(0, .9fr);
+    min-height: 224px;
+  }
+  .image-guidance-context .guidance-review { grid-column: auto; }
+  .image-guidance-context .guidance-workflow { grid-column: 1 / -1; }
+  .image-guidance-context .guidance-tools {
+    flex-wrap: nowrap;
+    align-content: center;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .image-guidance-context .guidance-tools > button,
+  .image-guidance-context .brush-size { flex: 0 0 auto; }
+  .pdf-guidance-context {
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    min-height: 174px;
+  }
+  .pdf-region-editor { grid-column: 1; }
+  .pdf-guidance-context .guidance-review { grid-column: 2; }
+  .image-artboard--guided { min-height: 260px; }
+}
+
+@container workspace-preview (max-width: 640px) {
+  .image-guidance-context,
+  .pdf-guidance-context { grid-template-columns: minmax(0, 1fr); }
+  .image-guidance-context .guidance-review,
+  .pdf-region-editor,
+  .pdf-guidance-context .guidance-review { grid-column: 1; }
 }

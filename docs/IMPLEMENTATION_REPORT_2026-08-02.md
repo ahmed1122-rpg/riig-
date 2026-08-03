@@ -44,11 +44,67 @@ All of these findings are fixed and have regression coverage.
   concurrency control, workspace public props, export quality summary, and
   processing route contracts were separated into focused modules.
 - Five layer-edit endpoints now share one ownership/idempotency/status/error
-  pipeline. The maintainability ratchet improved from 15 to 14 grandfathered
-  oversized files and from 8 clone blocks/147 cloned lines to 1 block/17 lines.
+  pipeline. The first maintainability pass improved from 15 to 14
+  grandfathered oversized files and from 8 clone blocks/147 cloned lines to 1
+  block/17 lines. The completed modularization pass reduced that further to
+  zero oversized files and zero exact clone blocks.
 - `app.ts` moved below the 500-source-line ceiling. Other reductions include
   processing routes 761→578, export service 949→920, export adapter 708→677,
-  export review 712→697, and workspace 1307→1292 source lines.
+  export review 712→697, while `Workspace.tsx` moved from 1307 to the
+  500-source-line ceiling.
+- `packages/document-processing/src/index.ts` is now a stable barrel over
+  cohesive OCR, PDF-region, PDF-layout, and PDF-source modules. Package imports
+  remain unchanged, every new production module is below 500 source lines, and
+  PDF page cleanup now runs from a per-page `finally` boundary.
+- `processing-service.ts` moved below the 500-line ceiling after extracting the
+  document edit coordinator, integrity-checking raster store, image-layer
+  operations, PDF-layer operations, and layer-state operations. Its public
+  service methods and route contracts remain unchanged.
+- `export-service.ts` moved from 920 to 477 source lines. Artifact construction
+  is isolated in a 398-line builder, while expiration, integrity validation,
+  buffered reads, and streaming reads are isolated in a 95-line reader. Public
+  service methods, storage keys, lease behavior, and artifact formats remain
+  compatible.
+- `processing-worker-runtime.ts` moved from 829 to 264 source lines. PostgreSQL
+  claiming is isolated in a 99-line module and claimed-job execution,
+  persistence, retry, lease-loss handling, and metering in a 487-line module.
+  The previous `claimNextProcessingJob` import remains available through a
+  compatibility re-export.
+- `processing-routes.ts` moved from 578 to 470 source lines after extracting
+  job/document/asset read routes into a 121-line registrar. HTTP paths, cache
+  headers, ETags, ownership checks, and error envelopes remain unchanged.
+- `auth-service.ts` moved from 553 to the 500-source-line ceiling after
+  extracting password reset/change coordination. Reset-delivery privacy,
+  token hashing, credential revocation, repository contracts, and public
+  service methods remain unchanged.
+- `PdfGuidanceEditor.tsx` moved from 534 to 389 source lines by isolating its
+  pointer-capture marker overlay and region labels in a 193-line component.
+  Region thresholds, normalized coordinates, selection, reading order, and
+  editor callbacks remain compatible.
+- `verify-deployment.mjs` moved from 515 to 463 source lines by extracting the
+  deployment-artifact inventory. Its worker reliability scan now follows the
+  split runtime, executor, and claim modules instead of assuming one file.
+- `LayerDock.tsx` moved from 577 to 443 source lines by isolating memoized row,
+  loading-skeleton, and checks-panel rendering in a 267-line component module.
+  Keyboard navigation, drag/drop, inline rename, visibility, locking, and
+  accessibility labels remain compatible.
+- `ExportReview.tsx` moved from 697 to the 500-line ceiling by extracting its
+  previews, modal focus isolation, and header. `BillingPortal.tsx` moved from
+  606 to 466 lines by extracting the hosted-checkout dialog and state views.
+- `packages/contracts/src/index.ts` is now a three-line stable barrel over
+  core, layer/guidance, and workflow contracts. The export-adapter entry point
+  moved from 677 to 308 lines by isolating PDF-to-PSD generation and shared PSD
+  buffer helpers. Existing package imports and generated artifact behavior are
+  unchanged.
+- The final 17-line duplicate guidance-editor import block was removed by
+  publishing the shared editor contract through `GuidanceEditorShared.tsx`.
+- `Workspace.tsx` now coordinates focused project-lifecycle, command,
+  navigation-guard, tool-controller, document-adoption, source-restoration,
+  layer-mutation, editor-layout, and dialog modules. Upload cleanup, source
+  restoration, history/refinement/export commands, keyboard dispatch, and
+  layer-operation validation retain their existing public routes and UI
+  contracts. Focused adoption and navigation-guard tests raise the web suite
+  from 92 to 95 tests.
 
 - The staging performance workflow now obtains its representative PDF through
   a short-lived HTTPS secret and verifies a pinned SHA-256 digest, minimum size,
@@ -68,9 +124,9 @@ All of these findings are fixed and have regression coverage.
 - The chaos gate now requires all three workers to return to `running/healthy`
   after each dependency outage, in addition to API readiness recovery.
 - A maintainability ratchet rejects new production files above 500 non-empty
-  lines, growth in 15 grandfathered large modules, and growth in exact clone
-  blocks of at least 16 lines. ADR numbering is unique and module ownership is
-  explicit.
+  lines and any exact clone block of at least 16 lines. There are no remaining
+  grandfathered oversized files; ADR numbering is unique and module ownership
+  is explicit.
 - UX regression tests cover failed autosave followed by explicit retry,
   transient export failure followed by retry, idempotent network replay, and
   refusal to replay a non-idempotent mutation.
@@ -80,8 +136,8 @@ All of these findings are fixed and have regression coverage.
 | Gate | Result |
 |---|---|
 | `npm run quality` | Passed; lint, stylelint, dead-code, all workspace typechecks, coverage, builds, bundle budget |
-| API coverage run | 56 files, 216 tests passed; 66.74% statements, 58.61% branches, 68.71% functions, 68.31% lines |
-| Web coverage run | 20 files, 92 tests passed; 25.16% statements, 27.97% branches, 18.73% functions, 25.78% lines |
+| API coverage run | 56 files, 219 tests passed; 67.01% statements, 58.50% branches, 68.97% functions, 68.64% lines |
+| Web coverage run | 22 files, 95 tests passed; 25.78% statements, 28.11% branches, 19.40% functions, 26.12% lines |
 | Export adapter | 16 tests passed; 93.26% statements, 87.87% branches, 88.88% functions, 93.93% lines |
 | `npm run test:e2e` | 8/8 desktop/mobile Chromium journeys passed |
 | `npm run test:topology:full` | Passed after image build, migrations, topology, dependency chaos, load, and cleanup |
@@ -101,25 +157,18 @@ not treated as successful evidence.
 The following items are real improvement work, but none should be represented
 as already completed or as a release blocker without the stated condition:
 
-1. Continue decomposing the 14 grandfathered oversized modules, starting with
-   `Workspace.tsx`, `processing-service.ts`, `document-processing/index.ts`,
-   `export-service.ts`, and `processing-worker-runtime.ts`. Keep lowering the
-   checked-in ratchet on every extraction; do not raise it to accommodate new
-   code.
-2. Replace the remaining 17-line duplicate editor import block with a shared
-   editor contract module when either guidance editor is next changed.
-3. Raise browser-unit coverage from the current 25.16% by testing the workspace
+1. Raise browser-unit coverage from the current 25.78% by testing the workspace
    upload hook, application/session boundaries, source upload states, and the
    large workspace orchestration component. The desktop/mobile E2E coverage is
    strong, but it is slower and less diagnostic than focused component tests.
-4. Add cursor pagination to project, export, upload, and user/admin listing
+2. Add cursor pagination to project, export, upload, and user/admin listing
    contracts. The current PostgreSQL repositories return unbounded result sets
    for several list operations; this is a scale risk, not a present correctness
    failure at the verified local load.
-5. Run a representative near-limit PDF benchmark with sustained concurrency,
+3. Run a representative near-limit PDF benchmark with sustained concurrency,
    enforce a finite workflow p95 budget, and capture worker RSS/CPU. The local
    1,278-byte fixture proves the workflow and recovery, not production capacity.
-6. Schedule minor dependency upgrades as a separate change with bundle and
+4. Schedule minor dependency upgrades as a separate change with bundle and
    behavioral comparison. Do not combine TypeScript 7, Zod 4, or other major
    upgrades with release hardening; the current production dependency audit is
    clean.

@@ -1,49 +1,33 @@
-import { createHash } from "node:crypto";
 import type {
   GuidedRefinementResult,
   ImageGuidanceStroke,
   LayerDocumentEditResult,
-  LayerEditKind,
   LayerDocument,
-  LayerNode,
   LayerStateUpdate,
   PdfMarkerRegion,
   ProcessingJob,
   ProcessingMode,
   ProjectKind,
-  RasterAssetReference,
   TraceContext,
 } from "@motionprep/contracts";
-import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 import {
   type PdfOcrEngine,
 } from "@motionprep/document-processing";
-import {
-  applyRasterGuidance,
-  MediaProcessingError,
-  mergeRasterLayers,
-  refineRasterEdges,
-} from "@motionprep/media-processing";
 import {
   applyPdfMarkerRegions,
   createImageGuidanceStroke,
   createPdfMarkerRegion,
   guidanceBounds,
 } from "@motionprep/guidance";
-import {
-  normalizeLayerName,
-  validateProductionDocument,
-} from "@motionprep/presets";
+import { validateProductionDocument } from "@motionprep/presets";
 import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
-import {
-  isObjectStorageIntegrityFailure,
-  type ObjectStorage,
-  type StoredObject,
+import type {
+  ObjectStorage,
+  StoredObject,
 } from "../storage/object-storage.js";
-import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
 import type {
   LayerDocumentRepository,
@@ -52,15 +36,29 @@ import type {
 import type { UsageMeter } from "../billing/usage-meter.js";
 import { InlineProcessingRunner } from "./inline-processing-runner.js";
 import { ProcessingDomainError } from "./processing-errors.js";
+import { DocumentEditCoordinator } from "./document-edit-coordinator.js";
+import { RasterAssetStore } from "./raster-asset-store.js";
 import {
-  preparePdfTextMerge,
-  preparePdfTextSplit,
-} from "./pdf-text-operations.js";
-import { unionLayerBounds } from "./layer-operation-utils.js";
+  ImageLayerOperations,
+  type MergeImageLayersInput,
+  type RefineImageLayerEdgesInput,
+} from "./image-layer-operations.js";
+import {
+  PdfLayerOperations,
+  type MergePdfTextLayersInput,
+  type NavigateEditHistoryInput,
+  type SplitPdfTextLayerInput,
+} from "./pdf-layer-operations.js";
+import { LayerStateOperations } from "./layer-state-operations.js";
 export { ProcessingDomainError } from "./processing-errors.js";
 
 export class ProcessingService {
   readonly #inlineRunner: InlineProcessingRunner;
+  readonly #edits: DocumentEditCoordinator;
+  readonly #rasterAssets: RasterAssetStore;
+  readonly #imageLayers: ImageLayerOperations;
+  readonly #pdfLayers: PdfLayerOperations;
+  readonly #layerStates: LayerStateOperations;
 
   constructor(
     private readonly jobs: ProcessingJobRepository,
@@ -82,6 +80,15 @@ export class ProcessingService {
       now,
       pdfOcrEngine,
     );
+    this.#edits = new DocumentEditCoordinator(documents, now);
+    this.#rasterAssets = new RasterAssetStore(storage);
+    this.#imageLayers = new ImageLayerOperations(
+      this.#edits,
+      this.#rasterAssets,
+      storage,
+    );
+    this.#pdfLayers = new PdfLayerOperations(this.#edits, documents);
+    this.#layerStates = new LayerStateOperations(this.#edits, documents);
   }
 
   async createAndRun(
@@ -235,7 +242,7 @@ export class ProcessingService {
         "أصل طبقة الصورة غير موجود.",
       );
     }
-    const object = await this.loadRasterObject(reference);
+    const object = await this.#rasterAssets.load(reference);
     if (!object) {
       throw new ProcessingDomainError(
         "LAYER_ASSET_NOT_FOUND",
@@ -254,110 +261,15 @@ export class ProcessingService {
     actorUserId = "system",
     operationId: string = crypto.randomUUID(),
   ): Promise<LayerDocument> {
-    const document = await this.findDocument(projectId, sourceVersionId);
-    const currentRevision = document.revision ?? 1;
-    if (currentRevision !== baseRevision) {
-      throw new ProcessingDomainError(
-        "DOCUMENT_REVISION_CONFLICT",
-        "تغيرت وثيقة الطبقات منذ فتح المراجعة. أعد تحميلها قبل الحفظ.",
-      );
-    }
-
-    const updatesById = new Map<string, LayerStateUpdate>();
-    for (const update of updates) {
-      if (
-        updatesById.has(update.id) ||
-        !isValidLayerName(update.name) ||
-        !Number.isFinite(update.opacity) ||
-        update.opacity < 0 ||
-        update.opacity > 1 ||
-        !Number.isSafeInteger(update.zIndex) ||
-        update.zIndex < 0 ||
-        update.zIndex > 1_000_000 ||
-        (update.readingOrder !== undefined &&
-          (!Number.isSafeInteger(update.readingOrder) ||
-            update.readingOrder < 0 ||
-            update.readingOrder > 1_000_000))
-      ) {
-        throw new ProcessingDomainError(
-          "INVALID_LAYER_UPDATE",
-          "تحديثات الطبقات غير صالحة.",
-        );
-      }
-      updatesById.set(update.id, update);
-    }
-
-    const layersById = new Map(
-      document.layers.map((layer) => [layer.id, layer]),
-    );
-    const knownIds = new Set(layersById.keys());
-    if ([...updatesById.keys()].some((id) => !knownIds.has(id))) {
-      throw new ProcessingDomainError(
-        "INVALID_LAYER_UPDATE",
-        "تتضمن المراجعة طبقة لا تنتمي إلى وثيقة المصدر الحالية.",
-      );
-    }
-    for (const change of updatesById.values()) {
-      const current = layersById.get(change.id);
-      if (
-        current?.fixed &&
-        (change.name !== current.name ||
-          change.visible !== current.visible ||
-          change.locked !== current.locked ||
-          change.opacity !== current.opacity ||
-          change.zIndex !== current.zIndex ||
-          change.readingOrder !== current.readingOrder)
-      ) {
-        throw new ProcessingDomainError(
-          "INVALID_LAYER_UPDATE",
-          "لا يمكن تعديل أو إعادة ترتيب طبقة خلفية PDF الثابتة.",
-        );
-      }
-    }
-
-    const changed: LayerDocument = {
-      ...document,
-      layers: document.layers.map((layer) => {
-        const change = updatesById.get(layer.id);
-        return change
-          ? {
-              ...layer,
-              name: change.name,
-              visible: change.visible,
-              locked: change.locked,
-              opacity: change.opacity,
-              zIndex: change.zIndex,
-              ...(change.readingOrder === undefined
-                ? {}
-                : { readingOrder: change.readingOrder }),
-            }
-          : layer;
-      }),
-    };
-    const updated = this.withEditTimeline(changed, document, {
-      kind: "layer-state",
+    return this.#layerStates.update({
+      projectId,
+      sourceVersionId,
+      projectKind,
+      baseRevision,
+      updates,
       actorUserId,
       operationId,
     });
-    const issues = validateProductionDocument(updated, projectKind);
-    if (issues.length > 0) {
-      throw new ProcessingDomainError(
-        "INVALID_LAYER_UPDATE",
-        issues[0]?.message ?? "فشل فحص وثيقة الطبقات بعد التعديل.",
-      );
-    }
-
-    const saved = await this.documents.saveIfRevision(
-      updated,
-      currentRevision,
-    );
-    if (!saved) {
-      throw new ProcessingDomainError(
-        "DOCUMENT_REVISION_CONFLICT",
-        "تغيرت وثيقة الطبقات أثناء الحفظ. أعد تحميلها ثم حاول مجددًا.",
-      );
-    }
-    return updated;
   }
 
   async applyGuidedRefinement(input: {
@@ -440,7 +352,7 @@ export class ProcessingService {
       } =
         input.projectKind === "book"
           ? applyPdfMarkerRegions(document, pdfRegions)
-          : await this.applyImageStrokes(
+          : await this.#imageLayers.applyGuidance(
               document,
               imageStrokes,
               currentRevision + 1,
@@ -477,7 +389,7 @@ export class ProcessingService {
           warnings,
         },
       };
-      const updated = this.withEditTimeline(changed, document, {
+      const updated = this.#edits.withTimeline(changed, document, {
         kind: "guided-refinement",
         actorUserId: input.actorUserId ?? "system",
         operationId: input.operationId ?? crypto.randomUUID(),
@@ -517,739 +429,34 @@ export class ProcessingService {
     }
   }
 
-  async splitPdfTextLayer(input: {
-    projectId: string;
-    sourceVersionId: string;
-    baseRevision: number;
-    layerId: string;
-    offset: number;
-    actorUserId: string;
-    operationId: string;
-  }): Promise<LayerDocumentEditResult> {
-    const document = await this.findDocument(
-      input.projectId,
-      input.sourceVersionId,
-    );
-    const replay = await this.findOperationReplay(
-      document,
-      input.operationId,
-      "pdf-split",
-    );
-    if (replay) {
-      return {
-        document: replay.document,
-        affectedLayerIds: replay.entry.affectedLayerIds ?? [input.layerId],
-        createdLayerIds: replay.entry.createdLayerIds ?? [],
-        removedLayerIds: replay.entry.removedLayerIds ?? [],
-      };
-    }
-    if ((document.revision ?? 1) !== input.baseRevision) {
-      throw revisionConflict();
-    }
-    const prepared = preparePdfTextSplit(document, input);
-    const updated = await this.saveDocumentOperation(
-      document,
-      prepared.changed,
-      "pdf-split",
-      input.actorUserId,
-      input.operationId,
-      prepared.details,
-    );
-    return { document: updated, ...prepared.details };
+  splitPdfTextLayer(
+    input: SplitPdfTextLayerInput,
+  ): Promise<LayerDocumentEditResult> {
+    return this.#pdfLayers.split(input);
   }
 
-  async mergePdfTextLayers(input: {
-    projectId: string;
-    sourceVersionId: string;
-    baseRevision: number;
-    layerIds: readonly string[];
-    separator: "space" | "newline";
-    actorUserId: string;
-    operationId: string;
-  }): Promise<LayerDocumentEditResult> {
-    const document = await this.findDocument(
-      input.projectId,
-      input.sourceVersionId,
-    );
-    const replay = await this.findOperationReplay(
-      document,
-      input.operationId,
-      "pdf-merge",
-    );
-    if (replay) {
-      return {
-        document: replay.document,
-        affectedLayerIds: replay.entry.affectedLayerIds ?? [...input.layerIds],
-        createdLayerIds: replay.entry.createdLayerIds ?? [],
-        removedLayerIds:
-          replay.entry.removedLayerIds ?? input.layerIds.slice(1),
-      };
-    }
-    if ((document.revision ?? 1) !== input.baseRevision) {
-      throw revisionConflict();
-    }
-    const prepared = preparePdfTextMerge(document, input);
-    const updated = await this.saveDocumentOperation(
-      document,
-      prepared.changed,
-      "pdf-merge",
-      input.actorUserId,
-      input.operationId,
-      prepared.details,
-    );
-    return { document: updated, ...prepared.details };
+  mergePdfTextLayers(
+    input: MergePdfTextLayersInput,
+  ): Promise<LayerDocumentEditResult> {
+    return this.#pdfLayers.merge(input);
   }
 
-  async navigateEditHistory(input: {
-    projectId: string;
-    sourceVersionId: string;
-    baseRevision: number;
-    direction: "undo" | "redo";
-  }): Promise<LayerDocument> {
-    const document = await this.requireOperationDocument(
-      input.projectId,
-      input.sourceVersionId,
-      input.baseRevision,
-    );
-    const timeline = document.editTimeline;
-    const targetCursor =
-      input.direction === "undo"
-        ? (timeline?.cursor ?? 0) - 1
-        : (timeline?.cursor ?? -1) + 1;
-    const targetEntry = timeline?.entries[targetCursor];
-    if (!timeline || !targetEntry) {
-      throw new ProcessingDomainError(
-        "EDIT_HISTORY_UNAVAILABLE",
-        input.direction === "undo"
-          ? "لا يوجد تعديل سابق متاح للتراجع."
-          : "لا يوجد تعديل تالٍ متاح للإعادة.",
-      );
-    }
-    const snapshot = await this.documents.findRevision(
-      input.projectId,
-      input.sourceVersionId,
-      targetEntry.revision,
-    );
-    if (!snapshot) {
-      throw new ProcessingDomainError(
-        "EDIT_HISTORY_UNAVAILABLE",
-        "انتهت مدة الاحتفاظ بمراجعة التعديل المطلوبة.",
-      );
-    }
-    const currentRevision = document.revision ?? 1;
-    const restored: LayerDocument = {
-      ...snapshot,
-      revision: currentRevision + 1,
-      editTimeline: { ...timeline, cursor: targetCursor },
-    };
-    const saved = await this.documents.saveIfRevision(
-      restored,
-      currentRevision,
-    );
-    if (!saved) throw revisionConflict();
-    return restored;
-  }
-
-  async refineImageLayerEdges(input: {
-    projectId: string;
-    sourceVersionId: string;
-    baseRevision: number;
-    layerId: string;
-    radius: 1 | 2 | 3;
-    strength: number;
-    actorUserId: string;
-    operationId: string;
-  }): Promise<LayerDocumentEditResult> {
-    const document = await this.findDocument(
-      input.projectId,
-      input.sourceVersionId,
-    );
-    const replay = await this.findOperationReplay(
-      document,
-      input.operationId,
-      "image-edge-refine",
-    );
-    if (replay) return editReplayResult(replay);
-    if ((document.revision ?? 1) !== input.baseRevision) {
-      throw revisionConflict();
-    }
-    if (!document.imagePreparation) {
-      throw invalidDocumentOperation("تحسين الحواف متاح لمشروعات الصور فقط.");
-    }
-    const layer = document.layers.find(
-      (candidate) => candidate.id === input.layerId,
-    );
-    if (
-      !layer ||
-      layer.kind !== "raster" ||
-      layer.locked ||
-      layer.fixed ||
-      !layer.rasterAsset
-    ) {
-      throw invalidDocumentOperation(
-        "اختر طبقة Raster غير مقفلة قبل تحسين الحواف.",
-      );
-    }
-    const object = await this.loadRasterObject(layer.rasterAsset);
-    if (!object) {
-      throw new ProcessingDomainError(
-        "LAYER_ASSET_NOT_FOUND",
-        "تعذر تحميل أصل طبقة Raster أو التحقق من سلامته.",
-      );
-    }
-    let refined: Buffer;
-    try {
-      refined = await refineRasterEdges(object.body, {
-        radius: input.radius,
-        strength: input.strength,
-      });
-    } catch (error) {
-      if (error instanceof MediaProcessingError) {
-        throw invalidDocumentOperation(error.message);
-      }
-      throw error;
-    }
-    const targetRevision = (document.revision ?? 1) + 1;
-    const reference = await this.storeToolRaster(
-      document,
-      targetRevision,
-      "edge-refine",
-      layer.id,
-      refined,
-    );
-    try {
-      const changed = {
-        ...document,
-        layers: document.layers.map((candidate) =>
-          candidate.id === layer.id
-            ? { ...candidate, rasterAsset: reference }
-            : candidate,
-        ),
-      };
-      const details = {
-        affectedLayerIds: [layer.id],
-        createdLayerIds: [],
-        removedLayerIds: [],
-      };
-      const updated = await this.saveDocumentOperation(
-        document,
-        changed,
-        "image-edge-refine",
-        input.actorUserId,
-        input.operationId,
-        details,
-        "image",
-      );
-      return { document: updated, ...details };
-    } catch (error) {
-      await this.storage.delete(reference.objectKey).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  async mergeImageLayers(input: {
-    projectId: string;
-    sourceVersionId: string;
-    baseRevision: number;
-    layerIds: readonly string[];
-    actorUserId: string;
-    operationId: string;
-  }): Promise<LayerDocumentEditResult> {
-    const document = await this.findDocument(
-      input.projectId,
-      input.sourceVersionId,
-    );
-    const replay = await this.findOperationReplay(
-      document,
-      input.operationId,
-      "image-merge",
-    );
-    if (replay) return editReplayResult(replay);
-    if ((document.revision ?? 1) !== input.baseRevision) {
-      throw revisionConflict();
-    }
-    if (!document.imagePreparation) {
-      throw invalidDocumentOperation("دمج Raster متاح لمشروعات الصور فقط.");
-    }
-    const uniqueIds = [...new Set(input.layerIds)];
-    if (uniqueIds.length < 2 || uniqueIds.length > MAX_IMAGE_LAYERS) {
-      throw invalidDocumentOperation(
-        `اختر من طبقتين إلى ${MAX_IMAGE_LAYERS} طبقة Raster للدمج.`,
-      );
-    }
-    const selected = uniqueIds.map((id) =>
-      document.layers.find((layer) => layer.id === id),
-    );
-    if (
-      selected.some(
-        (layer) =>
-          !layer ||
-          layer.kind !== "raster" ||
-          layer.locked ||
-          layer.fixed ||
-          !layer.visible ||
-          !layer.bounds ||
-          !layer.rasterAsset,
-      )
-    ) {
-      throw invalidDocumentOperation(
-        "يجب أن تكون كل الطبقات المحددة Raster ظاهرة وغير مقفلة ولها أصول وحدود.",
-      );
-    }
-    const rasterLayers = selected as Array<
-      LayerNode & {
-        bounds: NonNullable<LayerNode["bounds"]>;
-        rasterAsset: NonNullable<LayerNode["rasterAsset"]>;
-      }
-    >;
-    if (
-      rasterLayers.some(
-        (layer) => layer.parentId !== rasterLayers[0]!.parentId,
-      )
-    ) {
-      throw invalidDocumentOperation(
-        "لا يمكن دمج طبقات Raster من مجموعات مختلفة.",
-      );
-    }
-    const stored = await Promise.all(
-      rasterLayers.map(async (layer) => {
-        const object = await this.loadRasterObject(layer.rasterAsset);
-        if (!object) {
-          throw new ProcessingDomainError(
-            "LAYER_ASSET_NOT_FOUND",
-            "أحد أصول Raster المحددة غير متاح.",
-          );
-        }
-        return { layer, object };
-      }),
-    );
-    const bounds = unionLayerBounds(rasterLayers.map((layer) => layer.bounds));
-    let mergedBody: Buffer;
-    try {
-      mergedBody = await mergeRasterLayers({
-        bounds,
-        layers: stored.map(({ layer, object }) => ({
-          source: object.body,
-          bounds: layer.bounds,
-          opacity: layer.opacity,
-          zIndex: layer.zIndex,
-        })),
-      });
-    } catch (error) {
-      if (error instanceof MediaProcessingError) {
-        throw invalidDocumentOperation(error.message);
-      }
-      throw error;
-    }
-    const mergedId = crypto.randomUUID();
-    const targetRevision = (document.revision ?? 1) + 1;
-    const reference = await this.storeToolRaster(
-      document,
-      targetRevision,
-      "merge",
-      mergedId,
-      mergedBody,
-    );
-    try {
-      const removed = new Set(uniqueIds);
-      const mergedLayer: LayerNode = {
-        ...rasterLayers[0]!,
-        id: mergedId,
-        name: normalizeLayerName(`merged_${targetRevision}`),
-        visible: true,
-        locked: false,
-        fixed: false,
-        opacity: 1,
-        zIndex: Math.max(...rasterLayers.map((layer) => layer.zIndex)),
-        confidence: Math.min(
-          ...rasterLayers.map((layer) => layer.confidence ?? 1),
-        ),
-        bounds,
-        rasterAsset: reference,
-      };
-      const layers = [
-        ...document.layers.filter((layer) => !removed.has(layer.id)),
-        mergedLayer,
-      ];
-      const changed: LayerDocument = {
-        ...document,
-        layers,
-        imagePreparation: {
-          ...document.imagePreparation,
-          outputLayers: layers.filter((layer) => layer.kind === "raster").length,
-        },
-      };
-      const details = {
-        affectedLayerIds: uniqueIds,
-        createdLayerIds: [mergedId],
-        removedLayerIds: uniqueIds,
-      };
-      const updated = await this.saveDocumentOperation(
-        document,
-        changed,
-        "image-merge",
-        input.actorUserId,
-        input.operationId,
-        details,
-        "image",
-      );
-      return { document: updated, ...details };
-    } catch (error) {
-      await this.storage.delete(reference.objectKey).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  private async requireOperationDocument(
-    projectId: string,
-    sourceVersionId: string,
-    baseRevision: number,
+  navigateEditHistory(
+    input: NavigateEditHistoryInput,
   ): Promise<LayerDocument> {
-    const document = await this.findDocument(projectId, sourceVersionId);
-    if ((document.revision ?? 1) !== baseRevision) throw revisionConflict();
-    return document;
+    return this.#pdfLayers.navigate(input);
   }
 
-  private async saveDocumentOperation(
-    original: LayerDocument,
-    changed: LayerDocument,
-    kind: LayerEditKind,
-    actorUserId: string,
-    operationId: string,
-    details?: Pick<
-      LayerDocumentEditResult,
-      "affectedLayerIds" | "createdLayerIds" | "removedLayerIds"
-    >,
-    projectKind: ProjectKind = "book",
-  ): Promise<LayerDocument> {
-    const updated = this.withEditTimeline(changed, original, {
-      kind,
-      actorUserId,
-      operationId,
-      ...details,
-    });
-    const issues = validateProductionDocument(updated, projectKind);
-    if (issues.length > 0) {
-      throw invalidDocumentOperation(
-        issues[0]?.message ?? "فشل فحص وثيقة الطبقات بعد التعديل.",
-      );
-    }
-    const saved = await this.documents.saveIfRevision(
-      updated,
-      original.revision ?? 1,
-    );
-    if (!saved) throw revisionConflict();
-    return updated;
+  refineImageLayerEdges(
+    input: RefineImageLayerEdgesInput,
+  ): Promise<LayerDocumentEditResult> {
+    return this.#imageLayers.refineEdges(input);
   }
 
-  private withEditTimeline(
-    changed: LayerDocument,
-    original: LayerDocument,
-    operation: {
-      kind: LayerEditKind;
-      actorUserId: string;
-      operationId: string;
-      affectedLayerIds?: string[];
-      createdLayerIds?: string[];
-      removedLayerIds?: string[];
-    },
-  ): LayerDocument {
-    const currentRevision = original.revision ?? 1;
-    const timestamp = this.now().toISOString();
-    const timeline = original.editTimeline ?? {
-      cursor: 0,
-      entries: [
-        {
-          operationId: `baseline:${original.projectId}:${original.sourceVersionId ?? "source"}:${currentRevision}`,
-          kind: "baseline" as const,
-          revision: currentRevision,
-          actorUserId: operation.actorUserId,
-          createdAt: original.generatedAt ?? timestamp,
-        },
-      ],
-    };
-    const entries = [
-      ...timeline.entries.slice(0, timeline.cursor + 1),
-      {
-        operationId: operation.operationId,
-        kind: operation.kind,
-        revision: currentRevision + 1,
-        actorUserId: operation.actorUserId,
-        createdAt: timestamp,
-        ...(operation.affectedLayerIds
-          ? { affectedLayerIds: operation.affectedLayerIds }
-          : {}),
-        ...(operation.createdLayerIds
-          ? { createdLayerIds: operation.createdLayerIds }
-          : {}),
-        ...(operation.removedLayerIds
-          ? { removedLayerIds: operation.removedLayerIds }
-          : {}),
-      },
-    ].slice(-100);
-    return {
-      ...changed,
-      revision: currentRevision + 1,
-      editTimeline: { entries, cursor: entries.length - 1 },
-    };
+  mergeImageLayers(
+    input: MergeImageLayersInput,
+  ): Promise<LayerDocumentEditResult> {
+    return this.#imageLayers.merge(input);
   }
 
-  private async findOperationReplay(
-    document: LayerDocument,
-    operationId: string,
-    kind: LayerEditKind,
-  ): Promise<{
-    document: LayerDocument;
-    entry: NonNullable<LayerDocument["editTimeline"]>["entries"][number];
-  } | null> {
-    const entry = document.editTimeline?.entries.find(
-      (candidate) => candidate.operationId === operationId,
-    );
-    if (!entry) return null;
-    if (entry.kind !== kind) {
-      throw invalidDocumentOperation(
-        "استُخدم مفتاح العملية نفسه لتعديل مختلف.",
-      );
-    }
-    const replay = await this.documents.findRevision(
-      document.projectId,
-      document.sourceVersionId!,
-      entry.revision,
-    );
-    return replay ? { document: replay, entry } : null;
-  }
-
-  private async storeToolRaster(
-    document: LayerDocument,
-    revision: number,
-    tool: "edge-refine" | "merge",
-    layerId: string,
-    body: Buffer,
-  ): Promise<RasterAssetReference> {
-    const objectKey = [
-      "derived",
-      encodeURIComponent(document.projectId),
-      encodeURIComponent(document.sourceVersionId ?? "source"),
-      "tools",
-      `revision-${revision}`,
-      `${tool}-${encodeURIComponent(layerId)}.png`,
-    ].join("/");
-    const reference: RasterAssetReference = {
-      objectKey,
-      contentType: "image/png",
-      sizeBytes: body.byteLength,
-      sha256: createHash("sha256").update(body).digest("hex"),
-    };
-    await this.storage.put({ key: objectKey, ...reference, body });
-    return reference;
-  }
-
-  private async applyImageStrokes(
-    document: LayerDocument,
-    strokes: readonly ImageGuidanceStroke[],
-    targetRevision: number,
-  ): Promise<{
-    document: LayerDocument;
-    affectedLayerIds: string[];
-    createdLayerIds: string[];
-    warnings: string[];
-    storedKeys: string[];
-  }> {
-    const byLayer = new Map<string, ImageGuidanceStroke[]>();
-    for (const stroke of strokes) {
-      if (!stroke.targetLayerId) {
-        throw new ProcessingDomainError(
-          "GUIDANCE_LAYER_UNAVAILABLE",
-          "يجب اختيار طبقة Raster مستهدفة لكل ضربة قلم.",
-        );
-      }
-      const list = byLayer.get(stroke.targetLayerId) ?? [];
-      list.push(stroke);
-      byLayer.set(stroke.targetLayerId, list);
-    }
-    const separateTargets = [...byLayer.entries()].filter(([, list]) =>
-      list.some((stroke) => stroke.kind === "separate"),
-    ).length;
-    const contentLayerCount = document.layers.filter(
-      (layer) => layer.kind !== "group",
-    ).length;
-    if (contentLayerCount + separateTargets > MAX_IMAGE_LAYERS) {
-      throw new ProcessingDomainError(
-        "IMAGE_LAYER_LIMIT_EXCEEDED",
-        `لا يمكن أن تتجاوز الصور ${MAX_IMAGE_LAYERS} طبقة.`,
-      );
-    }
-
-    let layers = [...document.layers];
-    const affectedLayerIds: string[] = [];
-    const createdLayerIds: string[] = [];
-    const warnings: string[] = [];
-    const storedKeys: string[] = [];
-    for (const [layerId, layerStrokes] of byLayer) {
-      const layer = layers.find((candidate) => candidate.id === layerId);
-      if (
-        !layer ||
-        layer.kind !== "raster" ||
-        layer.locked ||
-        layer.fixed ||
-        !layer.rasterAsset
-      ) {
-        throw new ProcessingDomainError(
-          "GUIDANCE_LAYER_UNAVAILABLE",
-          "الطبقة المستهدفة غير موجودة أو مقفلة أو لا تحمل أصل Raster.",
-        );
-      }
-      const object = await this.loadRasterObject(layer.rasterAsset);
-      if (!object) {
-        throw new ProcessingDomainError(
-          "LAYER_ASSET_NOT_FOUND",
-          "أصل الطبقة المستهدفة غير متاح في التخزين.",
-        );
-      }
-      const applied = await applyRasterGuidance({
-        source: object.body,
-        documentWidth: document.width,
-        documentHeight: document.height,
-        ...(layer.bounds ? { layerBounds: layer.bounds } : {}),
-        strokes: layerStrokes,
-        autoFillPolicy: "review",
-      });
-      warnings.push(...applied.warnings.map((warning) => `${layerId}:${warning}`));
-      affectedLayerIds.push(layerId);
-      if (!applied.changed) continue;
-
-      const refinedReference = await this.storeGuidedRaster(
-        document,
-        targetRevision,
-        layerId,
-        "refined",
-        applied.refined,
-      );
-      storedKeys.push(refinedReference.objectKey);
-      layers = layers.map((candidate) =>
-        candidate.id === layerId
-          ? { ...candidate, rasterAsset: refinedReference }
-          : candidate,
-      );
-      if (applied.separated) {
-        const separatedId = crypto.randomUUID();
-        const separatedReference = await this.storeGuidedRaster(
-          document,
-          targetRevision,
-          separatedId,
-          "separated",
-          applied.separated,
-        );
-        storedKeys.push(separatedReference.objectKey);
-        const currentLayer = layers.find(
-          (candidate) => candidate.id === layerId,
-        )!;
-        layers.push({
-          ...currentLayer,
-          id: separatedId,
-          name: `+separated_${String(
-            createdLayerIds.length + 1,
-          ).padStart(2, "0")}`,
-          locked: false,
-          fixed: false,
-          zIndex: Math.max(...layers.map((candidate) => candidate.zIndex), 0) + 1,
-          confidence: 1,
-          rasterAsset: separatedReference,
-        });
-        createdLayerIds.push(separatedId);
-      }
-    }
-    return {
-      document: { ...document, layers },
-      affectedLayerIds,
-      createdLayerIds,
-      warnings,
-      storedKeys,
-    };
-  }
-
-  private async storeGuidedRaster(
-    document: LayerDocument,
-    revision: number,
-    layerId: string,
-    role: "refined" | "separated",
-    body: Buffer,
-  ): Promise<RasterAssetReference> {
-    const objectKey = [
-      "derived",
-      encodeURIComponent(document.projectId),
-      encodeURIComponent(document.sourceVersionId ?? "source"),
-      "guidance",
-      `revision-${revision}`,
-      `${encodeURIComponent(layerId)}-${role}.png`,
-    ].join("/");
-    const reference: RasterAssetReference = {
-      objectKey,
-      contentType: "image/png",
-      sizeBytes: body.byteLength,
-      sha256: createHash("sha256").update(body).digest("hex"),
-    };
-    await this.storage.put({ key: objectKey, ...reference, body });
-    return reference;
-  }
-
-  private async loadRasterObject(
-    reference: RasterAssetReference,
-  ): Promise<StoredObject | null> {
-    let object: StoredObject | null;
-    try {
-      object = await this.storage.get(reference.objectKey, {
-        maxBytes: reference.sizeBytes,
-      });
-    } catch (error) {
-      if (isObjectStorageIntegrityFailure(error)) {
-        throw new ProcessingDomainError(
-          "LAYER_ASSET_INTEGRITY_FAILED",
-          "فشل التحقق من سلامة أصل طبقة Raster المخزن.",
-        );
-      }
-      throw error;
-    }
-    if (object && !hasExpectedObjectIntegrity(object, reference)) {
-      throw new ProcessingDomainError(
-        "LAYER_ASSET_INTEGRITY_FAILED",
-        "فشل التحقق من سلامة أصل طبقة Raster المخزن.",
-      );
-    }
-    return object;
-  }
-
-}
-
-function isValidLayerName(name: string): name is `+${string}` {
-  return (
-    name.length >= 2 &&
-    name.length <= 121 &&
-    name.startsWith("+") &&
-    !name.startsWith("++") &&
-    !/[\u0000-\u001F\u007F\\/]/u.test(name)
-  );
-}
-
-function invalidDocumentOperation(message: string): ProcessingDomainError {
-  return new ProcessingDomainError("INVALID_DOCUMENT_OPERATION", message);
-}
-
-function revisionConflict(): ProcessingDomainError {
-  return new ProcessingDomainError(
-    "DOCUMENT_REVISION_CONFLICT",
-    "تغيرت وثيقة الطبقات منذ بدء العملية. أعد تحميلها ثم حاول مجددًا.",
-  );
-}
-
-function editReplayResult(replay: {
-  document: LayerDocument;
-  entry: NonNullable<LayerDocument["editTimeline"]>["entries"][number];
-}): LayerDocumentEditResult {
-  return {
-    document: replay.document,
-    affectedLayerIds: replay.entry.affectedLayerIds ?? [],
-    createdLayerIds: replay.entry.createdLayerIds ?? [],
-    removedLayerIds: replay.entry.removedLayerIds ?? [],
-  };
 }

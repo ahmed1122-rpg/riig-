@@ -27,6 +27,7 @@ for (const workspaceRoot of ["apps", "packages"]) {
 
 for (const path of [
   "tmp",
+  ".tmp",
   "artifacts/runtime-qa",
   "artifacts/test-results",
   "artifacts/screenshots",

@@ -72,6 +72,11 @@ export function createOtpAuthUri(input: {
   return `otpauth://totp/${encodeURIComponent(label)}?${query.toString()}`;
 }
 
+export function formatRecoveryCode(value: string): string {
+  const normalized = value.toUpperCase();
+  return `${normalized.slice(0, 5)}-${normalized.slice(5)}`;
+}
+
 function decodeBase32(value: string): Buffer {
   const normalized = value
     .toUpperCase()
@@ -90,4 +95,3 @@ function decodeBase32(value: string): Buffer {
   }
   return Buffer.from(bytes);
 }
-
