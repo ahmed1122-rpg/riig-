@@ -3,70 +3,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { verifyObservabilityArtifacts } from "./verify-observability-artifacts.mjs";
+import { requiredDeploymentFiles } from "./deployment-required-files.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const requiredFiles = [
-  "Dockerfile",
-  "Dockerfile.web",
-  "compose.production.yaml",
-  "compose.yaml",
-  "compose.integration.yaml",
-  ".gitignore",
-  ".env.production.example",
-  "deploy/nginx.conf",
-  "deploy/prometheus-alerts.yml",
-  "deploy/prometheus-alerts.test.yml",
-  "deploy/prometheus-scrape.example.yml",
-  "deploy/grafana/dashboards/motionprep-overview.json",
-  "docs/DEPLOYMENT.md",
-  "docs/OBJECT_STORAGE.md",
-  "docs/PRODUCTION_READINESS.md",
-  "scripts/verify-object-storage.mjs",
-  "apps/api/scripts/verify-staging-dependencies.mjs",
-  "apps/api/scripts/verify-staging-dependencies.node-test.mjs",
-  "docs/runbooks/production-release-and-rollback.md",
-  "docs/runbooks/processing-job-recovery.md",
-  "docs/runbooks/production-dependency-recovery.md",
-  "docs/runbooks/disaster-recovery.md",
-  "docs/runbooks/failure-mode-matrix.md",
-  "docs/runbooks/recovery-manifest.example.json",
-  "scripts/verify-recovery-manifest.mjs",
-  "scripts/verify-production-topology.mjs",
-  "scripts/verify-runtime-fault-recovery.mjs",
-  "scripts/load-pdf-workflow.mjs",
-  "scripts/load-pdf-config.mjs",
-  "scripts/load-test-metrics.mjs",
-  "scripts/verify-prometheus-rules.mjs",
-  "scripts/verify-staging-application.mjs",
-  "scripts/verify-bundle-budget.mjs",
-  "scripts/verify-release-environment.mjs",
-  "scripts/run-release-rollback-drill.mjs",
-  "scripts/release-drill-config.mjs",
-  "apps/api/migrations/012_processing_worker_leases.sql",
-  "apps/api/migrations/016_retention_cleanup.sql",
-  "apps/api/migrations/018_worker_events.sql",
-  "apps/api/migrations/019_upload_url_compatibility.sql",
-  "apps/api/migrations/020_worker_duration_metrics.sql",
-  "apps/api/migrations/023_project_job_fencing.sql",
-  "apps/api/migrations/024_billing_webhook_ordering.sql",
-  "apps/api/migrations/025_retention_reference_indexes.sql",
-  "apps/api/migrations/026_maintenance_status.sql",
-  "apps/api/migrations/028_job_correlation.sql",
-  "apps/api/migrations/030_worker_resource_metrics.sql",
-  ".github/workflows/ci.yml",
-  ".github/workflows/release-images.yml",
-  ".github/workflows/codeql.yml",
-  ".github/workflows/provider-readiness.yml",
-  ".github/workflows/staging-readiness.yml",
-  ".github/workflows/performance-readiness.yml",
-  ".github/workflows/staging-application-readiness.yml",
-  ".github/workflows/release-rollback-drill.yml",
-  ".github/dependabot.yml",
-  ".github/CODEOWNERS",
-];
 const violations = [];
 
-for (const file of requiredFiles) {
+for (const file of requiredDeploymentFiles) {
   try {
     await access(join(root, file));
   } catch {
@@ -83,6 +25,8 @@ const [
   exampleEnvironment,
   webApiClient,
   processingRuntime,
+  processingJobExecutor,
+  processingJobClaim,
   processingWorkerConfig,
   mediaWorkerEntry,
   documentWorkerEntry,
@@ -106,6 +50,8 @@ const [
       ".env.production.example",
       "apps/web/src/lib/api/transport.ts",
       "apps/api/src/processing/processing-worker-runtime.ts",
+      "apps/api/src/processing/processing-job-executor.ts",
+      "apps/api/src/processing/processing-job-claim.ts",
       "apps/api/src/processing/processing-worker-config.ts",
       "apps/worker-media/src/index.ts",
       "apps/worker-document/src/index.ts",
@@ -424,7 +370,9 @@ if (!s3Storage.includes('ChecksumAlgorithm: "SHA256"')) {
 if (!s3Storage.includes("HeadObjectCommand")) {
   violations.push("S3 writes must verify the configured encryption mode.");
 }
-if (!processingRuntime.includes("hasExpectedObjectIntegrity")) {
+const processingRuntimeSources =
+  `${processingRuntime}\n${processingJobExecutor}\n${processingJobClaim}`;
+if (!processingRuntimeSources.includes("hasExpectedObjectIntegrity")) {
   violations.push("Processing workers must verify stored source integrity.");
 }
 if (!exportWorkerEntry.includes("loadExportWorkerConfig")) {
@@ -473,7 +421,7 @@ for (const token of [
   "renewLease",
   "retryOrFail",
 ]) {
-  if (!processingRuntime.includes(token)) {
+  if (!processingRuntimeSources.includes(token)) {
     violations.push(`Processing worker runtime is missing reliability token: ${token}`);
   }
 }

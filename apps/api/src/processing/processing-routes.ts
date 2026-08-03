@@ -20,11 +20,7 @@ import {
 import {
   createSchema,
   documentParamsSchema,
-  documentQuerySchema,
   guidedRefinementSchema,
-  jobParamsSchema,
-  layerAssetParamsSchema,
-  layerAssetQuerySchema,
   mergeImageLayersSchema,
   mergeTextLayersSchema,
   navigateHistorySchema,
@@ -34,6 +30,7 @@ import {
   splitTextLayerSchema,
   updateDocumentSchema,
 } from "./processing-route-support.js";
+import { registerProcessingReadRoutes } from "./processing-read-routes.js";
 
 export async function registerProcessingRoutes(
   app: FastifyInstance,
@@ -42,13 +39,6 @@ export async function registerProcessingRoutes(
   auth: AuthService,
   options: { pdfRegionOcrEnabled?: boolean } = {},
 ): Promise<void> {
-  const findRequestProject = async (
-    request: FastifyRequest,
-    projectId: string,
-  ) => {
-    const user = await requireUser(request, auth);
-    return projects.findOwnedById(user.id, projectId);
-  };
   const queueProcessingJob = async (
     request: FastifyRequest,
     userId: string,
@@ -118,6 +108,8 @@ export async function registerProcessingRoutes(
     }
   };
 
+  await registerProcessingReadRoutes(app, projects, processing, auth);
+
   app.post("/v1/processing/jobs", async (request, reply) => {
     let user;
     try {
@@ -171,108 +163,6 @@ export async function registerProcessingRoutes(
       return domainError(error, request, reply);
     }
   });
-
-  app.get("/v1/processing/jobs/:jobId", async (request, reply) => {
-    const params = jobParamsSchema.safeParse(request.params);
-    if (!params.success) return reply.status(404).send();
-    try {
-      const user = await requireUser(request, auth);
-      const job = await processing.findJob(params.data.jobId);
-      const project = await projects.findOwnedById(user.id, job.projectId);
-      if (!project) {
-        throw new ProcessingDomainError(
-          "PROCESSING_NOT_FOUND",
-          "مهمة المعالجة غير موجودة.",
-        );
-      }
-      return { data: job, error: null };
-    } catch (error) {
-      return domainError(error, request, reply);
-    }
-  });
-
-  app.get(
-    "/v1/projects/:projectId/layer-document",
-    async (request, reply) => {
-      const params = documentParamsSchema.safeParse(request.params);
-      const query = documentQuerySchema.safeParse(request.query);
-      if (!params.success || !query.success) return reply.status(404).send();
-      try {
-        const project = await findRequestProject(
-          request,
-          params.data.projectId,
-        );
-        if (!project) {
-          return sendProjectNotFound(reply, request.id);
-        }
-        return {
-          data: await processing.findDocument(
-            project.id,
-            query.data.sourceVersionId,
-          ),
-          error: null,
-        };
-      } catch (error) {
-        return domainError(error, request, reply);
-      }
-    },
-  );
-
-  app.get(
-    "/v1/projects/:projectId/layers/:layerId/asset",
-    async (request, reply) => {
-      const params = layerAssetParamsSchema.safeParse(request.params);
-      const query = layerAssetQuerySchema.safeParse(request.query);
-      if (!params.success || !query.success) {
-        return reply.status(404).send();
-      }
-      try {
-        const user = await requireUser(request, auth);
-        const project = await projects.findOwnedById(
-          user.id,
-          params.data.projectId,
-        );
-        if (!project) {
-          return sendProjectNotFound(reply, request.id);
-        }
-        const asset = await processing.findRasterAsset(
-          project.id,
-          query.data.sourceVersionId,
-          params.data.layerId,
-        );
-        if (
-          query.data.assetSha256 &&
-          query.data.assetSha256 !== asset.sha256
-        ) {
-          return sendApiError(
-            reply,
-            request.id,
-            409,
-            "LAYER_ASSET_VERSION_MISMATCH",
-            "تغير أصل الطبقة منذ تحميل الوثيقة. حدّث مساحة العمل للحصول على النسخة الأحدث.",
-          );
-        }
-        const etag = `"${asset.sha256}"`;
-        const cacheControl = query.data.assetSha256
-          ? "private, max-age=31536000, immutable"
-          : "private, no-cache";
-        if (request.headers["if-none-match"] === etag) {
-          return reply
-            .status(304)
-            .header("cache-control", cacheControl)
-            .header("etag", etag)
-            .send();
-        }
-        return reply
-          .header("cache-control", cacheControl)
-          .header("etag", etag)
-          .type(asset.contentType)
-          .send(asset.body);
-      } catch (error) {
-        return domainError(error, request, reply);
-      }
-    },
-  );
 
   app.patch(
     "/v1/projects/:projectId/layer-document",

@@ -1,0 +1,574 @@
+/* Shared Luminous Motion Atelier primitives.
+   This late layer restores dimensional product depth after legacy feature
+   styles without changing component structure or route behaviour. */
+
+:root {
+  --spectral-line: color-mix(in srgb, var(--atelier-cyan) 32%, var(--line));
+  --spectral-line-strong: color-mix(in srgb, var(--atelier-indigo) 50%, var(--line));
+  --spectral-wash: linear-gradient(135deg, rgba(32, 217, 238, .11), rgba(76, 225, 189, .06) 42%, rgba(113, 103, 255, .1));
+  --spectral-rim: linear-gradient(135deg, rgba(32, 217, 238, .66), rgba(76, 225, 189, .34) 40%, rgba(113, 103, 255, .5));
+  --panel-highlight: inset 0 1px rgba(255, 255, 255, .82);
+  --elevation-low: 0 8px 24px rgba(15, 23, 42, .07), 0 1px 3px rgba(15, 23, 42, .05);
+  --elevation-panel: 0 22px 58px rgba(15, 23, 42, .11), 0 3px 10px rgba(15, 23, 42, .05);
+  --control-radius: 11px;
+  --panel-radius: 18px;
+}
+
+:root[data-theme="dark"] {
+  --spectral-line: color-mix(in srgb, var(--atelier-cyan) 24%, var(--line));
+  --spectral-line-strong: color-mix(in srgb, var(--atelier-indigo) 58%, var(--line));
+  --spectral-wash: linear-gradient(135deg, rgba(32, 217, 238, .1), rgba(76, 225, 189, .04) 42%, rgba(113, 103, 255, .13));
+  --panel-highlight: inset 0 1px rgba(255, 255, 255, .055);
+  --elevation-low: 0 10px 28px rgba(0, 0, 0, .2), 0 1px 2px rgba(0, 0, 0, .22);
+  --elevation-panel: 0 24px 62px rgba(0, 0, 0, .34), 0 0 0 1px rgba(113, 103, 255, .08);
+}
+
+body {
+  background:
+    radial-gradient(circle at 8% -10%, color-mix(in srgb, var(--atelier-cyan) 9%, transparent), transparent 34rem),
+    radial-gradient(circle at 88% 24%, color-mix(in srgb, var(--atelier-indigo) 7%, transparent), transparent 38rem),
+    var(--app-bg);
+  font-family: "Segoe UI Variable", "Segoe UI", "Noto Sans Arabic", Tahoma, Arial, sans-serif;
+}
+
+.app-icon {
+  flex: 0 0 auto;
+  transition: color 180ms ease, filter 180ms ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+}
+
+:where(button, a, article, figure):hover > .app-icon,
+:where(button, a, article, figure):hover > :where(span, div) > .app-icon {
+  filter: drop-shadow(0 4px 8px color-mix(in srgb, currentColor 24%, transparent));
+  transform: translateY(-1px) rotate(-2deg);
+}
+
+.app-shell {
+  background:
+    linear-gradient(color-mix(in srgb, var(--atelier-indigo) 2.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--atelier-indigo) 2.5%, transparent) 1px, transparent 1px),
+    var(--app-bg);
+  background-size: 40px 40px;
+}
+
+.sidebar {
+  border-inline-start-color: var(--spectral-line);
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--atelier-cyan) 12%, transparent), transparent 18rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, var(--atelier-indigo)), var(--surface));
+  box-shadow: -16px 0 46px rgba(15, 23, 42, .08), inset 1px 0 rgba(255, 255, 255, .44);
+}
+
+.brand {
+  border-bottom-color: var(--spectral-line);
+}
+
+.brand-mark,
+.path-icon,
+.time-saved__icon,
+.state-icon,
+.workflow-icon,
+.current-plan__title > span,
+.billing-method > header > span,
+.security-status > span,
+.admin-stat > span {
+  border: 1px solid var(--spectral-line);
+  background: var(--spectral-wash);
+  color: var(--primary-strong);
+  box-shadow: var(--panel-highlight), 0 8px 20px color-mix(in srgb, var(--atelier-indigo) 10%, transparent);
+}
+
+.nav-item {
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+}
+
+.nav-item:hover {
+  border-color: color-mix(in srgb, var(--spectral-line) 74%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 84%, var(--atelier-cyan));
+}
+
+.nav-item.is-active {
+  border-color: var(--spectral-line);
+  background: var(--spectral-wash);
+  color: var(--primary-strong);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .62);
+}
+
+.nav-item::after {
+  background: var(--gradient-atelier);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--atelier-cyan) 42%, transparent);
+}
+
+.sidebar-note {
+  border-color: var(--spectral-line);
+  border-radius: 14px;
+  background: var(--spectral-wash);
+  box-shadow: var(--panel-highlight);
+}
+
+.avatar,
+.admin-avatar {
+  background: var(--gradient-campaign);
+  color: white;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--atelier-indigo) 13%, transparent);
+}
+
+.topbar {
+  border-bottom-color: var(--spectral-line);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, .045);
+  backdrop-filter: blur(18px) saturate(1.24);
+}
+
+.page-content:not(.is-workspace) {
+  padding: clamp(28px, 3vw, 46px) clamp(20px, 3.8vw, 58px) 64px;
+}
+
+:where(.dashboard, .projects-view, .billing-page, .settings-view, .help-view, .security-page) {
+  width: min(100%, 1260px);
+  margin-inline: auto;
+}
+
+:where(.dashboard-hero, .page-title-row, .feature-page-header, .admin-page-heading) {
+  position: relative;
+  overflow: visible;
+  padding-top: 14px;
+  scroll-margin-top: calc(var(--topbar-height) + 18px);
+}
+
+:where(.dashboard-hero, .page-title-row, .feature-page-header, .admin-page-heading)::before {
+  position: absolute;
+  width: 76px;
+  height: 4px;
+  inset: 0 0 auto auto;
+  border-radius: 6px;
+  background: var(--gradient-atelier);
+  box-shadow: 0 0 18px rgba(32, 217, 238, .22);
+  content: "";
+}
+
+:where(.page-title-row, .feature-page-header, .admin-page-heading) h1 {
+  font-size: clamp(30px, 3.25vw, 46px);
+  line-height: 1.22;
+  letter-spacing: -.035em;
+}
+
+.eyebrow {
+  color: color-mix(in srgb, var(--atelier-indigo) 78%, var(--text));
+  font-weight: 850;
+  letter-spacing: .055em;
+}
+
+.primary-button {
+  border: 1px solid color-mix(in srgb, var(--atelier-cyan) 58%, var(--atelier-indigo));
+  border-radius: var(--control-radius);
+  background: var(--gradient-atelier);
+  color: #06131d;
+  box-shadow: 0 10px 26px rgba(32, 217, 238, .18), inset 0 1px rgba(255, 255, 255, .45);
+  transition: box-shadow 180ms ease, filter 180ms ease, transform 180ms ease;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: var(--gradient-atelier);
+  box-shadow: 0 14px 30px rgba(32, 217, 238, .24), inset 0 1px rgba(255, 255, 255, .55);
+  filter: saturate(1.08) brightness(1.03);
+  transform: translateY(-2px);
+}
+
+.secondary-button,
+.icon-button,
+.help-button,
+.settings-choice,
+.admin-row-action {
+  border-color: var(--line);
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .48);
+}
+
+:where(.secondary-button, .icon-button, .help-button, .settings-choice, .admin-row-action):hover:not(:disabled) {
+  border-color: var(--spectral-line-strong);
+  background: color-mix(in srgb, var(--surface) 88%, var(--atelier-cyan));
+  color: var(--primary-strong);
+}
+
+:where(
+  .time-saved, .creation-path, .processing-card, .data-state,
+  .current-plan, .billing-method, .plan-row, .invoice-section,
+  .security-primary, .security-side, .settings-card, .help-atlas,
+  .help-steps li, .help-limits, .admin-stat, .admin-panel,
+  .admin-table-wrap, .billing-admin-list, .system-settings-list
+) {
+  border: 1px solid transparent;
+  border-radius: var(--panel-radius);
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--spectral-rim) border-box;
+  box-shadow: var(--panel-highlight), var(--elevation-low);
+}
+
+:where(.creation-path, .plan-row, .admin-stat, .settings-card, .help-steps li) {
+  transition: border-color 180ms ease, box-shadow 220ms ease, transform 220ms cubic-bezier(.2, .8, .2, 1);
+}
+
+:where(.creation-path, .plan-row, .admin-stat, .settings-card, .help-steps li):hover {
+  border-color: transparent;
+  box-shadow: var(--panel-highlight), var(--elevation-panel);
+  transform: translateY(-3px);
+}
+
+.time-saved,
+.current-plan,
+.plan-row.is-recommended {
+  border-inline-start: 3px solid var(--atelier-cyan);
+}
+
+.usage-bar,
+.job-progress,
+.time-line,
+.project-progress > span {
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--surface-muted) 88%, var(--atelier-indigo));
+}
+
+:where(.usage-bar, .job-progress, .time-line, .project-progress > span) :where(i, span) {
+  border-radius: inherit;
+  background: var(--gradient-atelier);
+}
+
+.projects-toolbar,
+.admin-table-toolbar {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--panel-highlight), var(--elevation-low);
+}
+
+.filter-tabs {
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.filter-tabs button.is-active {
+  background: var(--surface);
+  color: var(--primary-strong);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, .09);
+}
+
+.project-search,
+.admin-search,
+.auth-input,
+.dialog-field :where(input, select, textarea),
+.checkout-plan-select select {
+  border-color: var(--line);
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--surface) 96%, var(--atelier-indigo));
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, .035);
+}
+
+:where(.project-search, .admin-search, .auth-input):focus-within,
+.dialog-field :where(input, select, textarea):focus {
+  border-color: var(--atelier-cyan);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--atelier-cyan) 18%, transparent), inset 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.project-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+  box-shadow: var(--panel-highlight), var(--elevation-low);
+}
+
+.data-state {
+  position: relative;
+  min-height: 210px;
+  justify-content: flex-start;
+  overflow: hidden;
+  gap: 18px;
+  padding: clamp(24px, 4vw, 42px);
+}
+
+.data-state::after {
+  position: absolute;
+  width: min(34vw, 360px);
+  height: 100%;
+  inset: 0 auto 0 0;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--atelier-cyan) 14%, transparent), transparent 68%);
+  content: "";
+  pointer-events: none;
+}
+
+.data-state > :not(.state-spinner) {
+  position: relative;
+  z-index: 1;
+}
+
+.data-state .state-icon {
+  width: 58px; height: 58px;
+  border-radius: 16px;
+}
+
+.data-state > div {
+  max-width: 620px;
+  gap: 8px;
+}
+
+.billing-auth-state {
+  align-items: flex-start; flex-direction: column;
+}
+
+.billing-auth-state > .app-icon {
+  box-sizing: content-box; padding: 14px;
+  border: 1px solid var(--spectral-line); border-radius: 16px;
+  background: var(--spectral-wash); color: var(--primary-strong);
+}
+
+.project-row {
+  padding-inline: 14px;
+  border-bottom-color: color-mix(in srgb, var(--line) 78%, transparent);
+  transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.project-row:hover {
+  background: var(--spectral-wash);
+  box-shadow: inset -3px 0 var(--atelier-cyan);
+}
+
+.project-preview,
+.recent-thumb {
+  border: 1px solid var(--spectral-line);
+  border-radius: 12px;
+  background: var(--spectral-wash);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .56);
+}
+
+.status,
+.sandbox-banner,
+.bounded-note,
+.admin-updated {
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 8px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .42);
+}
+
+.billing-overview,
+.security-layout,
+.settings-grid {
+  gap: clamp(16px, 2vw, 24px);
+}
+
+.billing-method,
+.security-side {
+  background:
+    linear-gradient(color-mix(in srgb, var(--surface) 92%, var(--atelier-indigo)), color-mix(in srgb, var(--surface) 96%, var(--atelier-cyan))) padding-box,
+    var(--spectral-rim) border-box;
+}
+
+.payment-card-demo {
+  overflow: hidden;
+  border: 1px solid rgba(76, 225, 189, .24);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 82% 15%, rgba(32, 217, 238, .2), transparent 8rem),
+    linear-gradient(145deg, #0c1b34, #132742 55%, #102f37);
+  box-shadow: 0 20px 38px rgba(7, 16, 31, .22), inset 0 1px rgba(255, 255, 255, .1);
+}
+
+.auth-gateway {
+  background:
+    radial-gradient(circle at 14% 18%, rgba(32, 217, 238, .16), transparent 28rem),
+    radial-gradient(circle at 82% 78%, rgba(181, 108, 255, .12), transparent 32rem),
+    #07101f;
+}
+
+.auth-panel {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(247, 249, 253, .96)),
+    #fff;
+  box-shadow: 32px 0 80px rgba(0, 0, 0, .22);
+}
+
+.auth-context {
+  border-inline-start: 1px solid rgba(32, 217, 238, .2);
+  background:
+    linear-gradient(135deg, rgba(32, 217, 238, .08), transparent 42%),
+    radial-gradient(circle at 86% 18%, rgba(113, 103, 255, .2), transparent 24rem),
+    #07101f;
+}
+
+.auth-context__presenter {
+  filter: drop-shadow(0 22px 32px rgba(0, 0, 0, .36));
+}
+
+.auth-trace li.is-active::before {
+  box-shadow: 0 0 0 5px rgba(76, 225, 189, .11), 0 0 18px rgba(32, 217, 238, .34);
+}
+
+.help-atlas img {
+  position: relative; z-index: 1;
+  visibility: visible; opacity: 1;
+  mix-blend-mode: normal;
+}
+
+.admin-sidebar {
+  border-inline-start-color: rgba(32, 217, 238, .18);
+  background:
+    radial-gradient(circle at 100% 0, rgba(32, 217, 238, .12), transparent 18rem),
+    linear-gradient(180deg, #0b1428, #07101f);
+  box-shadow: -18px 0 50px rgba(0, 0, 0, .24);
+}
+
+.admin-topbar {
+  border-bottom-color: var(--spectral-line);
+  background: color-mix(in srgb, var(--surface) 91%, transparent);
+  box-shadow: 0 8px 26px rgba(15, 23, 42, .055);
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+.admin-data-table {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+  box-shadow: var(--panel-highlight), var(--elevation-low);
+}
+
+.admin-data-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  border-bottom: 1px solid var(--spectral-line);
+  background: color-mix(in srgb, var(--surface) 88%, var(--atelier-cyan));
+  box-shadow: 0 7px 18px rgba(15, 23, 42, .055);
+}
+
+.admin-data-row {
+  border-bottom-color: color-mix(in srgb, var(--line) 80%, transparent);
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+.admin-data-row:hover {
+  background: var(--spectral-wash);
+  box-shadow: inset -3px 0 var(--atelier-cyan);
+}
+
+.app-dialog {
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--spectral-rim) border-box;
+  box-shadow: 0 32px 90px rgba(7, 16, 31, .32), var(--panel-highlight);
+}
+
+.app-dialog__header {
+  border-bottom-color: var(--spectral-line);
+  background: var(--spectral-wash);
+}
+
+.app-dialog__footer {
+  border-top-color: var(--spectral-line);
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--atelier-indigo));
+}
+
+.app-shell--workspace :where(.pro-tool-rail, .pro-layer-dock, .pro-preview-toolbar, .pro-source-row, .pro-status-bar),
+.export-review {
+  border-color: rgba(113, 103, 255, .25);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .045), 0 18px 50px rgba(0, 0, 0, .24);
+}
+
+.app-shell--workspace :where(.pro-tool-button, .pro-preview-control, .pro-quality-switch, .pro-focus-button) {
+  border-radius: 8px;
+}
+
+.app-shell--workspace :where(.pro-tool-button.is-active, .pro-layer-row.is-selected) {
+  background: linear-gradient(90deg, rgba(32, 217, 238, .15), rgba(113, 103, 255, .13));
+  box-shadow: inset -2px 0 var(--atelier-cyan);
+}
+
+.marketing-page :where(.marketing-pipeline, .showcase-board, .adobe-strip, .marketing-final-cta) {
+  border-color: rgba(113, 103, 255, .26);
+  box-shadow: 0 28px 74px rgba(7, 16, 31, .18), inset 0 1px rgba(255, 255, 255, .07);
+}
+
+.marketing-page :where(.campaign-tile, .campaign-props figure, .workflow-panel) {
+  border-radius: 18px;
+  box-shadow: var(--elevation-low);
+  transition: box-shadow 240ms ease, transform 240ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.marketing-page :where(.campaign-tile, .campaign-props figure, .workflow-panel):hover {
+  box-shadow: var(--elevation-panel);
+  transform: translateY(-4px);
+}
+
+.marketing-page :where(.campaign-tile img, .campaign-props img, .pipeline-art img, .help-atlas img) {
+  filter: saturate(1.04) contrast(1.02);
+}
+
+.marketing-page img {
+  background: linear-gradient(145deg, rgba(32, 217, 238, .07), rgba(113, 103, 255, .08));
+}
+
+@media (max-width: 900px) {
+  .page-content:not(.is-workspace) {
+    padding-inline: clamp(14px, 4vw, 24px);
+    padding-bottom: calc(128px + env(safe-area-inset-bottom));
+  }
+
+  .dashboard-hero {
+    align-items: center;
+  }
+
+  .project-row:hover,
+  .admin-data-row:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  :where(.page-title-row, .feature-page-header, .admin-page-heading) {
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  :where(.page-title-row, .feature-page-header, .admin-page-heading) h1 {
+    font-size: clamp(28px, 9vw, 38px);
+  }
+
+  .projects-toolbar {
+    align-items: stretch;
+    border-radius: 14px;
+  }
+
+  .project-row {
+    padding: 12px;
+  }
+
+  .marketing-page :where(.campaign-tile, .campaign-props figure, .workflow-panel) {
+    border-radius: 14px;
+  }
+
+  .auth-panel {
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-icon,
+  :where(.creation-path, .plan-row, .admin-stat, .settings-card, .help-steps li),
+  .marketing-page :where(.campaign-tile, .campaign-props figure, .workflow-panel) {
+    transition: none;
+  }
+
+  :where(button, a, article, figure):hover > .app-icon,
+  :where(button, a, article, figure):hover > :where(span, div) > .app-icon {
+    filter: none;
+    transform: none;
+  }
+}

@@ -47,14 +47,12 @@ test("public entry and guest authentication boundary are accessible", async ({
   await assertNoSeriousAccessibilityViolations(page);
 
   await page
-    .getByRole("button", { name: "فتح الاستوديو كضيف" })
+    .getByRole("button", { name: "استكشف الاستوديو كضيف" })
     .first()
     .click();
   await page.getByRole("button", { name: "مشروع جديد" }).click();
   await page.getByRole("button", { name: "فتح مساحة العمل" }).click();
-  const fileInput = page.locator('input[type="file"]');
-  await expect(fileInput).toBeAttached();
-  await fileInput.setInputFiles(imageFixture);
+  await page.getByRole("button", { name: "اختيار ملف واحد" }).click();
   await expect(
     page.getByRole("heading", { name: "مرحبًا بعودتك" }),
   ).toBeVisible();
@@ -66,7 +64,7 @@ test("keyboard dismisses the project dialog and mobile drawer", async ({
 }, testInfo) => {
   await openApplication(page);
   await page
-    .getByRole("button", { name: "فتح الاستوديو كضيف" })
+    .getByRole("button", { name: "استكشف الاستوديو كضيف" })
     .first()
     .click();
 
@@ -79,6 +77,21 @@ test("keyboard dismisses the project dialog and mobile drawer", async ({
   await expect(projectTrigger).toBeFocused();
 
   if (!testInfo.project.name.includes("mobile")) return;
+  const bottomNavigation = page.locator(".mobile-bottom-nav");
+  const navigationGeometry = await bottomNavigation.evaluate((navigation) => {
+    const rect = navigation.getBoundingClientRect();
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      viewportHeight: window.innerHeight,
+      position: window.getComputedStyle(navigation).position,
+    };
+  });
+  expect(navigationGeometry.position).toBe("fixed");
+  expect(navigationGeometry.top).toBeGreaterThanOrEqual(0);
+  expect(navigationGeometry.bottom).toBeLessThanOrEqual(
+    navigationGeometry.viewportHeight,
+  );
   const menuTrigger = page.locator(".mobile-menu");
   await menuTrigger.click();
   await expect(menuTrigger).toHaveAttribute("aria-expanded", "true");
@@ -94,7 +107,7 @@ test("authenticated pages render without serious accessibility regressions", asy
 }, testInfo) => {
   await openApplication(page);
   await page
-    .getByRole("button", { name: "فتح الاستوديو كضيف" })
+    .getByRole("button", { name: "استكشف الاستوديو كضيف" })
     .first()
     .click();
   await openRegistration(page);
@@ -126,7 +139,7 @@ test("creates an account, processes an image, saves review, and downloads export
 }, testInfo) => {
   await openApplication(page);
   await page
-    .getByRole("button", { name: "فتح الاستوديو كضيف" })
+    .getByRole("button", { name: "استكشف الاستوديو كضيف" })
     .first()
     .click();
   await openRegistration(page);
@@ -152,6 +165,23 @@ test("creates an account, processes an image, saves review, and downloads export
   await expect(page.getByText("جاهز للمراجعة")).toBeVisible({
     timeout: 30_000,
   });
+  const workspaceGeometry = await page.locator(".pro-preview-column").evaluate(
+    (preview) => {
+      const toolbar = preview.querySelector<HTMLElement>(".pro-preview-toolbar");
+      const guidance = preview.querySelector<HTMLElement>(".guidance-context");
+      const documentElement = document.documentElement;
+      return {
+        documentOverflow: documentElement.scrollWidth - documentElement.clientWidth,
+        previewOverflow: preview.scrollWidth - preview.clientWidth,
+        toolbarOverflow: toolbar ? toolbar.scrollWidth - toolbar.clientWidth : 0,
+        guidanceOverflow: guidance ? guidance.scrollWidth - guidance.clientWidth : 0,
+      };
+    },
+  );
+  expect(workspaceGeometry.documentOverflow).toBeLessThanOrEqual(2);
+  expect(workspaceGeometry.previewOverflow).toBeLessThanOrEqual(2);
+  expect(workspaceGeometry.toolbarOverflow).toBeLessThanOrEqual(2);
+  expect(workspaceGeometry.guidanceOverflow).toBeLessThanOrEqual(2);
   await assertNoSeriousAccessibilityViolations(page);
   const layerCount = page.getByText(/الطبقات 5/u);
   if (!(await layerCount.isVisible())) {
@@ -166,8 +196,8 @@ test("creates an account, processes an image, saves review, and downloads export
     await expect(layerCount).toBeVisible();
   }
 
-  const hideLayer = page.getByRole("button", { name: /إخفاء \+جزء_/u }).first();
-  const hidLayerInWorkspace = await hideLayer.isVisible();
+  const layerActions = page.getByRole("button", { name: /إجراءات الطبقة \+جزء_/u }).first();
+  const hidLayerInWorkspace = await layerActions.isVisible();
   const navigationSave = hidLayerInWorkspace
     ? page.waitForResponse(
         (response) =>
@@ -177,6 +207,9 @@ test("creates an account, processes an image, saves review, and downloads export
       )
     : null;
   if (hidLayerInWorkspace) {
+    await layerActions.click();
+    const hideLayer = page.getByRole("button", { name: /إخفاء الطبقة/u });
+    await expect(hideLayer).toBeVisible();
     await hideLayer.click();
     if (testInfo.project.name.includes("mobile")) {
       await page.locator(".mobile-menu").click();

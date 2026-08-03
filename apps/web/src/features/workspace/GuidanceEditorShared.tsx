@@ -5,6 +5,11 @@ import {
   type ReadyWorkspaceToolId,
 } from "./workspaceToolRegistry";
 
+export type {
+  ReadyWorkspaceToolId,
+  WorkspaceEditorCommand,
+} from "./workspaceToolRegistry";
+
 export type ProcessingMode = "automatic" | "manual" | "guided";
 export type ReviewState = "editing" | "refined" | "accepted";
 

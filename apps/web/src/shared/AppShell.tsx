@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
+import { useModalDrawer } from "./hooks/useModalDrawer";
 import type { DemoState, UserRole, ViewId } from "../types";
 import type { SessionUser } from "../lib/api";
 
@@ -82,67 +83,18 @@ export function AppShell({
   const drawerRef = useRef<HTMLElement>(null);
   const appMainRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const onToggleMobileRef = useRef(onToggleMobile);
-  onToggleMobileRef.current = onToggleMobile;
   const visibleNavigation =
     role === "creator"
       ? navigation
       : [...navigation, { id: "admin" as const, label: "مركز الإدارة", icon: "shield" as const }];
 
-  useEffect(() => {
-    if (!isMobile || !mobileNavOpen) return;
-    const drawer = drawerRef.current;
-    const appMain = appMainRef.current;
-    const previousOverflow = document.body.style.overflow;
-    const previousAriaHidden = appMain?.getAttribute("aria-hidden") ?? null;
-    const appMainHadInert = appMain?.hasAttribute("inert") ?? false;
-    document.body.style.overflow = "hidden";
-    appMain?.setAttribute("inert", "");
-    appMain?.setAttribute("aria-hidden", "true");
-
-    const frame = window.requestAnimationFrame(() => {
-      drawer
-        ?.querySelector<HTMLElement>("[data-drawer-initial-focus]")
-        ?.focus();
-    });
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onToggleMobileRef.current();
-        return;
-      }
-      if (event.key !== "Tab" || !drawer) return;
-      const focusable = Array.from(
-        drawer.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-      if (focusable.length === 0) {
-        event.preventDefault();
-        drawer.focus();
-        return;
-      }
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      if (!appMainHadInert) appMain?.removeAttribute("inert");
-      if (previousAriaHidden === null) appMain?.removeAttribute("aria-hidden");
-      else appMain?.setAttribute("aria-hidden", previousAriaHidden);
-      window.requestAnimationFrame(() => menuButtonRef.current?.focus());
-    };
-  }, [isMobile, mobileNavOpen]);
+  useModalDrawer({
+    active: isMobile && mobileNavOpen,
+    dialogRef: drawerRef,
+    backgroundRef: appMainRef,
+    triggerRef: menuButtonRef,
+    onClose: onToggleMobile,
+  });
 
   return (
     <div className={`app-shell app-shell--${activeView}`}>

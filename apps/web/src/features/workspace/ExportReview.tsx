@@ -15,7 +15,14 @@ import {
   type ExportGenerationState,
 } from "./exportFormatState";
 import { ExportQualitySummary } from "./ExportQualitySummary";
-import { RasterLayerPreview } from "./RasterLayerPreview";
+import {
+  ExportCharacterPreview,
+  ExportPdfPreview,
+} from "./ExportReviewPreviews";
+import { ExportReviewHeader } from "./ExportReviewHeader";
+import { useExportReviewDialog } from "./useExportReviewDialog";
+
+export { ExportCharacterPreview, ExportPdfPreview } from "./ExportReviewPreviews";
 
 type PreviewBackground = "white" | "transparent" | "checker";
 type PdfScope = "document" | "pages" | "selected";
@@ -55,11 +62,7 @@ interface ExportReviewProps {
   ) => Promise<void>;
 }
 
-interface FormatOption {
-  id: ExportFormat;
-  title: string;
-  hint: string;
-}
+type FormatOption = { id: ExportFormat; title: string; hint: string };
 
 export function ExportReview({
   mode,
@@ -91,11 +94,6 @@ export function ExportReview({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  const generationStateRef = useRef(generationState);
-  const generationTimerRef = useRef<number | null>(null);
-  onCloseRef.current = onClose;
-  generationStateRef.current = generationState;
   const selected = useMemo(
     () => layers.find((layer) => layer.id === selectedLayerId) ?? layers[0],
     [layers, selectedLayerId],
@@ -150,82 +148,14 @@ export function ExportReview({
     setGenerationMessage(undefined);
   };
 
-  useEffect(() => {
-    const restoreFocusTo = returnFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    const backdrop = backdropRef.current;
-    const dialog = dialogRef.current;
-    const isolatedElements: {
-      element: HTMLElement;
-      hadInert: boolean;
-      ariaHidden: string | null;
-    }[] = [];
-
-    // Isolate every sibling outside the modal path, including the app shell.
-    let modalBranch: HTMLElement | null = backdrop;
-    while (modalBranch?.parentElement) {
-      const parent = modalBranch.parentElement;
-      Array.from(parent.children).forEach((child) => {
-        if (child === modalBranch || !(child instanceof HTMLElement)) return;
-        isolatedElements.push({
-          element: child,
-          hadInert: child.hasAttribute("inert"),
-          ariaHidden: child.getAttribute("aria-hidden"),
-        });
-        child.setAttribute("inert", "");
-        child.setAttribute("aria-hidden", "true");
-      });
-      if (parent === document.body) break;
-      modalBranch = parent;
-    }
-
-    closeButtonRef.current?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && generationStateRef.current !== "working") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab" || !dialog) return;
-
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => element.getClientRects().length > 0 && element.getAttribute("aria-hidden") !== "true");
-
-      if (focusable.length === 0) {
-        event.preventDefault();
-        dialog.focus();
-        return;
-      }
-
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      const active = document.activeElement;
-      if (!dialog.contains(active)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      if (generationTimerRef.current !== null) window.clearTimeout(generationTimerRef.current);
-      isolatedElements.forEach(({ element, hadInert, ariaHidden }) => {
-        if (!hadInert) element.removeAttribute("inert");
-        if (ariaHidden === null) element.removeAttribute("aria-hidden");
-        else element.setAttribute("aria-hidden", ariaHidden);
-      });
-      window.requestAnimationFrame(() => restoreFocusTo?.focus());
-    };
-  }, [returnFocusTo]);
+  useExportReviewDialog({
+    backdropRef,
+    closeButtonRef,
+    dialogRef,
+    isWorking: generationState === "working",
+    onClose,
+    returnFocusTo,
+  });
 
   useEffect(() => {
     setFormat(mode === "image" ? "psd" : "png-layers-json");
@@ -361,24 +291,12 @@ export function ExportReview({
         aria-labelledby="export-review-title"
         tabIndex={-1}
       >
-        <header className="export-review__header">
-          <div className="export-review__title">
-            <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} disabled={generationState === "working"} aria-label="إغلاق مراجعة التصدير">
-              <Icon name="close" size={19} />
-            </button>
-            <span className="export-proof-mark"><Icon name="packageCheck" size={20} /></span>
-            <div>
-              <h2 id="export-review-title">المراجعة النهائية</h2>
-              <p>عاين الطبقات والأسماء وهدف Adobe قبل إنشاء الملف.</p>
-            </div>
-          </div>
-          <div className="export-review__status">
-            <span className="ready-pill"><Icon name="check" size={14} /> جاهز للتصدير</span>
-            <span className="review-file-name" dir="ltr">
-              {format === "psd" ? "motionprep.psd" : format === "txt" || format === "csv" || format === "json" ? `motionprep.${format}` : "motionprep.zip"}
-            </span>
-          </div>
-        </header>
+        <ExportReviewHeader
+          closeButtonRef={closeButtonRef}
+          format={format}
+          isWorking={generationState === "working"}
+          onClose={onClose}
+        />
 
         <div className="export-review__body">
           <section className="export-preview-panel" aria-label="المعاينة النهائية">
@@ -514,11 +432,8 @@ export function ExportReview({
           </aside>
 
           <aside className="export-setup-panel" aria-label="إعداد التصدير">
-            <ExportQualitySummary
-              mode={mode}
-              imageLayerCount={layers.length}
-              maxUploadBytes={maxUploadBytes}
-            />
+            <div className="export-setup-scroll">
+              <ExportQualitySummary mode={mode} imageLayerCount={layers.length} maxUploadBytes={maxUploadBytes} />
 
             <div className="export-setup">
               <div className="review-section-heading"><div><strong>إعداد التصدير</strong><small>الخيارات الأساسية فقط</small></div></div>
@@ -558,177 +473,58 @@ export function ExportReview({
               )}
             </div>
 
-            <div className="export-estimate">
-              <div><span>الحجم</span><strong>يُحسب بعد الإنشاء</strong></div>
-              <div><span>الوقت</span><strong>حسب حجم المصدر</strong></div>
-            </div>
-
-            <div className="local-demo-note"><Icon name="info" size={14} /><span>للصور: PSD وTIFF وPNG الشفافة وPNG + JSON. ولـPDF: PSD وPNG + JSON وTXT/CSV/JSON؛ وتُرسم نصوص PSD كطبقات Raster لتجنب اختلاف الخطوط بين الأجهزة.</span></div>
-            {saveState !== "saved" && (
-              <div className={`export-save-state is-${saveState}`} role="status">
-                <span>
-                  {saveState === "error"
-                    ? "لم تُحفظ مراجعة الطبقات الأخيرة."
-                    : saveState === "saving"
-                      ? "جارٍ حفظ مراجعة الطبقات…"
-                      : "توجد تغييرات تنتظر الحفظ."}
-                </span>
-                {saveState === "error" && onRetrySave && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void onRetrySave().catch((error: unknown) => {
-                        const message =
-                          error instanceof Error
-                            ? error.message
-                            : "تعذر إعادة الحفظ.";
-                        setGenerationMessage(message);
-                      });
-                    }}
-                  >
-                    إعادة الحفظ
-                  </button>
-                )}
+              <div className="export-estimate">
+                <div><span>الحجم</span><strong>يُحسب بعد الإنشاء</strong></div>
+                <div><span>الوقت</span><strong>حسب حجم المصدر</strong></div>
               </div>
-            )}
-            <button className={`create-export-button ${generationState === "done" ? "is-done" : ""}`} type="button" onClick={() => void createExport()} disabled={generationState === "working" || !selectedFormat || !canExport || saveState === "saving" || saveState === "error"}>
-              <Icon name={generationState === "done" ? "check" : "download"} size={17} />
-              {generationState === "working" ? "جارٍ تجهيز النسخة…" : generationState === "done" ? "تم إنشاء الملف" : "إنشاء ملف التصدير"}
-            </button>
-            {displayedGenerationMessage && (
-              <p
-                className={`export-generation-message ${generationState === "done" ? "is-success" : "is-error"}`}
-                role="status"
-                aria-live="polite"
-              >
-                {displayedGenerationMessage}
-              </p>
-            )}
+
+              <div className="local-demo-note"><Icon name="info" size={14} /><span>للصور: PSD وTIFF وPNG الشفافة وPNG + JSON. ولـPDF: PSD وPNG + JSON وTXT/CSV/JSON؛ وتُرسم نصوص PSD كطبقات Raster لتجنب اختلاف الخطوط بين الأجهزة.</span></div>
+              {saveState !== "saved" && (
+                <div className={`export-save-state is-${saveState}`} role="status">
+                  <span>
+                    {saveState === "error"
+                      ? "لم تُحفظ مراجعة الطبقات الأخيرة."
+                      : saveState === "saving"
+                        ? "جارٍ حفظ مراجعة الطبقات…"
+                        : "توجد تغييرات تنتظر الحفظ."}
+                  </span>
+                  {saveState === "error" && onRetrySave && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void onRetrySave().catch((error: unknown) => {
+                          const message =
+                            error instanceof Error
+                              ? error.message
+                              : "تعذر إعادة الحفظ.";
+                          setGenerationMessage(message);
+                        });
+                      }}
+                    >
+                      إعادة الحفظ
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </aside>
         </div>
+        <footer className="export-action-footer">
+          <button className={`create-export-button ${generationState === "done" ? "is-done" : ""}`} type="button" onClick={() => void createExport()} disabled={generationState === "working" || !selectedFormat || !canExport || saveState === "saving" || saveState === "error"}>
+            <Icon name={generationState === "done" ? "check" : "download"} size={17} />
+            {generationState === "working" ? "جارٍ تجهيز النسخة…" : generationState === "done" ? "تم إنشاء الملف" : "إنشاء ملف التصدير"}
+          </button>
+          {displayedGenerationMessage && (
+            <p
+              className={`export-generation-message ${generationState === "done" ? "is-success" : "is-error"}`}
+              role="status"
+              aria-live="polite"
+            >
+              {displayedGenerationMessage}
+            </p>
+          )}
+        </footer>
       </section>
     </div>
-  );
-}
-
-export function ExportCharacterPreview({
-  layers,
-  selectedLayerId,
-  safeBounds,
-  sourcePreviewUrl,
-  canvasWidth = 1,
-  canvasHeight = 1,
-}: {
-  layers: Layer[];
-  selectedLayerId: string;
-  safeBounds: boolean;
-  sourcePreviewUrl?: string;
-  canvasWidth?: number;
-  canvasHeight?: number;
-}) {
-  const visible = (id: string) => layers.find((layer) => layer.id === id)?.visible !== false;
-  const hasRealPreview =
-    Boolean(sourcePreviewUrl) || layers.some((layer) => layer.previewUrl);
-  return (
-    <div className={`export-image-board ${hasRealPreview ? "has-source" : ""} ${safeBounds ? "show-safe-bounds" : ""}`}>
-      <div className="artboard-grid" />
-      {hasRealPreview ? (
-        <RasterLayerPreview
-          layers={layers}
-          canvasWidth={canvasWidth}
-          canvasHeight={canvasHeight}
-          selectedLayerId={selectedLayerId}
-          {...(sourcePreviewUrl ? { fallbackSourceUrl: sourcePreviewUrl } : {})}
-          label="معاينة المصدر الحقيقي قبل التصدير"
-          className="export-source-image"
-        />
-      ) : (
-        <div className="character" aria-label="معاينة إرشادية للشخصية قبل رفع المصدر">
-          {visible("legs") && <span className={`character-legs ${selectedLayerId === "legs" ? "is-selected" : ""}`} />}
-          {visible("body") && <span className={`character-body ${selectedLayerId === "body" ? "is-selected" : ""}`} />}
-          {visible("arm-right") && <span className={`character-arm character-arm--right ${selectedLayerId === "arm-right" ? "is-selected" : ""}`} />}
-          {visible("arm-left") && <span className={`character-arm character-arm--left ${selectedLayerId === "arm-left" ? "is-selected" : ""}`} />}
-          {visible("head") && <span className={`character-head ${selectedLayerId === "head" ? "is-selected" : ""}`} />}
-          {visible("eye-right") && <span className={`character-eye character-eye--right ${selectedLayerId === "eye-right" ? "is-selected" : ""}`} />}
-          {visible("eye-left") && <span className={`character-eye character-eye--left ${selectedLayerId === "eye-left" ? "is-selected" : ""}`} />}
-          {visible("mouth") && <span className={`character-mouth ${selectedLayerId === "mouth" ? "is-selected" : ""}`} />}
-        </div>
-      )}
-      {safeBounds && <span className="safe-bound-label">Safe 90%</span>}
-    </div>
-  );
-}
-
-export function ExportPdfPreview({
-  layers,
-  selectedLayerId,
-  safeBounds,
-  page,
-  pages = [],
-}: {
-  layers: Layer[];
-  selectedLayerId: string;
-  safeBounds: boolean;
-  page: number;
-  pages?: Array<{ pageNumber: number; width: number; height: number }>;
-}) {
-  const pageSize = pages.find((item) => item.pageNumber === page) ?? {
-    pageNumber: page,
-    width: Math.max(
-      1,
-      ...layers
-        .filter((layer) => layer.pageNumber === page)
-        .map((layer) => (layer.bounds?.x ?? 0) + (layer.bounds?.width ?? 0)),
-    ),
-    height: Math.max(
-      1,
-      ...layers
-        .filter((layer) => layer.pageNumber === page)
-        .map((layer) => (layer.bounds?.y ?? 0) + (layer.bounds?.height ?? 0)),
-    ),
-  };
-  const contentLayers = layers.filter(
-    (layer) =>
-      layer.pageNumber === page &&
-      layer.kind !== "page" &&
-      layer.visible &&
-      layer.bounds,
-  );
-  return (
-    <article
-      className={`export-pdf-page ${safeBounds ? "show-safe-bounds" : ""}`}
-      aria-label={`معاينة الصفحة ${page} من المستند الحقيقي`}
-      style={
-        {
-          "--pdf-aspect": `${pageSize.width} / ${pageSize.height}`,
-        } as React.CSSProperties
-      }
-    >
-      {contentLayers.map((layer) => {
-        const bounds = layer.bounds!;
-        return (
-          <div
-            key={layer.id}
-            className={`export-pdf-layer ${selectedLayerId === layer.id ? "is-selected" : ""}`}
-            dir={layer.direction ?? "auto"}
-            style={{
-              insetInlineStart: `${(bounds.x / pageSize.width) * 100}%`,
-              top: `${(bounds.y / pageSize.height) * 100}%`,
-              width: `${(bounds.width / pageSize.width) * 100}%`,
-              height: `${(bounds.height / pageSize.height) * 100}%`,
-              opacity: layer.opacity / 100,
-              fontFamily: layer.fontFamily,
-              fontSize: `${Math.max(6, Math.min(18, ((layer.fontSize ?? bounds.height) / pageSize.height) * 520))}px`,
-            }}
-          >
-            {layer.fullContent ?? layer.name.replace(/^\+/, "").replace(/_/gu, " ")}
-          </div>
-        );
-      })}
-      {contentLayers.length === 0 && (
-        <p className="export-pdf-empty">لا توجد طبقات نص ظاهرة في هذه الصفحة.</p>
-      )}
-      {safeBounds && <span className="safe-bound-label">Safe 90%</span>}
-    </article>
   );
 }

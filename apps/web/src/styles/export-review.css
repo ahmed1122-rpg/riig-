@@ -17,7 +17,7 @@
   display: grid;
   width: min(1580px, 100%);
   height: min(920px, 100%);
-  grid-template-rows: 62px minmax(0, 1fr);
+  grid-template-rows: 62px minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
@@ -577,10 +577,18 @@
 .opacity-field input { width: 100%; accent-color: var(--primary); }
 
 .export-setup-panel {
-  display: flex;
-  overflow-y: auto;
-  flex-direction: column;
+  display: grid;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr) auto;
   background: var(--surface);
+  scrollbar-width: thin;
+}
+
+.export-setup-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
 }
 
@@ -745,21 +753,37 @@
 .local-demo-note svg { flex: 0 0 auto; }
 
 .create-export-button {
-  position: sticky;
-  z-index: 6;
-  bottom: 12px;
   display: flex;
   min-height: 40px;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  margin: 0 12px 12px;
+  margin: 0;
   border-radius: 5px;
   background: var(--primary);
-  box-shadow: 0 -8px 24px color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--primary) 24%, transparent);
   color: var(--primary-ink);
   font-size: 9px;
   font-weight: 800;
+}
+
+.export-action-footer {
+  position: relative;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 -12px 28px color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.export-action-footer .export-generation-message {
+  position: static;
+  bottom: auto;
+  margin: 0;
 }
 
 .create-export-button:hover { background: var(--primary-strong); }
@@ -779,7 +803,7 @@
   .advanced-export-toggle { min-height: 28px; margin-bottom: 5px; }
   .export-estimate { margin-bottom: 5px; padding-top: 6px; }
   .local-demo-note { margin-bottom: 5px; padding-block: 6px; }
-  .create-export-button { min-height: 36px; margin-bottom: 8px; }
+  .create-export-button { min-height: 36px; }
 }
 
 @media (max-width: 1180px) {
@@ -803,7 +827,14 @@
   .export-layer-list { max-height: 260px; }
   .selected-layer-editor { grid-template-columns: minmax(180px, 1fr) minmax(200px, 1fr); align-items: end; }
   .fixed-layer-note { grid-column: 1 / -1; }
-  .export-setup-panel { overflow: visible; }
+  .export-setup-panel { display: block; overflow: visible; }
+  .export-setup-scroll { overflow: visible; }
+  .export-action-footer {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    margin: 0;
+    box-shadow: 0 -12px 28px color-mix(in srgb, var(--surface) 78%, transparent);
+  }
   .quality-summary { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.2fr); gap: 8px; }
   .quality-summary ul { margin: 0; }
   .format-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -813,7 +844,7 @@
 }
 
 @media (max-width: 760px) {
-  .export-review { grid-template-rows: 56px minmax(0, 1fr); }
+  .export-review { grid-template-rows: 56px minmax(0, 1fr) auto; }
   .export-review__header { position: sticky; z-index: 10; top: 0; padding: 0 9px; }
   .export-proof-mark,
   .review-file-name { display: none; }

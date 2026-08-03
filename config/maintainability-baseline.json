@@ -1,22 +1,7 @@
 {
   "maxSourceLines": 500,
   "minCloneLines": 16,
-  "oversizedFiles": {
-    "apps/api/src/auth/auth-service.ts": 553,
-    "apps/api/src/exports/export-service.ts": 920,
-    "apps/api/src/processing/processing-routes.ts": 578,
-    "apps/api/src/processing/processing-service.ts": 1217,
-    "apps/api/src/processing/processing-worker-runtime.ts": 829,
-    "apps/web/src/features/billing/BillingPortal.tsx": 606,
-    "apps/web/src/features/workspace/ExportReview.tsx": 697,
-    "apps/web/src/features/workspace/LayerDock.tsx": 577,
-    "apps/web/src/features/workspace/PdfGuidanceEditor.tsx": 536,
-    "apps/web/src/features/workspace/Workspace.tsx": 1292,
-    "packages/contracts/src/index.ts": 545,
-    "packages/document-processing/src/index.ts": 1115,
-    "packages/export-adapters/src/index.ts": 677,
-    "scripts/verify-deployment.mjs": 520
-  },
-  "maxExactCloneBlocks": 1,
-  "maxExactClonedLines": 17
+  "oversizedFiles": {},
+  "maxExactCloneBlocks": 0,
+  "maxExactClonedLines": 0
 }

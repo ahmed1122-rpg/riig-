@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const buildMapPath = new URL("../docs/BUILD_MAP.md", import.meta.url);
 const contractsPath = new URL(
-  "../packages/contracts/src/index.ts",
+  "../packages/contracts/src/core-contracts.ts",
   import.meta.url,
 );
 const uploadRoutesPath = new URL(

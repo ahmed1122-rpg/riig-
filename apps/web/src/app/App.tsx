@@ -189,6 +189,12 @@ export function App() {
   }, [lightTheme]);
 
   useEffect(() => {
+    if (view === "workspace") return;
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [view]);
+
+  useEffect(() => {
     try {
       const reducedMotion = JSON.parse(
         window.localStorage.getItem("motionprep.settings.reduced-motion") ??

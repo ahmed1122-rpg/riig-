@@ -196,7 +196,7 @@ textarea {
 }
 
 .topbar {
-  min-height: 68px;
+  min-height: var(--topbar-height);
   border-bottom-color: color-mix(in srgb, var(--atelier-indigo) 14%, var(--line));
   background: color-mix(in srgb, var(--surface) 93%, transparent);
   backdrop-filter: blur(16px) saturate(1.2);

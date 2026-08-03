@@ -312,7 +312,7 @@
 
 :where(
   .app-shell,
-  .landing-page,
+  .marketing-page,
   .auth-gateway,
   .admin-shell,
   .workspace,
@@ -354,4 +354,175 @@
 ) {
   min-inline-size: 44px !important;
   min-block-size: 44px !important;
+}
+
+/* The admin shell is standalone. These final contracts pair the shared 14px
+   readability floor with intrinsic sizing that cannot widen the viewport. */
+.admin-shell {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  contain: inline-size;
+}
+
+.admin-shell > :where(.admin-main, .admin-sidebar),
+.admin-main > :where(.admin-topbar, .admin-content),
+.admin-content > .admin-view {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.admin-sidebar {
+  inline-size: 236px;
+  max-inline-size: 100%;
+}
+
+.admin-sidebar .admin-sidebar-close {
+  border-color: rgba(32, 217, 238, 0.38);
+  background: rgba(32, 217, 238, 0.1);
+  color: #e5fbff;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.admin-insight-panel .admin-empty {
+  color: #5f6c67;
+}
+
+.admin-insight-panel .admin-empty strong {
+  color: #17201e;
+}
+
+.admin-insight-panel .admin-empty span {
+  color: #5f6c67;
+}
+
+.projects-view {
+  max-inline-size: 1080px;
+}
+
+.projects-view .page-title-row {
+  justify-content: flex-start;
+}
+
+.admin-brand,
+.admin-sidebar nav button,
+.admin-sidebar__scope,
+.admin-topbar,
+.admin-page-heading,
+.admin-stat,
+.system-settings-list article,
+.admin-brand > div,
+.admin-sidebar nav button > span,
+.admin-sidebar__scope > span,
+.admin-topbar__leading,
+.admin-page-heading > div,
+.admin-stat > div,
+.system-settings-list article > div {
+  min-inline-size: 0;
+}
+
+.admin-sidebar nav button,
+.admin-sidebar__scope,
+.admin-topbar__leading,
+.admin-page-heading,
+.admin-stat,
+.system-settings-list article {
+  line-height: 1.45;
+}
+
+.admin-sidebar :where(nav button > span, .admin-sidebar__scope small),
+.admin-brand :where(strong, small),
+.system-settings-list article :where(strong, small) {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.admin-page-heading {
+  flex-wrap: wrap;
+}
+
+.operational-rail__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding-block: 10px;
+}
+
+.operational-rail__head > div {
+  display: grid;
+  min-inline-size: 0;
+  gap: 4px;
+}
+
+.operational-rail__head > div > :where(strong, small) {
+  min-inline-size: 0;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.admin-empty {
+  padding: 28px 18px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.admin-empty > .app-icon {
+  color: var(--atelier-cyan);
+}
+
+.admin-empty strong {
+  color: #f1f5f9;
+  line-height: 1.5;
+}
+
+.admin-empty span {
+  color: #cbd5e1;
+  line-height: 1.65;
+}
+
+.app-shell--workspace .pro-source-status,
+.app-shell--workspace .pro-source-file {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.app-shell--workspace .pro-source-file strong,
+.app-shell--workspace .pro-source-file small,
+.app-shell--workspace .pro-upload-pill span {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell--workspace .guidance-review {
+  padding-inline: 8px;
+}
+
+@media (max-width: 800px) {
+  .admin-shell {
+    display: block;
+    contain: inline-size;
+  }
+
+  .admin-sidebar {
+    inline-size: min(82vw, 250px);
+  }
+
+  .admin-overview-grid,
+  .system-settings-list,
+  .admin-table-toolbar,
+  .admin-data-table {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  .operational-rail__head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operational-rail__head .status {
+    justify-self: start;
+  }
 }

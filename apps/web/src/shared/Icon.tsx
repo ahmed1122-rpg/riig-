@@ -165,7 +165,17 @@ interface IconProps {
   className?: string;
 }
 
-export function Icon({ name, size = 20, ...props }: IconProps) {
+export function Icon({ name, size = 20, className, ...props }: IconProps) {
   const Component = icons[name];
-  return <Component size={size} strokeWidth={1.8} aria-hidden="true" {...props} />;
+  return (
+    <Component
+      className={className ? `app-icon ${className}` : "app-icon"}
+      data-icon={name}
+      size={size}
+      strokeWidth={1.8}
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    />
+  );
 }

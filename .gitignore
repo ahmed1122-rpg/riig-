@@ -17,3 +17,4 @@ artifacts/test-results/
 artifacts/playwright/
 artifacts/runtime-qa/
 artifacts/screenshots/
+artifacts/local-qa/

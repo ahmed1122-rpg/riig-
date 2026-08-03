@@ -2,6 +2,7 @@
 
 @import url("./visual-polish.css") layer(tokens);
 @import url("./index.css") layer(shells);
+@import url("./app-shell-responsive.css") layer(shells);
 @import url("./features/workspace-foundation.css") layer(features);
 @import url("./export-review.css") layer(features);
 @import url("./guided-editors.css") layer(features);
@@ -13,4 +14,5 @@
 @import url("./creator-polish.css") layer(features);
 @import url("./access-polish.css") layer(features);
 @import url("./atelier.css") layer(overrides);
+@import url("./luminous-primitives.css") layer(overrides);
 @import url("./overrides/accessibility-responsive.css") layer(overrides);
