@@ -54,6 +54,13 @@ their hosted results remain evidence gates rather than assumptions.
 
 ## Implemented locally
 
+- Incident response now has a severity/ownership/containment runbook and a
+  machine-verified evidence manifest. The verifier enforces chronological UTC
+  state, acknowledgement targets, immutable release identity, known alert
+  names, redaction, closed-incident actions, a stable monitoring window, owned
+  follow-ups, and Ed25519 attestation. Recovery and incident evidence share one
+  signing implementation, and the maintainability ratchet remains at zero exact
+  clone blocks.
 - Upload publication now uses one PostgreSQL transaction for the upload,
   source-version, and project state. A bounded reconciler repairs legacy or
   interrupted `verifying`/`ready` state only after re-inspecting object size,
