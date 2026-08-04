@@ -45,6 +45,13 @@ Use the coordinated PostgreSQL/object-storage procedure in
 [`runbooks/disaster-recovery.md`](runbooks/disaster-recovery.md); a
 database-only restore does not satisfy these targets.
 
+Before a public launch, assign the incident roles and alert destinations in
+[`runbooks/incident-response.md`](runbooks/incident-response.md). Every staging
+drill or production incident must retain a redacted, chronologically valid
+incident manifest. `npm run verify:incident -- <manifest.json>` enforces exact
+release identity, response targets, evidence links, a stable observation
+window, owned follow-ups, and Ed25519 attestation metadata.
+
 ## Required services
 
 - PostgreSQL 17 with TLS, daily backups, and point-in-time recovery.

@@ -34,3 +34,10 @@ Never include passwords, session cookies, uploaded content, book text, payment
 tokens, provider secrets, TOTP seeds, recovery codes, or raw recovery manifests
 in reports or logs. Retain only the minimum redacted reproduction and the
 request/job correlation identifiers needed to investigate the issue.
+
+Declare and coordinate suspected security, privacy, integrity, payment, or
+supply-chain events with
+[`docs/runbooks/incident-response.md`](docs/runbooks/incident-response.md).
+Security-sensitive uncertainty is SEV1 until evidence supports a lower
+classification; preserve redacted evidence and exact release identity before
+containment or rollback.

@@ -46,6 +46,7 @@
     "verify:alerts": "node scripts/verify-prometheus-rules.mjs",
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
     "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
+    "verify:incident": "node --test scripts/verify-incident-manifest.test.mjs && node scripts/verify-incident-manifest.mjs docs/runbooks/incident-manifest.example.json",
     "verify:css": "node scripts/verify-css-architecture.mjs",
     "verify:fixtures": "node --test scripts/ocr-corpus-wikitext.test.mjs scripts/ocr-holdout-policy.test.mjs && node scripts/verify-fixture-corpus.mjs && node scripts/verify-ocr-corpus.mjs --allow-stale-implementation-when-disabled",
     "verify:ocr-corpus": "node scripts/verify-ocr-corpus.mjs",
@@ -61,7 +62,7 @@
     "test:topology": "node scripts/verify-production-topology.mjs",
     "test:faults:topology": "node scripts/verify-runtime-fault-recovery.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=22.12.0",

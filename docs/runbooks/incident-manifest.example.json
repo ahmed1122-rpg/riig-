@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "incidentId": "INC-2026-08-04-001",
+  "severity": "SEV2",
+  "status": "closed",
+  "title": "Object storage readiness outage during staging drill",
+  "environment": "staging",
+  "detectionSource": "monitoring",
+  "detectedAt": "2026-08-04T10:00:00.000Z",
+  "acknowledgedAt": "2026-08-04T10:08:00.000Z",
+  "containedAt": "2026-08-04T10:18:00.000Z",
+  "recoveredAt": "2026-08-04T10:42:00.000Z",
+  "closedAt": "2026-08-04T11:05:00.000Z",
+  "roles": {
+    "incidentCommander": "release-owner",
+    "technicalLead": "operations-owner",
+    "communicationsLead": "product-owner"
+  },
+  "affectedServices": [
+    "api",
+    "object_storage"
+  ],
+  "triggeredAlerts": [
+    "MotionPrepObjectStorageUnavailable"
+  ],
+  "release": {
+    "gitSha": "452cd9941bd085fcad88c08bec7284f94d6f9db9",
+    "runtimeImageRef": "ghcr.io/example/motionprep-runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "webImageRef": "ghcr.io/example/motionprep-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "customerImpact": {
+    "summary": "Staging uploads and exports were unavailable; no production tenants were affected.",
+    "dataIntegrity": "verified-intact",
+    "dataExposure": "not-detected"
+  },
+  "securityEscalated": false,
+  "containmentSummary": "Paused processing and export workers while preserving their durable queues.",
+  "recoverySummary": "Corrected the private endpoint policy and restored provider readiness.",
+  "rootCauseSummary": "A staging bucket policy update denied the workload identity used by the API and workers.",
+  "actions": [
+    {
+      "at": "2026-08-04T10:08:00.000Z",
+      "kind": "detection",
+      "summary": "Confirmed object-storage readiness failure from private metrics."
+    },
+    {
+      "at": "2026-08-04T10:18:00.000Z",
+      "kind": "containment",
+      "summary": "Paused affected workers without deleting queued jobs."
+    },
+    {
+      "at": "2026-08-04T10:42:00.000Z",
+      "kind": "recovery",
+      "summary": "Restored least-privilege bucket access for the staging workload identity."
+    },
+    {
+      "at": "2026-08-04T10:48:00.000Z",
+      "kind": "verification",
+      "summary": "Completed the authenticated PDF upload, processing, review, export, and download journey."
+    }
+  ],
+  "correlationIds": [
+    "staging-drill-request-001",
+    "staging-drill-job-001"
+  ],
+  "evidenceUris": [
+    "https://github.com/example/motionprep/actions/runs/100000001"
+  ],
+  "monitoringStableMinutes": 17,
+  "followUps": [
+    {
+      "owner": "operations-owner",
+      "dueAt": "2026-08-11T17:00:00.000Z",
+      "summary": "Add a protected pre-deployment assertion for the workload-identity bucket policy."
+    }
+  ],
+  "attestation": {
+    "algorithm": "Ed25519",
+    "signer": "incident-commander",
+    "signedAt": "2026-08-04T11:10:00.000Z",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+  }
+}

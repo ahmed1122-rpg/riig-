@@ -1,10 +1,10 @@
-import {
-  createPublicKey,
-  verify as verifySignature,
-} from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { canonicalJson } from "./ocr-holdout-policy.mjs";
+import {
+  evidenceSigningPayload,
+  validateEvidenceAttestation,
+  validateEvidenceSignature,
+} from "./evidence-attestation.mjs";
 
 const digestReference = /^.+@sha256:[a-f0-9]{64}$/u;
 const requiredTextFields = [
@@ -97,89 +97,25 @@ export function validateRecoveryManifest(manifest) {
 }
 
 export function recoveryManifestSigningPayload(manifest) {
-  const { signature: _signature, ...attestation } =
-    manifest.attestation ?? {};
-  return Buffer.from(
-    canonicalJson({
-      ...manifest,
-      attestation,
-    }),
-    "utf8",
-  );
+  return evidenceSigningPayload(manifest);
 }
 
 export function validateRecoveryManifestSignature(
   manifest,
   publicKeyPem,
 ) {
-  const violations = validateAttestationMetadata(manifest);
-  if (violations.length > 0) {
-    return violations;
-  }
-
-  const signature = Buffer.from(
-    manifest.attestation.signature,
-    "base64",
-  );
-  try {
-    const publicKey = createPublicKey(publicKeyPem);
-    if (publicKey.asymmetricKeyType !== "ed25519") {
-      violations.push("Recovery signing public key must be Ed25519.");
-    } else if (
-      !verifySignature(
-        null,
-        recoveryManifestSigningPayload(manifest),
-        publicKey,
-        signature,
-      )
-    ) {
-      violations.push("Recovery manifest signature is invalid.");
-    }
-  } catch (error) {
-    violations.push(
-      `Recovery signing public key is invalid: ${message(error)}`,
-    );
-  }
-  return violations;
+  return validateEvidenceSignature(manifest, publicKeyPem, {
+    completedAt: manifest.smokeCompletedAt,
+    completionLabel: "smoke completion",
+    evidenceLabel: "Recovery",
+  });
 }
 
 function validateAttestationMetadata(manifest) {
-  const violations = [];
-  if (manifest.attestation?.algorithm !== "Ed25519") {
-    violations.push("attestation.algorithm must be Ed25519.");
-  }
-  if (
-    typeof manifest.attestation?.signer !== "string" ||
-    manifest.attestation.signer.trim() === ""
-  ) {
-    violations.push("attestation.signer must be a non-empty string.");
-  }
-  const signedAt = Date.parse(manifest.attestation?.signedAt);
-  if (!Number.isFinite(signedAt)) {
-    violations.push("attestation.signedAt must be an ISO-8601 timestamp.");
-  } else if (
-    Number.isFinite(Date.parse(manifest.smokeCompletedAt)) &&
-    signedAt < Date.parse(manifest.smokeCompletedAt)
-  ) {
-    violations.push(
-      "attestation.signedAt cannot precede smoke completion.",
-    );
-  }
-
-  const signatureText = manifest.attestation?.signature;
-  const signature =
-    typeof signatureText === "string"
-      ? Buffer.from(signatureText, "base64")
-      : Buffer.alloc(0);
-  if (
-    signature.byteLength !== 64 ||
-    signature.toString("base64") !== signatureText
-  ) {
-    violations.push(
-      "attestation.signature must be a 64-byte Ed25519 signature in base64.",
-    );
-  }
-  return violations;
+  return validateEvidenceAttestation(manifest, {
+    completedAt: manifest.smokeCompletedAt,
+    completionLabel: "smoke completion",
+  });
 }
 
 async function main() {
@@ -232,8 +168,4 @@ async function main() {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   await main();
-}
-
-function message(error) {
-  return error instanceof Error ? error.message : "unknown error";
 }

@@ -39,6 +39,9 @@ const [
   packageManifest,
   localCompose,
   apiPackageManifest,
+  deploymentContract,
+  securityPolicy,
+  incidentResponseRunbook,
 ] =
   await Promise.all(
     [
@@ -64,6 +67,9 @@ const [
       "package.json",
       "compose.yaml",
       "apps/api/package.json",
+      "docs/DEPLOYMENT.md",
+      "SECURITY.md",
+      "docs/runbooks/incident-response.md",
     ].map((file) => readFile(join(root, file), "utf8")),
   );
 
@@ -404,8 +410,34 @@ for (const token of [
 if (!packageManifest.includes('"verify:object-storage"')) {
   violations.push("Package scripts must expose the provider object-storage probe.");
 }
+if (!packageManifest.includes('"verify:incident"')) {
+  violations.push("Package scripts must expose the incident evidence verifier.");
+}
 if (!apiPackageManifest.includes('"verify:staging-dependencies"')) {
   violations.push("API package scripts must expose the staging dependency probe.");
+}
+for (const token of [
+  "SEV1",
+  "Incident commander",
+  "PAYMENT_MODE=disabled",
+  "digest-qualified",
+  "MotionPrepUploadIntegrityFailure",
+  "disaster-recovery.md",
+  "npm run verify:incident",
+  "Ed25519",
+  "Post-incident review",
+]) {
+  if (!incidentResponseRunbook.includes(token)) {
+    violations.push(`Incident response runbook is missing contract token: ${token}`);
+  }
+}
+for (const [name, source] of [
+  ["deployment", deploymentContract],
+  ["security", securityPolicy],
+]) {
+  if (!source.includes("incident-response.md")) {
+    violations.push(`${name} documentation must link the incident response runbook.`);
+  }
 }
 if (!/^PDF_REGION_OCR_ENABLED=false$/mu.test(exampleEnvironment)) {
   violations.push(
