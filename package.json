@@ -23,7 +23,7 @@
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "test:load:utils": "node --test scripts/load-test-utils.test.mjs scripts/load-pdf-config.test.mjs scripts/load-test-metrics.test.mjs",
+    "test:load:utils": "node --test scripts/load-test-utils.test.mjs scripts/load-pdf-config.test.mjs scripts/load-test-metrics.test.mjs scripts/load-release-identity.test.mjs",
     "test:load:pdf": "node scripts/load-pdf-workflow.mjs",
     "fetch:representative-pdf": "node scripts/fetch-representative-pdf.mjs",
     "test:representative-pdf": "node --test scripts/fetch-representative-pdf.test.mjs",

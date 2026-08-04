@@ -15,6 +15,18 @@ const protectedPolicy = {
   LOAD_MAX_FINAL_QUEUE_DEPTH: "0",
 };
 
+const releasePolicy = {
+  LOAD_REQUIRE_RELEASE_IDENTITY: "true",
+  LOAD_RELEASE_GIT_SHA: "a".repeat(40),
+  LOAD_EXPECTED_APPLICATION_VERSION: "0.1.3",
+  LOAD_RUNTIME_IMAGE_REF: `ghcr.io/example/runtime@sha256:${"b".repeat(64)}`,
+  LOAD_WEB_IMAGE_REF: `ghcr.io/example/web@sha256:${"c".repeat(64)}`,
+  GITHUB_REPOSITORY: "example/motionprep",
+  GITHUB_SHA: "d".repeat(40),
+  GITHUB_REF: "refs/heads/main",
+  GITHUB_RUN_ID: "12345",
+};
+
 test("accepts a representative sustained-load policy", () => {
   const config = loadPdfConfiguration(protectedPolicy);
 
@@ -72,4 +84,48 @@ test("requires paired protected metrics coordinates", () => {
       }),
     /configured together/u,
   );
+});
+
+test("binds protected load evidence to release and workflow provenance", () => {
+  const config = loadPdfConfiguration({
+    ...protectedPolicy,
+    ...releasePolicy,
+  });
+
+  assert.equal(config.releaseIdentity.releaseGitSha, releasePolicy.LOAD_RELEASE_GIT_SHA);
+  assert.equal(config.releaseIdentity.evidenceGitSha, releasePolicy.GITHUB_SHA);
+  assert.equal(config.releaseIdentity.evidenceRunId, releasePolicy.GITHUB_RUN_ID);
+});
+
+test("rejects incomplete or mutable release-bound evidence", () => {
+  assert.throws(
+    () =>
+      loadPdfConfiguration({
+        ...protectedPolicy,
+        ...releasePolicy,
+        LOAD_WEB_IMAGE_REF: "ghcr.io/example/web:latest",
+      }),
+    /sha256 digest/u,
+  );
+  assert.throws(
+    () =>
+      loadPdfConfiguration({
+        ...protectedPolicy,
+        ...releasePolicy,
+        GITHUB_RUN_ID: "",
+      }),
+    /GITHUB_RUN_ID is required/u,
+  );
+});
+
+test("does not bind ordinary CI smoke runs from ambient GitHub metadata alone", () => {
+  const config = loadPdfConfiguration({
+    ...protectedPolicy,
+    GITHUB_REPOSITORY: "example/motionprep",
+    GITHUB_SHA: "d".repeat(40),
+    GITHUB_REF: "refs/heads/main",
+    GITHUB_RUN_ID: "12345",
+  });
+
+  assert.equal(config.releaseIdentity, null);
 });

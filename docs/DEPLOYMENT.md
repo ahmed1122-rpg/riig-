@@ -172,8 +172,12 @@ Configure explicit p95, API RSS growth, aggregate worker RSS growth, and queue
 age ceilings; the final queue depth must return to zero. The private metrics
 endpoint is sampled throughout the run so the retained report includes
 p50/p95/p99, API and worker RSS/heap/CPU peaks, queue peaks, final drain state,
-and every acceptance decision. Neither workflow turns a local smoke test into
-a provider or capacity attestation.
+and every acceptance decision. Both staging smoke and representative-load
+reports bind the expected release SHA, application version, digest-qualified
+image coordinates, and GitHub workflow provenance. Readiness is checked before
+and after the load so a deployment change during measurement fails the gate.
+Neither workflow turns a local smoke test into a provider or capacity
+attestation.
 
 The protected pre-release dependency probe is equivalent to running the
 following two commands from a staging task with the deployment workload

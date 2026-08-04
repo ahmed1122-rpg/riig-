@@ -198,7 +198,7 @@ if (
   );
 }
 const providerWorkflow = workflowSources[3];
-for (const token of [
+requireWorkflowTokens(providerWorkflow, "Provider-readiness identity", [
   "Reject ambiguous or missing provider credentials",
   "AWS_ROLE_ARN",
   "AWS_REGION",
@@ -211,15 +211,9 @@ for (const token of [
   "--public-key recovery-public-key.pem",
   "provider-readiness-evidence-${{ github.sha }}",
   ".tmp/provider-object-storage-evidence.json",
-]) {
-  if (!providerWorkflow.includes(token)) {
-    violations.push(
-      `Provider-readiness workflow is missing identity token: ${token}`,
-    );
-  }
-}
+]);
 const stagingWorkflow = workflowSources[4];
-for (const token of [
+requireWorkflowTokens(stagingWorkflow, "Staging-readiness", [
   "environment: production-readiness",
   "DATABASE_URL: ${{ secrets.DATABASE_URL }}",
   "REDIS_URL: ${{ secrets.REDIS_URL }}",
@@ -231,24 +225,30 @@ for (const token of [
   "staging-dependency-evidence-${{ github.sha }}",
   ".tmp/staging-dependency-evidence.json",
   ".tmp/staging-object-storage-evidence.json",
-]) {
-  if (!stagingWorkflow.includes(token)) {
-    violations.push(`Staging-readiness workflow is missing token: ${token}`);
-  }
-}
+]);
 const performanceWorkflow = workflowSources[5];
-for (const token of [
+requireWorkflowTokens(performanceWorkflow, "Performance-readiness", [
   'LOAD_MIN_CONCURRENCY: "4"', 'LOAD_MIN_TOTAL_JOURNEYS: "12"',
   "LOAD_MAX_API_RSS_GROWTH_BYTES", "LOAD_MAX_WORKER_RSS_GROWTH_BYTES",
   "LOAD_MAX_QUEUE_AGE_SECONDS", 'LOAD_MAX_FINAL_QUEUE_DEPTH: "0"',
   'LOAD_REQUIRE_METRICS: "true"',
-]) {
-  if (!performanceWorkflow.includes(token)) {
-    violations.push(`Performance-readiness workflow is missing token: ${token}`);
-  }
-}
+  'LOAD_REQUIRE_RELEASE_IDENTITY: "true"',
+  "LOAD_RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}",
+  "LOAD_EXPECTED_APPLICATION_VERSION: ${{ vars.EXPECTED_APPLICATION_VERSION }}",
+  "Verify deployed release identity before the load run",
+  ".tmp/performance-release-evidence.json",
+]);
+const stagingApplicationWorkflow = workflowSources[6];
+requireWorkflowTokens(stagingApplicationWorkflow, "Staging-application", [
+  "npm run verify:staging-application",
+  'LOAD_REQUIRE_RELEASE_IDENTITY: "true"',
+  "LOAD_RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}",
+  "LOAD_EXPECTED_APPLICATION_VERSION: ${{ vars.EXPECTED_APPLICATION_VERSION }}",
+  "LOAD_RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}",
+  "LOAD_WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}",
+]);
 const rollbackWorkflow = workflowSources[7];
-for (const token of [
+requireWorkflowTokens(rollbackWorkflow, "Release rollback", [
   "environment: production-readiness",
   "ROLLBACK_RUNTIME_IMAGE_REF",
   "ROLLBACK_WEB_IMAGE_REF",
@@ -257,11 +257,7 @@ for (const token of [
   "release-rollback-evidence-${{ github.sha }}",
   ".tmp/release-rollback-evidence.json",
   ".tmp/release-drill-rollback-pdf.json",
-]) {
-  if (!rollbackWorkflow.includes(token)) {
-    violations.push(`Release rollback workflow is missing token: ${token}`);
-  }
-}
+]);
 
 if (!runtimeDockerfile.includes("USER node")) {
   violations.push("Runtime API image must run as the non-root node user.");
@@ -499,4 +495,10 @@ if (violations.length > 0) {
   process.exitCode = 1;
 } else {
   console.log("Deployment artifacts verified.");
+}
+
+function requireWorkflowTokens(source, label, tokens) {
+  for (const token of tokens) {
+    if (!source.includes(token)) violations.push(`${label} workflow is missing token: ${token}`);
+  }
 }

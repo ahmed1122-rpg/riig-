@@ -25,6 +25,12 @@ jobs:
     timeout-minutes: 45
     environment: production-readiness
     env:
+      STAGING_ORIGIN: ${{ vars.STAGING_ORIGIN }}
+      EXPECTED_APPLICATION_VERSION: ${{ vars.EXPECTED_APPLICATION_VERSION }}
+      RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
+      RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
+      WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
+      STAGING_EVIDENCE_PATH: .tmp/performance-release-evidence.json
       LOAD_TARGET_ORIGIN: ${{ vars.STAGING_ORIGIN }}
       LOAD_EXPECTED_HOST: ${{ vars.STAGING_HOST }}
       LOAD_CONCURRENCY: ${{ inputs.concurrency }}
@@ -46,6 +52,11 @@ jobs:
       LOAD_METRICS_BEARER_TOKEN: ${{ secrets.METRICS_BEARER_TOKEN }}
       LOAD_REQUIRE_METRICS: "true"
       LOAD_REPORT_PATH: .tmp/pdf-load-report.json
+      LOAD_REQUIRE_RELEASE_IDENTITY: "true"
+      LOAD_RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
+      LOAD_EXPECTED_APPLICATION_VERSION: ${{ vars.EXPECTED_APPLICATION_VERSION }}
+      LOAD_RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
+      LOAD_WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -53,6 +64,8 @@ jobs:
           node-version: 22.12.0
           cache: npm
       - run: npm ci
+      - name: Verify deployed release identity before the load run
+        run: npm run verify:staging-application
       - name: Fetch and verify the protected representative PDF
         run: npm run fetch:representative-pdf
       - name: Require explicit representative-load policy
@@ -72,6 +85,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pdf-load-evidence-${{ github.sha }}
-          path: .tmp/pdf-load-report.json
+          path: |
+            .tmp/performance-release-evidence.json
+            .tmp/pdf-load-report.json
           if-no-files-found: error
           retention-days: 90
