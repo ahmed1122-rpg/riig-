@@ -75,6 +75,7 @@ export function loadPdfConfiguration(environment) {
   if (!Number.isInteger(maxFinalQueueDepth)) {
     throw new Error("LOAD_MAX_FINAL_QUEUE_DEPTH must be an integer.");
   }
+  const releaseIdentity = parseReleaseIdentity(environment);
   return {
     targetOrigin,
     requestOrigin: new URL(
@@ -149,5 +150,71 @@ export function loadPdfConfiguration(environment) {
     reviewFlow,
     metricsUrl,
     metricsToken,
+    releaseIdentity,
   };
 }
+
+function parseReleaseIdentity(environment) {
+  const required = environment.LOAD_REQUIRE_RELEASE_IDENTITY === "true";
+  const values = {
+    releaseGitSha: environment.LOAD_RELEASE_GIT_SHA?.trim() || "",
+    applicationVersion:
+      environment.LOAD_EXPECTED_APPLICATION_VERSION?.trim() || "",
+    runtimeImageRef: environment.LOAD_RUNTIME_IMAGE_REF?.trim() || "",
+    webImageRef: environment.LOAD_WEB_IMAGE_REF?.trim() || "",
+    evidenceRepository: environment.GITHUB_REPOSITORY?.trim() || "",
+    evidenceGitSha: environment.GITHUB_SHA?.trim() || "",
+    evidenceGitRef: environment.GITHUB_REF?.trim() || "",
+    evidenceRunId: environment.GITHUB_RUN_ID?.trim() || "",
+  };
+  const configured = [
+    values.releaseGitSha,
+    values.applicationVersion,
+    values.runtimeImageRef,
+    values.webImageRef,
+  ].some(Boolean);
+  if (!required && !configured) return null;
+
+  for (const [key, value] of Object.entries(values)) {
+    if (!value) {
+      throw new Error(
+        `${environmentNameByReleaseIdentityKey[key]} is required with release-bound load evidence.`,
+      );
+    }
+  }
+  if (!/^[a-f0-9]{40}$/u.test(values.releaseGitSha)) {
+    throw new Error("LOAD_RELEASE_GIT_SHA must be an exact lowercase Git SHA.");
+  }
+  if (!/^[a-f0-9]{40}$/u.test(values.evidenceGitSha)) {
+    throw new Error("GITHUB_SHA must be an exact lowercase Git SHA.");
+  }
+  for (const key of ["runtimeImageRef", "webImageRef"]) {
+    if (!/^.+@sha256:[a-f0-9]{64}$/u.test(values[key])) {
+      throw new Error(
+        `${environmentNameByReleaseIdentityKey[key]} must be pinned by sha256 digest.`,
+      );
+    }
+  }
+  if (!/^\d+$/u.test(values.evidenceRunId)) {
+    throw new Error("GITHUB_RUN_ID must be numeric.");
+  }
+  if (!values.evidenceRepository.includes("/")) {
+    throw new Error("GITHUB_REPOSITORY must use the owner/repository form.");
+  }
+  if (!values.evidenceGitRef.startsWith("refs/")) {
+    throw new Error("GITHUB_REF must be an exact refs/* identity.");
+  }
+
+  return values;
+}
+
+const environmentNameByReleaseIdentityKey = {
+  releaseGitSha: "LOAD_RELEASE_GIT_SHA",
+  applicationVersion: "LOAD_EXPECTED_APPLICATION_VERSION",
+  runtimeImageRef: "LOAD_RUNTIME_IMAGE_REF",
+  webImageRef: "LOAD_WEB_IMAGE_REF",
+  evidenceRepository: "GITHUB_REPOSITORY",
+  evidenceGitSha: "GITHUB_SHA",
+  evidenceGitRef: "GITHUB_REF",
+  evidenceRunId: "GITHUB_RUN_ID",
+};

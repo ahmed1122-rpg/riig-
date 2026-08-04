@@ -14,12 +14,18 @@ import {
   summarizeMetricPeaks,
   withCaptureTime,
 } from "./load-test-metrics.mjs";
+import {
+  assertTargetRelease,
+  inspectTargetRelease,
+} from "./load-release-identity.mjs";
 
 const config = loadPdfConfiguration(process.env);
 const fixture = await readFile(config.pdfPath);
 const sourceSha256 = createHash("sha256").update(fixture).digest("hex");
 const runId = randomUUID();
 const startedAt = new Date();
+const releaseIdentityBefore = await inspectTargetRelease(config);
+assertTargetRelease(releaseIdentityBefore);
 const timings = [];
 const attempts = Array.from(
   { length: config.concurrency * config.iterationsPerUser },
@@ -48,6 +54,7 @@ try {
 }
 const metricsAfter = await readLoadMetrics(config);
 if (metricsAfter) metricSamples.push(withCaptureTime(metricsAfter, new Date()));
+const releaseIdentityAfter = await inspectTargetRelease(config);
 const failures = results.filter((result) => !result.ok);
 const errorRate = failures.length / Math.max(1, results.length);
 const summary = summarizeDurations(timings);
@@ -84,9 +91,12 @@ const acceptanceChecks = {
   queueDrained:
     config.maxFinalQueueDepth === null ||
     (metricsAfter?.queueDepth ?? Infinity) <= config.maxFinalQueueDepth,
+  releaseIdentity:
+    releaseIdentityBefore === null ||
+    (releaseIdentityBefore.passed && releaseIdentityAfter?.passed === true),
 };
 const report = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   runId,
   startedAt: startedAt.toISOString(),
   completedAt: new Date().toISOString(),
@@ -97,6 +107,24 @@ const report = {
     bytes: fixture.byteLength,
     sha256: sourceSha256,
   },
+  release: config.releaseIdentity
+    ? {
+        expected: {
+          gitSha: config.releaseIdentity.releaseGitSha,
+          applicationVersion: config.releaseIdentity.applicationVersion,
+          runtimeImageRef: config.releaseIdentity.runtimeImageRef,
+          webImageRef: config.releaseIdentity.webImageRef,
+        },
+        evidenceProvenance: {
+          repository: config.releaseIdentity.evidenceRepository,
+          gitSha: config.releaseIdentity.evidenceGitSha,
+          gitRef: config.releaseIdentity.evidenceGitRef,
+          workflowRunId: config.releaseIdentity.evidenceRunId,
+        },
+        before: releaseIdentityBefore,
+        after: releaseIdentityAfter,
+      }
+    : null,
   load: {
     concurrency: config.concurrency,
     iterationsPerUser: config.iterationsPerUser,

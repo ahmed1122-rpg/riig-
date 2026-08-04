@@ -34,6 +34,7 @@ export const requiredDeploymentFiles = [
   "scripts/load-pdf-workflow.mjs",
   "scripts/load-pdf-config.mjs",
   "scripts/load-test-metrics.mjs",
+  "scripts/load-release-identity.mjs",
   "scripts/verify-prometheus-rules.mjs",
   "scripts/verify-staging-application.mjs",
   "scripts/verify-bundle-budget.mjs",

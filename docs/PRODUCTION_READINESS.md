@@ -66,6 +66,10 @@ their hosted results remain evidence gates rather than assumptions.
   and offers an in-place remount that rebuilds the UI from the durable session
   before requiring a full-page reload. Component tests cover unavailable and
   failing reporters plus transient-crash recovery.
+- Protected staging and representative-load reports now bind the expected
+  release SHA, application version, digest-qualified images, and GitHub
+  workflow provenance. The PDF workflow checks the public release identity
+  before and after load so a mid-run deployment fails the capacity gate.
 - Upload publication now uses one PostgreSQL transaction for the upload,
   source-version, and project state. A bounded reconciler repairs legacy or
   interrupted `verifying`/`ready` state only after re-inspecting object size,

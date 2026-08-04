@@ -28,6 +28,11 @@ jobs:
       LOAD_ITERATIONS: "1"
       LOAD_MAX_ERROR_RATE: "0"
       LOAD_REPORT_PATH: .tmp/staging-smoke-pdf-report.json
+      LOAD_REQUIRE_RELEASE_IDENTITY: "true"
+      LOAD_RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
+      LOAD_EXPECTED_APPLICATION_VERSION: ${{ vars.EXPECTED_APPLICATION_VERSION }}
+      LOAD_RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
+      LOAD_WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
