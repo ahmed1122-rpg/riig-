@@ -23,8 +23,14 @@ import type {
   ImageGuideInput,
   PdfGuideInput,
 } from "./workspaceGuidance";
+import type { WorkspaceToolController } from "./useWorkspaceToolController";
+import type {
+  WorkspaceEditorState,
+  WorkspaceReviewState,
+  WorkspaceSourceState,
+} from "./useWorkspaceStateControllers";
 
-interface WorkspaceEditorLayoutProps {
+interface WorkspaceEditorLayoutModel {
   mode: ProjectMode;
   authenticated: boolean;
   maxUploadBytes: ApplicationCapabilities["limits"]["maxUploadBytes"];
@@ -104,7 +110,115 @@ interface WorkspaceEditorLayoutProps {
   onNotify: (message: string) => void;
 }
 
-export function WorkspaceEditorLayout(props: WorkspaceEditorLayoutProps) {
+interface WorkspaceEditorLayoutProps {
+  context: {
+    mode: ProjectMode;
+    authenticated: boolean;
+    maxUploadBytes: ApplicationCapabilities["limits"]["maxUploadBytes"];
+    onRequireAuth: () => void;
+    onNotify: (message: string) => void;
+  };
+  source: WorkspaceSourceState;
+  review: WorkspaceReviewState;
+  editor: WorkspaceEditorState;
+  tools: WorkspaceToolController;
+  actions: {
+    fileRef: MutableRefObject<HTMLInputElement | null>;
+    chooseSource: (file?: File) => Promise<void>;
+    cancelUpload: () => void;
+    hiddenLayers: string[];
+    onApplyImageGuide: WorkspaceEditorLayoutModel["onApplyImageGuide"];
+    onApplyPdfGuide: WorkspaceEditorLayoutModel["onApplyPdfGuide"];
+    onHistoryNavigate: WorkspaceEditorLayoutModel["onHistoryNavigate"];
+    onPdfSegmentationChange: WorkspaceEditorLayoutModel["onPdfSegmentationChange"];
+    onConfirm: WorkspaceEditorLayoutModel["onConfirm"];
+  };
+}
+
+export function WorkspaceEditorLayout({
+  context,
+  source,
+  review,
+  editor,
+  tools,
+  actions,
+}: WorkspaceEditorLayoutProps) {
+  const props: WorkspaceEditorLayoutModel = {
+    mode: context.mode,
+    authenticated: context.authenticated,
+    maxUploadBytes: context.maxUploadBytes,
+    persistedSource: source.persistedSource,
+    sourceName: source.sourceName,
+    sourceVersion: source.sourceVersion,
+    sourceHash: source.sourceHash,
+    uploadState: source.uploadState,
+    uploadProgress: source.uploadProgress,
+    uploadDetailsOpen: source.uploadDetailsOpen,
+    uploadError: source.uploadError,
+    fileRef: actions.fileRef,
+    chooseSource: actions.chooseSource,
+    cancelUpload: actions.cancelUpload,
+    onToggleUploadDetails: () =>
+      source.setUploadDetailsOpen((current) => !current),
+    tools: tools.workspaceTools,
+    activeTool: tools.activeTool,
+    toolCollapsed: editor.toolCollapsed,
+    onToolCollapsedChange: editor.setToolCollapsed,
+    onUseTool: tools.useTool,
+    zoom: editor.zoom,
+    previewBackground: editor.previewBackground,
+    previewQuality: editor.previewQuality,
+    grid: editor.grid,
+    safeBounds: editor.safeBounds,
+    solo: editor.solo,
+    focusMode: editor.focusMode,
+    onZoomChange: editor.setZoom,
+    onPreviewBackgroundChange: editor.setPreviewBackground,
+    onPreviewQualityChange: editor.setPreviewQuality,
+    onGridChange: editor.setGrid,
+    onSafeBoundsChange: editor.setSafeBounds,
+    onSoloChange: editor.setSolo,
+    onFocusModeChange: editor.setFocusMode,
+    imageLayers: review.imageLayers,
+    bookLayers: review.bookLayers,
+    layers: review.layers,
+    hiddenLayers: actions.hiddenLayers,
+    selectedIds: review.selectedIds,
+    activeLayerId: review.activeLayerId,
+    onSelectLayer: review.selectLayer,
+    onLayerSelectionChange: review.changeSelection,
+    onLayersChange: review.setLayers,
+    layersCollapsed: editor.layersCollapsed,
+    layerWidth: editor.layerWidth,
+    layerLoading: editor.layerLoading,
+    onLayersCollapsedChange: editor.setLayersCollapsed,
+    onLayerWidthChange: editor.setLayerWidth,
+    onArrangeReadingOrder: tools.arrangeReadingOrder,
+    guidanceRevision: source.guidanceRevision,
+    imagePreparation: source.imagePreparation,
+    ocrReview: source.ocrReview,
+    imageCanvasSize: source.imageCanvasSize,
+    sourcePreviewUrl: source.sourcePreviewUrl,
+    pdfMode: editor.pdfMode,
+    pdfPages: source.pdfPages,
+    activePdfPage: source.activePdfPage,
+    pdfPageCount: source.pdfPageCount,
+    pdfPageSize: source.pdfPageSize,
+    processing: source.processing,
+    editorCommand: tools.editorCommand,
+    onApplyImageGuide: actions.onApplyImageGuide,
+    onApplyPdfGuide: actions.onApplyPdfGuide,
+    onHistoryNavigate: actions.onHistoryNavigate,
+    onPdfSegmentationChange: actions.onPdfSegmentationChange,
+    onPdfPageChange: (page, size) => {
+      source.setActivePdfPage(page);
+      source.setPdfPageSize(size);
+    },
+    onConfirm: actions.onConfirm,
+    onToolSelect: tools.selectEditorTool,
+    onRequireAuth: context.onRequireAuth,
+    onNotify: context.onNotify,
+  };
   const requestSourceSelection = () => {
     if (props.authenticated) {
       props.fileRef.current?.click();

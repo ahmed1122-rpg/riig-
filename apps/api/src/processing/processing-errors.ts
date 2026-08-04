@@ -21,6 +21,7 @@ export type ProcessingDomainErrorCode =
   | "GUIDANCE_INVALID"
   | "GUIDANCE_DUPLICATE"
   | "GUIDANCE_LAYER_UNAVAILABLE"
+  | "IDEMPOTENCY_CONFLICT"
   | "PROCESSING_FAILED";
 
 export class ProcessingDomainError extends Error {
@@ -45,6 +46,7 @@ export function processingDomainCode(code: string): ProcessingDomainErrorCode {
     case "IMAGE_HAS_NO_VISIBLE_PIXELS":
     case "DOCUMENT_REVISION_CONFLICT":
     case "INVALID_DOCUMENT_OPERATION":
+    case "IDEMPOTENCY_CONFLICT":
       return code;
     default:
       return "PROCESSING_FAILED";

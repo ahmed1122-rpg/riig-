@@ -5,6 +5,7 @@ import {
   sendApiError,
   sendProjectNotFound,
 } from "../http/api-response.js";
+import { toProcessingJobDto } from "../jobs/job-dtos.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import {
   ProcessingDomainError,
@@ -38,7 +39,7 @@ export async function registerProcessingReadRoutes(
           "مهمة المعالجة غير موجودة.",
         );
       }
-      return { data: job, error: null };
+      return { data: toProcessingJobDto(job), error: null };
     } catch (error) {
       return sendProcessingError(error, request, reply);
     }

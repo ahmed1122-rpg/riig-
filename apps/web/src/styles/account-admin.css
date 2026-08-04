@@ -540,7 +540,7 @@ button.admin-data-row:hover { background: #f7faf9; }
 .unauthorized-page h1 { margin-bottom: 11px; font-size: 27px; }
 .unauthorized-page p { color: #5f6c67; font-size: 10px; line-height: 1.9; }
 .unauthorized-page section > div { display: flex; justify-content: center; gap: 8px; margin: 24px 0 17px; }
-.unauthorized-page small { display: flex; align-items: center; justify-content: center; gap: 6px; color: #7c8884; font-size: 8px; }
+.unauthorized-page small { display: flex; align-items: center; justify-content: center; gap: 6px; color: #5f6c67; font-size: 9px; }
 
 @media (max-width: 1120px) {
   .auth-gateway { grid-template-columns: minmax(450px, .95fr) minmax(360px, 1.05fr); }
@@ -611,9 +611,10 @@ button.admin-data-row:hover { background: #f7faf9; }
     color: #8a9691;
     font-size: 6px;
   }
-  .processing-table .admin-data-row > span:nth-child(2)::before { content: "المالك"; }
-  .processing-table .admin-data-row > span:nth-child(3)::before { content: "المرحلة"; }
-  .processing-table .admin-data-row > span:nth-child(4)::before { content: "العمر"; }
+  .processing-table .admin-data-row > span:nth-child(2)::before { content: "النوع"; }
+  .processing-table .admin-data-row > span:nth-child(3)::before { content: "الحالة"; }
+  .processing-table .admin-data-row > span:nth-child(4)::before { content: "التقدم"; }
+  .processing-table .admin-data-row > span:nth-child(5)::before { content: "التحديث"; }
   .users-table .user-cell { padding: 0 0 12px 44px; border-bottom: 1px solid var(--admin-line); }
   .users-table .user-cell > i { width: 40px; height: 40px; }
   .users-table .user-cell strong { font-size: 15px; line-height: 1.45; }

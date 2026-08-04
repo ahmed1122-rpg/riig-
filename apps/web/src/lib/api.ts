@@ -7,3 +7,4 @@ export * from "./api/exports-client";
 export * from "./api/billing-client";
 export * from "./api/admin-client";
 export * from "./api/capabilities-client";
+export * from "./api/activity-client";

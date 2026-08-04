@@ -58,6 +58,34 @@ describe("migration integrity", () => {
       path.join(directory, "030_worker_resource_metrics.sql"),
       "utf8",
     );
+    const projectReviewMigration = await readFile(
+      path.join(directory, "031_project_review_approvals.sql"),
+      "utf8",
+    );
+    const uploadIntegrityMigration = await readFile(
+      path.join(directory, "032_upload_integrity_failures.sql"),
+      "utf8",
+    );
+    const idempotencyFingerprintMigration = await readFile(
+      path.join(directory, "033_idempotency_request_fingerprints.sql"),
+      "utf8",
+    );
+    const exportPreflightMigration = await readFile(
+      path.join(directory, "034_remove_export_preflight_status.sql"),
+      "utf8",
+    );
+    const sourceRestoreIdentityMigration = await readFile(
+      path.join(directory, "035_source_version_restore_identity.sql"),
+      "utf8",
+    );
+    const uploadCancellationMigration = await readFile(
+      path.join(directory, "036_upload_cancellation_convergence.sql"),
+      "utf8",
+    );
+    const accountPrivacyMigration = await readFile(
+      path.join(directory, "037_account_privacy.sql"),
+      "utf8",
+    );
 
     expect(() => assertMigrationNames(files)).not.toThrow();
     expect(sourceVersionMigration).not.toMatch(
@@ -91,6 +119,64 @@ describe("migration integrity", () => {
     expect(workerResourceMigration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
     expect(workerResourceMigration).toContain(
       "ADD COLUMN IF NOT EXISTS resident_memory_bytes",
+    );
+    expect(projectReviewMigration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
+    expect(projectReviewMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS project_review_approvals",
+    );
+    expect(projectReviewMigration).toContain(
+      "UNIQUE (actor_user_id, operation_id)",
+    );
+    expect(projectReviewMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS current_review_approval_id",
+    );
+    expect(uploadIntegrityMigration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
+    expect(uploadIntegrityMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS upload_integrity_events",
+    );
+    expect(uploadIntegrityMigration).toContain("UNIQUE (upload_id)");
+    expect(idempotencyFingerprintMigration).not.toMatch(
+      /RENAME\s+COLUMN|DROP\s+COLUMN/iu,
+    );
+    expect(idempotencyFingerprintMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS request_hash",
+    );
+    expect(exportPreflightMigration).toContain(
+      "WHERE status = 'preflight'",
+    );
+    expect(exportPreflightMigration).not.toContain("'preflight',");
+    expect(sourceRestoreIdentityMigration).not.toMatch(
+      /RENAME\s+COLUMN|DROP\s+COLUMN/iu,
+    );
+    expect(sourceRestoreIdentityMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS idempotency_key",
+    );
+    expect(sourceRestoreIdentityMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS originating_request_id",
+    );
+    expect(sourceRestoreIdentityMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS operation_id",
+    );
+    expect(sourceRestoreIdentityMigration).toContain(
+      "source_version_restore_events_sync_identity",
+    );
+    expect(uploadCancellationMigration).not.toMatch(
+      /RENAME\s+COLUMN|DROP\s+COLUMN/iu,
+    );
+    expect(uploadCancellationMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS project_status_before_upload",
+    );
+    expect(uploadCancellationMigration).toContain(
+      "upload_sessions_cancel_cleanup_idx",
+    );
+    expect(accountPrivacyMigration).not.toMatch(
+      /RENAME\s+COLUMN|DROP\s+(TABLE|COLUMN)/iu,
+    );
+    expect(accountPrivacyMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS account_deletion_requests",
+    );
+    expect(accountPrivacyMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS legal_accepted_at",
     );
   });
 });

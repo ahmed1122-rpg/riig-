@@ -402,6 +402,12 @@
   border-color: rgb(239 68 68 / 35%);
   background: rgb(239 68 68 / 8%);
 }
+.export-save-state.is-dirty,
+.export-save-state.is-conflict {
+  border-color: color-mix(in srgb, var(--amber) 32%, var(--line));
+  background: var(--amber-soft);
+  color: var(--amber);
+}
 
 .export-save-state button {
   border: 0;
@@ -784,6 +790,32 @@
   position: static;
   bottom: auto;
   margin: 0;
+}
+
+.export-preflight-issues {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  list-style: none;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.export-preflight-issues li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.export-preflight-issues svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
 }
 
 .create-export-button:hover { background: var(--primary-strong); }

@@ -6,7 +6,11 @@ import type {
   ProjectKind,
 } from "@motionprep/contracts";
 import type { Pool } from "pg";
-import type { ExportRepository } from "../../exports/export-repository.js";
+import type {
+  ExportRepository,
+  ExportStatusSummary,
+} from "../../exports/export-repository.js";
+import type { JobListCursor } from "../../jobs/job-list-cursor.js";
 import {
   mapQueuedJobRow,
   type QueuedJobRow,
@@ -41,22 +45,53 @@ export class PostgresExportRepository implements ExportRepository {
     return result.rows[0] ? mapExport(result.rows[0]) : null;
   }
 
-  async list(): Promise<ExportJob[]> {
+  async list(limit: number): Promise<ExportJob[]> {
     const result = await this.pool.query<ExportRow>(
-      `${exportSelect} ORDER BY created_at DESC`,
+      `${exportSelect} ORDER BY created_at DESC LIMIT $1`,
+      [boundedListLimit(limit)],
     );
     return result.rows.map(mapExport);
   }
 
-  async listByProjectIds(projectIds: string[]): Promise<ExportJob[]> {
+  async listByProjectIds(
+    projectIds: string[],
+    limit: number,
+    cursor?: JobListCursor,
+  ): Promise<ExportJob[]> {
     if (projectIds.length === 0) return [];
+    const cursorClause = cursor
+      ? "AND (updated_at < $3 OR (updated_at = $3 AND ('export:' || id::text) < $4))"
+      : "";
+    const parameters = cursor
+      ? [projectIds, boundedListLimit(limit), cursor.updatedAt, cursor.id]
+      : [projectIds, boundedListLimit(limit)];
     const result = await this.pool.query<ExportRow>(
       `${exportSelect}
        WHERE project_id = ANY($1::uuid[])
-       ORDER BY created_at DESC`,
-      [projectIds],
+       ${cursorClause}
+       ORDER BY updated_at DESC, id DESC
+       LIMIT $2`,
+      parameters,
     );
     return result.rows.map(mapExport);
+  }
+
+  async summarizeStatuses(): Promise<ExportStatusSummary> {
+    const result = await this.pool.query<{
+      total: string | number;
+      queued: string | number;
+      failed: string | number;
+    }>(`SELECT
+          count(*) AS total,
+          count(*) FILTER (WHERE status = 'queued') AS queued,
+          count(*) FILTER (WHERE status = 'failed') AS failed
+        FROM export_jobs`);
+    const row = result.rows[0];
+    return {
+      total: Number(row?.total ?? 0),
+      queued: Number(row?.queued ?? 0),
+      failed: Number(row?.failed ?? 0),
+    };
   }
 
   async save(job: ExportJob): Promise<void> {
@@ -313,7 +348,7 @@ export class PostgresExportRepository implements ExportRepository {
           lease_expires_at = NULL,
           updated_at = $2
         WHERE job.id = $1
-          AND job.status IN ('preflight', 'queued', 'generating')
+          AND job.status IN ('queued', 'generating')
         RETURNING ${exportReturningColumns}
       `,
       [id, updatedAt],
@@ -321,6 +356,10 @@ export class PostgresExportRepository implements ExportRepository {
     if (result.rows[0]) return mapExport(result.rows[0]);
     return this.findById(id);
   }
+}
+
+function boundedListLimit(limit: number): number {
+  return Math.max(1, Math.min(Math.trunc(limit), 200));
 }
 
 const exportColumns = `

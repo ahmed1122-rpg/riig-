@@ -12,6 +12,8 @@ export type ExportDomainErrorCode =
   | "EXPORT_DOCUMENT_NOT_READY"
   | "EXPORT_DOCUMENT_REVISION_CONFLICT"
   | "EXPORT_PREFLIGHT_FAILED"
+  | "REVIEW_APPROVAL_REQUIRED"
+  | "IDEMPOTENCY_CONFLICT"
   | "EXPORT_REQUEST_IN_PROGRESS";
 
 export class ExportDomainError extends Error {

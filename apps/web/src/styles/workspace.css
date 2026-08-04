@@ -334,7 +334,8 @@
 .pro-toolbar-end { display: flex; min-width: 0; align-items: center; gap: 6px; margin-inline-start: auto; }
 .pro-quality-switch { display: flex; padding: 2px; border: 1px solid rgba(255,255,255,.09); border-radius: 6px; }
 .pro-quality-switch button { min-height: 26px; padding-inline: 8px; }
-.pro-status-bar i.is-processing { width: 6px; height: 6px; border-radius: 50%; background: #e6ae4e; box-shadow: 0 0 0 3px rgba(230,174,78,.11); animation: pulse-dot 1s ease-in-out infinite; }
+.pro-status-bar i.is-processing,
+.pro-status-bar i.is-saving { width: 6px; height: 6px; border-radius: 50%; background: #e6ae4e; box-shadow: 0 0 0 3px rgba(230,174,78,.11); animation: pulse-dot 1s ease-in-out infinite; }
 @keyframes pulse-dot { 50% { opacity: .45; } }
 .pro-focus-button { border: 1px solid rgba(255,255,255,.11); border-radius: 6px; }
 
@@ -685,6 +686,10 @@
 .pro-status-bar i { width: 6px; height: 6px; border-radius: 50%; }
 .pro-status-bar i.is-saved,
 .pro-status-bar i.is-ready { background: var(--success); }
+.pro-status-bar i.is-dirty,
+.pro-status-bar i.is-conflict { background: var(--amber); }
+.pro-status-bar i.is-error { background: var(--danger); }
+.pro-status-bar i.is-unavailable { background: var(--text-muted); }
 .pro-status-bar strong { margin-inline-start: auto; max-width: 260px; overflow: hidden; color: var(--text-soft); font-size: var(--ws-text-xs); text-overflow: ellipsis; white-space: nowrap; }
 
 .pro-workspace.is-preview-focus {

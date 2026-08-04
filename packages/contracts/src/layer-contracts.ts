@@ -129,11 +129,13 @@ export type LayerEditKind =
   | "pdf-region-ocr"
   | "pdf-split"
   | "pdf-merge"
+  | "history-navigation"
   | "image-edge-refine"
   | "image-merge";
 
 export interface LayerEditEntry {
   operationId: string;
+  requestHash?: string;
   kind: LayerEditKind;
   revision: number;
   actorUserId: string;
@@ -143,9 +145,20 @@ export interface LayerEditEntry {
   removedLayerIds?: string[];
 }
 
+export interface LayerHistoryNavigationEntry {
+  operationId: string;
+  requestHash: string;
+  direction: "undo" | "redo";
+  fromRevision: number;
+  resultRevision: number;
+  actorUserId: string;
+  createdAt: string;
+}
+
 export interface LayerEditTimeline {
   cursor: number;
   entries: LayerEditEntry[];
+  navigationEntries?: LayerHistoryNavigationEntry[];
 }
 
 export interface LayerDocumentEditResult {
@@ -184,6 +197,20 @@ export interface LayerDocument {
   };
   guidance?: GuidanceSnapshot;
   editTimeline?: LayerEditTimeline;
+}
+
+export interface ProductionIssue {
+  code:
+    | "IMAGE_LAYER_LIMIT_EXCEEDED"
+    | "IMAGE_RASTER_ASSET_MISSING"
+    | "IMAGE_RASTER_ASSET_DUPLICATE"
+    | "IMAGE_RASTER_BOUNDS_INVALID"
+    | "INVALID_LAYER_PREFIX"
+    | "PDF_BACKGROUND_MISSING"
+    | "PDF_BACKGROUND_NOT_FIXED";
+  message: string;
+  layerId?: string;
+  pageNumber?: number;
 }
 
 export interface LayerStateUpdate {

@@ -6,123 +6,59 @@ import swagger from "@fastify/swagger";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
+import type { AppDependencies } from "./app-dependencies.js";
+export type { AppDependencies } from "./app-dependencies.js";
 import { isCookieMutationOriginAllowed } from "./http/cookie-mutation-origin.js";
 import { registerHealthRoutes } from "./http/health-routes.js";
-import {
-  InMemoryProjectRepository,
-  type ProjectRepository,
-} from "./projects/project-repository.js";
+import { InMemoryProjectRepository } from "./projects/project-repository.js";
 import { registerProjectRoutes } from "./projects/project-routes.js";
+import { InMemoryProjectReviewCommand } from "./projects/project-review.js";
 import { registerUploadRoutes } from "./uploads/upload-routes.js";
-import {
-  InMemoryUploadRepository,
-  type UploadRepository,
-} from "./uploads/upload-repository.js";
-import { UploadService } from "./uploads/upload-service.js";
-import {
-  InMemoryUploadFinalizationCommand,
-  type UploadFinalizationCommand,
-} from "./uploads/upload-finalization.js";
-import {
-  InMemoryExportRepository,
-  type ExportRepository,
-} from "./exports/export-repository.js";
+import { InMemoryUploadRepository } from "./uploads/upload-repository.js";
+import { InMemoryExportRepository } from "./exports/export-repository.js";
 import { ExportService } from "./exports/export-service.js";
 import { registerExportRoutes } from "./exports/export-routes.js";
-import {
-  InMemoryAuthRepository,
-  type AuthRepository,
-} from "./auth/auth-repository.js";
+import { InMemoryAuthRepository } from "./auth/auth-repository.js";
 import { AuthService } from "./auth/auth-service.js";
 import { registerAuthRoutes } from "./auth/auth-routes.js";
-import {
-  InMemoryAuditRepository,
-  type AuditRepository,
-} from "./audit/audit-repository.js";
+import { InMemoryAuditRepository } from "./audit/audit-repository.js";
 import { AuditService } from "./audit/audit-service.js";
-import {
-  InMemoryBillingRepository,
-  type BillingRepository,
-} from "./billing/billing-repository.js";
+import { InMemoryBillingRepository } from "./billing/billing-repository.js";
 import { SandboxPaymentProvider } from "./billing/payment-provider.js";
 import { BillingService } from "./billing/billing-service.js";
 import { registerBillingRoutes } from "./billing/billing-routes.js";
 import { registerAdminRoutes } from "./admin/admin-routes.js";
-import {
-  InMemoryIdempotencyStore,
-  type IdempotencyStore,
-} from "./idempotency/idempotency-store.js";
-import type { LoginAttemptStore } from "./auth/login-attempt-store.js";
-import {
-  InMemoryObjectStorage,
-  type ObjectStorage,
-} from "./storage/object-storage.js";
+import { InMemoryIdempotencyStore } from "./idempotency/idempotency-store.js";
+import { InMemoryObjectStorage } from "./storage/object-storage.js";
 import {
   InMemoryLayerDocumentRepository,
   InMemoryProcessingJobRepository,
-  type LayerDocumentRepository,
-  type ProcessingJobRepository,
 } from "./processing/processing-repository.js";
 import { ProcessingService } from "./processing/processing-service.js";
 import { registerProcessingRoutes } from "./processing/processing-routes.js";
-import type { EmailSender } from "./auth/email-sender.js";
-import type { SecretProtector } from "./auth/secret-protector.js";
-import type { PaymentProvider } from "./billing/payment-provider.js";
-import type { PdfOcrEngine } from "@motionprep/document-processing";
-import {
-  InMemorySourceVersionRepository,
-  type SourceVersionRepository,
-} from "./sources/source-version-repository.js";
+import { InMemorySourceVersionRepository } from "./sources/source-version-repository.js";
 import { registerHttpMetrics } from "./observability/http-metrics.js";
-import type { AdminAccessCommand } from "./admin/admin-access-command.js";
-import {
-  RepositoryUsageMeter,
-  type UsageMeter,
-} from "./billing/usage-meter.js";
-import type { OperationalStatusProvider } from "./observability/operational-status.js";
-import {
-  InMemorySourceVersionRestoreCommand,
-  type SourceVersionRestoreCommand,
-} from "./sources/source-version-restore.js";
+import { RepositoryUsageMeter } from "./billing/usage-meter.js";
+import { InMemorySourceVersionRestoreCommand } from "./sources/source-version-restore.js";
 import { registerCapabilityRoutes } from "./capabilities/capability-routes.js";
-import type { RateLimitStoreConstructor } from "./infrastructure/redis/redis-rate-limit-store.js";
 import {
   registerOpenApiDefaults,
   transformOpenApiDocumentation,
 } from "./http/openapi-defaults.js";
-import { UploadReconciler } from "./uploads/upload-reconciler.js";
+import { UploadReconciliationMetrics } from "./uploads/upload-reconciliation-metrics.js";
+import { createUploadRuntime } from "./uploads/upload-runtime.js";
 import { registerHttpErrorHandler } from "./http/error-handler.js";
 import { registerHttpTracing } from "./observability/tracing.js";
+import { ActivityService } from "./activity/activity-service.js";
+import { registerActivityRoutes } from "./activity/activity-routes.js";
+import {
+  AccountDeletionProcessor,
+  AccountPrivacyService,
+  InMemoryAccountPrivacyRepository,
+} from "./privacy/account-privacy.js";
+import { registerAccountPrivacyRoutes } from "./privacy/account-privacy-routes.js";
 
 const APPLICATION_VERSION = "0.1.3";
-
-export interface AppDependencies {
-  projects?: ProjectRepository;
-  uploads?: UploadRepository;
-  uploadFinalization?: UploadFinalizationCommand;
-  sourceVersions?: SourceVersionRepository;
-  sourceVersionRestores?: SourceVersionRestoreCommand;
-  exports?: ExportRepository;
-  auth?: AuthRepository;
-  audit?: AuditRepository;
-  billing?: BillingRepository;
-  idempotency?: IdempotencyStore;
-  loginAttempts?: LoginAttemptStore;
-  objectStorage?: ObjectStorage;
-  processingJobs?: ProcessingJobRepository;
-  layerDocuments?: LayerDocumentRepository;
-  emailSender?: EmailSender;
-  secretProtector?: SecretProtector;
-  paymentProviders?: PaymentProvider[];
-  pdfOcrEngine?: PdfOcrEngine;
-  readiness?: () => Promise<void>;
-  dependencyReadiness?: Readonly<Record<string, () => Promise<void>>>;
-  metricsProbeTimeoutMs?: number;
-  adminAccess?: AdminAccessCommand;
-  usageMeter?: UsageMeter;
-  operationalStatus?: OperationalStatusProvider;
-  rateLimitStore?: RateLimitStoreConstructor;
-}
 
 export async function buildApp(
   config: AppConfig,
@@ -224,6 +160,7 @@ export async function buildApp(
       tags: [
         { name: "health" },
         { name: "auth" },
+        { name: "account" },
         { name: "projects" },
         { name: "uploads" },
         { name: "processing" },
@@ -291,6 +228,7 @@ export async function buildApp(
     },
   });
   registerOpenApiDefaults(app);
+  const uploadReconciliationMetrics = new UploadReconciliationMetrics();
   await registerHttpMetrics(app, {
     ...(config.METRICS_BEARER_TOKEN
       ? { bearerToken: config.METRICS_BEARER_TOKEN }
@@ -305,6 +243,7 @@ export async function buildApp(
     ...(dependencies.metricsProbeTimeoutMs
       ? { probeTimeoutMs: dependencies.metricsProbeTimeoutMs }
       : {}),
+    uploadReconciliationMetrics,
     buildInfo: {
       version: APPLICATION_VERSION,
       release: process.env.RELEASE_VERSION ?? "development",
@@ -326,39 +265,30 @@ export async function buildApp(
     );
   const objectStorage =
     dependencies.objectStorage ?? new InMemoryObjectStorage();
-  const uploadFinalization =
-    dependencies.uploadFinalization ??
-    new InMemoryUploadFinalizationCommand(
-      uploadRepository,
-      sourceVersionRepository,
-      projects,
-    );
-  const uploadService = new UploadService(
-    uploadRepository,
-    () => new Date(),
+  const uploadRuntime = createUploadRuntime({
+    uploads: uploadRepository,
+    sourceVersions: sourceVersionRepository,
+    projects,
     idempotency,
-    objectStorage,
-    sourceVersionRepository,
-    uploadFinalization,
-    config.MAX_UPLOAD_BYTES,
-  );
-  const uploadReconciler = new UploadReconciler(
-    uploadFinalization,
-    objectStorage,
-    (report) => {
-      if (report.inspected > 0) {
-        app.log.info(report, "upload.reconciliation_completed");
-      }
-    },
-  );
+    storage: objectStorage,
+    maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    metrics: uploadReconciliationMetrics,
+    logger: app.log,
+    ...(dependencies.uploadFinalization ? { finalization: dependencies.uploadFinalization } : {}),
+    ...(dependencies.uploadIntegrityFailures ? { integrityFailures: dependencies.uploadIntegrityFailures } : {}),
+    ...(dependencies.uploadCancellations ? { cancellations: dependencies.uploadCancellations } : {}),
+  });
   if (config.NODE_ENV === "production") {
-    app.addHook("onReady", async () => uploadReconciler.start());
-    app.addHook("onClose", async () => uploadReconciler.stop());
+    app.addHook("onReady", async () => uploadRuntime.reconciler.start());
+    app.addHook("onClose", async () => uploadRuntime.reconciler.stop());
   }
   const exportRepository =
     dependencies.exports ?? new InMemoryExportRepository();
   const layerDocumentRepository =
     dependencies.layerDocuments ?? new InMemoryLayerDocumentRepository();
+  const projectReviews =
+    dependencies.projectReviews ??
+    new InMemoryProjectReviewCommand(projects, layerDocumentRepository);
   const exportService = new ExportService(
     exportRepository,
     () => new Date(),
@@ -367,6 +297,12 @@ export async function buildApp(
     objectStorage,
     layerDocumentRepository,
     config.EXPORT_EXECUTION_MODE === "inline",
+    (error, objectKey) => {
+      app.log.error(
+        { err: error, object_key: objectKey },
+        "export.artifact_cleanup_failed",
+      );
+    },
   );
   const billingRepository =
     dependencies.billing ?? new InMemoryBillingRepository();
@@ -386,8 +322,38 @@ export async function buildApp(
     () => new Date(),
     idempotency,
     config.PROCESSING_EXECUTION_MODE === "inline",
-    dependencies.pdfOcrEngine,
-    usageMeter,
+    {
+      ...(dependencies.pdfOcrEngine
+        ? { pdfOcrEngine: dependencies.pdfOcrEngine }
+        : {}),
+      usageMeter,
+      onAssetCleanupError: (error, objectKey) => {
+        app.log.error(
+          { err: error, object_key: objectKey },
+          "processing.asset_cleanup_failed",
+        );
+      },
+      rasterAssetWriteConcurrency: config.RASTER_ASSET_WRITE_CONCURRENCY,
+      onAssetWriteObservation: (observation) => {
+        app.log.info(
+          {
+            asset_count: observation.assetCount,
+            stored_count: observation.storedCount,
+            total_bytes: observation.totalBytes,
+            duration_ms: observation.durationMs,
+            concurrency: observation.concurrency,
+            outcome: observation.outcome,
+          },
+          "processing.raster_asset_write_observed",
+        );
+      },
+      onAssetWriteObservationError: (error) => {
+        app.log.error(
+          { err: error },
+          "processing.raster_asset_observer_failed",
+        );
+      },
+    },
   );
   const authRepository = dependencies.auth ?? new InMemoryAuthRepository();
   const authService = new AuthService(
@@ -407,6 +373,17 @@ export async function buildApp(
         new URL("/auth/reset", config.WEB_ORIGIN).toString(),
       totpIssuer: config.TOTP_ISSUER,
     },
+  );
+  const accountPrivacyRepository =
+    dependencies.accountPrivacy ??
+    new InMemoryAccountPrivacyRepository(authRepository);
+  const accountPrivacyService = new AccountPrivacyService(
+    accountPrivacyRepository,
+    authService,
+    new AccountDeletionProcessor(
+      accountPrivacyRepository,
+      objectStorage,
+    ),
   );
   const auditRepository =
     dependencies.audit ?? new InMemoryAuditRepository();
@@ -445,14 +422,25 @@ export async function buildApp(
     secureCookies: config.COOKIE_SECURE,
     sessionTtlSeconds: config.SESSION_TTL_SECONDS,
   });
+  await registerAccountPrivacyRoutes(app, authService, accountPrivacyService);
   await registerProjectRoutes(
     app,
     projects,
     authService,
     sourceVersionRepository,
     sourceVersionRestores,
+    projectReviews,
   );
-  await registerUploadRoutes(app, projects, uploadService, authService, {
+  await registerActivityRoutes(
+    app,
+    new ActivityService(
+      projects,
+      processingJobRepository,
+      exportRepository,
+    ),
+    authService,
+  );
+  await registerUploadRoutes(app, projects, uploadRuntime.service, authService, {
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
   });
   await registerExportRoutes(app, projects, exportService, authService);

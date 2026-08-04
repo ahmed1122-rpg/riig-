@@ -14,6 +14,7 @@ import {
   type LayerReviewSnapshot,
 } from "./layerReviewState";
 import type { WorkspaceSaveState } from "./WorkspaceChrome";
+import { isWorkspaceRevisionConflict } from "./workspaceConflict";
 
 interface WorkspaceReviewAutosaveOptions {
   projectId?: string;
@@ -35,6 +36,15 @@ interface WorkspaceReviewAutosave {
   resetSavedReview: () => void;
 }
 
+interface PendingLayerReviewSave {
+  projectId: string;
+  sourceVersionId: string;
+  baseRevision: number;
+  updates: ReturnType<typeof collectLayerReviewUpdates>;
+  snapshot: LayerReviewSnapshot;
+  operationId: string;
+}
+
 export function useWorkspaceReviewAutosave(
   options: WorkspaceReviewAutosaveOptions,
 ): WorkspaceReviewAutosave {
@@ -43,12 +53,14 @@ export function useWorkspaceReviewAutosave(
   const revisionRef = useRef<number | undefined>(options.revision);
   const layersRef = useRef<Layer[]>(options.layers);
   const savePromiseRef = useRef<Promise<number> | null>(null);
+  const pendingSaveRef = useRef<PendingLayerReviewSave | null>(null);
   const saveInFlightRef = useRef(false);
   layersRef.current = options.layers;
   revisionRef.current = options.revision;
 
   const adoptSavedReview = useCallback(
     (layers: Layer[], revision: number) => {
+      pendingSaveRef.current = null;
       savedReviewRef.current = snapshotLayerReview(layers);
       revisionRef.current = revision;
       options.setRevision(revision);
@@ -58,10 +70,11 @@ export function useWorkspaceReviewAutosave(
   );
 
   const resetSavedReview = useCallback(() => {
+    pendingSaveRef.current = null;
     savedReviewRef.current = new Map();
     revisionRef.current = undefined;
     options.setRevision(undefined);
-    options.setSaveState("idle");
+    options.setSaveState("unavailable");
   }, [options.setRevision, options.setSaveState]);
 
   const hasUnsavedReview = useCallback(
@@ -96,30 +109,56 @@ export function useWorkspaceReviewAutosave(
         if (!options.projectId || !options.sourceVersionId || revision === undefined) {
           throw new Error("وثيقة الطبقات غير جاهزة للحفظ.");
         }
-        const currentLayers = layersRef.current;
-        const updates = collectLayerReviewUpdates(
-          currentLayers,
-          savedReviewRef.current,
-        );
-        if (updates.length === 0) {
+        let pending = pendingSaveRef.current;
+        if (
+          pending &&
+          (pending.projectId !== options.projectId ||
+            pending.sourceVersionId !== options.sourceVersionId)
+        ) {
+          pendingSaveRef.current = null;
+          pending = null;
+        }
+        if (!pending) {
+          const currentLayers = layersRef.current;
+          const updates = collectLayerReviewUpdates(
+            currentLayers,
+            savedReviewRef.current,
+          );
+          if (updates.length > 0) {
+            pending = {
+              projectId: options.projectId,
+              sourceVersionId: options.sourceVersionId,
+              baseRevision: revision,
+              updates,
+              snapshot: snapshotLayerReview(currentLayers),
+              operationId: crypto.randomUUID(),
+            };
+            pendingSaveRef.current = pending;
+          }
+        }
+        if (!pending) {
           options.setSaveState("saved");
           return revision;
         }
 
-        const submittedSnapshot = snapshotLayerReview(currentLayers);
         options.setSaveState("saving");
         try {
           const updated = await updateLayerDocument(
-            options.projectId,
-            options.sourceVersionId,
-            revision,
-            updates,
+            pending.projectId,
+            pending.sourceVersionId,
+            pending.baseRevision,
+            pending.updates,
+            pending.operationId,
           );
-          savedReviewRef.current = submittedSnapshot;
+          savedReviewRef.current = pending.snapshot;
           revisionRef.current = updated.revision;
           options.setRevision(updated.revision);
+          pendingSaveRef.current = null;
         } catch (error) {
-          options.setSaveState("error");
+          if (!isAmbiguousSaveFailure(error)) pendingSaveRef.current = null;
+          options.setSaveState(
+            isWorkspaceRevisionConflict(error) ? "conflict" : "error",
+          );
           await options.onRevisionConflict(error);
           throw error;
         }
@@ -153,8 +192,11 @@ export function useWorkspaceReviewAutosave(
       options.layers,
       savedReviewRef.current,
     );
-    if (updates.length === 0) return;
-    options.setSaveState("idle");
+    if (updates.length === 0) {
+      options.setSaveState("saved");
+      return;
+    }
+    options.setSaveState("dirty");
     const timeout = window.setTimeout(() => {
       saveTimerRef.current = null;
       void flushLayerReview().catch((error: unknown) => {
@@ -205,4 +247,8 @@ export function useWorkspaceReviewAutosave(
     adoptSavedReview,
     resetSavedReview,
   };
+}
+
+function isAmbiguousSaveFailure(error: unknown): boolean {
+  return error instanceof ApiError && error.retryable;
 }

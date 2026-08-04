@@ -4,6 +4,7 @@ import {
   createAppTestHarness,
   registerCreator,
 } from "./app-test-helpers.js";
+import { InMemoryProjectRepository } from "./projects/project-repository.js";
 
 const harness = createAppTestHarness();
 
@@ -414,5 +415,50 @@ describe("API — الرفع وإصدارات المصدر", () => {
       headers: { cookie },
     });
     expect(cancelled.json().data.status).toBe("cancelled");
+  });
+
+  it("does not replace a source while a project job is active", async () => {
+    const projects = new InMemoryProjectRepository();
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      projects,
+    });
+    const cookie = await registerCreator(app, "busy-upload@example.test");
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      headers: { cookie },
+      payload: { name: "Busy project", kind: "image" },
+    });
+    const projectId = created.json().data.id as string;
+    const sourceVersionId = crypto.randomUUID();
+    await projects.updateCurrentSourceVersion(projectId, sourceVersionId, 1);
+    await projects.updateStatusForSource(
+      projectId,
+      sourceVersionId,
+      "processing",
+      { type: "processing", id: crypto.randomUUID() },
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: {
+        cookie,
+        "x-idempotency-key": "busy-project-upload-001",
+      },
+      payload: {
+        projectId,
+        filename: "replacement.png",
+        contentType: "image/png",
+        sizeBytes: 68,
+        replaceSourceVersion: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("PROJECT_JOB_ACTIVE");
+    await expect(projects.findById(projectId)).resolves.toMatchObject({
+      status: "processing",
+    });
   });
 });

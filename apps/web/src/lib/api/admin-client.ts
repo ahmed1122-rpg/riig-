@@ -1,5 +1,13 @@
 import { request } from "./transport";
-import type { AdminAuditEvent, AdminBillingData, AdminOverview, AdminProcessingJob, AdminSystemStatus, AdminUser } from "./models";
+import type {
+  AdminAuditEvent,
+  AdminBillingData,
+  AdminExportJob,
+  AdminOverview,
+  AdminProcessingJob,
+  AdminSystemStatus,
+  AdminUser,
+} from "./models";
 
 export function getAdminOverview(): Promise<AdminOverview> {
   return request("/v1/admin/overview");
@@ -31,6 +39,10 @@ export function getAdminProcessing(): Promise<AdminProcessingJob[]> {
   return request("/v1/admin/processing");
 }
 
+export function getAdminExports(): Promise<AdminExportJob[]> {
+  return request("/v1/admin/exports");
+}
+
 export function retryAdminProcessing(
   jobId: string,
   reason: string,
@@ -42,6 +54,16 @@ export function retryAdminProcessing(
       body: JSON.stringify({ reason }),
     },
   );
+}
+
+export function retryAdminExport(
+  jobId: string,
+  reason: string,
+): Promise<AdminExportJob> {
+  return request(`/v1/admin/exports/${encodeURIComponent(jobId)}/retry`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export function getAdminBilling(): Promise<AdminBillingData> {

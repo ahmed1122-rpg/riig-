@@ -4,7 +4,10 @@ import type {
   ProjectKind,
 } from "@motionprep/contracts";
 import { validateProductionDocument } from "@motionprep/presets";
-import { DocumentEditCoordinator } from "./document-edit-coordinator.js";
+import {
+  DocumentEditCoordinator,
+  layerEditRequestHash,
+} from "./document-edit-coordinator.js";
 import { ProcessingDomainError } from "./processing-errors.js";
 import type { LayerDocumentRepository } from "./processing-repository.js";
 
@@ -29,6 +32,14 @@ export class LayerStateOperations {
       input.projectId,
       input.sourceVersionId,
     );
+    const requestHash = layerEditRequestHash("layer-state", input);
+    const replay = await this.edits.findReplay(
+      document,
+      input.operationId,
+      "layer-state",
+      requestHash,
+    );
+    if (replay) return replay.document;
     const currentRevision = document.revision ?? 1;
     if (currentRevision !== input.baseRevision) {
       throw new ProcessingDomainError(
@@ -86,6 +97,7 @@ export class LayerStateOperations {
       kind: "layer-state",
       actorUserId: input.actorUserId,
       operationId: input.operationId,
+      requestHash,
     });
     const issues = validateProductionDocument(updated, input.projectKind);
     if (issues.length > 0) {

@@ -6,8 +6,11 @@ import { PostgresBillingRepository } from "./postgres-billing-repository.js";
 import { PostgresExportRepository } from "./postgres-export-repository.js";
 import { PostgresIdempotencyStore } from "./postgres-idempotency-store.js";
 import { PostgresProjectRepository } from "./postgres-project-repository.js";
+import { PostgresProjectReviewCommand } from "./postgres-project-review.js";
 import { PostgresUploadRepository } from "./postgres-upload-repository.js";
 import { PostgresUploadFinalizationCommand } from "./postgres-upload-finalization.js";
+import { PostgresUploadIntegrityFailureCommand } from "./postgres-upload-integrity-failure.js";
+import { PostgresUploadCancellationCommand } from "./postgres-upload-cancellation.js";
 import { PostgresSourceVersionRepository } from "./postgres-source-version-repository.js";
 import {
   PostgresLayerDocumentRepository,
@@ -18,6 +21,7 @@ import { PostgresUsageMeter } from "./postgres-usage-meter.js";
 import { PostgresOperationalStatusProvider } from "./postgres-operational-status.js";
 import { PostgresSourceVersionRestoreCommand } from "./postgres-source-version-restore.js";
 import { PostgresEmailOutboxRepository } from "./postgres-email-outbox.js";
+import { PostgresAccountPrivacyRepository } from "./postgres-account-privacy-repository.js";
 
 export function createPostgresPersistence(config: AppConfig) {
   if (!config.DATABASE_URL) {
@@ -31,8 +35,13 @@ export function createPostgresPersistence(config: AppConfig) {
   return {
     repositories: {
       projects: new PostgresProjectRepository(database.pool),
+      projectReviews: new PostgresProjectReviewCommand(database.pool),
       uploads: new PostgresUploadRepository(database.pool),
       uploadFinalization: new PostgresUploadFinalizationCommand(database.pool),
+      uploadIntegrityFailures: new PostgresUploadIntegrityFailureCommand(
+        database.pool,
+      ),
+      uploadCancellations: new PostgresUploadCancellationCommand(database.pool),
       sourceVersions: new PostgresSourceVersionRepository(database.pool),
       sourceVersionRestores: new PostgresSourceVersionRestoreCommand(
         database.pool,
@@ -44,6 +53,7 @@ export function createPostgresPersistence(config: AppConfig) {
       idempotency: new PostgresIdempotencyStore(database.pool),
       processingJobs: new PostgresProcessingJobRepository(database.pool),
       layerDocuments: new PostgresLayerDocumentRepository(database.pool),
+      accountPrivacy: new PostgresAccountPrivacyRepository(database.pool),
     },
     adminAccess: new PostgresAdminAccessCommand(database.pool),
     usageMeter: new PostgresUsageMeter(

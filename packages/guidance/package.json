@@ -2,6 +2,7 @@
   "name": "@motionprep/guidance",
   "version": "0.1.3",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "exports": {
     ".": {

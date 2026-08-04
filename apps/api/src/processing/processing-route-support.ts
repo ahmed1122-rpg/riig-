@@ -149,6 +149,7 @@ const processingDomainError = createDomainErrorResponder(
     code === "LAYER_ASSET_NOT_FOUND"
       ? 404
       : code === "DOCUMENT_REVISION_CONFLICT" ||
+          code === "IDEMPOTENCY_CONFLICT" ||
           code === "PROCESSING_IN_PROGRESS" ||
           code === "SOURCE_NOT_CURRENT" ||
           code === "SOURCE_NOT_READY" ||

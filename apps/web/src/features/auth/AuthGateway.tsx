@@ -296,7 +296,10 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
               <PasswordRequirements password={password} id="register-password-requirements" />
               <label className="check-label auth-consent">
                 <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-                <span>أوافق على شروط الاستخدام وسياسة الخصوصية.</span>
+                <span>
+                  أوافق على <a href="/legal/terms.html" target="_blank" rel="noreferrer">شروط الاستخدام</a>
+                  {" "}و<a href="/legal/privacy.html" target="_blank" rel="noreferrer">سياسة الخصوصية</a>.
+                </span>
               </label>
               {submitState === "error" && <div id="register-error" className="form-message is-error" role="alert">أكمل البيانات والموافقة، واستخدم كلمة مرور من 10 أحرف على الأقل.</div>}
               <RateLimitedMessage state={submitState} />

@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const reuseExistingServer = process.env.PLAYWRIGHT_REUSE_SERVER === "true";
+
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "artifacts/playwright",
@@ -36,7 +38,10 @@ export default defineConfig({
     {
       command: "npm run serve:e2e --workspace @motionprep/api",
       url: "http://127.0.0.1:4000/v1/health/live",
-      reuseExistingServer: !process.env.CI,
+      env: {
+        WEB_ORIGIN: "http://127.0.0.1:5173",
+      },
+      reuseExistingServer,
       timeout: 30_000,
       stdout: "pipe",
       stderr: "pipe",
@@ -45,7 +50,7 @@ export default defineConfig({
       command:
         "npm run dev --workspace @motionprep/web -- --host 127.0.0.1",
       url: "http://127.0.0.1:5173",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer,
       timeout: 30_000,
       stdout: "pipe",
       stderr: "pipe",

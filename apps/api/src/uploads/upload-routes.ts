@@ -30,7 +30,8 @@ const domainError = createDomainErrorResponder(
       : code === "UPLOAD_STORAGE_MISMATCH"
         ? 502
       : code === "ACTIVE_UPLOAD_EXISTS" ||
-          code === "UPLOAD_REQUEST_IN_PROGRESS"
+          code === "UPLOAD_REQUEST_IN_PROGRESS" ||
+          code === "IDEMPOTENCY_CONFLICT"
         ? 409
         : 400,
 );
@@ -97,6 +98,16 @@ export async function registerUploadRoutes(
       return sendProjectNotFound(reply, request.id);
     }
 
+    if (await projects.hasActiveJob(project.id)) {
+      return sendApiError(
+        reply,
+        request.id,
+        409,
+        "PROJECT_JOB_ACTIVE",
+        "انتظر اكتمال المعالجة أو التصدير النشط قبل بدء رفع جديد.",
+      );
+    }
+
     if (
       project.currentSourceVersionId &&
       parsed.data.replaceSourceVersion !== true
@@ -138,6 +149,7 @@ export async function registerUploadRoutes(
       const session = await uploads.createIntent(
         intentInput,
         requestIdempotencyKey(request),
+        project.status,
       );
       await projects.updateStatus(session.projectId, "uploading");
       return reply.status(201).send({ data: session, error: null });

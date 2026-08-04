@@ -6,7 +6,12 @@ import type { Pool, PoolClient } from "pg";
 import type {
   LayerDocumentRepository,
   ProcessingJobRepository,
+  ProcessingStatusSummary,
 } from "../../processing/processing-repository.js";
+import {
+  boundedJobListLimit,
+  type JobListCursor,
+} from "../../jobs/job-list-cursor.js";
 import {
   mapProcessingRow,
   type ProcessingRow,
@@ -32,9 +37,52 @@ export class PostgresProcessingJobRepository
   async list(limit: number): Promise<ProcessingJob[]> {
     const result = await this.pool.query<ProcessingRow>(
       `${processingSelect} ORDER BY created_at DESC LIMIT $1`,
-      [Math.max(1, Math.min(limit, 200))],
+      [boundedJobListLimit(limit)],
     );
     return result.rows.map(mapProcessingRow);
+  }
+
+  async listByProjectIds(
+    projectIds: string[],
+    limit: number,
+    cursor?: JobListCursor,
+  ): Promise<ProcessingJob[]> {
+    if (projectIds.length === 0) return [];
+    const cursorClause = cursor
+      ? "AND (updated_at < $3 OR (updated_at = $3 AND ('processing:' || id::text) < $4))"
+      : "";
+    const parameters = cursor
+      ? [projectIds, boundedJobListLimit(limit), cursor.updatedAt, cursor.id]
+      : [projectIds, boundedJobListLimit(limit)];
+    const result = await this.pool.query<ProcessingRow>(
+      `${processingSelect}
+       WHERE project_id = ANY($1::uuid[])
+       ${cursorClause}
+       ORDER BY updated_at DESC, id DESC
+       LIMIT $2`,
+      parameters,
+    );
+    return result.rows.map(mapProcessingRow);
+  }
+
+  async summarizeStatuses(): Promise<ProcessingStatusSummary> {
+    const result = await this.pool.query<{
+      total: string | number;
+      active: string | number;
+      failed: string | number;
+    }>(`SELECT
+          count(*) AS total,
+          count(*) FILTER (
+            WHERE status IN ('queued', 'processing', 'verifying')
+          ) AS active,
+          count(*) FILTER (WHERE status = 'failed') AS failed
+        FROM processing_jobs`);
+    const row = result.rows[0];
+    return {
+      total: Number(row?.total ?? 0),
+      active: Number(row?.active ?? 0),
+      failed: Number(row?.failed ?? 0),
+    };
   }
 
   async findBySource(
@@ -197,10 +245,11 @@ export class PostgresLayerDocumentRepository
     }
     const client = await this.pool.connect();
     const revision = document.revision ?? 1;
-    const timestamp = document.generatedAt ?? new Date().toISOString();
-    try {
-      await client.query("BEGIN");
-      const current = await client.query<{
+      const timestamp = document.generatedAt ?? new Date().toISOString();
+      try {
+        await client.query("BEGIN");
+        await lockProjectForDocumentMutation(client, document.projectId);
+        const current = await client.query<{
         revision: number;
         document: LayerDocument;
       }>(
@@ -246,14 +295,19 @@ export class PostgresLayerDocumentRepository
         document,
         timestamp,
       );
-      await pruneRevisions(
-        client,
-        document.projectId,
-        document.sourceVersionId,
-        revision,
-        document,
-      );
-      await client.query("COMMIT");
+        await pruneRevisions(
+          client,
+          document.projectId,
+          document.sourceVersionId,
+          revision,
+          document,
+        );
+        await invalidateProjectReview(
+          client,
+          document.projectId,
+          document.sourceVersionId,
+        );
+        await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -271,10 +325,11 @@ export class PostgresLayerDocumentRepository
     }
     const client = await this.pool.connect();
     const revision = document.revision ?? expectedRevision + 1;
-    const updatedAt = new Date().toISOString();
-    try {
-      await client.query("BEGIN");
-      const current = await client.query<{
+      const updatedAt = new Date().toISOString();
+      try {
+        await client.query("BEGIN");
+        await lockProjectForDocumentMutation(client, document.projectId);
+        const current = await client.query<{
         revision: number;
         document: LayerDocument;
       }>(
@@ -317,14 +372,19 @@ export class PostgresLayerDocumentRepository
         document,
         updatedAt,
       );
-      await pruneRevisions(
-        client,
-        document.projectId,
-        document.sourceVersionId,
-        revision,
-        document,
-      );
-      await client.query("COMMIT");
+        await pruneRevisions(
+          client,
+          document.projectId,
+          document.sourceVersionId,
+          revision,
+          document,
+        );
+        await invalidateProjectReview(
+          client,
+          document.projectId,
+          document.sourceVersionId,
+        );
+        await client.query("COMMIT");
       return true;
     } catch (error) {
       await client.query("ROLLBACK");
@@ -359,14 +419,25 @@ async function pruneRevisions(
   revision: number,
   document: LayerDocument,
 ): Promise<void> {
-  const retained =
-    document.editTimeline?.entries.map((entry) => entry.revision) ?? [];
+  const retained = [
+    ...(document.editTimeline?.entries.map((entry) => entry.revision) ?? []),
+    ...(document.editTimeline?.navigationEntries?.map(
+      (entry) => entry.resultRevision,
+    ) ?? []),
+  ];
   await client.query(
-    `DELETE FROM layer_document_revisions
-     WHERE project_id = $1
-       AND source_version_id = $2
-       AND revision < $3
-       AND NOT (revision = ANY($4::integer[]))`,
+    `DELETE FROM layer_document_revisions AS stored_revision
+     WHERE stored_revision.project_id = $1
+       AND stored_revision.source_version_id = $2
+       AND stored_revision.revision < $3
+       AND NOT (stored_revision.revision = ANY($4::integer[]))
+       AND NOT EXISTS (
+         SELECT 1
+         FROM export_jobs AS export_job
+         WHERE export_job.project_id = stored_revision.project_id
+           AND export_job.source_version_id = stored_revision.source_version_id
+           AND export_job.document_revision = stored_revision.revision
+       )`,
     [
       projectId,
       sourceVersionId,
@@ -374,6 +445,33 @@ async function pruneRevisions(
       retained,
     ],
   );
+}
+
+async function invalidateProjectReview(
+  client: PoolClient,
+  projectId: string,
+  sourceVersionId: string,
+): Promise<void> {
+  await client.query(
+    `UPDATE projects
+     SET current_review_approval_id = NULL,
+         status = CASE
+           WHEN active_job_id IS NULL THEN 'needs_review'
+           ELSE status
+         END,
+         updated_at = now()
+     WHERE id = $1 AND current_source_version_id = $2`,
+    [projectId, sourceVersionId],
+  );
+}
+
+async function lockProjectForDocumentMutation(
+  client: PoolClient,
+  projectId: string,
+): Promise<void> {
+  await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [
+    projectId,
+  ]);
 }
 
 const processingSelect = `

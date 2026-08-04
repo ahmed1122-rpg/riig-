@@ -3,6 +3,15 @@ import type {
   FastifySchema,
   RouteOptions,
 } from "fastify";
+import { documentedSuccessResponses } from "./openapi-success-responses.js";
+import {
+  boolean,
+  integer,
+  number,
+  objectSchema as objectBody,
+  stringArray,
+  text,
+} from "./openapi-schema-builders.js";
 
 interface OpenApiSchema extends FastifySchema {
   hide?: boolean;
@@ -93,7 +102,9 @@ export function transformOpenApiDocumentation({
   const method = Array.isArray(route.method)
     ? route.method[0]
     : route.method;
-  const body = documentedBodies.get(`${method} ${url}`);
+  const routeKey = `${method} ${url}`;
+  const body = documentedBodies.get(routeKey);
+  const successResponses = documentedSuccessResponses.get(routeKey);
   const params = pathParameters(url);
   return {
     url,
@@ -101,6 +112,14 @@ export function transformOpenApiDocumentation({
       ...schema,
       ...(body && !schema.body ? { body } : {}),
       ...(params && !schema.params ? { params } : {}),
+      ...(successResponses
+        ? {
+            response: {
+              ...(schema.response ?? {}),
+              ...successResponses,
+            },
+          }
+        : {}),
       ...(url === "/v1/uploads/:uploadId/content"
         ? { consumes: ["application/octet-stream"] }
         : {}),
@@ -133,31 +152,25 @@ function pathParameters(url: string): Record<string, unknown> | undefined {
   };
 }
 
-const text = (format?: string) => ({
-  type: "string",
-  ...(format ? { format } : {}),
-});
-const integer = { type: "integer" };
-const number = { type: "number" };
-const boolean = { type: "boolean" };
-const stringArray = { type: "array", items: text() };
-const objectBody = (
-  required: string[],
-  properties: Record<string, unknown>,
-) => ({
-  type: "object",
-  required,
-  properties,
-  additionalProperties: false,
-});
-
 const documentedBodies = new Map<string, Record<string, unknown>>([
   [
     "POST /v1/auth/register",
-    objectBody(["name", "email", "password"], {
+    objectBody(["name", "email", "password", "legal"], {
       name: text(),
       email: text("email"),
       password: text("password"),
+      legal: objectBody(["accepted", "termsVersion", "privacyVersion"], {
+        accepted: { type: "boolean", const: true },
+        termsVersion: text(),
+        privacyVersion: text(),
+      }),
+    }),
+  ],
+  [
+    "DELETE /v1/account",
+    objectBody(["password", "confirmation"], {
+      password: text("password"),
+      confirmation: { type: "string", const: "DELETE" },
     }),
   ],
   [
@@ -221,6 +234,13 @@ const documentedBodies = new Map<string, Record<string, unknown>>([
     }),
   ],
   [
+    "POST /v1/projects/:projectId/review/approve",
+    objectBody(["sourceVersionId", "documentRevision"], {
+      sourceVersionId: text("uuid"),
+      documentRevision: integer,
+    }),
+  ],
+  [
     "POST /v1/uploads/intents",
     objectBody(["projectId", "filename", "contentType", "sizeBytes"], {
       projectId: text("uuid"),
@@ -233,10 +253,9 @@ const documentedBodies = new Map<string, Record<string, unknown>>([
   ["PUT /v1/uploads/:uploadId/content", { type: "string", format: "binary" }],
   [
     "POST /v1/processing/jobs",
-    objectBody(["projectId", "sourceVersionId", "projectKind"], {
+    objectBody(["projectId", "sourceVersionId"], {
       projectId: text("uuid"),
       sourceVersionId: text("uuid"),
-      projectKind: { type: "string", enum: ["image", "book"] },
       pdfSeparationMode: text(),
     }),
   ],
@@ -350,6 +369,10 @@ const documentedBodies = new Map<string, Record<string, unknown>>([
   ],
   [
     "POST /v1/admin/processing/:jobId/retry",
+    objectBody(["reason"], { reason: text() }),
+  ],
+  [
+    "POST /v1/admin/exports/:jobId/retry",
     objectBody(["reason"], { reason: text() }),
   ],
   [

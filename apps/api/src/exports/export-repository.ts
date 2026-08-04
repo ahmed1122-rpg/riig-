@@ -1,9 +1,26 @@
 import type { ExportJob } from "@motionprep/contracts";
+import {
+  boundedJobListLimit,
+  compareJobsByUpdatedAt,
+  isBeforeJobCursor,
+  type JobListCursor,
+} from "../jobs/job-list-cursor.js";
+
+export interface ExportStatusSummary {
+  total: number;
+  queued: number;
+  failed: number;
+}
 
 export interface ExportRepository {
   findById(id: string): Promise<ExportJob | null>;
-  list(): Promise<ExportJob[]>;
-  listByProjectIds(projectIds: string[]): Promise<ExportJob[]>;
+  list(limit: number): Promise<ExportJob[]>;
+  listByProjectIds(
+    projectIds: string[],
+    limit: number,
+    cursor?: JobListCursor,
+  ): Promise<ExportJob[]>;
+  summarizeStatuses(): Promise<ExportStatusSummary>;
   save(job: ExportJob): Promise<void>;
   claimNext(
     workerId: string,
@@ -34,15 +51,35 @@ export class InMemoryExportRepository implements ExportRepository {
     return this.#jobs.get(id) ?? null;
   }
 
-  async list(): Promise<ExportJob[]> {
-    return [...this.#jobs.values()];
+  async list(limit: number): Promise<ExportJob[]> {
+    return [...this.#jobs.values()]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, boundedListLimit(limit));
   }
 
-  async listByProjectIds(projectIds: string[]): Promise<ExportJob[]> {
+  async listByProjectIds(
+    projectIds: string[],
+    limit: number,
+    cursor?: JobListCursor,
+  ): Promise<ExportJob[]> {
     const allowed = new Set(projectIds);
     return [...this.#jobs.values()]
-      .filter((job) => allowed.has(job.projectId))
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      .filter(
+        (job) =>
+          allowed.has(job.projectId) &&
+          (!cursor || isBeforeJobCursor(job, cursor, "export:")),
+      )
+      .sort(compareJobsByUpdatedAt)
+      .slice(0, boundedListLimit(limit));
+  }
+
+  async summarizeStatuses(): Promise<ExportStatusSummary> {
+    const jobs = [...this.#jobs.values()];
+    return {
+      total: jobs.length,
+      queued: jobs.filter((job) => job.status === "queued").length,
+      failed: jobs.filter((job) => job.status === "failed").length,
+    };
   }
 
   async save(job: ExportJob): Promise<void> {
@@ -158,7 +195,7 @@ export class InMemoryExportRepository implements ExportRepository {
   ): Promise<ExportJob | null> {
     const job = this.#jobs.get(id);
     if (!job) return null;
-    if (!["preflight", "queued", "generating"].includes(job.status)) {
+    if (!["queued", "generating"].includes(job.status)) {
       return job;
     }
     const cancelled: ExportJob = {
@@ -171,4 +208,8 @@ export class InMemoryExportRepository implements ExportRepository {
     this.#jobs.set(id, cancelled);
     return cancelled;
   }
+}
+
+function boundedListLimit(limit: number): number {
+  return boundedJobListLimit(limit);
 }

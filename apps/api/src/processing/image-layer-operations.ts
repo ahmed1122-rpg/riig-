@@ -17,11 +17,13 @@ import {
   DocumentEditCoordinator,
   editReplayResult,
   invalidDocumentOperation,
+  layerEditRequestHash,
   revisionConflict,
 } from "./document-edit-coordinator.js";
 import { unionLayerBounds } from "./layer-operation-utils.js";
 import { ProcessingDomainError } from "./processing-errors.js";
 import { RasterAssetStore } from "./raster-asset-store.js";
+import { cleanupRasterAssets } from "./raster-asset-cleanup.js";
 
 export interface RefineImageLayerEdgesInput {
   projectId: string;
@@ -56,6 +58,10 @@ export class ImageLayerOperations {
     private readonly edits: DocumentEditCoordinator,
     private readonly rasterAssets: RasterAssetStore,
     private readonly storage: ObjectStorage,
+    private readonly onAssetCleanupError?: (
+      error: unknown,
+      objectKey: string,
+    ) => void,
   ) {}
 
   async refineEdges(
@@ -65,10 +71,12 @@ export class ImageLayerOperations {
       input.projectId,
       input.sourceVersionId,
     );
+    const requestHash = layerEditRequestHash("image-edge-refine", input);
     const replay = await this.edits.findReplay(
       document,
       input.operationId,
       "image-edge-refine",
+      requestHash,
     );
     if (replay) return editReplayResult(replay);
     if ((document.revision ?? 1) !== input.baseRevision) {
@@ -141,10 +149,11 @@ export class ImageLayerOperations {
         input.operationId,
         details,
         "image",
+        requestHash,
       );
       return { document: updated, ...details };
     } catch (error) {
-      await this.storage.delete(reference.objectKey).catch(() => undefined);
+      await this.cleanupAsset(reference.objectKey);
       throw error;
     }
   }
@@ -156,10 +165,12 @@ export class ImageLayerOperations {
       input.projectId,
       input.sourceVersionId,
     );
+    const requestHash = layerEditRequestHash("image-merge", input);
     const replay = await this.edits.findReplay(
       document,
       input.operationId,
       "image-merge",
+      requestHash,
     );
     if (replay) return editReplayResult(replay);
     if ((document.revision ?? 1) !== input.baseRevision) {
@@ -290,12 +301,21 @@ export class ImageLayerOperations {
         input.operationId,
         details,
         "image",
+        requestHash,
       );
       return { document: updated, ...details };
     } catch (error) {
-      await this.storage.delete(reference.objectKey).catch(() => undefined);
+      await this.cleanupAsset(reference.objectKey);
       throw error;
     }
+  }
+
+  private cleanupAsset(objectKey: string): Promise<void> {
+    return cleanupRasterAssets(
+      this.storage,
+      [objectKey],
+      this.onAssetCleanupError,
+    );
   }
 
   async applyGuidance(

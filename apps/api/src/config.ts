@@ -50,6 +50,12 @@ const environmentSchema = z
     PROCESSING_EXECUTION_MODE: z
       .enum(["inline", "worker"])
       .default("inline"),
+    RASTER_ASSET_WRITE_CONCURRENCY: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(4)
+      .default(2),
     EXPORT_EXECUTION_MODE: z
       .enum(["inline", "worker"])
       .default("inline"),

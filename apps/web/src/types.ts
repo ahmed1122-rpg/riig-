@@ -12,7 +12,14 @@ export type ViewId =
 export type ProjectMode = ProjectKind;
 export type DemoState = "ready" | "loading" | "empty" | "error";
 export type { UserRole } from "@motionprep/contracts";
-export type AdminView = "overview" | "processing" | "users" | "billing" | "audit" | "system";
+export type AdminView =
+  | "overview"
+  | "processing"
+  | "exports"
+  | "users"
+  | "billing"
+  | "audit"
+  | "system";
 export type PdfSegmentation = "headings" | "topics" | "sentences" | "lines" | "words" | "characters";
 
 export interface Layer {

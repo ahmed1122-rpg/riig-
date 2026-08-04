@@ -4,12 +4,14 @@ import type {
   SubscriptionView,
   UserSummary,
 } from "@motionprep/contracts";
+import { createHash } from "node:crypto";
 import { BILLING_PLAN_CATALOG } from "@motionprep/contracts";
 import type { AuditService } from "../audit/audit-service.js";
 import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
+import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import type { BillingRepository } from "./billing-repository.js";
 import type { PaymentProvider } from "./payment-provider.js";
 import { starterSubscription } from "./usage-meter.js";
@@ -20,7 +22,7 @@ export class BillingDomainError extends Error {
       | "PAYMENT_PROVIDER_UNAVAILABLE"
       | "CHECKOUT_NOT_FOUND"
       | "CHECKOUT_NOT_COMPLETABLE"
-      | "CHECKOUT_REQUEST_IN_PROGRESS"
+      | "IDEMPOTENCY_CONFLICT"
       | "WEBHOOK_SIGNATURE_INVALID"
       | "WEBHOOK_EVENT_INVALID"
       | "SUBSCRIPTION_NOT_MANAGEABLE",
@@ -95,70 +97,73 @@ export class BillingService {
     }
 
     const now = this.now();
-    const id = crypto.randomUUID();
-    const claimedId = await this.idempotency.claim(
+    const proposedId = crypto.randomUUID();
+    const claim = await this.idempotency.claimRequest(
       "billing-checkout",
       scopedIdempotencyKey,
-      id,
+      proposedId,
+      requestFingerprint("billing-checkout", {
+        providerId: input.providerId,
+        planId: input.planId,
+        currency: input.currency,
+        returnUrl: input.returnUrl,
+      }),
       24 * 60 * 60,
     );
-    if (claimedId !== id) {
-      const existing = await this.repository.findCheckout(claimedId);
-      if (existing) return existing;
+    if (claim.outcome === "conflict") {
       throw new BillingDomainError(
-        "CHECKOUT_REQUEST_IN_PROGRESS",
-        "طلب الدفع المطابق ما زال قيد الإنشاء. أعد المحاولة بعد لحظات.",
+        "IDEMPOTENCY_CONFLICT",
+        "استُخدم مفتاح منع التكرار نفسه لطلب دفع مختلف.",
       );
     }
-
+    const id = claim.resourceId;
     const expiresAt = new Date(now.getTime() + 30 * 60_000).toISOString();
     const amountMinor = planFor(input.planId).prices[input.currency];
-    let checkout: CheckoutSession;
-    let providerReference: string;
-    try {
-      const providerResult = await provider.createCheckout({
-        checkoutId: id,
-        userId: input.actor.id,
-        customerEmail: input.actor.email,
-        planId: input.planId,
-        currency: input.currency,
-        amountMinor,
-        returnUrl: input.returnUrl,
-        expiresAt,
-      });
-      providerReference = providerResult.externalReference;
-      checkout = {
-        id,
-        userId: input.actor.id,
-        provider: input.providerId,
-        planId: input.planId,
-        status: "redirect_required",
-        currency: input.currency,
-        amountMinor,
-        checkoutUrl: providerResult.checkoutUrl,
-        providerReference,
-        createdAt: now.toISOString(),
-        expiresAt,
-      };
-      await this.repository.saveCheckout(checkout);
-    } catch (error) {
-      await this.idempotency.release(
-        "billing-checkout",
-        scopedIdempotencyKey,
-        id,
-      );
-      throw error;
-    }
+    const pending = await this.repository.ensurePendingCheckout({
+      id,
+      userId: input.actor.id,
+      provider: input.providerId,
+      planId: input.planId,
+      status: "pending",
+      currency: input.currency,
+      amountMinor,
+      checkoutUrl: null,
+      createdAt: now.toISOString(),
+      expiresAt,
+    });
+    if (pending.status !== "pending") return pending;
+
+    // Every provider treats checkoutId as its external idempotency identity.
+    // A replay can therefore resume the same pending operation after an
+    // ambiguous provider/DB boundary without creating a second checkout.
+    const providerResult = await provider.createCheckout({
+      checkoutId: pending.id,
+      userId: pending.userId,
+      customerEmail: input.actor.email,
+      planId: pending.planId,
+      currency: pending.currency,
+      amountMinor: pending.amountMinor,
+      returnUrl: input.returnUrl,
+      expiresAt: pending.expiresAt,
+    });
+    const completion = await this.repository.completePendingCheckout({
+      ...pending,
+      status: "redirect_required",
+      checkoutUrl: providerResult.checkoutUrl,
+      providerReference: providerResult.externalReference,
+    });
+    if (!completion.transitioned) return completion.checkout;
+
     await this.audit.record({
       actorUserId: input.actor.id,
       action: "billing.checkout.created",
       targetType: "checkout",
-      targetId: checkout.id,
+      targetId: completion.checkout.id,
       outcome: "success",
-      reason: `provider=${providerReference}`,
+      reason: `provider=${providerResult.externalReference}`,
       requestId: input.requestId,
     });
-    return checkout;
+    return completion.checkout;
   }
 
   async completeSandbox(
@@ -225,13 +230,20 @@ export class BillingService {
 
     const claimId = crypto.randomUUID();
     const claimKey = `${input.providerId}:${event.eventId}`;
-    const claimed = await this.idempotency.claim(
+    const claim = await this.idempotency.claimRequest(
       "billing-webhook",
       claimKey,
       claimId,
+      createHash("sha256").update(input.rawBody).digest("hex"),
       90 * 24 * 60 * 60,
     );
-    if (claimed !== claimId) {
+    if (claim.outcome === "conflict") {
+      throw new BillingDomainError(
+        "IDEMPOTENCY_CONFLICT",
+        "تعارض محتوى حدث مزود الدفع مع حدث سابق يحمل الهوية نفسها.",
+      );
+    }
+    if (claim.outcome === "replayed") {
       return { accepted: true, processed: false, duplicate: true };
     }
 

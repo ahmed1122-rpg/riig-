@@ -11,6 +11,7 @@ import { createDomainErrorResponder } from "../http/domain-route-error.js";
 import { requestIdempotencyKey } from "../http/request-metadata.js";
 import { runResourceRoute } from "../http/resource-route.js";
 import { requestTraceContext } from "../observability/tracing.js";
+import { toExportJobDto } from "../jobs/job-dtos.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import {
   ExportDomainError,
@@ -55,8 +56,10 @@ const domainError = createDomainErrorResponder(
     code === "EXPORT_NOT_FOUND"
       ? 404
       : code === "EXPORT_REQUEST_IN_PROGRESS" ||
+          code === "IDEMPOTENCY_CONFLICT" ||
           code === "EXPORT_DOCUMENT_REVISION_CONFLICT" ||
-          code === "EXPORT_SOURCE_NOT_CURRENT"
+          code === "EXPORT_SOURCE_NOT_CURRENT" ||
+          code === "REVIEW_APPROVAL_REQUIRED"
         ? 409
         : code === "EXPORT_SOURCE_INTEGRITY_FAILED" ||
             code === "EXPORT_ARTIFACT_INTEGRITY_FAILED"
@@ -88,9 +91,11 @@ export async function registerExportRoutes(
       const user = await requireUser(request, auth);
       const ownedProjects = await projects.listOwnedByUser(user.id);
       return {
-        data: await exports.listByProjectIds(
-          ownedProjects.map((project) => project.id),
-        ),
+        data: (
+          await exports.listByProjectIds(
+            ownedProjects.map((project) => project.id),
+          )
+        ).map(toExportJobDto),
         error: null,
       };
     } catch (error) {
@@ -120,8 +125,19 @@ export async function registerExportRoutes(
     if (!project) {
       return sendProjectNotFound(reply, request.id);
     }
+    const {
+      selectedPage,
+      documentRevision: requestedDocumentRevision,
+      ...exportInput
+    } = body.data;
+    const documentRevision =
+      requestedDocumentRevision ?? project.reviewApproval?.documentRevision;
+    const reviewApproved = Boolean(
+      documentRevision !== undefined &&
+        project.reviewApproval?.sourceVersionId === body.data.sourceVersionId &&
+        project.reviewApproval.documentRevision === documentRevision,
+    );
     try {
-      const { selectedPage, documentRevision, ...exportInput } = body.data;
       const job = await exports.create(
         {
           ...exportInput,
@@ -141,6 +157,7 @@ export async function registerExportRoutes(
           ),
         request.id,
         requestTraceContext(request),
+        reviewApproved,
       );
       if (job.status === "ready") {
         await projects.finishJobStatus(
@@ -148,9 +165,12 @@ export async function registerExportRoutes(
           job.sourceVersionId,
           { type: "export", id: job.id },
           "completed",
+          job.documentRevision,
         );
       }
-      return reply.status(202).send({ data: job, error: null });
+      return reply
+        .status(202)
+        .send({ data: toExportJobDto(job), error: null });
     } catch (error) {
       const failedJobId =
         error instanceof ExportDomainError || error instanceof ExportExecutionError
@@ -162,6 +182,7 @@ export async function registerExportRoutes(
           body.data.sourceVersionId,
           { type: "export", id: failedJobId },
           "failed",
+          documentRevision,
         );
       }
       return domainError(error, request, reply);
@@ -172,7 +193,7 @@ export async function registerExportRoutes(
     return runResourceRoute(request, reply, {
       parseId: exportIdFrom,
       load: (exportId) => requireRequestExport(request, exportId),
-      handle: (job) => ({ data: job, error: null }),
+      handle: (job) => ({ data: toExportJobDto(job), error: null }),
       onError: domainError,
     });
   });
@@ -224,9 +245,10 @@ export async function registerExportRoutes(
           cancelled.projectId,
           cancelled.sourceVersionId,
           { type: "export", id: cancelled.id },
-          "needs_review",
+          "cancelled",
+          cancelled.documentRevision,
         );
-        return { data: cancelled, error: null };
+        return { data: toExportJobDto(cancelled), error: null };
       },
       onError: domainError,
     });

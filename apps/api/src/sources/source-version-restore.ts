@@ -3,6 +3,7 @@ import type {
   SourceVersionRestoreEvent,
   SourceVersionRestoreResult,
 } from "@motionprep/contracts";
+import { InMemoryProjectOperationLock } from "../projects/in-memory-project-operation-lock.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import type { SourceVersionRepository } from "./source-version-repository.js";
 
@@ -29,7 +30,8 @@ export interface RestoreSourceVersionInput {
   targetSourceVersionId: string;
   expectedCurrentSourceVersionId: string;
   reason: string;
-  requestId: string;
+  idempotencyKey: string;
+  originatingRequestId: string;
 }
 
 export interface SourceVersionRestoreCommand {
@@ -45,7 +47,7 @@ export class InMemorySourceVersionRestoreCommand
   implements SourceVersionRestoreCommand
 {
   readonly #events: SourceVersionRestoreEvent[] = [];
-  readonly #locks = new Map<string, Promise<void>>();
+  readonly #projectOperations = new InMemoryProjectOperationLock();
 
   constructor(
     private readonly projects: ProjectRepository,
@@ -56,11 +58,11 @@ export class InMemorySourceVersionRestoreCommand
   async restore(
     input: RestoreSourceVersionInput,
   ): Promise<SourceVersionRestoreResult> {
-    return this.withProjectLock(input.projectId, async () => {
+    return this.#projectOperations.run(input.projectId, async () => {
       const existing = this.#events.find(
         (event) =>
           event.actorUserId === input.actorUserId &&
-          event.requestId === input.requestId,
+          event.idempotencyKey === input.idempotencyKey,
       );
       if (existing) {
         assertReplayMatches(existing, input);
@@ -116,12 +118,15 @@ export class InMemorySourceVersionRestoreCommand
         updated;
       const event: SourceVersionRestoreEvent = {
         id: crypto.randomUUID(),
+        operationId: crypto.randomUUID(),
         projectId: project.id,
         actorUserId: input.actorUserId,
         fromSourceVersionId: input.expectedCurrentSourceVersionId,
         toSourceVersionId: target.id,
         reason: input.reason,
-        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        originatingRequestId: input.originatingRequestId,
+        requestId: input.idempotencyKey,
         createdAt: this.now().toISOString(),
       };
       this.#events.push(event);
@@ -157,28 +162,6 @@ export class InMemorySourceVersionRestoreCommand
     }
     return project;
   }
-
-  private async withProjectLock<T>(
-    projectId: string,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const previous = this.#locks.get(projectId) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const queued = previous.then(() => current);
-    this.#locks.set(projectId, queued);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.#locks.get(projectId) === queued) {
-        this.#locks.delete(projectId);
-      }
-    }
-  }
 }
 
 export function assertReplayMatches(
@@ -186,6 +169,8 @@ export function assertReplayMatches(
   input: RestoreSourceVersionInput,
 ): void {
   if (
+    event.actorUserId !== input.actorUserId ||
+    event.idempotencyKey !== input.idempotencyKey ||
     event.projectId !== input.projectId ||
     event.toSourceVersionId !== input.targetSourceVersionId ||
     event.fromSourceVersionId !== input.expectedCurrentSourceVersionId ||

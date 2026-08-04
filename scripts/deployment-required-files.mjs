@@ -47,6 +47,8 @@ export const requiredDeploymentFiles = [
   "apps/api/migrations/026_maintenance_status.sql",
   "apps/api/migrations/028_job_correlation.sql",
   "apps/api/migrations/030_worker_resource_metrics.sql",
+  "apps/api/migrations/032_upload_integrity_failures.sql",
+  "apps/api/migrations/036_upload_cancellation_convergence.sql",
   ".github/workflows/ci.yml",
   ".github/workflows/release-images.yml",
   ".github/workflows/codeql.yml",

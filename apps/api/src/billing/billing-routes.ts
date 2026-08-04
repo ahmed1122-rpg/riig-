@@ -39,7 +39,7 @@ function billingErrorStatus(code: BillingDomainError["code"]): number {
     case "CHECKOUT_NOT_FOUND":
       return 404;
     case "CHECKOUT_NOT_COMPLETABLE":
-    case "CHECKOUT_REQUEST_IN_PROGRESS":
+    case "IDEMPOTENCY_CONFLICT":
     case "SUBSCRIPTION_NOT_MANAGEABLE":
       return 409;
     case "PAYMENT_PROVIDER_UNAVAILABLE":

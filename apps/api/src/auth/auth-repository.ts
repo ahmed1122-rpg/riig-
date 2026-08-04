@@ -5,6 +5,11 @@ export interface UserRecord extends UserSummary {
   passwordHash: string;
   mfaSecretCiphertext: string | null;
   recoveryCodeHashes: string[];
+  termsVersion?: string | null;
+  privacyVersion?: string | null;
+  legalAcceptedAt?: string | null;
+  deletionRequestedAt?: string | null;
+  deletedAt?: string | null;
 }
 
 export interface SessionRecord {

@@ -122,6 +122,7 @@ export function registerHttpTracing(app: FastifyInstance): void {
           "http.route": route,
           "server.address": request.hostname,
           "url.path": request.url.split("?", 1)[0] ?? request.url,
+          "motionprep.request.id": request.id,
         },
       },
       parentContext,

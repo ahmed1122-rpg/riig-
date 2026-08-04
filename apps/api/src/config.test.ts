@@ -121,6 +121,24 @@ describe("production configuration", () => {
     ).toThrow();
   });
 
+  it("bounds raster asset write concurrency independently from job concurrency", () => {
+    expect(
+      loadConfig({ NODE_ENV: "test" }).RASTER_ASSET_WRITE_CONCURRENCY,
+    ).toBe(2);
+    expect(
+      loadConfig({
+        NODE_ENV: "test",
+        RASTER_ASSET_WRITE_CONCURRENCY: "4",
+      }).RASTER_ASSET_WRITE_CONCURRENCY,
+    ).toBe(4);
+    expect(() =>
+      loadConfig({
+        NODE_ENV: "test",
+        RASTER_ASSET_WRITE_CONCURRENCY: "5",
+      }),
+    ).toThrow();
+  });
+
   it("rejects plaintext production database, Redis, and SMTP transports", () => {
     expect(() =>
       loadConfig({

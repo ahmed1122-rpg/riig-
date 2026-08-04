@@ -44,6 +44,7 @@ describe("API — استعادة إصدار المصدر", () => {
       url: `/v1/projects/${projectId}/source-version-restores`,
       headers: { cookie },
     });
+    const originatingRequestId = restored.headers["x-request-id"] as string;
 
     expect(restored.statusCode).toBe(201);
     expect(restored.json().data).toMatchObject({
@@ -56,7 +57,10 @@ describe("API — استعادة إصدار المصدر", () => {
       event: {
         fromSourceVersionId: second,
         toSourceVersionId: first,
+        idempotencyKey: "restore-first-version-001",
+        originatingRequestId,
         requestId: "restore-first-version-001",
+        operationId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
       },
     });
     expect(replayed.statusCode).toBe(200);
@@ -64,8 +68,18 @@ describe("API — استعادة إصدار المصدر", () => {
     expect(replayed.json().data.event.id).toBe(
       restored.json().data.event.id,
     );
+    expect(replayed.json().data.event.operationId).toBe(
+      restored.json().data.event.operationId,
+    );
+    expect(replayed.json().data.event.originatingRequestId).toBe(
+      originatingRequestId,
+    );
+    expect(replayed.headers["x-request-id"]).not.toBe(originatingRequestId);
     expect(history.statusCode).toBe(200);
     expect(history.json().data).toHaveLength(1);
+    expect(history.json().data[0]).toMatchObject(
+      restored.json().data.event,
+    );
   });
 
   it("rejects stale preconditions and reused keys with different intent", async () => {

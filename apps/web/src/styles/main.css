@@ -9,6 +9,7 @@
 @import url("./workspace.css") layer(features);
 @import url("./account-admin.css") layer(features);
 @import url("./feature-pages.css") layer(features);
+@import url("./activity-center.css") layer(features);
 @import url("./marketing-polish.css") layer(features);
 @import url("./marketing-showcase.css") layer(features);
 @import url("./creator-polish.css") layer(features);

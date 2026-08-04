@@ -5,6 +5,7 @@ import path from "node:path";
 const imageFixture = path.resolve(
   "artifacts/fixtures/alpha-components.png",
 );
+const pdfFixture = path.resolve("artifacts/fixtures/motionprep-e2e.pdf");
 const diagnostics = new Map<string, string[]>();
 
 test.beforeEach(async ({ page }, testInfo) => {
@@ -132,6 +133,61 @@ test("authenticated pages render without serious accessibility regressions", asy
     await expect(page.locator(".app-main")).toBeVisible();
     await assertNoSeriousAccessibilityViolations(page);
   }
+  await assertCreatorAdminBoundary(page);
+  await completeSandboxCheckoutFlow(page);
+});
+
+test("processes a PDF through the real book workflow", async ({ page }, testInfo) => {
+  await openApplication(page);
+  await page.getByRole("button", { name: "استكشف الاستوديو كضيف" }).first().click();
+  await openRegistration(page);
+  await registerCreatorAccount(
+    page,
+    `pdf-${testInfo.project.name}-${Date.now()}@example.test`,
+  );
+
+  await page.getByRole("button", { name: "مشروع جديد" }).click();
+  await page.getByRole("button", { name: /PDF.*فصل النص/u }).click();
+  await page.getByRole("button", { name: "فتح مساحة العمل" }).click();
+  await page.locator('input[type="file"]').setInputFiles(pdfFixture);
+  await expect(page.getByText("جاهز للمراجعة")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".workspace")).toBeVisible();
+  await assertNoSeriousAccessibilityViolations(page);
+});
+
+test("exports personal data and requests durable account deletion", async ({
+  page,
+}, testInfo) => {
+  await openApplication(page);
+  await page.getByRole("button", { name: "استكشف الاستوديو كضيف" }).first().click();
+  await openRegistration(page);
+  await registerCreatorAccount(
+    page,
+    `privacy-${testInfo.project.name}-${Date.now()}@example.test`,
+  );
+  await page.goto("/?view=settings", { waitUntil: "networkidle" });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /تنزيل النسخة/u }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^motionprep-account-.*\.json$/u);
+  expect(await download.failure()).toBeNull();
+
+  await page.getByPlaceholder("كلمة المرور الحالية").fill("Playwright-QA-2026!");
+  await page.getByRole("checkbox", { name: "أفهم أن الحذف غير قابل للتراجع" }).check();
+  const deletion = page.waitForResponse(
+    (response) =>
+      response.request().method() === "DELETE" &&
+      response.url().endsWith("/v1/account"),
+  );
+  await page.getByRole("button", { name: "حذف الحساب نهائيًا" }).click();
+  expect((await deletion).status()).toBe(202);
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(
+    page.getByRole("heading", {
+      name: "حوّل صورة واحدة أو ملف PDF إلى طبقات جاهزة للتحريك.",
+    }),
+  ).toBeVisible();
 });
 
 test("creates an account, processes an image, saves review, and downloads export", async ({
@@ -242,12 +298,14 @@ test("creates an account, processes an image, saves review, and downloads export
   await expect(page.getByRole("button", { name: "فصل" })).toHaveCount(0);
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "إنشاء ملف التصدير" }).click();
+  await page
+    .getByRole("button", { name: "اعتماد المراجعة وإنشاء التصدير" })
+    .click();
   const download = await downloadPromise;
   expect(await download.failure()).toBeNull();
   expect(download.suggestedFilename()).toMatch(/\.psd$/u);
   await expect(
-    page.getByRole("button", { name: "تم إنشاء الملف" }),
+    page.getByRole("button", { name: "تم اعتماد المراجعة وإنشاء الملف" }),
   ).toBeVisible();
 });
 
@@ -268,6 +326,55 @@ async function openApplication(page: Page): Promise<void> {
   const response = await page.goto("/", { waitUntil: "networkidle" });
   expect(response?.ok()).toBe(true);
   await expect(page.locator("#root")).not.toBeEmpty({ timeout: 15_000 });
+}
+
+async function assertCreatorAdminBoundary(page: Page): Promise<void> {
+  const response = await page.goto("/?view=admin", {
+    waitUntil: "networkidle",
+  });
+  expect(response?.ok()).toBe(true);
+  await expect(
+    page.getByRole("heading", { name: "لا يملك هذا الدور صلاحية الوصول" }),
+  ).toBeVisible();
+  await expect(page.getByText("403 / مسار محمي")).toBeVisible();
+  await expect(page.locator(".admin-shell")).toHaveCount(0);
+  await assertNoSeriousAccessibilityViolations(page);
+}
+
+async function completeSandboxCheckoutFlow(page: Page): Promise<void> {
+  await page.goto("/?view=billing", { waitUntil: "networkidle" });
+  await expect(page.getByText("SANDBOX — لا يوجد تحصيل فعلي")).toBeVisible();
+  await page.getByRole("button", { name: "اختيار الخطة" }).first().click();
+  await expect(
+    page.getByRole("dialog", { name: "تأكيد تغيير الخطة" }),
+  ).toBeVisible();
+
+  const createCheckout = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/v1/billing/checkouts") &&
+      response.status() === 201,
+  );
+  const completeCheckout = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes("/v1/billing/checkouts/") &&
+      response.url().endsWith("/complete-sandbox") &&
+      response.ok(),
+  );
+  await page
+    .getByRole("button", { name: "المتابعة للدفع المستضاف" })
+    .click();
+  await createCheckout;
+  await completeCheckout;
+
+  await expect(
+    page.getByRole("heading", { name: "تم تأكيد حالة الدفع" }),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/sandbox_checkout|checkout_id|session_id/u);
+  await page.getByRole("button", { name: "العودة إلى الفوترة" }).click();
+  await expect(page.locator(".current-plan h2")).toHaveText("صانع محتوى");
+  await assertNoSeriousAccessibilityViolations(page);
 }
 
 async function openRegistration(page: Page): Promise<void> {

@@ -143,6 +143,7 @@ describe("production application surfaces", () => {
         onRequireAuth={noop}
         onCreateProject={noop}
         onViewProjects={noop}
+        onOpenProject={noop}
         onNotify={noop}
       />,
     );

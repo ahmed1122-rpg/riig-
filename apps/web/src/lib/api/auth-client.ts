@@ -1,5 +1,9 @@
 import { ApiError, request } from "./transport";
 import type { SessionUser } from "./models";
+import {
+  CURRENT_PRIVACY_VERSION,
+  CURRENT_TERMS_VERSION,
+} from "@motionprep/contracts";
 
 export async function getSession(): Promise<SessionUser | null> {
   try {
@@ -50,9 +54,49 @@ export async function register(
 ): Promise<SessionUser> {
   const session = await request<{ user: SessionUser }>("/v1/auth/register", {
     method: "POST",
-    body: JSON.stringify({ name, email, password }),
+    body: JSON.stringify({
+      name,
+      email,
+      password,
+      legal: {
+        accepted: true,
+        termsVersion: CURRENT_TERMS_VERSION,
+        privacyVersion: CURRENT_PRIVACY_VERSION,
+      },
+    }),
   });
   return session.user;
+}
+
+export interface AccountDataExport {
+  schemaVersion: "1";
+  generatedAt: string;
+  account: SessionUser;
+  legal: {
+    termsVersion: string | null;
+    privacyVersion: string | null;
+    acceptedAt: string | null;
+  };
+  projects: unknown[];
+  sourceVersions: unknown[];
+  exports: unknown[];
+  subscriptions: unknown[];
+  checkoutSessions: unknown[];
+  auditEvents: unknown[];
+}
+
+export function exportAccountData(): Promise<AccountDataExport> {
+  return request("/v1/account/export");
+}
+
+export function deleteAccount(password: string): Promise<{
+  requestId: string;
+  status: "processing" | "failed" | "completed";
+}> {
+  return request("/v1/account", {
+    method: "DELETE",
+    body: JSON.stringify({ password, confirmation: "DELETE" }),
+  });
 }
 
 export async function completeMfaLogin(

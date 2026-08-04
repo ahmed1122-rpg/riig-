@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../lib/api/transport";
 import type { Layer } from "../../types";
 import {
   ExportCharacterPreview,
@@ -57,6 +58,58 @@ describe("ExportCharacterPreview", () => {
 });
 
 describe("ExportReview production editing policy", () => {
+  it("shows every server-side preflight blocker", async () => {
+    const onCreateExport = vi.fn().mockRejectedValue(
+      new ApiError(
+        "REVIEW_PREFLIGHT_FAILED",
+        "Document preflight failed.",
+        422,
+        "request-review",
+        false,
+        [
+          {
+            code: "INVALID_LAYER_PREFIX",
+            message: "Layer name must start with one plus sign.",
+            layerId: "source",
+          },
+          {
+            code: "IMAGE_RASTER_ASSET_MISSING",
+            message: "Raster asset is missing.",
+            layerId: "source",
+          },
+        ],
+      ),
+    );
+    const view = render(
+      <ExportReview
+        mode="image"
+        layers={[sourceLayer]}
+        selectedLayerId="source"
+        onSelectedLayerChange={() => undefined}
+        onLayersChange={() => undefined}
+        onClose={() => undefined}
+        onNotify={() => undefined}
+        returnFocusTo={null}
+        canExport
+        onCreateExport={onCreateExport}
+      />,
+    );
+
+    fireEvent.click(
+      view.container.querySelector<HTMLButtonElement>(
+        ".create-export-button",
+      )!,
+    );
+    await waitFor(() =>
+      expect(view.container.querySelectorAll(".export-preflight-issues li"))
+        .toHaveLength(2),
+    );
+    expect(view.container.textContent).toContain(
+      "Layer name must start with one plus sign.",
+    );
+    expect(view.container.textContent).toContain("Raster asset is missing.");
+  });
+
   it("keeps export retryable after a transient failure", async () => {
     const onCreateExport = vi
       .fn()

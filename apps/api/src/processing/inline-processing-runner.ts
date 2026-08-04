@@ -7,7 +7,6 @@ import {
 import {
   MediaProcessingError,
   prepareImageSource,
-  type PreparedRasterAsset,
 } from "@motionprep/media-processing";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import {
@@ -28,6 +27,11 @@ import type {
   LayerDocumentRepository,
   ProcessingJobRepository,
 } from "./processing-repository.js";
+import { cleanupRasterAssets } from "./raster-asset-cleanup.js";
+import {
+  writeRasterAssets,
+  type RasterAssetWriteObservation,
+} from "./raster-asset-writer.js";
 
 export class InlineProcessingRunner {
   constructor(
@@ -37,6 +41,15 @@ export class InlineProcessingRunner {
     private readonly storage: ObjectStorage,
     private readonly now: () => Date,
     private readonly pdfOcrEngine?: PdfOcrEngine,
+    private readonly onAssetCleanupError?: (
+      error: unknown,
+      objectKey: string,
+    ) => void,
+    private readonly rasterAssetWriteConcurrency = 2,
+    private readonly onAssetWriteObservation?: (
+      observation: RasterAssetWriteObservation,
+    ) => void,
+    private readonly onAssetWriteObservationError?: (error: unknown) => void,
   ) {}
 
   async run(job: ProcessingJob): Promise<ProcessingJob> {
@@ -128,8 +141,21 @@ export class InlineProcessingRunner {
           sourceVersionId: job.sourceVersionId,
           source: source.body,
         });
-        storedRasterAssetKeys = await this.storeRasterAssets(
+        storedRasterAssetKeys = await writeRasterAssets(
+          this.storage,
           prepared.rasterAssets,
+          {
+            concurrency: this.rasterAssetWriteConcurrency,
+            ...(this.onAssetCleanupError
+              ? { onCleanupError: this.onAssetCleanupError }
+              : {}),
+            ...(this.onAssetWriteObservation
+              ? { onObservation: this.onAssetWriteObservation }
+              : {}),
+            ...(this.onAssetWriteObservationError
+              ? { onObservationError: this.onAssetWriteObservationError }
+              : {}),
+          },
         );
         document = prepared.document;
       }
@@ -162,8 +188,10 @@ export class InlineProcessingRunner {
       return this.transition(verifying, "ready", 100);
     } catch (error) {
       if (!documentSaved && storedRasterAssetKeys.length > 0) {
-        await Promise.allSettled(
-          storedRasterAssetKeys.map((key) => this.storage.delete(key)),
+        await cleanupRasterAssets(
+          this.storage,
+          storedRasterAssetKeys,
+          this.onAssetCleanupError,
         );
       }
       if (error instanceof DocumentProcessingError) {
@@ -184,27 +212,6 @@ export class InlineProcessingRunner {
         code,
         "تعذر تجهيز وثيقة الطبقات.",
       );
-    }
-  }
-
-  private async storeRasterAssets(
-    assets: readonly PreparedRasterAsset[],
-  ): Promise<string[]> {
-    const stored: string[] = [];
-    try {
-      for (const asset of assets) {
-        await this.storage.put({
-          key: asset.objectKey,
-          contentType: asset.contentType,
-          sizeBytes: asset.sizeBytes,
-          body: asset.body,
-        });
-        stored.push(asset.objectKey);
-      }
-      return stored;
-    } catch (error) {
-      await Promise.allSettled(stored.map((key) => this.storage.delete(key)));
-      throw error;
     }
   }
 

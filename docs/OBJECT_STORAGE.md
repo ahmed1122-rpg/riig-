@@ -69,6 +69,12 @@ count and SHA-256 incrementally while streaming. If bytes change during an
 active transfer, the stream and HTTP connection terminate instead of returning
 an apparently successful corrupt file.
 
+Object inspection returns `null` only for a provider-confirmed missing key.
+An existing key whose required checksum metadata is absent raises an integrity
+error, while provider authorization, timeout, and availability failures remain
+retryable dependency errors. This distinction prevents an S3 outage from
+incorrectly making a source terminal.
+
 ## Read and download memory policy
 
 - Export downloads use Node streams from S3 through Fastify. Backpressure is

@@ -3,6 +3,7 @@ import type { ExportFormat } from "@motionprep/contracts";
 import type { PdfSegmentation } from "../../types";
 import type { ConfirmationRequest } from "../../shared/useConfirmation";
 import {
+  approveProjectReview,
   applyGuidedRefinement,
   createExportArtifact,
   navigateLayerDocumentHistory,
@@ -270,6 +271,11 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
         );
       }
       const documentRevision = await options.flushLayerReview();
+      await approveProjectReview(
+        options.projectId,
+        options.sourceVersionId,
+        documentRevision,
+      );
       await createExportArtifact(
         options.projectId,
         options.sourceVersionId,

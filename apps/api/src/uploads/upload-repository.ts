@@ -1,4 +1,17 @@
-import type { UploadSession } from "@motionprep/contracts";
+import type {
+  ProjectStatus,
+  UploadSession,
+} from "@motionprep/contracts";
+
+export interface SaveUploadOptions {
+  projectStatusBeforeUpload?: ProjectStatus;
+}
+
+export interface UploadStatusSummary {
+  total: number;
+  active: number;
+  failed: number;
+}
 
 export interface UploadRepository {
   findById(id: string): Promise<UploadSession | null>;
@@ -7,12 +20,17 @@ export interface UploadRepository {
     projectId: string,
     sourceVersionId: string,
   ): Promise<UploadSession | null>;
-  expireActiveByProject(
+  findExpiredActiveByProject(
     projectId: string,
     expiredAt: string,
   ): Promise<UploadSession[]>;
+  findProjectStatusBeforeUpload(
+    uploadId: string,
+  ): Promise<ProjectStatus | null>;
+  markObjectPurged(uploadId: string, purgedAt: string): Promise<void>;
   list(): Promise<UploadSession[]>;
-  save(session: UploadSession): Promise<void>;
+  summarizeStatuses(): Promise<UploadStatusSummary>;
+  save(session: UploadSession, options?: SaveUploadOptions): Promise<void>;
 }
 
 const activeStatuses = new Set<UploadSession["status"]>([
@@ -23,6 +41,7 @@ const activeStatuses = new Set<UploadSession["status"]>([
 
 export class InMemoryUploadRepository implements UploadRepository {
   readonly #sessions = new Map<string, UploadSession>();
+  readonly #projectStatusesBeforeUpload = new Map<string, ProjectStatus>();
 
   async findById(id: string): Promise<UploadSession | null> {
     return this.#sessions.get(id) ?? null;
@@ -52,35 +71,56 @@ export class InMemoryUploadRepository implements UploadRepository {
     );
   }
 
-  async expireActiveByProject(
+  async findExpiredActiveByProject(
     projectId: string,
     expiredAt: string,
   ): Promise<UploadSession[]> {
-    const expired: UploadSession[] = [];
-    for (const session of this.#sessions.values()) {
-      if (
-        session.projectId !== projectId ||
-        !activeStatuses.has(session.status) ||
-        session.expiresAt > expiredAt
-      ) {
-        continue;
-      }
-      const cancelled: UploadSession = {
-        ...session,
-        status: "cancelled",
-        updatedAt: expiredAt,
-      };
-      this.#sessions.set(session.uploadId, cancelled);
-      expired.push(cancelled);
-    }
-    return expired;
+    return [...this.#sessions.values()].filter(
+      (session) =>
+        session.projectId === projectId &&
+        activeStatuses.has(session.status) &&
+        session.expiresAt <= expiredAt,
+    );
+  }
+
+  async findProjectStatusBeforeUpload(
+    uploadId: string,
+  ): Promise<ProjectStatus | null> {
+    return this.#projectStatusesBeforeUpload.get(uploadId) ?? null;
   }
 
   async list(): Promise<UploadSession[]> {
     return [...this.#sessions.values()];
   }
 
-  async save(session: UploadSession): Promise<void> {
+  async summarizeStatuses(): Promise<UploadStatusSummary> {
+    const sessions = [...this.#sessions.values()];
+    return {
+      total: sessions.length,
+      active: sessions.filter((session) => activeStatuses.has(session.status))
+        .length,
+      failed: sessions.filter((session) => session.status === "failed").length,
+    };
+  }
+
+  async markObjectPurged(_uploadId: string, _purgedAt: string): Promise<void> {
+    // In-memory object storage is process-local; no durable purge marker is
+    // required, but the method preserves the production repository contract.
+  }
+
+  async save(
+    session: UploadSession,
+    options: SaveUploadOptions = {},
+  ): Promise<void> {
     this.#sessions.set(session.uploadId, session);
+    if (
+      options.projectStatusBeforeUpload !== undefined &&
+      !this.#projectStatusesBeforeUpload.has(session.uploadId)
+    ) {
+      this.#projectStatusesBeforeUpload.set(
+        session.uploadId,
+        options.projectStatusBeforeUpload,
+      );
+    }
   }
 }

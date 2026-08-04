@@ -4,9 +4,11 @@ import {
   MAX_IMAGE_LAYERS,
   MAX_UPLOAD_BYTES,
   type ExportFormat,
+  type ProductionIssue,
 } from "@motionprep/contracts";
+import { ApiError } from "../../lib/api/transport";
 import { Icon } from "../../shared/Icon";
-import type { Layer, ProjectMode } from "../../types";
+import type { Layer } from "../../types";
 import { getExportFormatPresentation } from "../exports/exportPresentation";
 import { moveEditableLayer } from "./layerReviewState";
 import {
@@ -20,49 +22,16 @@ import {
   ExportPdfPreview,
 } from "./ExportReviewPreviews";
 import { ExportReviewHeader } from "./ExportReviewHeader";
+import { ExportReviewFooter } from "./ExportReviewFooter";
+import type {
+  ExportReviewProps,
+  FormatOption,
+  PdfScope,
+  PreviewBackground,
+} from "./exportReviewTypes";
 import { useExportReviewDialog } from "./useExportReviewDialog";
 
 export { ExportCharacterPreview, ExportPdfPreview } from "./ExportReviewPreviews";
-
-type PreviewBackground = "white" | "transparent" | "checker";
-type PdfScope = "document" | "pages" | "selected";
-
-interface ExportReviewProps {
-  mode: ProjectMode;
-  maxUploadBytes?: number;
-  layers: Layer[];
-  selectedLayerId: string;
-  onSelectedLayerChange: (id: string) => void;
-  onLayersChange: (layers: Layer[]) => void;
-  onClose: () => void;
-  onNotify: (message: string) => void;
-  returnFocusTo: HTMLElement | null;
-  canExport: boolean;
-  saveState?: "idle" | "saving" | "saved" | "error";
-  onRetrySave?: () => Promise<void>;
-  sourcePreviewUrl?: string;
-  canvasSize?: {
-    width: number;
-    height: number;
-  };
-  pdfPages?: Array<{
-    pageNumber: number;
-    width: number;
-    height: number;
-  }>;
-  onCreateExport: (
-    format: ExportFormat,
-    options: {
-      scope?: "full-document" | "per-page" | "selected-page";
-      selectedPage?: number;
-      scale: 1;
-      colorProfile: "sRGB";
-      namingPresetId: string;
-    },
-  ) => Promise<void>;
-}
-
-type FormatOption = { id: ExportFormat; title: string; hint: string };
 
 export function ExportReview({
   mode,
@@ -91,6 +60,9 @@ export function ExportReview({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [generationState, setGenerationState] = useState<ExportGenerationState>("idle");
   const [generationMessage, setGenerationMessage] = useState<string>();
+  const [generationIssues, setGenerationIssues] = useState<
+    readonly ProductionIssue[]
+  >([]);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -129,6 +101,7 @@ export function ExportReview({
     setFormat(next.format);
     setGenerationState(next.generationState);
     setGenerationMessage(undefined);
+    setGenerationIssues([]);
   };
 
   const changePdfScope = (nextScope: PdfScope) => {
@@ -140,12 +113,14 @@ export function ExportReview({
     setPdfScope(next.scope);
     setGenerationState(next.generationState);
     setGenerationMessage(undefined);
+    setGenerationIssues([]);
   };
 
   const invalidateGeneratedExport = () => {
     if (generationState === "working") return;
     setGenerationState("idle");
     setGenerationMessage(undefined);
+    setGenerationIssues([]);
   };
 
   useExportReviewDialog({
@@ -161,6 +136,7 @@ export function ExportReview({
     setFormat(mode === "image" ? "psd" : "png-layers-json");
     setGenerationState("idle");
     setGenerationMessage(undefined);
+    setGenerationIssues([]);
     setBackground(mode === "image" ? "checker" : "white");
   }, [mode]);
 
@@ -235,16 +211,26 @@ export function ExportReview({
       onNotify(message);
       return;
     }
-    if (saveState === "saving" || saveState === "error") {
+    if (
+      saveState === "saving" ||
+      saveState === "conflict" ||
+      saveState === "error" ||
+      saveState === "unavailable"
+    ) {
       const message =
         saveState === "saving"
           ? "انتظر اكتمال حفظ مراجعة الطبقات قبل التصدير."
-          : "تعذر حفظ مراجعة الطبقات. أعد الحفظ قبل التصدير.";
+          : saveState === "conflict"
+            ? "توجد نسخة أحدث من المشروع. أعد تحميلها قبل التصدير."
+            : saveState === "unavailable"
+              ? "ارفع مصدرًا وجهّزه قبل التصدير."
+              : "تعذر حفظ مراجعة الطبقات. أعد الحفظ قبل التصدير.";
       setGenerationMessage(message);
       onNotify(message);
       return;
     }
     setGenerationMessage(undefined);
+    setGenerationIssues([]);
     setGenerationState("working");
     try {
       await onCreateExport(
@@ -274,6 +260,7 @@ export function ExportReview({
       onNotify(successMessage);
     } catch (error) {
       setGenerationState("idle");
+      setGenerationIssues(error instanceof ApiError ? error.issues : []);
       const message =
         error instanceof Error ? error.message : "تعذر إنشاء ملف التصدير.";
       setGenerationMessage(message);
@@ -484,9 +471,13 @@ export function ExportReview({
                   <span>
                     {saveState === "error"
                       ? "لم تُحفظ مراجعة الطبقات الأخيرة."
-                      : saveState === "saving"
-                        ? "جارٍ حفظ مراجعة الطبقات…"
-                        : "توجد تغييرات تنتظر الحفظ."}
+                      : saveState === "conflict"
+                        ? "توجد نسخة أحدث. أعد تحميل المشروع لحماية تعديلاتك."
+                        : saveState === "saving"
+                          ? "جارٍ حفظ مراجعة الطبقات…"
+                          : saveState === "unavailable"
+                            ? "الحفظ غير متاح قبل تجهيز المصدر."
+                            : "توجد تغييرات تنتظر الحفظ، وستُحفظ قبل إنشاء الملف."}
                   </span>
                   {saveState === "error" && onRetrySave && (
                     <button
@@ -509,21 +500,21 @@ export function ExportReview({
             </div>
           </aside>
         </div>
-        <footer className="export-action-footer">
-          <button className={`create-export-button ${generationState === "done" ? "is-done" : ""}`} type="button" onClick={() => void createExport()} disabled={generationState === "working" || !selectedFormat || !canExport || saveState === "saving" || saveState === "error"}>
-            <Icon name={generationState === "done" ? "check" : "download"} size={17} />
-            {generationState === "working" ? "جارٍ تجهيز النسخة…" : generationState === "done" ? "تم إنشاء الملف" : "إنشاء ملف التصدير"}
-          </button>
-          {displayedGenerationMessage && (
-            <p
-              className={`export-generation-message ${generationState === "done" ? "is-success" : "is-error"}`}
-              role="status"
-              aria-live="polite"
-            >
-              {displayedGenerationMessage}
-            </p>
-          )}
-        </footer>
+        <ExportReviewFooter
+          generationState={generationState}
+          disabled={
+            generationState === "working" ||
+            !selectedFormat ||
+            !canExport ||
+            saveState === "saving" ||
+            saveState === "conflict" ||
+            saveState === "error" ||
+            saveState === "unavailable"
+          }
+          onCreate={() => void createExport()}
+          message={displayedGenerationMessage}
+          issues={generationIssues}
+        />
       </section>
     </div>
   );

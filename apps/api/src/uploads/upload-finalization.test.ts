@@ -64,5 +64,12 @@ describe("InMemoryUploadFinalizationCommand", () => {
       status: "needs_review",
       currentSourceVersionId: source.id,
     });
+
+    await expect(
+      command.finalize({ session: ready, sha256: "b".repeat(64) }),
+    ).rejects.toThrow("Published upload checksum cannot be changed.");
+    await expect(uploads.findById(uploadId)).resolves.toMatchObject({
+      sha256,
+    });
   });
 });

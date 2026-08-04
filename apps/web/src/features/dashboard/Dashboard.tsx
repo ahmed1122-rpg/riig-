@@ -7,13 +7,26 @@ import {
 import { Icon } from "../../shared/Icon";
 import { Dialog } from "../../shared/Dialog";
 import type { ProjectMode } from "../../types";
+import type { WorkflowActivityItem } from "../../lib/api";
+import { CreatorActivityCenter } from "./CreatorActivityCenter";
 
 interface DashboardProps {
   onOpenWorkspace: (mode: ProjectMode) => void;
   onNavigateProjects: () => void;
+  onNavigateExports: () => void;
+  authenticated: boolean;
+  onRequireAuth: () => void;
+  onOpenActivityProject: (item: WorkflowActivityItem) => void;
 }
 
-export function Dashboard({ onOpenWorkspace, onNavigateProjects }: DashboardProps) {
+export function Dashboard({
+  onOpenWorkspace,
+  onNavigateProjects,
+  onNavigateExports,
+  authenticated,
+  onRequireAuth,
+  onOpenActivityProject,
+}: DashboardProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [mode, setMode] = useState<ProjectMode>("image");
 
@@ -96,16 +109,13 @@ export function Dashboard({ onOpenWorkspace, onNavigateProjects }: DashboardProp
           </div>
         </div>
 
-        <aside className="processing-card">
-          <div className="processing-head">
-            <span><i /> خط الإنتاج</span>
-            <small>خادم + عمّال مستقلون</small>
-          </div>
-          <strong>المصدر → المعالجة → المراجعة → التصدير</strong>
-          <p>تظهر حالة كل ملف بعد رفعه، وتبقى المهمة محفوظة عند انقطاع المتصفح.</p>
-          <div className="job-progress"><span style={{ width: "100%" }} /></div>
-          <div className="processing-foot"><span>قابل للاستئناف</span><span>معرّف تتبع لكل طلب</span></div>
-        </aside>
+        <CreatorActivityCenter
+          authenticated={authenticated}
+          onRequireAuth={onRequireAuth}
+          onOpenProject={onOpenActivityProject}
+          onNavigateProjects={onNavigateProjects}
+          onNavigateExports={onNavigateExports}
+        />
       </section>
 
       {wizardOpen && createPortal(

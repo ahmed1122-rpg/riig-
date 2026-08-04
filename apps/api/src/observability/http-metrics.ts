@@ -25,6 +25,7 @@ export async function registerHttpMetrics(
     dependencyReadiness?: Readonly<Record<string, () => Promise<void>>>;
     buildInfo?: { version: string; release: string };
     probeTimeoutMs?: number;
+    uploadReconciliationMetrics?: { render(): string[] };
   } = {},
 ): Promise<void> {
   const startedAt = new WeakMap<FastifyRequest, bigint>();
@@ -97,6 +98,9 @@ export async function registerHttpMetrics(
       ? settleProbe(options.readiness, probeTimeoutMs)
       : null;
     const lines = renderHttpMetrics(metrics);
+    if (options.uploadReconciliationMetrics) {
+      lines.push(...options.uploadReconciliationMetrics.render());
+    }
     if (operationalSnapshotProbe) {
       try {
         const snapshotOutcome = await operationalSnapshotProbe;

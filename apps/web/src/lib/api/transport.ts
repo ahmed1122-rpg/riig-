@@ -1,4 +1,7 @@
+import type { ProductionIssue } from "@motionprep/contracts";
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RETRY_AFTER_MS = 30_000;
 const RETRYABLE_STATUSES = new Set([408, 425, 429, 502, 503, 504]);
 
 interface BrowserLocation {
@@ -45,7 +48,12 @@ export const API_ORIGIN = resolveApiOrigin(
 
 export interface ApiEnvelope<T> {
   data: T | null;
-  error: { code: string; message: string; requestId?: string } | null;
+  error: {
+    code: string;
+    message: string;
+    requestId?: string;
+    issues?: ProductionIssue[];
+  } | null;
 }
 
 export class ApiError extends Error {
@@ -55,6 +63,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly requestId?: string,
     readonly retryable = false,
+    readonly issues: readonly ProductionIssue[] = [],
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = "ApiError";
@@ -97,7 +107,7 @@ export async function request<T>(
         throw error;
       }
       attempt += 1;
-      await abortableDelay(retryDelay(attempt), init.signal);
+      await abortableDelay(retryDelay(attempt, error), init.signal);
     }
   }
 }
@@ -148,6 +158,8 @@ async function requestAttempt<T>(
       response.status,
       apiError?.requestId ?? requestId,
       RETRYABLE_STATUSES.has(response.status),
+      apiError?.issues ?? [],
+      retryAfterMilliseconds(response.headers.get("retry-after")),
     );
   }
   if (response.status === 204) return undefined as T;
@@ -217,9 +229,29 @@ function isRetryableError(error: unknown): boolean {
   return error instanceof ApiError && error.retryable;
 }
 
-function retryDelay(attempt: number): number {
+function retryDelay(attempt: number, error: unknown): number {
+  if (error instanceof ApiError && error.retryAfterMs !== undefined) {
+    return error.retryAfterMs;
+  }
   const exponential = Math.min(2_000, 250 * 2 ** (attempt - 1));
   return exponential + Math.round(Math.random() * 150);
+}
+
+function retryAfterMilliseconds(value: string | null): number | undefined {
+  const normalized = value?.trim();
+  if (!normalized) return undefined;
+  let milliseconds: number;
+  if (/^\d+$/u.test(normalized)) {
+    milliseconds = Number(normalized) * 1_000;
+  } else {
+    const retryAt = Date.parse(normalized);
+    if (!Number.isFinite(retryAt)) return undefined;
+    milliseconds = Math.max(0, retryAt - Date.now());
+  }
+  if (!Number.isSafeInteger(milliseconds) || milliseconds < 0) {
+    return undefined;
+  }
+  return Math.min(MAX_RETRY_AFTER_MS, milliseconds);
 }
 
 function responseErrorMessage(status: number): string {

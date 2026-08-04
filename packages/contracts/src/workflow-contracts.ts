@@ -23,8 +23,25 @@ export interface ProjectSummary {
   status: ProjectStatus;
   currentSourceVersionId: string | null;
   currentSourceVersionNumber: number | null;
+  reviewApproval: ProjectReviewApproval | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProjectReviewApproval {
+  id: string;
+  projectId: string;
+  sourceVersionId: string;
+  documentRevision: number;
+  actorUserId: string;
+  operationId: string;
+  approvedAt: string;
+}
+
+export interface ProjectReviewApprovalResult {
+  project: ProjectSummary;
+  approval: ProjectReviewApproval;
+  replayed: boolean;
 }
 export interface SourceVersionSummary {
   id: string;
@@ -42,11 +59,15 @@ export interface SourceVersionSummary {
 
 export interface SourceVersionRestoreEvent {
   id: string;
+  operationId: string;
   projectId: string;
   actorUserId: string;
   fromSourceVersionId: string;
   toSourceVersionId: string;
   reason: string;
+  idempotencyKey: string;
+  originatingRequestId: string;
+  /** @deprecated Legacy alias of idempotencyKey during the rollout window. */
   requestId: string;
   createdAt: string;
 }
@@ -172,6 +193,12 @@ export interface ExportJob {
   createdAt: string;
   updatedAt: string;
   artifact?: {
+    /**
+     * Immutable object-storage location for this completed generation.
+     * Older persisted jobs predate this field and continue to use the
+     * deterministic legacy location derived from the job and filename.
+     */
+    objectKey?: string;
     filename: string;
     sizeBytes: number;
     sha256: string;
@@ -207,6 +234,135 @@ export interface ProcessingJob {
   errorCode: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ExportArtifactDto {
+  filename: string;
+  sizeBytes: number;
+  sha256: string;
+  expiresAt: string;
+}
+
+export type ExportJobDto = Pick<
+  ExportJob,
+  | "id"
+  | "projectId"
+  | "sourceVersionId"
+  | "documentRevision"
+  | "projectKind"
+  | "format"
+  | "scope"
+  | "selectedPage"
+  | "scale"
+  | "colorProfile"
+  | "namingPresetId"
+  | "status"
+  | "progress"
+  | "attempt"
+  | "maxAttempts"
+  | "errorCode"
+  | "createdAt"
+  | "updatedAt"
+> & {
+  artifact?: ExportArtifactDto;
+};
+
+export interface ProcessingJobOptionsDto {
+  pdfSeparationMode?: PdfSeparationMode;
+  pdfRegionOcr?: {
+    pageNumber: number;
+    start: NormalizedPoint;
+    end: NormalizedPoint;
+    baseRevision: number;
+  };
+}
+
+export type ProcessingJobDto = Pick<
+  ProcessingJob,
+  | "id"
+  | "projectId"
+  | "sourceVersionId"
+  | "projectKind"
+  | "status"
+  | "progress"
+  | "attempt"
+  | "maxAttempts"
+  | "errorCode"
+  | "createdAt"
+  | "updatedAt"
+> & {
+  options: ProcessingJobOptionsDto;
+};
+
+export interface AdminJobOperationsDto {
+  correlationId: string | null;
+  traceId: string | null;
+  attempt: {
+    current: number;
+    maximum: number;
+    nextAt: string;
+  };
+  error: { code: string } | null;
+  lease: {
+    owner: string | null;
+    expiresAt: string | null;
+  } | null;
+}
+
+export type AdminExportJobDto = Omit<
+  ExportJobDto,
+  "attempt" | "maxAttempts" | "errorCode"
+> &
+  AdminJobOperationsDto;
+
+export type AdminProcessingJobDto = Omit<
+  ProcessingJobDto,
+  "attempt" | "maxAttempts" | "errorCode"
+> &
+  AdminJobOperationsDto;
+
+export type WorkflowActivityKind =
+  | "upload"
+  | "processing"
+  | "review"
+  | "export";
+
+export type WorkflowActivityStatus =
+  | "pending"
+  | "running"
+  | "attention"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export type WorkflowActivityAction =
+  | "open-project"
+  | "review-project"
+  | "view-exports";
+
+export interface WorkflowActivityItem {
+  id: string;
+  kind: WorkflowActivityKind;
+  status: WorkflowActivityStatus;
+  project: Pick<ProjectSummary, "id" | "name" | "kind">;
+  sourceVersionId: string | null;
+  jobId: string | null;
+  progress: number | null;
+  errorCode: string | null;
+  recommendedAction: WorkflowActivityAction;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowActivityFeed {
+  items: WorkflowActivityItem[];
+  summary: {
+    active: number;
+    needsAttention: number;
+    failed: number;
+  };
+  nextCursor: string | null;
+  generatedAt: string;
 }
 
 export interface UploadIntent {

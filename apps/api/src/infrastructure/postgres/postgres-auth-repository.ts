@@ -24,6 +24,11 @@ interface UserRow {
   recovery_code_hashes: string[];
   created_at: Date | string;
   last_login_at: Date | string | null;
+  terms_version: string | null;
+  privacy_version: string | null;
+  legal_accepted_at: Date | string | null;
+  deletion_requested_at: Date | string | null;
+  deleted_at: Date | string | null;
 }
 
 interface SessionRow {
@@ -85,9 +90,10 @@ export class PostgresAuthRepository implements AuthRepository {
         INSERT INTO users (
           id, name, email, role, status, password_hash, created_at,
           last_login_at, mfa_enabled, mfa_secret_ciphertext,
-          recovery_code_hashes
+          recovery_code_hashes, terms_version, privacy_version, legal_accepted_at,
+          deletion_requested_at, deleted_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
           email = EXCLUDED.email,
@@ -97,7 +103,12 @@ export class PostgresAuthRepository implements AuthRepository {
           last_login_at = EXCLUDED.last_login_at,
           mfa_enabled = EXCLUDED.mfa_enabled,
           mfa_secret_ciphertext = EXCLUDED.mfa_secret_ciphertext,
-          recovery_code_hashes = EXCLUDED.recovery_code_hashes
+          recovery_code_hashes = EXCLUDED.recovery_code_hashes,
+          terms_version = EXCLUDED.terms_version,
+          privacy_version = EXCLUDED.privacy_version,
+          legal_accepted_at = EXCLUDED.legal_accepted_at,
+          deletion_requested_at = EXCLUDED.deletion_requested_at,
+          deleted_at = EXCLUDED.deleted_at
       `,
       [
         user.id,
@@ -111,6 +122,11 @@ export class PostgresAuthRepository implements AuthRepository {
         user.mfaEnabled,
         user.mfaSecretCiphertext,
         user.recoveryCodeHashes,
+        user.termsVersion ?? null,
+        user.privacyVersion ?? null,
+        user.legalAcceptedAt ?? null,
+        user.deletionRequestedAt ?? null,
+        user.deletedAt ?? null,
       ],
     );
   }
@@ -134,7 +150,8 @@ export class PostgresAuthRepository implements AuthRepository {
         RETURNING
           id, name, email, role, status, password_hash, mfa_enabled,
           mfa_secret_ciphertext, recovery_code_hashes, created_at,
-          last_login_at
+          last_login_at, terms_version, privacy_version, legal_accepted_at,
+          deletion_requested_at, deleted_at
       `,
       [
         id,
@@ -169,7 +186,8 @@ export class PostgresAuthRepository implements AuthRepository {
         RETURNING
           id, name, email, role, status, password_hash, mfa_enabled,
           mfa_secret_ciphertext, recovery_code_hashes, created_at,
-          last_login_at
+          last_login_at, terms_version, privacy_version, legal_accepted_at,
+          deletion_requested_at, deleted_at
       `,
       [
         id,
@@ -378,7 +396,9 @@ export class PostgresAuthRepository implements AuthRepository {
 const userSelect = `
   SELECT
     id, name, email, role, status, password_hash, mfa_enabled,
-    mfa_secret_ciphertext, recovery_code_hashes, created_at, last_login_at
+    mfa_secret_ciphertext, recovery_code_hashes, created_at, last_login_at,
+    terms_version, privacy_version, legal_accepted_at,
+    deletion_requested_at, deleted_at
   FROM users
 `;
 
@@ -395,6 +415,13 @@ function mapUser(row: UserRow): UserRecord {
     recoveryCodeHashes: row.recovery_code_hashes,
     createdAt: toIso(row.created_at),
     lastLoginAt: row.last_login_at ? toIso(row.last_login_at) : null,
+    termsVersion: row.terms_version,
+    privacyVersion: row.privacy_version,
+    legalAcceptedAt: row.legal_accepted_at ? toIso(row.legal_accepted_at) : null,
+    deletionRequestedAt: row.deletion_requested_at
+      ? toIso(row.deletion_requested_at)
+      : null,
+    deletedAt: row.deleted_at ? toIso(row.deleted_at) : null,
   };
 }
 

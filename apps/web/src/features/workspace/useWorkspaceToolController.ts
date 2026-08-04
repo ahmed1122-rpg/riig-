@@ -260,3 +260,7 @@ export function useWorkspaceToolController(
     workspaceTools,
   };
 }
+
+export type WorkspaceToolController = ReturnType<
+  typeof useWorkspaceToolController
+>;
