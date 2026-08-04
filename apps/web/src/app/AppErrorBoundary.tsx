@@ -1,7 +1,13 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
+
+interface AppErrorReport {
+  error: Error;
+  componentStack: string;
+}
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
+  onError?: (report: AppErrorReport) => void;
 }
 
 interface AppErrorBoundaryState {
@@ -18,9 +24,27 @@ export class AppErrorBoundary extends Component<
     return { failed: true };
   }
 
-  componentDidCatch(error: Error): void {
-    globalThis.reportError(error);
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    try {
+      this.props.onError?.({
+        error,
+        componentStack: info.componentStack ?? "",
+      });
+    } catch {
+      // A reporting adapter cannot be allowed to replace the fallback.
+    }
+    const reportError = globalThis.reportError;
+    if (typeof reportError !== "function") return;
+    try {
+      reportError(error);
+    } catch {
+      // A platform reporting failure must not replace the recovery surface.
+    }
   }
+
+  private readonly recover = (): void => {
+    this.setState({ failed: false });
+  };
 
   render(): ReactNode {
     if (!this.state.failed) return this.props.children;
@@ -31,11 +55,19 @@ export class AppErrorBoundary extends Component<
           <p>تعذّر عرض مساحة العمل</p>
           <h1>حدث خطأ غير متوقع في الواجهة</h1>
           <small>
-            لم تُرسل أي عملية جديدة بعد الخطأ. أعد تحميل التطبيق لاستعادة آخر
-            نسخة محفوظة من المشروع.
+            لن يرسل هذا التنبيه عمليات جديدة تلقائيًا. جرّب الاستعادة لإعادة
+            بناء الواجهة من الجلسة المحفوظة، أو أعد تحميل التطبيق عند استمرار
+            المشكلة.
           </small>
           <div>
-            <button type="button" onClick={() => window.location.reload()}>
+            <button type="button" onClick={this.recover}>
+              محاولة الاستعادة
+            </button>
+            <button
+              type="button"
+              className="is-secondary"
+              onClick={() => window.location.reload()}
+            >
               إعادة تحميل التطبيق
             </button>
             <button
