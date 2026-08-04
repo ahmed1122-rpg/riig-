@@ -101,6 +101,7 @@ const report = {
     concurrency: config.concurrency,
     iterationsPerUser: config.iterationsPerUser,
     totalJourneys: results.length,
+    reviewFlow: config.reviewFlow,
   },
   acceptance: {
     maxErrorRate: config.maxErrorRate,
@@ -219,28 +220,31 @@ async function executeJourney(index) {
     await measure("processing-ready", () =>
       waitForJob(`/v1/processing/jobs/${processing.body.data.id}`, "processing"),
     );
-    const layerDocument = await measure("review-document", () =>
-      api(
-        `/v1/projects/${projectId}/layer-document?sourceVersionId=${sourceVersionId}`,
-        { expectedStatus: 200 },
-      ),
-    );
-    const documentRevision = layerDocument.body.data.revision;
-    await measure("review-approve", () =>
-      api(`/v1/projects/${projectId}/review/approve`, {
-        method: "POST",
-        json: { sourceVersionId, documentRevision },
-        headers: { "x-idempotency-key": `approve-${suffix}` },
-        expectedStatus: 200,
-      }),
-    );
+    let documentRevision;
+    if (config.reviewFlow === "approval-required") {
+      const layerDocument = await measure("review-document", () =>
+        api(
+          `/v1/projects/${projectId}/layer-document?sourceVersionId=${sourceVersionId}`,
+          { expectedStatus: 200 },
+        ),
+      );
+      documentRevision = layerDocument.body.data.revision;
+      await measure("review-approve", () =>
+        api(`/v1/projects/${projectId}/review/approve`, {
+          method: "POST",
+          json: { sourceVersionId, documentRevision },
+          headers: { "x-idempotency-key": `approve-${suffix}` },
+          expectedStatus: 200,
+        }),
+      );
+    }
     const exportJob = await measure("export-submit", () =>
       api("/v1/exports", {
         method: "POST",
         json: {
           projectId,
           sourceVersionId,
-          documentRevision,
+          ...(documentRevision === undefined ? {} : { documentRevision }),
           format: "psd",
           scope: "full-document",
           scale: 1,

@@ -23,6 +23,25 @@ test("accepts a representative sustained-load policy", () => {
   assert.equal(config.minTotalJourneys, 12);
   assert.equal(config.maxFinalQueueDepth, 0);
   assert.equal(config.requireMetrics, true);
+  assert.equal(config.reviewFlow, "approval-required");
+});
+
+test("supports the pre-approval journey only when explicitly selected", () => {
+  assert.equal(
+    loadPdfConfiguration({
+      ...protectedPolicy,
+      LOAD_REVIEW_FLOW: "pre-approval",
+    }).reviewFlow,
+    "pre-approval",
+  );
+  assert.throws(
+    () =>
+      loadPdfConfiguration({
+        ...protectedPolicy,
+        LOAD_REVIEW_FLOW: "automatic",
+      }),
+    /LOAD_REVIEW_FLOW/u,
+  );
 });
 
 test("rejects smoke-sized runs when the protected policy requires load", () => {
