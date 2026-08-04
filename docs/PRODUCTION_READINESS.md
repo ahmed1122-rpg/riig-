@@ -61,6 +61,11 @@ their hosted results remain evidence gates rather than assumptions.
   follow-ups, and Ed25519 attestation. Recovery and incident evidence share one
   signing implementation, and the maintainability ratchet remains at zero exact
   clone blocks.
+- The application error boundary now reports failures only when the browser
+  supports `reportError`, keeps its fallback usable if reporting itself fails,
+  and offers an in-place remount that rebuilds the UI from the durable session
+  before requiring a full-page reload. Component tests cover unavailable and
+  failing reporters plus transient-crash recovery.
 - Upload publication now uses one PostgreSQL transaction for the upload,
   source-version, and project state. A bounded reconciler repairs legacy or
   interrupted `verifying`/`ready` state only after re-inspecting object size,
