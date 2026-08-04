@@ -24,7 +24,7 @@ describe("layer document client routes", () => {
     );
   });
 
-  it("keeps the autosave PATCH contract unchanged", async () => {
+  it("sends a stable operation identity with the autosave PATCH", async () => {
     request.mockResolvedValue({});
     const layers = [{
       id: "layer-1",
@@ -35,12 +35,19 @@ describe("layer document client routes", () => {
       zIndex: 1,
     }];
 
-    await updateLayerDocument("project-1", "source-1", 3, layers);
+    await updateLayerDocument(
+      "project-1",
+      "source-1",
+      3,
+      layers,
+      "autosave-operation-001",
+    );
 
     expect(request).toHaveBeenCalledWith(
       "/v1/projects/project-1/layer-document",
       {
         method: "PATCH",
+        headers: { "x-idempotency-key": "autosave-operation-001" },
         body: JSON.stringify({
           sourceVersionId: "source-1",
           baseRevision: 3,

@@ -3,6 +3,12 @@ import type {
   SubscriptionView,
 } from "@motionprep/contracts";
 
+export interface BillingStatusSummary {
+  activeSubscriptions: number;
+  pendingCheckouts: number;
+  paidCheckouts: number;
+}
+
 export interface BillingRepository {
   findSubscription(userId: string): Promise<SubscriptionView | null>;
   findSubscriptionByProviderReference(
@@ -17,6 +23,11 @@ export interface BillingRepository {
   ): Promise<boolean>;
   findCheckout(id: string): Promise<CheckoutSession | null>;
   listCheckouts(limit: number): Promise<CheckoutSession[]>;
+  summarizeStatuses(): Promise<BillingStatusSummary>;
+  ensurePendingCheckout(checkout: CheckoutSession): Promise<CheckoutSession>;
+  completePendingCheckout(
+    checkout: CheckoutSession,
+  ): Promise<{ checkout: CheckoutSession; transitioned: boolean }>;
   saveCheckout(checkout: CheckoutSession): Promise<void>;
 }
 
@@ -77,6 +88,44 @@ export class InMemoryBillingRepository implements BillingRepository {
     return [...this.#checkouts.values()]
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(0, Math.max(1, Math.min(limit, 200)));
+  }
+
+  async summarizeStatuses(): Promise<BillingStatusSummary> {
+    const subscriptions = [...this.#subscriptions.values()];
+    const checkouts = [...this.#checkouts.values()];
+    return {
+      activeSubscriptions: subscriptions.filter((subscription) =>
+        ["active", "trialing"].includes(subscription.status),
+      ).length,
+      pendingCheckouts: checkouts.filter((checkout) =>
+        ["pending", "redirect_required"].includes(checkout.status),
+      ).length,
+      paidCheckouts: checkouts.filter((checkout) => checkout.status === "paid")
+        .length,
+    };
+  }
+
+  async ensurePendingCheckout(
+    checkout: CheckoutSession,
+  ): Promise<CheckoutSession> {
+    const existing = this.#checkouts.get(checkout.id);
+    if (existing) return existing;
+    this.#checkouts.set(checkout.id, checkout);
+    return checkout;
+  }
+
+  async completePendingCheckout(
+    checkout: CheckoutSession,
+  ): Promise<{ checkout: CheckoutSession; transitioned: boolean }> {
+    const current = this.#checkouts.get(checkout.id);
+    if (!current) {
+      throw new Error("Pending checkout no longer exists.");
+    }
+    if (current.status !== "pending") {
+      return { checkout: current, transitioned: false };
+    }
+    this.#checkouts.set(checkout.id, checkout);
+    return { checkout, transitioned: true };
   }
 
   async saveCheckout(checkout: CheckoutSession): Promise<void> {

@@ -15,6 +15,8 @@ import {
   RetentionCleanup,
   type RetentionCleanupReport,
 } from "./retention-cleanup.js";
+import { PostgresAccountPrivacyRepository } from "../infrastructure/postgres/postgres-account-privacy-repository.js";
+import { AccountDeletionProcessor } from "../privacy/account-privacy.js";
 
 const RETENTION_ADVISORY_LOCK_ID = 1_971_041_106;
 
@@ -116,10 +118,16 @@ export function createRetentionRuntime(): RetentionRuntime {
   );
   const storage = new S3ObjectStorage(createS3ObjectStorageOptions(config));
   const retentionConfig = loadRetentionConfig();
+  const accountPrivacy = new PostgresAccountPrivacyRepository(database.pool);
   const cleanup = new RetentionCleanup(
     new PostgresRetentionStore(database.pool),
     storage,
     retentionConfig,
+    () => new Date(),
+    {
+      repository: accountPrivacy,
+      processor: new AccountDeletionProcessor(accountPrivacy, storage),
+    },
   );
 
   return {

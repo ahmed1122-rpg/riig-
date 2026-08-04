@@ -3,7 +3,7 @@ import type { EmailOutboxRepository } from "../postgres/postgres-email-outbox.js
 
 export interface EmailDeliveryEvent {
   deliveryId: string;
-  outcome: "sent" | "retry" | "failed";
+  outcome: "sent" | "retry" | "failed" | "lease_lost";
   attempt: number;
   errorCode: string | null;
 }
@@ -20,6 +20,7 @@ export class EmailOutboxDispatcher {
     private readonly onEvent: (event: EmailDeliveryEvent) => void = () => {},
     private readonly now: () => Date = () => new Date(),
     private readonly pollMilliseconds = 1_000,
+    private readonly onCycleError: (error: unknown) => void = () => {},
   ) {}
 
   start(): void {
@@ -45,18 +46,6 @@ export class EmailOutboxDispatcher {
     if (!delivery) return false;
     try {
       await this.sender.sendPasswordReset(delivery.message);
-      const saved = await this.outbox.markSent(
-        delivery.id,
-        this.#workerId,
-        this.now().toISOString(),
-      );
-      if (!saved) throw new Error("Email delivery lease was lost.");
-      this.onEvent({
-        deliveryId: delivery.id,
-        outcome: "sent",
-        attempt: delivery.attempt,
-        errorCode: null,
-      });
     } catch {
       const failedAt = this.now();
       const status = await this.outbox.retryOrFail(
@@ -68,14 +57,60 @@ export class EmailOutboxDispatcher {
         ).toISOString(),
         failedAt.toISOString(),
       );
-      this.onEvent({
+      this.emitEvent({
         deliveryId: delivery.id,
-        outcome: status === "failed" ? "failed" : "retry",
+        outcome:
+          status === null
+            ? "lease_lost"
+            : status === "failed"
+              ? "failed"
+              : "retry",
         attempt: delivery.attempt,
-        errorCode: "SMTP_DELIVERY_FAILED",
+        errorCode:
+          status === null
+            ? "EMAIL_DELIVERY_LEASE_LOST"
+            : "SMTP_DELIVERY_FAILED",
       });
+      return true;
     }
+
+    const saved = await this.outbox.markSent(
+      delivery.id,
+      this.#workerId,
+      this.now().toISOString(),
+    );
+    this.emitEvent(
+      saved
+        ? {
+            deliveryId: delivery.id,
+            outcome: "sent",
+            attempt: delivery.attempt,
+            errorCode: null,
+          }
+        : {
+            deliveryId: delivery.id,
+            outcome: "lease_lost",
+            attempt: delivery.attempt,
+            errorCode: "EMAIL_DELIVERY_LEASE_LOST",
+          },
+    );
     return true;
+  }
+
+  private emitEvent(event: EmailDeliveryEvent): void {
+    try {
+      this.onEvent(event);
+    } catch (error) {
+      this.reportCycleError(error);
+    }
+  }
+
+  private reportCycleError(error: unknown): void {
+    try {
+      this.onCycleError(error);
+    } catch {
+      // An observability callback must never change durable delivery state.
+    }
   }
 
   private schedule(delay: number): void {
@@ -83,7 +118,7 @@ export class EmailOutboxDispatcher {
     this.#timer = setTimeout(() => {
       this.#timer = null;
       this.#running = this.drain()
-        .catch(() => undefined)
+        .catch((error: unknown) => this.reportCycleError(error))
         .finally(() => {
           this.#running = null;
           this.schedule(this.pollMilliseconds);

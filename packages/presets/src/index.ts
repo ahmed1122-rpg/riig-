@@ -1,6 +1,7 @@
 import {
   MAX_IMAGE_LAYERS,
   type LayerDocument,
+  type ProductionIssue,
   type ProjectKind,
 } from "@motionprep/contracts";
 
@@ -91,20 +92,6 @@ export function createPdfTextLayerName(
   }
 
   return normalizeLayerName(`${semantic.slice(0, 53)}_${stableHash(fullText)}`);
-}
-
-export interface ProductionIssue {
-  code:
-    | "IMAGE_LAYER_LIMIT_EXCEEDED"
-    | "IMAGE_RASTER_ASSET_MISSING"
-    | "IMAGE_RASTER_ASSET_DUPLICATE"
-    | "IMAGE_RASTER_BOUNDS_INVALID"
-    | "INVALID_LAYER_PREFIX"
-    | "PDF_BACKGROUND_MISSING"
-    | "PDF_BACKGROUND_NOT_FIXED";
-  message: string;
-  layerId?: string;
-  pageNumber?: number;
 }
 
 export function validateProductionDocument(

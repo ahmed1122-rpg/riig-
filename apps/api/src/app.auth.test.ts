@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
+import type {
+  AccountDataExport,
+  AccountDeletionRequest,
+  AccountPrivacyRepository,
+  PrepareAccountDeletionResult,
+} from "./privacy/account-privacy.js";
+import { InMemoryObjectStorage } from "./storage/object-storage.js";
 import {
   createAppTestHarness,
   registerCreator,
   sessionCookie,
+  legalAcceptance,
+  TEST_PASSWORD,
 } from "./app-test-helpers.js";
 import { InMemoryEmailSender } from "./auth/email-sender.js";
 import { AesGcmSecretProtector } from "./auth/secret-protector.js";
@@ -11,6 +20,50 @@ import { createTotpCode } from "./auth/totp.js";
 import { InMemoryExportRepository } from "./exports/export-repository.js";
 
 const harness = createAppTestHarness();
+
+class ActiveSubscriptionPrivacyRepository implements AccountPrivacyRepository {
+  async exportAccount(): Promise<AccountDataExport> {
+    throw new Error("not used");
+  }
+  async prepareDeletion(_userId: string): Promise<PrepareAccountDeletionResult> {
+    return { kind: "active_subscription" };
+  }
+  async listPendingDeletions(): Promise<AccountDeletionRequest[]> {
+    return [];
+  }
+  async markDeletionFailed(): Promise<void> {}
+  async completeDeletion(): Promise<void> {}
+}
+
+class FailingDeletionPrivacyRepository extends ActiveSubscriptionPrivacyRepository {
+  failed = false;
+  broken = false;
+  override async prepareDeletion(userId: string): Promise<PrepareAccountDeletionResult> {
+    if (this.broken) throw new Error("privacy repository unavailable");
+    return {
+      kind: "ready",
+      request: {
+        id: crypto.randomUUID(),
+        userId,
+        status: "processing",
+        objectKeys: ["sources/private.png"],
+        attempt: 1,
+        requestedAt: "2026-08-04T10:00:00.000Z",
+        updatedAt: "2026-08-04T10:00:00.000Z",
+        completedAt: null,
+      },
+    };
+  }
+  override async markDeletionFailed(): Promise<void> {
+    this.failed = true;
+  }
+}
+
+class AlwaysFailStorage extends InMemoryObjectStorage {
+  override async delete(): Promise<void> {
+    throw new Error("storage unavailable");
+  }
+}
 
 describe("API — المصادقة والصلاحيات", () => {
   it("requires authentication and prevents cross-account project access", async () => {
@@ -125,7 +178,8 @@ describe("API — المصادقة والصلاحيات", () => {
       payload: {
         name: "نور أحمد",
         email: "noor@example.com",
-        password: "StrongPass123",
+        password: TEST_PASSWORD,
+        legal: legalAcceptance,
       },
     });
     const cookie = sessionCookie(registered.headers["set-cookie"]);
@@ -157,6 +211,132 @@ describe("API — المصادقة والصلاحيات", () => {
     });
     expect(expired.statusCode).toBe(401);
   });
+  it("records versioned legal consent, exports account data, and deletes the session-bound account", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const cookie = await registerCreator(app, "privacy@example.com");
+
+    const exported = await app.inject({
+      method: "GET",
+      url: "/v1/account/export",
+      headers: { cookie },
+    });
+    expect(exported.statusCode).toBe(200);
+    expect(exported.json().data).toMatchObject({
+      schemaVersion: "1",
+      account: { email: "privacy@example.com" },
+      legal: {
+        termsVersion: legalAcceptance.termsVersion,
+        privacyVersion: legalAcceptance.privacyVersion,
+      },
+    });
+    expect(exported.json().data.account.passwordHash).toBeUndefined();
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/v1/account",
+      headers: { cookie },
+      payload: {
+        password: TEST_PASSWORD,
+        confirmation: "DELETE",
+      },
+    });
+    expect(deleted.statusCode).toBe(202);
+    expect(deleted.json().data.status).toBe("completed");
+
+    const session = await app.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers: { cookie },
+    });
+    expect(session.statusCode).toBe(401);
+  });
+  it("rejects registration without an auditable policy version", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: {
+        name: "موافقة ناقصة",
+        email: "missing-consent@example.com",
+        password: TEST_PASSWORD,
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("VALIDATION_FAILED");
+  });
+  it("protects privacy routes and keeps failed object deletion retryable", async () => {
+    const unauthenticatedApp = await harness.build(
+      loadConfig({ NODE_ENV: "test" }),
+    );
+    const unauthenticated = await unauthenticatedApp.inject({
+      method: "GET",
+      url: "/v1/account/export",
+    });
+    expect(unauthenticated.statusCode).toBe(401);
+    await unauthenticatedApp.close();
+
+    const repository = new FailingDeletionPrivacyRepository();
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      accountPrivacy: repository,
+      objectStorage: new AlwaysFailStorage(),
+    });
+    const cookie = await registerCreator(app, "retry-delete@example.com");
+    const invalid = await app.inject({
+      method: "DELETE",
+      url: "/v1/account",
+      headers: { cookie },
+      payload: { password: TEST_PASSWORD, confirmation: "WRONG" },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const wrongPassword = await app.inject({
+      method: "DELETE",
+      url: "/v1/account",
+      headers: { cookie },
+      payload: { password: "WrongPassword123", confirmation: "DELETE" },
+    });
+    expect(wrongPassword.statusCode).toBe(400);
+    expect(wrongPassword.json().error.code).toBe("CURRENT_PASSWORD_INVALID");
+
+    const accepted = await app.inject({
+      method: "DELETE",
+      url: "/v1/account",
+      headers: { cookie },
+      payload: { password: TEST_PASSWORD, confirmation: "DELETE" },
+    });
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json().data.status).toBe("failed");
+    expect(repository.failed).toBe(true);
+    repository.broken = true;
+    const unexpected = await app.inject({
+      method: "DELETE",
+      url: "/v1/account",
+      headers: { cookie },
+      payload: { password: TEST_PASSWORD, confirmation: "DELETE" },
+    });
+    expect(unexpected.statusCode).toBe(500);
+  });
+
+  it("blocks deletion while a live provider subscription remains active", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      accountPrivacy: new ActiveSubscriptionPrivacyRepository(),
+    });
+    const cookie = await registerCreator(app, "active-plan@example.com");
+    const failedExport = await app.inject({
+      method: "GET",
+      url: "/v1/account/export",
+      headers: { cookie },
+    });
+    expect(failedExport.statusCode).toBe(500);
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/account",
+      headers: { cookie },
+      payload: { password: TEST_PASSWORD, confirmation: "DELETE" },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("ACTIVE_SUBSCRIPTION");
+  });
   it("enforces the shared password policy at the registration boundary", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     const invalidPasswords = [
@@ -175,6 +355,7 @@ describe("API — المصادقة والصلاحيات", () => {
           name: "سياسة كلمة المرور",
           email: `password-policy-${index}@example.com`,
           password,
+          legal: legalAcceptance,
         },
       });
 
@@ -204,7 +385,7 @@ describe("API — المصادقة والصلاحيات", () => {
       url: "/v1/auth/login",
       payload: {
         email: "locked@example.com",
-        password: "StrongPass123",
+        password: TEST_PASSWORD,
       },
     });
     expect(locked.statusCode).toBe(429);
@@ -244,7 +425,7 @@ describe("API — المصادقة والصلاحيات", () => {
       url: "/v1/auth/login",
       payload: {
         email: "mfa@example.com",
-        password: "StrongPass123",
+        password: TEST_PASSWORD,
       },
     });
     expect(login.statusCode).toBe(202);
@@ -269,7 +450,7 @@ describe("API — المصادقة والصلاحيات", () => {
       url: "/v1/auth/login",
       payload: {
         email: "mfa@example.com",
-        password: "StrongPass123",
+        password: TEST_PASSWORD,
       },
     });
     const repeatedRecovery = await app.inject({
@@ -346,7 +527,7 @@ describe("API — المصادقة والصلاحيات", () => {
       url: "/v1/auth/login",
       payload: {
         email: "reset@example.com",
-        password: "StrongPass123",
+        password: TEST_PASSWORD,
       },
     });
     expect(oldPassword.statusCode).toBe(400);

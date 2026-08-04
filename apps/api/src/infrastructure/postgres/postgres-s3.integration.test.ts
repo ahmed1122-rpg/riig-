@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
+  CheckoutSession,
   ExportJob,
   LayerDocument,
   ProcessingJob,
@@ -26,9 +27,12 @@ import {
 import { PostgresProjectRepository } from "./postgres-project-repository.js";
 import { PostgresSourceVersionRestoreCommand } from "./postgres-source-version-restore.js";
 import { PostgresUploadFinalizationCommand } from "./postgres-upload-finalization.js";
+import { PostgresUploadIntegrityFailureCommand } from "./postgres-upload-integrity-failure.js";
 import { PostgresUploadRepository } from "./postgres-upload-repository.js";
 import { PostgresAuthRepository } from "./postgres-auth-repository.js";
 import { PostgresEmailOutboxRepository } from "./postgres-email-outbox.js";
+import { PostgresAccountPrivacyRepository } from "./postgres-account-privacy-repository.js";
+import { AccountDeletionProcessor } from "../../privacy/account-privacy.js";
 
 const integrationEnvironment = {
   databaseUrl: requireEnvironment("INTEGRATION_DATABASE_URL"),
@@ -96,6 +100,89 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       expectedMigrations,
     );
     expect(columns.rows).toHaveLength(14);
+  });
+
+  it("blocks live subscription deletion, then purges private objects and anonymizes the account", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const owner = await pool.query<{ owner_user_id: string }>(
+      "SELECT owner_user_id FROM projects WHERE id = $1",
+      [fixture.projectId],
+    );
+    const userId = owner.rows[0]!.owner_user_id;
+    const key = `sources/${fixture.projectId}/${crypto.randomUUID()}.png`;
+    const body = Buffer.from([1, 2, 3]);
+    await storage.put({
+      key,
+      contentType: "image/png",
+      sizeBytes: body.byteLength,
+      body,
+    });
+    await pool.query(
+      `INSERT INTO upload_sessions (
+         upload_id, project_id, filename, content_type, expected_size_bytes,
+         status, sha256, object_key, expires_at, max_bytes,
+         demo_upload_url, upload_url, created_at, updated_at
+       ) VALUES ($1, $2, 'private.png', 'image/png', 3, 'ready', $3, $4,
+                 $5, 31457280, $6, $6, $5, $5)`,
+      [
+        crypto.randomUUID(),
+        fixture.projectId,
+        "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+        key,
+        "2026-08-04T13:00:00.000Z",
+        `/v1/uploads/${crypto.randomUUID()}/content`,
+      ],
+    );
+    await new PostgresBillingRepository(pool).saveSubscription(
+      createSubscription(userId),
+    );
+    const repository = new PostgresAccountPrivacyRepository(pool);
+    await expect(
+      repository.prepareDeletion(userId, "2026-08-04T12:00:00.000Z"),
+    ).resolves.toEqual({ kind: "active_subscription" });
+    await pool.query(
+      "UPDATE subscriptions SET status = 'cancelled' WHERE user_id = $1",
+      [userId],
+    );
+
+    const prepared = await repository.prepareDeletion(
+      userId,
+      "2026-08-04T12:01:00.000Z",
+    );
+    if (prepared.kind !== "ready") throw new Error("Deletion remained blocked.");
+    expect(prepared.request.objectKeys).toContain(key);
+    await expect(
+      new AccountDeletionProcessor(
+        repository,
+        storage,
+        () => new Date("2026-08-04T12:02:00.000Z"),
+      ).process(prepared.request),
+    ).resolves.toBe("completed");
+
+    await expect(storage.inspect(key)).resolves.toBeNull();
+    const result = await pool.query<{
+      name: string;
+      email: string;
+      status: string;
+      deleted_at: Date | null;
+      project_count: string;
+      provider_customer_id: string | null;
+    }>(
+      `SELECT users.name, users.email, users.status, users.deleted_at,
+              (SELECT count(*) FROM projects WHERE owner_user_id = users.id) AS project_count,
+              subscriptions.provider_customer_id
+       FROM users LEFT JOIN subscriptions ON subscriptions.user_id = users.id
+       WHERE users.id = $1`,
+      [userId],
+    );
+    expect(result.rows[0]).toMatchObject({
+      name: "Deleted account",
+      status: "suspended",
+      project_count: "0",
+      provider_customer_id: null,
+    });
+    expect(result.rows[0]!.email).toMatch(/^deleted\+[a-f0-9-]+@deleted\.invalid$/u);
+    expect(result.rows[0]!.deleted_at).toBeTruthy();
   });
 
   it("atomically creates a password reset and durable email delivery", async () => {
@@ -328,6 +415,9 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       project_status: "needs_review",
       current_source_version_id: sourceVersionId,
     });
+    await expect(
+      command.finalize({ session: ready, sha256: "c".repeat(64) }),
+    ).rejects.toThrow("Published upload checksum cannot be changed.");
 
     const newerUploadId = crypto.randomUUID();
     const newerSourceVersionId = crypto.randomUUID();
@@ -397,6 +487,152 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     });
   });
 
+  it("makes a proven upload integrity failure atomic and replay-safe", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const uploadId = crypto.randomUUID();
+    const sourceVersionId = crypto.randomUUID();
+    const timestamp = "2026-08-03T12:00:00.000Z";
+    const expectedSha256 = "a".repeat(64);
+    const observedSha256 = "b".repeat(64);
+    await pool.query(
+      `INSERT INTO source_versions (
+         id, project_id, upload_id, version_number, filename, content_type,
+         size_bytes, status, sha256, created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, 1, 'corrupt.png', 'image/png', 1,
+         'verifying', $4, $5, $5
+       )`,
+      [
+        sourceVersionId,
+        fixture.projectId,
+        uploadId,
+        expectedSha256,
+        timestamp,
+      ],
+    );
+    await pool.query(
+      `INSERT INTO upload_sessions (
+         upload_id, project_id, filename, content_type, expected_size_bytes,
+         status, source_version_id, sha256, object_key, expires_at, max_bytes,
+         upload_url, created_at, updated_at
+       ) VALUES (
+         $1, $2, 'corrupt.png', 'image/png', 1, 'verifying', $3, $4,
+         $5, '2026-08-03T12:10:00.000Z', 31457280, $6, $7, $7
+       )`,
+      [
+        uploadId,
+        fixture.projectId,
+        sourceVersionId,
+        expectedSha256,
+        `sources/${fixture.projectId}/${uploadId}.png`,
+        `/v1/uploads/${uploadId}/content`,
+        timestamp,
+      ],
+    );
+    await pool.query(
+      `UPDATE projects
+       SET current_source_version_id = $2, status = 'queued'
+       WHERE id = $1`,
+      [fixture.projectId, sourceVersionId],
+    );
+    const session = await new PostgresUploadRepository(pool).findById(uploadId);
+    if (!session) throw new Error("Integrity fixture upload is missing.");
+    const input = {
+      session,
+      code: "UPLOAD_HASH_MISMATCH" as const,
+      observed: {
+        key: session.objectKey,
+        contentType: session.contentType,
+        sizeBytes: session.expectedSizeBytes,
+        sha256: observedSha256,
+      },
+    };
+
+    const failing = new PostgresUploadIntegrityFailureCommand(pool, {
+      afterUploadUpdated: async () => {
+        throw new Error("injected integrity transition failure");
+      },
+    });
+    await expect(failing.markIntegrityFailure(input)).rejects.toThrow(
+      "injected integrity transition failure",
+    );
+    const rolledBack = await pool.query<{
+      upload_status: string;
+      source_status: string;
+      project_status: string;
+      event_count: string;
+    }>(
+      `SELECT upload.status AS upload_status,
+         source.status AS source_status,
+         project.status AS project_status,
+         (SELECT count(*) FROM upload_integrity_events
+          WHERE upload_id = upload.upload_id) AS event_count
+       FROM upload_sessions AS upload
+       JOIN source_versions AS source ON source.id = upload.source_version_id
+       JOIN projects AS project ON project.id = upload.project_id
+       WHERE upload.upload_id = $1`,
+      [uploadId],
+    );
+    expect(rolledBack.rows[0]).toEqual({
+      upload_status: "verifying",
+      source_status: "verifying",
+      project_status: "queued",
+      event_count: "0",
+    });
+
+    const command = new PostgresUploadIntegrityFailureCommand(pool);
+    await expect(command.markIntegrityFailure(input)).resolves.toEqual({
+      outcome: "transitioned",
+    });
+    await expect(command.markIntegrityFailure(input)).resolves.toEqual({
+      outcome: "already_terminal",
+    });
+    const terminal = await pool.query<{
+      upload_status: string;
+      source_status: string;
+      project_status: string;
+      failure_code: string | null;
+      event_count: string;
+    }>(
+      `SELECT upload.status AS upload_status,
+         source.status AS source_status,
+         project.status AS project_status,
+         upload.integrity_failure_code AS failure_code,
+         (SELECT count(*) FROM upload_integrity_events
+          WHERE upload_id = upload.upload_id) AS event_count
+       FROM upload_sessions AS upload
+       JOIN source_versions AS source ON source.id = upload.source_version_id
+       JOIN projects AS project ON project.id = upload.project_id
+       WHERE upload.upload_id = $1`,
+      [uploadId],
+    );
+    expect(terminal.rows[0]).toEqual({
+      upload_status: "failed",
+      source_status: "failed",
+      project_status: "failed",
+      failure_code: "UPLOAD_HASH_MISMATCH",
+      event_count: "1",
+    });
+    await expect(
+      new PostgresRetentionStore(pool).markUploadPurged(
+        uploadId,
+        "2026-08-03T12:15:00.000Z",
+      ),
+    ).resolves.toBe(true);
+    const retainedFailure = await pool.query<{
+      status: string;
+      object_purged_at: Date | null;
+    }>(
+      `SELECT status, object_purged_at
+       FROM upload_sessions WHERE upload_id = $1`,
+      [uploadId],
+    );
+    expect(retainedFailure.rows[0]).toMatchObject({
+      status: "failed",
+      object_purged_at: expect.any(Date),
+    });
+  });
+
   it("restores one source version atomically and deduplicates concurrent replay", async () => {
     const actorUserId = crypto.randomUUID();
     const projectId = crypto.randomUUID();
@@ -448,13 +684,25 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       targetSourceVersionId: firstId,
       expectedCurrentSourceVersionId: secondId,
       reason: "Restore the reviewed source version.",
-      requestId: "integration-restore-001",
+      idempotencyKey: "integration-restore-001",
+      originatingRequestId: "integration-http-request-001",
     };
 
     const results = await Promise.all([
       command.restore(input),
       command.restore(input),
     ]);
+    const replayFromAnotherRequest = await command.restore({
+      ...input,
+      originatingRequestId: "integration-http-request-replay-002",
+    });
+    await expect(
+      command.restore({
+        ...input,
+        reason: "A conflicting restore intent.",
+        originatingRequestId: "integration-http-request-conflict-003",
+      }),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
     const events = await command.list(projectId, actorUserId);
     const project = await pool.query<{
       current_source_version_id: string;
@@ -469,9 +717,55 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       true,
     ]);
     expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      idempotencyKey: "integration-restore-001",
+      originatingRequestId: "integration-http-request-001",
+      requestId: "integration-restore-001",
+      operationId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+    });
+    expect(results[0]?.event.operationId).toBe(results[1]?.event.operationId);
+    expect(replayFromAnotherRequest).toMatchObject({
+      replayed: true,
+      event: {
+        operationId: results[0]?.event.operationId,
+        originatingRequestId: "integration-http-request-001",
+      },
+    });
     expect(project.rows[0]).toEqual({
       current_source_version_id: firstId,
       status: "needs_review",
+    });
+
+    const legacyEventId = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO source_version_restore_events (
+         id, project_id, actor_user_id, from_source_version_id,
+         to_source_version_id, reason, request_id, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        legacyEventId,
+        projectId,
+        actorUserId,
+        firstId,
+        secondId,
+        "Legacy release compatibility event.",
+        "legacy-restore-identity-001",
+        timestamp,
+      ],
+    );
+    const legacyIdentity = await pool.query<{
+      idempotency_key: string;
+      originating_request_id: string;
+      operation_id: string;
+    }>(
+      `SELECT idempotency_key, originating_request_id, operation_id
+       FROM source_version_restore_events WHERE id = $1`,
+      [legacyEventId],
+    );
+    expect(legacyIdentity.rows[0]).toEqual({
+      idempotency_key: "legacy-restore-identity-001",
+      originating_request_id: "legacy-restore-identity-001",
+      operation_id: legacyEventId,
     });
   });
 
@@ -651,6 +945,48 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     });
   });
 
+  it("persists and completes one checkout setup transition", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const user = await pool.query<{ owner_user_id: string }>(
+      "SELECT owner_user_id FROM projects WHERE id = $1",
+      [fixture.projectId],
+    );
+    const repository = new PostgresBillingRepository(pool);
+    const pending: CheckoutSession = {
+      id: crypto.randomUUID(),
+      userId: user.rows[0]!.owner_user_id,
+      provider: "sandbox-local",
+      planId: "creator",
+      status: "pending",
+      currency: "EGP",
+      amountMinor: 59000,
+      checkoutUrl: null,
+      createdAt: "2026-08-03T18:00:00.000Z",
+      expiresAt: "2026-08-03T18:30:00.000Z",
+    };
+    const ready: CheckoutSession = {
+      ...pending,
+      status: "redirect_required",
+      checkoutUrl: "https://payments.example/session",
+      providerReference: "provider-session-1",
+    };
+
+    await expect(repository.ensurePendingCheckout(pending)).resolves.toEqual(
+      pending,
+    );
+    await expect(repository.ensurePendingCheckout(pending)).resolves.toEqual(
+      pending,
+    );
+    await expect(repository.completePendingCheckout(ready)).resolves.toMatchObject({
+      transitioned: true,
+      checkout: { status: "redirect_required" },
+    });
+    await expect(repository.completePendingCheckout(ready)).resolves.toMatchObject({
+      transitioned: false,
+      checkout: { providerReference: "provider-session-1" },
+    });
+  });
+
   it("prunes only unreferenced terminal source versions", async () => {
     const fixture = await insertProjectFixture(pool, "image");
     const removableSourceId = crypto.randomUUID();
@@ -783,7 +1119,8 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
         expiresAt: "2026-07-28T09:30:00.000Z",
       },
     });
-    const exportKey = `artifacts/${fixture.projectId}/${exportJob.id}/retention.psd`;
+    const exportKey = `artifacts/${fixture.projectId}/${exportJob.id}/generations/${crypto.randomUUID()}/retention.psd`;
+    exportJob.artifact!.objectKey = exportKey;
     await Promise.all([
       storage.put({
         key: uploadKey,
@@ -896,7 +1233,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     }
 
     expect(ready.artifact?.sha256).toMatch(/^[a-f0-9]{64}$/u);
-    const key = `artifacts/${fixture.projectId}/${job.id}/${ready.artifact!.filename}`;
+    const key = ready.artifact!.objectKey!;
     const artifact = await storage.get(key);
     expect(artifact?.contentType).toBe("application/json");
     expect(JSON.parse(artifact!.body.toString("utf8"))).toMatchObject({

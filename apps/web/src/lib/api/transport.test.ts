@@ -149,6 +149,13 @@ describe("request", () => {
               code: "PROJECT_STALE",
               message: "stale",
               requestId: "payload-request",
+              issues: [
+                {
+                  code: "INVALID_LAYER_PREFIX",
+                  message: "Layer name is invalid.",
+                  layerId: "layer-1",
+                },
+              ],
             },
           }),
           {
@@ -172,6 +179,13 @@ describe("request", () => {
       code: "PROJECT_STALE",
       message: "stale",
       requestId: "payload-request",
+      issues: [
+        {
+          code: "INVALID_LAYER_PREFIX",
+          message: "Layer name is invalid.",
+          layerId: "layer-1",
+        },
+      ],
     });
     await expect(request("/v1/project", { retries: 0 })).rejects.toMatchObject({
       code: "HTTP_503",
@@ -254,6 +268,68 @@ describe("request", () => {
 
     await expect(pending).resolves.toBe("saved");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("honors Retry-After before replaying a retryable request", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: null,
+            error: { code: "RATE_LIMITED", message: "wait" },
+          }),
+          {
+            status: 429,
+            headers: {
+              "content-type": "application/json",
+              "retry-after": "2",
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: "ready", error: null }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = request<string>("/v1/activity", { retries: 1 });
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(pending).resolves.toBe("ready");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("caps an excessive Retry-After delay", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 503,
+          headers: { "retry-after": "120" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: "ready", error: null }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = request<string>("/v1/activity", { retries: 1 });
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(pending).resolves.toBe("ready");
   });
 
   it("does not replay a non-idempotent mutation after a network failure", async () => {

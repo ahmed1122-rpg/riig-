@@ -1,4 +1,5 @@
 import type {
+  ExportJob,
   ExportRequest,
   LayerDocument,
   LayerNode,
@@ -7,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { InMemoryIdempotencyStore } from "../idempotency/idempotency-store.js";
 import { InMemoryLayerDocumentRepository } from "../processing/processing-repository.js";
 import { InMemoryObjectStorage } from "../storage/object-storage.js";
+import { exportArtifactGenerationKey } from "./export-artifact-reader.js";
 import { InMemoryExportRepository } from "./export-repository.js";
 import { ExportService } from "./export-service.js";
 
@@ -30,14 +32,14 @@ describe("ExportService worker execution", () => {
     ).rejects.toMatchObject({
       code: "EXPORT_DOCUMENT_REVISION_CONFLICT",
     });
-    await expect(repository.list()).resolves.toHaveLength(0);
+    await expect(repository.list(200)).resolves.toHaveLength(0);
   });
 
-  it("fails a queued export if the layer document changes before the worker claims it", async () => {
+  it("exports the pinned layer-document revision when a newer revision exists", async () => {
     const repository = new InMemoryExportRepository();
     const storage = new InMemoryObjectStorage();
     const documents = new InMemoryLayerDocumentRepository();
-    const document = { ...createBookDocument(), revision: 2 };
+    const document = { ...createBookDocument("pinned revision"), revision: 2 };
     await documents.save(document);
     const service = createWorkerService(repository, storage, documents);
     const queued = await service.create(
@@ -45,15 +47,31 @@ describe("ExportService worker execution", () => {
       "book",
       "document-changed-before-worker",
     );
-    await documents.save({ ...document, revision: 3 });
-
-    await expect(
-      service.claimAndProcess("export-worker-revision", 60_000),
-    ).resolves.toMatchObject({
-      id: queued.id,
-      status: "failed",
-      errorCode: "EXPORT_DOCUMENT_REVISION_CONFLICT",
+    await documents.save({
+      ...document,
+      revision: 3,
+      layers: document.layers.map((layer) =>
+        layer.kind === "text"
+          ? { ...layer, fullText: "newer revision", name: "+newer_revision" }
+          : layer,
+      ),
     });
+
+    const ready = await service.claimAndProcess(
+      "export-worker-revision",
+      60_000,
+    );
+    expect(ready).toMatchObject({
+      id: queued.id,
+      status: "ready",
+      documentRevision: 2,
+    });
+    expect((await service.artifact(queued.id)).body.toString("utf8")).toContain(
+      "pinned revision",
+    );
+    expect((await service.artifact(queued.id)).body.toString("utf8")).not.toContain(
+      "newer revision",
+    );
   });
 
   it("claims a queued text export, persists its artifact, and serves it", async () => {
@@ -84,6 +102,9 @@ describe("ExportService worker execution", () => {
       },
     });
     expect(ready?.artifact?.sha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(ready?.artifact?.objectKey).toMatch(
+      /^artifacts\/[^/]+\/[^/]+\/generations\/[^/]+\/[^/]+$/u,
+    );
 
     const artifact = await service.artifact(queued.id);
     expect(artifact.contentType).toBe("text/plain; charset=utf-8");
@@ -218,6 +239,38 @@ describe("ExportService worker execution", () => {
     },
   );
 
+  it("rejects reuse of an idempotency key for a different export request", async () => {
+    const repository = new InMemoryExportRepository();
+    const storage = new InMemoryObjectStorage();
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = createBookDocument();
+    await documents.save(document);
+    const service = new ExportService(
+      repository,
+      () => new Date(timestamp),
+      new InMemoryIdempotencyStore(),
+      undefined,
+      storage,
+      documents,
+      true,
+    );
+
+    await service.create(
+      createRequest(document, "txt"),
+      "book",
+      "conflicting-export-request",
+    );
+
+    await expect(
+      service.create(
+        createRequest(document, "json"),
+        "book",
+        "conflicting-export-request",
+      ),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+    await expect(repository.list(200)).resolves.toHaveLength(1);
+  });
+
   it("rejects artifact access before generation and unknown jobs", async () => {
     const repository = new InMemoryExportRepository();
     const document = createBookDocument();
@@ -260,12 +313,7 @@ describe("ExportService worker execution", () => {
       "book",
       "tampered-artifact",
     );
-    const artifactKey = [
-      "artifacts",
-      encodeURIComponent(document.projectId),
-      ready.id,
-      ready.artifact!.filename,
-    ].join("/");
+    const artifactKey = ready.artifact!.objectKey!;
     const tampered = Buffer.from("tampered cloud artifact");
     await storage.put({
       key: artifactKey,
@@ -276,6 +324,128 @@ describe("ExportService worker execution", () => {
 
     await expect(service.artifact(ready.id)).rejects.toMatchObject({
       code: "EXPORT_ARTIFACT_INTEGRITY_FAILED",
+    });
+  });
+
+  it("reads historical artifacts that predate persisted object keys", async () => {
+    const repository = new InMemoryExportRepository();
+    const storage = new InMemoryObjectStorage();
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = createBookDocument();
+    await documents.save(document);
+    const service = new ExportService(
+      repository,
+      () => new Date(timestamp),
+      new InMemoryIdempotencyStore(),
+      undefined,
+      storage,
+      documents,
+      true,
+    );
+    const ready = await service.create(
+      createRequest(document, "txt"),
+      "book",
+      "legacy-artifact-location",
+    );
+    const generatedKey = ready.artifact!.objectKey!;
+    const generatedObject = (await storage.get(generatedKey))!;
+    const legacyKey = `artifacts/${ready.projectId}/${ready.id}/${ready.artifact!.filename}`;
+    await storage.put({ ...generatedObject, key: legacyKey });
+    await storage.delete(generatedKey);
+    const { objectKey: _objectKey, ...legacyArtifact } = ready.artifact!;
+    await repository.save({ ...ready, artifact: legacyArtifact });
+
+    await expect(service.artifact(ready.id)).resolves.toMatchObject({
+      key: legacyKey,
+      body: generatedObject.body,
+    });
+  });
+
+  it("removes only a lost attempt while preserving a concurrently finalized generation", async () => {
+    const storage = new InMemoryObjectStorage();
+    const repository = new ConcurrentFinalizationRepository(storage);
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = createBookDocument();
+    await documents.save(document);
+    const service = createWorkerService(repository, storage, documents);
+    const queued = await service.create(
+      createRequest(document, "txt"),
+      "book",
+      "lease-race-artifact",
+    );
+
+    const completed = await service.claimAndProcess("old-worker", 60_000);
+
+    expect(completed).toMatchObject({
+      id: queued.id,
+      status: "ready",
+      artifact: { objectKey: repository.winnerObjectKey },
+    });
+    await expect(storage.inspect(repository.lostObjectKey!)).resolves.toBeNull();
+    await expect(storage.inspect(repository.winnerObjectKey!)).resolves.not.toBeNull();
+    await expect(service.artifact(queued.id)).resolves.toMatchObject({
+      key: repository.winnerObjectKey,
+    });
+  });
+
+  it("reports a lost-attempt cleanup failure without replacing the winning export", async () => {
+    const storage = new FailingDeleteObjectStorage();
+    const repository = new ConcurrentFinalizationRepository(storage);
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = createBookDocument();
+    const cleanupErrors: Array<{ error: unknown; objectKey: string }> = [];
+    await documents.save(document);
+    const service = new ExportService(
+      repository,
+      () => new Date(timestamp),
+      new InMemoryIdempotencyStore(),
+      undefined,
+      storage,
+      documents,
+      false,
+      (error, objectKey) => cleanupErrors.push({ error, objectKey }),
+    );
+    const queued = await service.create(
+      createRequest(document, "txt"),
+      "book",
+      "lease-race-cleanup-failure",
+    );
+
+    const completed = await service.claimAndProcess("old-worker", 60_000);
+
+    expect(completed).toMatchObject({
+      id: queued.id,
+      status: "ready",
+      artifact: { objectKey: repository.winnerObjectKey },
+    });
+    expect(cleanupErrors).toEqual([
+      {
+        error: expect.objectContaining({ message: "storage delete unavailable" }),
+        objectKey: repository.lostObjectKey,
+      },
+    ]);
+    await expect(storage.inspect(repository.winnerObjectKey!)).resolves.not.toBeNull();
+  });
+
+  it("keeps an artifact when finalization committed before the database client rejected", async () => {
+    const repository = new CommitThenRejectRepository();
+    const storage = new InMemoryObjectStorage();
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = createBookDocument();
+    await documents.save(document);
+    const service = createWorkerService(repository, storage, documents);
+    const queued = await service.create(
+      createRequest(document, "txt"),
+      "book",
+      "ambiguous-finalization",
+    );
+
+    const completed = await service.claimAndProcess("export-worker", 60_000);
+
+    expect(completed).toMatchObject({ id: queued.id, status: "ready" });
+    await expect(storage.inspect(completed!.artifact!.objectKey!)).resolves.not.toBeNull();
+    await expect(service.artifact(queued.id)).resolves.toMatchObject({
+      key: completed!.artifact!.objectKey,
     });
   });
 
@@ -300,18 +470,47 @@ describe("ExportService worker execution", () => {
       "book",
       "expired-artifact",
     );
-    const artifactKey = [
-      "artifacts",
-      encodeURIComponent(document.projectId),
-      ready.id,
-      ready.artifact!.filename,
-    ].join("/");
+    const artifactKey = ready.artifact!.objectKey!;
     currentTime = new Date(Date.parse(timestamp) + 24 * 60 * 60_000 + 1);
 
     await expect(service.artifact(ready.id)).rejects.toMatchObject({
       code: "EXPORT_ARTIFACT_NOT_READY",
     });
     await expect(storage.get(artifactKey)).resolves.toBeNull();
+  });
+
+  it("reports expired-artifact cleanup failures without allowing the download", async () => {
+    const repository = new InMemoryExportRepository();
+    const storage = new FailingDeleteObjectStorage();
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = createBookDocument();
+    const cleanupKeys: string[] = [];
+    await documents.save(document);
+    let currentTime = new Date(timestamp);
+    const service = new ExportService(
+      repository,
+      () => currentTime,
+      new InMemoryIdempotencyStore(),
+      undefined,
+      storage,
+      documents,
+      true,
+      (_error, objectKey) => {
+        cleanupKeys.push(objectKey);
+        throw new Error("observer unavailable");
+      },
+    );
+    const ready = await service.create(
+      createRequest(document, "txt"),
+      "book",
+      "expired-cleanup-failure",
+    );
+    currentTime = new Date(Date.parse(timestamp) + 24 * 60 * 60_000 + 1);
+
+    await expect(service.artifact(ready.id)).rejects.toMatchObject({
+      code: "EXPORT_ARTIFACT_NOT_READY",
+    });
+    expect(cleanupKeys).toEqual([ready.artifact!.objectKey]);
   });
 
   it("marks an inline export failed and releases its claim after infrastructure failure", async () => {
@@ -336,7 +535,7 @@ describe("ExportService worker execution", () => {
         "inline-storage-failure",
       ),
     ).rejects.toThrow(/Object storage/u);
-    expect(await repository.list()).toEqual([
+    expect(await repository.list(200)).toEqual([
       expect.objectContaining({
         status: "failed",
         errorCode: "EXPORT_WORKER_FAILED",
@@ -344,6 +543,87 @@ describe("ExportService worker execution", () => {
     ]);
   });
 });
+
+class ConcurrentFinalizationRepository extends InMemoryExportRepository {
+  lostObjectKey: string | undefined;
+  winnerObjectKey: string | undefined;
+
+  constructor(private readonly storage: InMemoryObjectStorage) {
+    super();
+  }
+
+  override async updateClaim(
+    id: string,
+    workerId: string,
+    changes: Partial<ExportJob>,
+    updatedAt: string,
+  ): Promise<ExportJob | null> {
+    if (changes.status !== "ready" || !changes.artifact?.objectKey) {
+      return super.updateClaim(id, workerId, changes, updatedAt);
+    }
+
+    const current = await this.findById(id);
+    if (!current) return null;
+    this.lostObjectKey = changes.artifact.objectKey;
+    const winnerBody = Buffer.from("concurrently finalized generation");
+    const winnerObjectKey = exportArtifactGenerationKey(
+      current,
+      crypto.randomUUID(),
+      changes.artifact.filename,
+    );
+    const winnerMetadata = await this.storage.put({
+      key: winnerObjectKey,
+      contentType: "text/plain; charset=utf-8",
+      sizeBytes: winnerBody.byteLength,
+      body: winnerBody,
+    });
+    this.winnerObjectKey = winnerObjectKey;
+    await this.save({
+      ...current,
+      ...changes,
+      status: "ready",
+      progress: 100,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      artifact: {
+        ...changes.artifact,
+        objectKey: winnerObjectKey,
+        sizeBytes: winnerMetadata.sizeBytes,
+        sha256: winnerMetadata.sha256,
+      },
+      updatedAt,
+    });
+    return null;
+  }
+}
+
+class CommitThenRejectRepository extends InMemoryExportRepository {
+  #rejectedFinalization = false;
+
+  override async updateClaim(
+    id: string,
+    workerId: string,
+    changes: Partial<ExportJob>,
+    updatedAt: string,
+  ): Promise<ExportJob | null> {
+    const persisted = await super.updateClaim(id, workerId, changes, updatedAt);
+    if (
+      changes.status === "ready" &&
+      persisted &&
+      !this.#rejectedFinalization
+    ) {
+      this.#rejectedFinalization = true;
+      throw new Error("database client rejected after finalization commit");
+    }
+    return persisted;
+  }
+}
+
+class FailingDeleteObjectStorage extends InMemoryObjectStorage {
+  override async delete(): Promise<void> {
+    throw new Error("storage delete unavailable");
+  }
+}
 
 function createWorkerService(
   repository: InMemoryExportRepository,

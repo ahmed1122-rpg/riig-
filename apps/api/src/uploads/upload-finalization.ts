@@ -2,6 +2,7 @@ import type { UploadSession } from "@motionprep/contracts";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import type { SourceVersionRepository } from "../sources/source-version-repository.js";
 import type { UploadRepository } from "./upload-repository.js";
+import { UploadOperationLock } from "./upload-operation-lock.js";
 
 export interface FinalizeVerifiedUploadInput {
   session: UploadSession;
@@ -22,29 +23,33 @@ export class InMemoryUploadFinalizationCommand
   implements UploadFinalizationCommand
 {
   readonly #publishedUploadIds = new Set<string>();
-  readonly #locks = new Map<string, Promise<void>>();
 
   constructor(
     private readonly uploads: UploadRepository,
     private readonly sourceVersions: SourceVersionRepository,
     private readonly projects: ProjectRepository,
     private readonly now: () => Date = () => new Date(),
+    private readonly uploadOperations = new UploadOperationLock(),
   ) {}
 
   async finalize(
     input: FinalizeVerifiedUploadInput,
   ): Promise<UploadSession> {
-    return this.withUploadLock(input.session.uploadId, async () => {
+    return this.uploadOperations.run(input.session.projectId, async () => {
       const current = await this.requireMatchingUpload(input.session);
       const source = await this.requireMatchingSource(current);
+      if (this.#publishedUploadIds.has(current.uploadId)) {
+        if (current.sha256?.toLowerCase() !== input.sha256.toLowerCase()) {
+          throw new Error("Published upload checksum cannot be changed.");
+        }
+        return current;
+      }
       const ready: UploadSession = {
         ...current,
         status: "ready",
         sha256: input.sha256.toLowerCase(),
         updatedAt: this.now().toISOString(),
       };
-
-      if (this.#publishedUploadIds.has(ready.uploadId)) return ready;
 
       await this.uploads.save(ready);
       await this.sourceVersions.update(source.id, {
@@ -90,25 +95,5 @@ export class InMemoryUploadFinalizationCommand
       throw new Error("Upload source version does not match its session.");
     }
     return source;
-  }
-
-  private async withUploadLock<T>(
-    uploadId: string,
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const previous = this.#locks.get(uploadId) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const queued = previous.then(() => current);
-    this.#locks.set(uploadId, queued);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.#locks.get(uploadId) === queued) this.#locks.delete(uploadId);
-    }
   }
 }

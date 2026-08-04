@@ -6,13 +6,9 @@ import type {
   LayerStateUpdate,
   PdfMarkerRegion,
   ProcessingJob,
-  ProcessingMode,
   ProjectKind,
   TraceContext,
 } from "@motionprep/contracts";
-import {
-  type PdfOcrEngine,
-} from "@motionprep/document-processing";
 import {
   applyPdfMarkerRegions,
   createImageGuidanceStroke,
@@ -24,6 +20,7 @@ import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
+import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import type {
   ObjectStorage,
   StoredObject,
@@ -33,10 +30,12 @@ import type {
   LayerDocumentRepository,
   ProcessingJobRepository,
 } from "./processing-repository.js";
-import type { UsageMeter } from "../billing/usage-meter.js";
 import { InlineProcessingRunner } from "./inline-processing-runner.js";
 import { ProcessingDomainError } from "./processing-errors.js";
-import { DocumentEditCoordinator } from "./document-edit-coordinator.js";
+import {
+  DocumentEditCoordinator,
+  layerEditRequestHash,
+} from "./document-edit-coordinator.js";
 import { RasterAssetStore } from "./raster-asset-store.js";
 import {
   ImageLayerOperations,
@@ -50,6 +49,9 @@ import {
   type SplitPdfTextLayerInput,
 } from "./pdf-layer-operations.js";
 import { LayerStateOperations } from "./layer-state-operations.js";
+import { cleanupRasterAssets } from "./raster-asset-cleanup.js";
+import type { GuidedRefinementInput } from "./guided-refinement-input.js";
+import type { ProcessingServiceRuntimeOptions } from "./processing-service-options.js";
 export { ProcessingDomainError } from "./processing-errors.js";
 
 export class ProcessingService {
@@ -69,8 +71,7 @@ export class ProcessingService {
     private readonly idempotency: IdempotencyStore =
       new InMemoryIdempotencyStore(),
     private readonly executeInline = true,
-    pdfOcrEngine?: PdfOcrEngine,
-    private readonly usageMeter?: UsageMeter,
+    private readonly runtime: ProcessingServiceRuntimeOptions = {},
   ) {
     this.#inlineRunner = new InlineProcessingRunner(
       jobs,
@@ -78,7 +79,11 @@ export class ProcessingService {
       uploads,
       storage,
       now,
-      pdfOcrEngine,
+      runtime.pdfOcrEngine,
+      runtime.onAssetCleanupError,
+      runtime.rasterAssetWriteConcurrency ?? 2,
+      runtime.onAssetWriteObservation,
+      runtime.onAssetWriteObservationError,
     );
     this.#edits = new DocumentEditCoordinator(documents, now);
     this.#rasterAssets = new RasterAssetStore(storage);
@@ -86,6 +91,7 @@ export class ProcessingService {
       this.#edits,
       this.#rasterAssets,
       storage,
+      runtime.onAssetCleanupError,
     );
     this.#pdfLayers = new PdfLayerOperations(this.#edits, documents);
     this.#layerStates = new LayerStateOperations(this.#edits, documents);
@@ -112,34 +118,57 @@ export class ProcessingService {
         "نسخة المصدر لا تتبع المشروع أو لم تكتمل جاهزيتها.",
       );
     }
-    const existing = await this.jobs.findBySource(projectId, sourceVersionId);
+    const id = crypto.randomUUID();
+    const scopedIdempotencyKey =
+      `${projectId}:${sourceVersionId}:${idempotencyKey}`;
+    const claim = await this.idempotency.claimRequest(
+      "processing",
+      scopedIdempotencyKey,
+      id,
+      requestFingerprint("processing", {
+        projectId,
+        sourceVersionId,
+        projectKind,
+        options,
+      }),
+      24 * 60 * 60,
+    );
+    if (claim.outcome === "conflict") {
+      throw new ProcessingDomainError(
+        "IDEMPOTENCY_CONFLICT",
+        "استُخدم مفتاح منع التكرار نفسه لطلب معالجة مختلف.",
+      );
+    }
+    if (claim.outcome === "replayed") {
+      const repeated = await this.jobs.findById(claim.resourceId);
+      if (repeated) return repeated;
+      throw new ProcessingDomainError(
+        "PROCESSING_IN_PROGRESS",
+        "طلب المعالجة المطابق ما زال قيد الإنشاء. أعد المحاولة بعد لحظات.",
+      );
+    }
+
+    let existing: ProcessingJob | null;
+    try {
+      existing = await this.jobs.findBySource(projectId, sourceVersionId);
+    } catch (error) {
+      await this.idempotency.release(
+        "processing",
+        scopedIdempotencyKey,
+        id,
+      );
+      throw error;
+    }
     if (existing) {
-      const existingRegional = existing.options.pdfRegionOcr;
-      const requestedRegional = options.pdfRegionOcr;
-      if (!existingRegional && !requestedRegional) return existing;
-      if (
-        existingRegional &&
-        requestedRegional &&
-        existingRegional.operationId === requestedRegional.operationId
-      ) {
-        return existing;
-      }
+      await this.idempotency.release(
+        "processing",
+        scopedIdempotencyKey,
+        id,
+      );
       throw new ProcessingDomainError(
         "PROCESSING_IN_PROGRESS",
         "توجد مهمة معالجة نشطة لهذا المصدر. انتظر اكتمالها ثم أعد المحاولة.",
       );
-    }
-
-    const id = crypto.randomUUID();
-    const claimed = await this.idempotency.claim(
-      "processing",
-      `${projectId}:${sourceVersionId}:${idempotencyKey}`,
-      id,
-      24 * 60 * 60,
-    );
-    if (claimed !== id) {
-      const repeated = await this.jobs.findById(claimed);
-      if (repeated) return repeated;
     }
 
     const timestamp = this.now().toISOString();
@@ -163,14 +192,19 @@ export class ProcessingService {
       updatedAt: timestamp,
     };
     let reserved = false;
-    if (ownerUserId && this.usageMeter) {
-      await this.usageMeter.reserveJob(ownerUserId, job.id);
-      reserved = true;
-    }
     try {
+      if (ownerUserId && this.runtime.usageMeter) {
+        await this.runtime.usageMeter.reserveJob(ownerUserId, job.id);
+        reserved = true;
+      }
       await this.jobs.save(job);
     } catch (error) {
-      if (reserved) await this.usageMeter?.releaseJob(job.id);
+      if (reserved) await this.runtime.usageMeter?.releaseJob(job.id);
+      await this.idempotency.release(
+        "processing",
+        scopedIdempotencyKey,
+        job.id,
+      );
       throw error;
     }
     if (onQueued && !(await onQueued(job))) {
@@ -180,7 +214,7 @@ export class ProcessingService {
         errorCode: "SOURCE_NOT_CURRENT",
         updatedAt: this.now().toISOString(),
       });
-      if (reserved) await this.usageMeter?.releaseJob(job.id);
+      if (reserved) await this.runtime.usageMeter?.releaseJob(job.id);
       throw new ProcessingDomainError(
         "SOURCE_NOT_CURRENT",
         "تغير إصدار المصدر الحالي قبل إدخال المهمة إلى الطابور.",
@@ -192,7 +226,7 @@ export class ProcessingService {
     try {
       return await this.#inlineRunner.run(job);
     } finally {
-      await this.usageMeter?.recordProcessingSeconds(
+      await this.runtime.usageMeter?.recordProcessingSeconds(
         job.id,
         1,
         Math.max(1, Math.ceil((Date.now() - startedAt) / 1_000)),
@@ -272,21 +306,34 @@ export class ProcessingService {
     });
   }
 
-  async applyGuidedRefinement(input: {
-    projectId: string;
-    sourceVersionId: string;
-    projectKind: ProjectKind;
-    baseRevision: number;
-    mode: ProcessingMode;
-    imageStrokes: readonly ImageGuidanceStroke[];
-    pdfRegions: readonly PdfMarkerRegion[];
-    actorUserId?: string;
-    operationId?: string;
-  }): Promise<GuidedRefinementResult> {
+  async applyGuidedRefinement(
+    input: GuidedRefinementInput,
+  ): Promise<GuidedRefinementResult> {
     const document = await this.findDocument(
       input.projectId,
       input.sourceVersionId,
     );
+    const operationId = input.operationId ?? crypto.randomUUID();
+    const requestHash = layerEditRequestHash("guided-refinement", {
+      ...input,
+      operationId,
+    });
+    if (input.operationId) {
+      const replay = await this.#edits.findReplay(
+        document,
+        operationId,
+        "guided-refinement",
+        requestHash,
+      );
+      if (replay) {
+        return {
+          document: replay.document,
+          affectedLayerIds: replay.entry.affectedLayerIds ?? [],
+          createdLayerIds: replay.entry.createdLayerIds ?? [],
+          warnings: replay.document.guidance?.warnings ?? [],
+        };
+      }
+    }
     const currentRevision = document.revision ?? 1;
     if (currentRevision !== input.baseRevision) {
       throw new ProcessingDomainError(
@@ -392,7 +439,8 @@ export class ProcessingService {
       const updated = this.#edits.withTimeline(changed, document, {
         kind: "guided-refinement",
         actorUserId: input.actorUserId ?? "system",
-        operationId: input.operationId ?? crypto.randomUUID(),
+        operationId,
+        requestHash,
       });
       const issues = validateProductionDocument(updated, input.projectKind);
       if (issues.length > 0) {
@@ -421,8 +469,10 @@ export class ProcessingService {
       };
     } catch (error) {
       if (storedKeys.length > 0) {
-        await Promise.allSettled(
-          storedKeys.map((key) => this.storage.delete(key)),
+        await cleanupRasterAssets(
+          this.storage,
+          storedKeys,
+          this.runtime.onAssetCleanupError,
         );
       }
       throw error;

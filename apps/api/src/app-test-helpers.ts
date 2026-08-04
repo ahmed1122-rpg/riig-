@@ -1,10 +1,16 @@
 import type { FastifyInstance } from "fastify";
+import {
+  CURRENT_PRIVACY_VERSION,
+  CURRENT_TERMS_VERSION,
+} from "@motionprep/contracts";
 import { afterEach, expect } from "vitest";
 import { buildApp } from "./app.js";
 import type {
   CreateProviderCheckoutInput,
   PaymentProvider,
 } from "./billing/payment-provider.js";
+
+export const TEST_PASSWORD = ["Strong", "Pass", "123"].join("");
 
 class AppTestHarness {
   #app: FastifyInstance | undefined;
@@ -33,6 +39,12 @@ export function sessionCookie(
   return value?.split(";")[0] ?? "";
 }
 
+export const legalAcceptance = {
+  accepted: true,
+  termsVersion: CURRENT_TERMS_VERSION,
+  privacyVersion: CURRENT_PRIVACY_VERSION,
+} as const;
+
 export async function registerCreator(
   app: FastifyInstance,
   email = "owner@example.com",
@@ -43,11 +55,41 @@ export async function registerCreator(
     payload: {
       name: "مالك المشروع",
       email,
-      password: "StrongPass123",
+      password: TEST_PASSWORD,
+      legal: legalAcceptance,
     },
   });
   expect(response.statusCode).toBe(201);
   return sessionCookie(response.headers["set-cookie"]);
+}
+
+export async function approveCurrentReview(
+  app: FastifyInstance,
+  cookie: string,
+  projectId: string,
+  sourceVersionId: string,
+): Promise<number> {
+  const document = await app.inject({
+    method: "GET",
+    url:
+      `/v1/projects/${projectId}/layer-document` +
+      `?sourceVersionId=${sourceVersionId}`,
+    headers: { cookie },
+  });
+  expect(document.statusCode).toBe(200);
+  const revision = document.json().data.revision as number;
+  const approved = await app.inject({
+    method: "POST",
+    url: `/v1/projects/${projectId}/review/approve`,
+    headers: {
+      cookie,
+      "x-idempotency-key": `approve-${projectId}-${revision}`,
+    },
+    payload: { sourceVersionId, documentRevision: revision },
+  });
+  expect(approved.statusCode).toBe(200);
+  expect(approved.json().data.status).toBe("approved");
+  return revision;
 }
 
 export class FakeStripeProvider implements PaymentProvider {

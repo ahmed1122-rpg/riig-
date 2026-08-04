@@ -2,6 +2,8 @@
   "name": "motionprep-studio",
   "version": "0.1.3",
   "private": true,
+  "packageManager": "npm@11.13.0",
+  "license": "UNLICENSED",
   "description": "Prepare images and books as animation-ready layered assets.",
   "workspaces": [
     "packages/*",

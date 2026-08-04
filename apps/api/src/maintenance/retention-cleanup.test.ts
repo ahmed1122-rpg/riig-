@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InMemoryObjectStorage } from "../storage/object-storage.js";
+import {
+  AccountDeletionProcessor,
+  type AccountPrivacyRepository,
+} from "../privacy/account-privacy.js";
 import type { RetentionConfig } from "./retention-config.js";
 import {
   RetentionCleanup,
+  PostgresRetentionStore,
   exportArtifactKey,
   type RetentionDatabaseCounts,
   type RetentionStore,
@@ -34,6 +39,7 @@ const emptyCounts: RetentionDatabaseCounts = {
   exportJobs: 0,
   uploadSessions: 0,
   sourceVersions: 0,
+  uploadIntegrityEvents: 0,
 };
 
 describe("retention cleanup", () => {
@@ -160,9 +166,91 @@ describe("retention cleanup", () => {
     ]);
   });
 
+  it("surfaces failed durable account deletion through maintenance", async () => {
+    const request = {
+      id: crypto.randomUUID(),
+      userId: crypto.randomUUID(),
+      status: "processing" as const,
+      objectKeys: ["sources/private.png"],
+      attempt: 1,
+      requestedAt: "2026-08-04T10:00:00.000Z",
+      updatedAt: "2026-08-04T10:00:00.000Z",
+      completedAt: null,
+    };
+    const repository: AccountPrivacyRepository = {
+      async exportAccount() { throw new Error("not used"); },
+      async prepareDeletion() { return { kind: "ready", request }; },
+      async listPendingDeletions() { return [request]; },
+      async markDeletionFailed() {},
+      async completeDeletion() {},
+    };
+    const storage = new InMemoryObjectStorage();
+    storage.delete = () => Promise.reject("temporary outage");
+    const store: RetentionStore = {
+      async listExpiredUploads() { return []; },
+      async markUploadPurged() { return false; },
+      async listExpiredArtifacts() { return []; },
+      async markArtifactPurged() { return false; },
+      async pruneDatabase() { return emptyCounts; },
+    };
+
+    const report = await new RetentionCleanup(
+      store,
+      storage,
+      config,
+      () => new Date("2026-08-04T10:01:00.000Z"),
+      {
+        repository,
+        processor: new AccountDeletionProcessor(repository, storage),
+      },
+    ).run();
+
+    expect(report.failures).toEqual([
+      {
+        key: `account-deletion:${request.id}`,
+        message: "One or more private objects could not be deleted.",
+      },
+    ]);
+  });
+
   it("derives the same private artifact key used by the export service", () => {
     expect(exportArtifactKey("project", "export", "result.psd")).toBe(
       "artifacts/project/export/result.psd",
     );
+  });
+
+  it("prefers immutable artifact metadata and falls back for historical rows", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [
+        {
+          id: "current-export",
+          project_id: "project",
+          filename: "current.psd",
+          object_key:
+            "artifacts/project/current-export/generations/generation/current.psd",
+        },
+        {
+          id: "legacy-export",
+          project_id: "project",
+          filename: "legacy.psd",
+          object_key: null,
+        },
+      ],
+    });
+    const store = new PostgresRetentionStore({ query } as never);
+
+    await expect(
+      store.listExpiredArtifacts("2026-07-28T12:00:00.000Z", 100),
+    ).resolves.toEqual([
+      {
+        exportId: "current-export",
+        objectKey:
+          "artifacts/project/current-export/generations/generation/current.psd",
+      },
+      {
+        exportId: "legacy-export",
+        objectKey: "artifacts/project/legacy-export/legacy.psd",
+      },
+    ]);
   });
 });

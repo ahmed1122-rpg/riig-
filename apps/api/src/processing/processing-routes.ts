@@ -11,6 +11,7 @@ import {
   sendProjectNotFound,
 } from "../http/api-response.js";
 import { requestIdempotencyKey } from "../http/request-metadata.js";
+import { toProcessingJobDto } from "../jobs/job-dtos.js";
 import { requestTraceContext } from "../observability/tracing.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import {
@@ -150,7 +151,9 @@ export async function registerProcessingRoutes(
           ? { pdfSeparationMode: body.data.pdfSeparationMode ?? "sentence" }
           : {},
       );
-      return reply.status(202).send({ data: job, error: null });
+      return reply
+        .status(202)
+        .send({ data: toProcessingJobDto(job), error: null });
     } catch (error) {
       if (error instanceof ProcessingDomainError && error.jobId) {
         await projects.finishJobStatus(
@@ -205,6 +208,10 @@ export async function registerProcessingRoutes(
           })),
           user.id,
           requestIdempotencyKey(request),
+        );
+        await projects.invalidateReview(
+          project.id,
+          body.data.sourceVersionId,
         );
         return { data: updated, error: null };
       } catch (error) {
@@ -316,7 +323,9 @@ export async function registerProcessingRoutes(
           },
           operationId,
         );
-        return reply.status(202).send({ data: job, error: null });
+        return reply
+          .status(202)
+          .send({ data: toProcessingJobDto(job), error: null });
       } catch (error) {
         if (error instanceof ProcessingDomainError && error.jobId) {
           await projects.finishJobStatus(
@@ -410,9 +419,11 @@ export async function registerProcessingRoutes(
         reply,
         params.data.projectId,
         body.data.sourceVersionId,
-        ({ project }) =>
+        ({ project, userId, operationId }) =>
           processing.navigateEditHistory({
             projectId: project.id,
+            actorUserId: userId,
+            operationId,
             ...body.data,
           }),
       );

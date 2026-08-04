@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 import {
+  approveCurrentReview,
   createAppTestHarness,
   registerCreator,
 } from "./app-test-helpers.js";
@@ -66,6 +67,11 @@ describe("API — المعالجة ووثائق الطبقات", () => {
       },
       payload: { projectId, sourceVersionId },
     });
+    const observed = await app.inject({
+      method: "GET",
+      url: `/v1/processing/jobs/${processed.json().data.id}`,
+      headers: { cookie },
+    });
     const subscription = await app.inject({
       method: "GET",
       url: "/v1/billing/subscription",
@@ -80,13 +86,13 @@ describe("API — المعالجة ووثائق الطبقات", () => {
     expect(processed.statusCode).toBe(202);
     expect(repeated.json().data.id).toBe(processed.json().data.id);
     expect(processed.json().data.status).toBe("ready");
-    expect(processed.json().data.correlationId).toBe(
-      processed.headers["x-request-id"],
-    );
-    expect(processed.json().data.traceContext).toEqual({
-      traceparent:
-        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
-    });
+    for (const publicJob of [processed.json().data, observed.json().data]) {
+      expect(publicJob).not.toHaveProperty("correlationId");
+      expect(publicJob).not.toHaveProperty("traceContext");
+      expect(publicJob).not.toHaveProperty("nextAttemptAt");
+      expect(publicJob).not.toHaveProperty("leaseOwner");
+      expect(publicJob).not.toHaveProperty("leaseExpiresAt");
+    }
     expect(subscription.json().data.usage.jobs).toBe(1);
     expect(subscription.json().data.usage.processingMinutes).toBeGreaterThan(0);
     expect(document.statusCode).toBe(200);
@@ -277,6 +283,7 @@ describe("API — المعالجة ووثائق الطبقات", () => {
         (layer: { rasterAsset?: unknown }) => Boolean(layer.rasterAsset),
       ),
     ).toBe(true);
+    await approveCurrentReview(app, cookie, projectId, sourceVersionId);
 
     const exported = await app.inject({
       method: "POST",
@@ -519,6 +526,7 @@ describe("API — المعالجة ووثائق الطبقات", () => {
         }),
       ]),
     );
+    await approveCurrentReview(app, cookie, projectId, sourceVersionId);
 
     const textExport = await app.inject({
       method: "POST",
@@ -699,6 +707,7 @@ describe("API — المعالجة ووثائق الطبقات", () => {
       });
 
     const words = await processAs("word", "pdf-reanalysis-word");
+    const conflicting = await processAs("line", "pdf-reanalysis-word");
     const lines = await processAs("line", "pdf-reanalysis-line");
     const document = await app.inject({
       method: "GET",
@@ -711,6 +720,8 @@ describe("API — المعالجة ووثائق الطبقات", () => {
         (layer: { kind: string }) => layer.kind === "text",
       );
 
+    expect(conflicting.statusCode).toBe(409);
+    expect(conflicting.json().error.code).toBe("IDEMPOTENCY_CONFLICT");
     expect(words.json().data.id).not.toBe(lines.json().data.id);
     expect(lines.json().data).toMatchObject({
       status: "ready",

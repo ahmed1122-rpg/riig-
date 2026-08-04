@@ -1,6 +1,10 @@
 import type { Pool } from "pg";
 import type { ObjectStorage } from "../storage/object-storage.js";
 import type { RetentionConfig } from "./retention-config.js";
+import type {
+  AccountDeletionProcessor,
+  AccountPrivacyRepository,
+} from "../privacy/account-privacy.js";
 
 export interface ExpiredUploadObject {
   uploadId: string;
@@ -28,6 +32,7 @@ export interface RetentionDatabaseCounts {
   exportJobs: number;
   uploadSessions: number;
   sourceVersions: number;
+  uploadIntegrityEvents: number;
 }
 
 export interface RetentionStore {
@@ -61,11 +66,16 @@ export class RetentionCleanup {
     private readonly storage: ObjectStorage,
     private readonly config: RetentionConfig,
     private readonly now: () => Date = () => new Date(),
+    private readonly accountDeletions?: {
+      repository: AccountPrivacyRepository;
+      processor: AccountDeletionProcessor;
+    },
   ) {}
 
   async run(): Promise<RetentionCleanupReport> {
     const checkedAt = this.now().toISOString();
     const failures: RetentionCleanupReport["failures"] = [];
+    await this.resumeAccountDeletions(failures);
     const uploadsPurged = await this.purgeUploads(checkedAt, failures);
     const artifactsPurged = await this.purgeArtifacts(checkedAt, failures);
     const database = await this.store.pruneDatabase(
@@ -79,6 +89,31 @@ export class RetentionCleanup {
       database,
       failures,
     };
+  }
+
+  private async resumeAccountDeletions(
+    failures: RetentionCleanupReport["failures"],
+  ): Promise<void> {
+    if (!this.accountDeletions) return;
+    const requests = await this.accountDeletions.repository.listPendingDeletions(
+      this.config.RETENTION_BATCH_SIZE,
+    );
+    for (const request of requests) {
+      try {
+        const status = await this.accountDeletions.processor.process(request);
+        if (status === "failed") {
+          failures.push({
+            key: `account-deletion:${request.id}`,
+            message: "One or more private objects could not be deleted.",
+          });
+        }
+      } catch (error) {
+        failures.push({
+          key: `account-deletion:${request.id}`,
+          message: errorMessage(error),
+        });
+      }
+    }
   }
 
   private async purgeUploads(
@@ -139,6 +174,7 @@ interface ArtifactCleanupRow {
   id: string;
   project_id: string;
   filename: string;
+  object_key: string | null;
 }
 
 export class PostgresRetentionStore implements RetentionStore {
@@ -210,7 +246,8 @@ export class PostgresRetentionStore implements RetentionStore {
   ): Promise<ExpiredExportArtifact[]> {
     const result = await this.pool.query<ArtifactCleanupRow>(
       `
-        SELECT id, project_id, artifact->>'filename' AS filename
+        SELECT id, project_id, artifact->>'filename' AS filename,
+          artifact->>'objectKey' AS object_key
         FROM export_jobs
         WHERE status = 'ready'
           AND artifact IS NOT NULL
@@ -223,7 +260,8 @@ export class PostgresRetentionStore implements RetentionStore {
     );
     return result.rows.map((row) => ({
       exportId: row.id,
-      objectKey: exportArtifactKey(row.project_id, row.id, row.filename),
+      objectKey:
+        row.object_key ?? exportArtifactKey(row.project_id, row.id, row.filename),
     }));
   }
 
@@ -425,6 +463,13 @@ export class PostgresRetentionStore implements RetentionStore {
           )
         `,
         [jobCutoff, config.RETENTION_BATCH_SIZE],
+      ),
+      uploadIntegrityEvents: await count(
+        `DELETE FROM upload_integrity_events WHERE ctid IN (
+          SELECT ctid FROM upload_integrity_events
+          WHERE created_at <= $1 LIMIT $2
+        )`,
+        [auditCutoff, config.RETENTION_BATCH_SIZE],
       ),
       };
       await client.query("COMMIT");

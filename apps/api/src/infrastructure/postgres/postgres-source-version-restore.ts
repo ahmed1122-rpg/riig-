@@ -33,12 +33,15 @@ interface TargetVersionRow {
 
 interface RestoreEventRow {
   id: string;
+  operation_id: string;
   project_id: string;
   actor_user_id: string;
   from_source_version_id: string;
   to_source_version_id: string;
   reason: string;
   request_id: string;
+  idempotency_key: string;
+  originating_request_id: string;
   created_at: Date | string;
 }
 
@@ -55,13 +58,13 @@ export class PostgresSourceVersionRestoreCommand
       await client.query("BEGIN");
       await client.query(
         "SELECT pg_advisory_xact_lock(hashtext($1))",
-        [`source-restore:${input.actorUserId}:${input.requestId}`],
+        [`source-restore:${input.actorUserId}:${input.idempotencyKey}`],
       );
 
-      const existing = await findEventByRequest(
+      const existing = await findEventByIdempotencyKey(
         client,
         input.actorUserId,
-        input.requestId,
+        input.idempotencyKey,
       );
       if (existing) {
         const event = mapEvent(existing);
@@ -112,20 +115,24 @@ export class PostgresSourceVersionRestoreCommand
 
       const event: SourceVersionRestoreEvent = {
         id: crypto.randomUUID(),
+        operationId: crypto.randomUUID(),
         projectId: input.projectId,
         actorUserId: input.actorUserId,
         fromSourceVersionId: input.expectedCurrentSourceVersionId,
         toSourceVersionId: input.targetSourceVersionId,
         reason: input.reason,
-        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        originatingRequestId: input.originatingRequestId,
+        requestId: input.idempotencyKey,
         createdAt: new Date().toISOString(),
       };
       const updatedResult = await client.query<ProjectRestoreRow>(
         `
-          UPDATE projects
-          SET current_source_version_id = $2,
-              status = 'needs_review',
-              updated_at = now()
+            UPDATE projects
+            SET current_source_version_id = $2,
+                status = 'needs_review',
+                current_review_approval_id = NULL,
+                updated_at = now()
           WHERE id = $1
           RETURNING id, name, kind, status, current_source_version_id,
             created_at, updated_at
@@ -135,19 +142,23 @@ export class PostgresSourceVersionRestoreCommand
       await client.query(
         `
           INSERT INTO source_version_restore_events (
-            id, project_id, actor_user_id, from_source_version_id,
-            to_source_version_id, reason, request_id, created_at
+            id, operation_id, project_id, actor_user_id,
+            from_source_version_id, to_source_version_id, reason,
+            request_id, idempotency_key, originating_request_id, created_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         `,
         [
           event.id,
+          event.operationId,
           event.projectId,
           event.actorUserId,
           event.fromSourceVersionId,
           event.toSourceVersionId,
           event.reason,
           event.requestId,
+          event.idempotencyKey,
+          event.originatingRequestId,
           event.createdAt,
         ],
       );
@@ -188,8 +199,7 @@ export class PostgresSourceVersionRestoreCommand
     }
     const result = await this.pool.query<RestoreEventRow>(
       `
-        SELECT id, project_id, actor_user_id, from_source_version_id,
-          to_source_version_id, reason, request_id, created_at
+        SELECT ${restoreEventColumns}
         FROM source_version_restore_events
         WHERE project_id = $1
         ORDER BY created_at DESC
@@ -230,19 +240,18 @@ async function findOwnedProject(
   return mapPostgresProject(row, requiredRow(version.rows[0]).version_number);
 }
 
-async function findEventByRequest(
+async function findEventByIdempotencyKey(
   client: PoolClient,
   actorUserId: string,
-  requestId: string,
+  idempotencyKey: string,
 ): Promise<RestoreEventRow | null> {
   const result = await client.query<RestoreEventRow>(
     `
-      SELECT id, project_id, actor_user_id, from_source_version_id,
-        to_source_version_id, reason, request_id, created_at
+      SELECT ${restoreEventColumns}
       FROM source_version_restore_events
-      WHERE actor_user_id = $1 AND request_id = $2
+      WHERE actor_user_id = $1 AND idempotency_key = $2
     `,
-    [actorUserId, requestId],
+    [actorUserId, idempotencyKey],
   );
   return result.rows[0] ?? null;
 }
@@ -250,15 +259,24 @@ async function findEventByRequest(
 function mapEvent(row: RestoreEventRow): SourceVersionRestoreEvent {
   return {
     id: row.id,
+    operationId: row.operation_id,
     projectId: row.project_id,
     actorUserId: row.actor_user_id,
     fromSourceVersionId: row.from_source_version_id,
     toSourceVersionId: row.to_source_version_id,
     reason: row.reason,
+    idempotencyKey: row.idempotency_key,
+    originatingRequestId: row.originating_request_id,
     requestId: row.request_id,
     createdAt: toIso(row.created_at),
   };
 }
+
+const restoreEventColumns = `
+  id, operation_id, project_id, actor_user_id, from_source_version_id,
+  to_source_version_id, reason, request_id, idempotency_key,
+  originating_request_id, created_at
+`;
 
 function requiredRow<T>(row: T | undefined): T {
   if (!row) throw new Error("PostgreSQL did not return the required row.");

@@ -6,6 +6,7 @@ import {
   FakeStripeProvider,
   registerCreator,
   sessionCookie,
+  legalAcceptance,
 } from "./app-test-helpers.js";
 import { InMemoryAuthRepository } from "./auth/auth-repository.js";
 import { AuthService } from "./auth/auth-service.js";
@@ -29,6 +30,7 @@ describe("API — الفوترة والإدارة", () => {
         name: "صانع محتوى",
         email: "creator@example.com",
         password: "StrongPass123",
+        legal: legalAcceptance,
       },
     });
     const cookie = sessionCookie(registered.headers["set-cookie"]);
@@ -60,6 +62,18 @@ describe("API — الفوترة والإدارة", () => {
     expect(checkout.statusCode).toBe(201);
     expect(checkout.json().data.id).toBe(repeated.json().data.id);
     expect(checkout.json().data.checkoutUrl).toContain("sandbox_checkout");
+
+    const conflicting = await app.inject({
+      method: "POST",
+      url: "/v1/billing/checkouts",
+      headers: {
+        cookie,
+        "x-idempotency-key": "checkout-creator-001",
+      },
+      payload: { ...checkoutPayload, planId: "studio" },
+    });
+    expect(conflicting.statusCode).toBe(409);
+    expect(conflicting.json().error.code).toBe("IDEMPOTENCY_CONFLICT");
 
     const ownedCheckout = await app.inject({
       method: "GET",
@@ -301,6 +315,7 @@ describe("API — الفوترة والإدارة", () => {
         name: "مستخدم للاختبار",
         email: "target@example.com",
         password: "StrongPass123",
+        legal: legalAcceptance,
       },
     });
     const targetId = creatorRegistration.json().data.user.id as string;
@@ -423,6 +438,11 @@ describe("API — الفوترة والإدارة", () => {
       leaseOwner: null,
       leaseExpiresAt: null,
       errorCode: "PROCESSING_FAILED",
+      correlationId: "processing-request-123",
+      traceContext: {
+        traceparent:
+          "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+      },
       createdAt: "2026-07-31T00:00:00.000Z",
       updatedAt: "2026-07-31T00:00:00.000Z",
     });
@@ -442,6 +462,25 @@ describe("API — الفوترة والإدارة", () => {
     });
     const cookie = sessionCookie(login.headers["set-cookie"]);
 
+    const listed = await app.inject({
+      method: "GET",
+      url: "/v1/admin/processing",
+      headers: { cookie },
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().data[0]).toMatchObject({
+      correlationId: "processing-request-123",
+      traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+      attempt: {
+        current: 3,
+        maximum: 3,
+        nextAt: "2026-07-31T00:00:00.000Z",
+      },
+      error: { code: "PROCESSING_FAILED" },
+      lease: null,
+    });
+    expect(listed.json().data[0]).not.toHaveProperty("traceContext");
+
     const retried = await app.inject({
       method: "POST",
       url: `/v1/admin/processing/${jobId}/retry`,
@@ -455,8 +494,8 @@ describe("API — الفوترة والإدارة", () => {
     expect(retried.json().data).toMatchObject({
       status: "queued",
       progress: 0,
-      attempt: 0,
-      errorCode: null,
+      attempt: { current: 0, maximum: 3 },
+      error: null,
     });
     const audit = await app.inject({
       method: "GET",
@@ -538,6 +577,11 @@ describe("API — الفوترة والإدارة", () => {
       leaseOwner: null,
       leaseExpiresAt: null,
       errorCode: "EXPORT_WORKER_FAILED",
+      correlationId: "export-request-123",
+      traceContext: {
+        traceparent:
+          "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+      },
       createdAt: "2026-08-01T00:00:00.000Z",
       updatedAt: "2026-08-01T00:00:00.000Z",
     });
@@ -558,6 +602,25 @@ describe("API — الفوترة والإدارة", () => {
     });
     const cookie = sessionCookie(login.headers["set-cookie"]);
 
+    const listed = await app.inject({
+      method: "GET",
+      url: "/v1/admin/exports",
+      headers: { cookie },
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().data[0]).toMatchObject({
+      correlationId: "export-request-123",
+      traceId: "0af7651916cd43dd8448eb211c80319c",
+      attempt: {
+        current: 3,
+        maximum: 3,
+        nextAt: "2026-08-01T00:00:00.000Z",
+      },
+      error: { code: "EXPORT_WORKER_FAILED" },
+      lease: null,
+    });
+    expect(listed.json().data[0]).not.toHaveProperty("traceContext");
+
     const retried = await app.inject({
       method: "POST",
       url: `/v1/admin/exports/${jobId}/retry`,
@@ -571,8 +634,8 @@ describe("API — الفوترة والإدارة", () => {
     expect(retried.json().data).toMatchObject({
       status: "queued",
       progress: 0,
-      attempt: 0,
-      errorCode: null,
+      attempt: { current: 0, maximum: 3 },
+      error: null,
     });
     const audit = await app.inject({
       method: "GET",

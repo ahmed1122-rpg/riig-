@@ -2,10 +2,28 @@ import type {
   LayerDocument,
   ProcessingJob,
 } from "@motionprep/contracts";
+import {
+  boundedJobListLimit,
+  compareJobsByUpdatedAt,
+  isBeforeJobCursor,
+  type JobListCursor,
+} from "../jobs/job-list-cursor.js";
+
+export interface ProcessingStatusSummary {
+  total: number;
+  active: number;
+  failed: number;
+}
 
 export interface ProcessingJobRepository {
   findById(id: string): Promise<ProcessingJob | null>;
   list(limit: number): Promise<ProcessingJob[]>;
+  listByProjectIds(
+    projectIds: string[],
+    limit: number,
+    cursor?: JobListCursor,
+  ): Promise<ProcessingJob[]>;
+  summarizeStatuses(): Promise<ProcessingStatusSummary>;
   findBySource(
     projectId: string,
     sourceVersionId: string,
@@ -44,7 +62,34 @@ export class InMemoryProcessingJobRepository
   async list(limit: number): Promise<ProcessingJob[]> {
     return [...this.#jobs.values()]
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-      .slice(0, Math.max(1, Math.min(limit, 200)));
+      .slice(0, boundedJobListLimit(limit));
+  }
+
+  async listByProjectIds(
+    projectIds: string[],
+    limit: number,
+    cursor?: JobListCursor,
+  ): Promise<ProcessingJob[]> {
+    const allowed = new Set(projectIds);
+    return [...this.#jobs.values()]
+      .filter(
+        (job) =>
+          allowed.has(job.projectId) &&
+          (!cursor || isBeforeJobCursor(job, cursor, "processing:")),
+      )
+      .sort(compareJobsByUpdatedAt)
+      .slice(0, boundedJobListLimit(limit));
+  }
+
+  async summarizeStatuses(): Promise<ProcessingStatusSummary> {
+    const jobs = [...this.#jobs.values()];
+    return {
+      total: jobs.length,
+      active: jobs.filter((job) =>
+        ["queued", "processing", "verifying"].includes(job.status),
+      ).length,
+      failed: jobs.filter((job) => job.status === "failed").length,
+    };
   }
 
   async findBySource(
@@ -154,9 +199,12 @@ export class InMemoryLayerDocumentRepository
   private storeRevision(document: LayerDocument): void {
     if (!document.sourceVersionId) return;
     const revision = document.revision ?? 1;
-    const retained = new Set(
-      document.editTimeline?.entries.map((entry) => entry.revision) ?? [],
-    );
+    const retained = new Set([
+      ...(document.editTimeline?.entries.map((entry) => entry.revision) ?? []),
+      ...(document.editTimeline?.navigationEntries?.map(
+        (entry) => entry.resultRevision,
+      ) ?? []),
+    ]);
     this.#revisions.set(
       `${document.projectId}:${document.sourceVersionId}:${revision}`,
       structuredClone(document),

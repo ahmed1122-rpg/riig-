@@ -215,6 +215,12 @@ describe("API — البنية التحتية", () => {
     expect(response.body).toContain(
       'motionprep_maintenance_stale{task="retention"} 0',
     );
+    expect(response.body).toContain(
+      "motionprep_upload_reconciliation_runs_total 0",
+    );
+    expect(response.body).toContain(
+      'motionprep_upload_integrity_terminal_total{reason="UPLOAD_HASH_MISMATCH"} 0',
+    );
     expect(response.body).toContain("motionprep_process_resident_memory_bytes");
     expect(response.body).toContain("motionprep_process_cpu_seconds_total");
     expect(response.body).toContain(

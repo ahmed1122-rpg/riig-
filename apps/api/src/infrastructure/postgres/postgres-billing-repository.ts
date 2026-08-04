@@ -6,6 +6,7 @@ import type {
 } from "@motionprep/contracts";
 import type { Pool } from "pg";
 import type {
+  BillingStatusSummary,
   BillingRepository,
   ProviderEventVersion,
 } from "../../billing/billing-repository.js";
@@ -214,6 +215,85 @@ export class PostgresBillingRepository implements BillingRepository {
       [Math.max(1, Math.min(limit, 200))],
     );
     return result.rows.map(mapCheckout);
+  }
+
+  async summarizeStatuses(): Promise<BillingStatusSummary> {
+    const [subscriptions, checkouts] = await Promise.all([
+      this.pool.query<{ active: string | number }>(
+        `SELECT count(*) FILTER (
+           WHERE status IN ('active', 'trialing')
+         ) AS active
+         FROM subscriptions`,
+      ),
+      this.pool.query<{
+        pending: string | number;
+        paid: string | number;
+      }>(`SELECT
+           count(*) FILTER (
+             WHERE status IN ('pending', 'redirect_required')
+           ) AS pending,
+           count(*) FILTER (WHERE status = 'paid') AS paid
+         FROM checkout_sessions`),
+    ]);
+    return {
+      activeSubscriptions: Number(subscriptions.rows[0]?.active ?? 0),
+      pendingCheckouts: Number(checkouts.rows[0]?.pending ?? 0),
+      paidCheckouts: Number(checkouts.rows[0]?.paid ?? 0),
+    };
+  }
+
+  async ensurePendingCheckout(
+    checkout: CheckoutSession,
+  ): Promise<CheckoutSession> {
+    await this.pool.query(
+      `INSERT INTO checkout_sessions (
+         id, user_id, provider, plan_id, status, currency, amount_minor,
+         checkout_url, provider_reference, created_at, expires_at
+       ) VALUES ($1, $2, $3, $4, 'pending', $5, $6, NULL, NULL, $7, $8)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        checkout.id,
+        checkout.userId,
+        checkout.provider,
+        checkout.planId,
+        checkout.currency,
+        checkout.amountMinor,
+        checkout.createdAt,
+        checkout.expiresAt,
+      ],
+    );
+    const current = await this.findCheckout(checkout.id);
+    if (!current) throw new Error("Pending checkout was not persisted.");
+    return current;
+  }
+
+  async completePendingCheckout(
+    checkout: CheckoutSession,
+  ): Promise<{ checkout: CheckoutSession; transitioned: boolean }> {
+    const result = await this.pool.query<CheckoutRow>(
+      `UPDATE checkout_sessions
+       SET status = $2,
+           checkout_url = $3,
+           provider_reference = $4,
+           expires_at = $5
+       WHERE id = $1 AND status = 'pending'
+       RETURNING
+         id, user_id, provider, plan_id, status, currency, amount_minor,
+         checkout_url, provider_reference, created_at, expires_at`,
+      [
+        checkout.id,
+        checkout.status,
+        checkout.checkoutUrl,
+        checkout.providerReference ?? null,
+        checkout.expiresAt,
+      ],
+    );
+    if (result.rows[0]) {
+      return { checkout: mapCheckout(result.rows[0]), transitioned: true };
+    }
+    const current = await this.findCheckout(checkout.id);
+    if (!current) throw new Error("Pending checkout no longer exists.");
+    return { checkout: current, transitioned: false };
   }
 
   async saveCheckout(checkout: CheckoutSession): Promise<void> {

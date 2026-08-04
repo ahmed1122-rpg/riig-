@@ -50,6 +50,7 @@ export type ProviderWebhookEvent =
 
 export interface PaymentProvider {
   readonly id: PaymentProviderId;
+  /** Must be idempotent for repeated calls carrying the same checkoutId. */
   createCheckout(
     input: CreateProviderCheckoutInput,
   ): Promise<{ checkoutUrl: string; externalReference: string }>;

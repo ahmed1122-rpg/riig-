@@ -1,11 +1,13 @@
 import type {
   AuditEvent,
+  AdminExportJobDto,
+  AdminProcessingJobDto,
   BillingPlanCatalogItem,
   CheckoutSession,
-  ExportJob,
+  ExportJobDto,
   LayerDocument,
   LayerDocumentEditResult,
-  ProcessingJob,
+  ProcessingJobDto,
   ProjectSummary as ContractProjectSummary,
   SourceVersionSummary as ContractSourceVersionSummary,
   SourceVersionRestoreEvent,
@@ -39,7 +41,8 @@ export type LayerDocumentEditView = Omit<
   LayerDocumentEditResult,
   "document"
 > & { document: LayerDocumentView };
-export type ExportSummary = ExportJob;
+export type ExportSummary = ExportJobDto;
+export type ProcessingSummary = ProcessingJobDto;
 
 export type SubscriptionSummary = Omit<SubscriptionView, "id" | "userId">;
 export type CheckoutSummary = CheckoutSession;
@@ -66,7 +69,8 @@ export interface AdminOverview {
   audit: AdminAuditEvent[];
 }
 
-export type AdminProcessingJob = ProcessingJob;
+export type AdminProcessingJob = AdminProcessingJobDto;
+export type AdminExportJob = AdminExportJobDto;
 
 export interface AdminBillingData {
   subscriptions: Array<

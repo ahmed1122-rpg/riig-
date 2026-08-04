@@ -3,24 +3,36 @@ import {
   cancelExport,
   downloadExport,
   listExports,
+  listProjects,
   type ExportSummary,
+  type ProjectSummary,
 } from "../../lib/api";
 import { DataState } from "../../shared/DataState";
 import { formatBytes, formatDateTime } from "../../shared/formatters";
 import { Icon } from "../../shared/Icon";
 import type { DemoState } from "../../types";
 import { getExportFormatPresentation } from "./exportPresentation";
+import { getExportFailureMessage } from "../../shared/workflowFailurePresentation";
+
+export type ExportProjectTarget = Pick<
+  ProjectSummary,
+  | "id"
+  | "name"
+  | "kind"
+  | "currentSourceVersionId"
+  | "currentSourceVersionNumber"
+>;
 
 interface ExportsViewProps {
   authenticated: boolean;
   onRequireAuth: () => void;
   onCreateProject: () => void;
   onViewProjects: () => void;
+  onOpenProject: (project: ExportProjectTarget) => void;
   onNotify: (message: string) => void;
 }
 
 const statusLabels: Record<ExportSummary["status"], string> = {
-  preflight: "فحص أولي",
   queued: "في الانتظار",
   generating: "قيد الإنشاء",
   verifying: "قيد التحقق",
@@ -34,6 +46,7 @@ export function ExportsView({
   onRequireAuth,
   onCreateProject,
   onViewProjects,
+  onOpenProject,
   onNotify,
 }: ExportsViewProps) {
   const [items, setItems] = useState<ExportSummary[]>([]);
@@ -41,6 +54,7 @@ export function ExportsView({
     authenticated ? "loading" : "empty",
   );
   const [cancellingId, setCancellingId] = useState<string>();
+  const [openingProjectId, setOpeningProjectId] = useState<string>();
   const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
@@ -61,7 +75,7 @@ export function ExportsView({
           setState(exports.length ? "ready" : "empty");
           if (
             exports.some((item) =>
-              ["preflight", "queued", "generating", "verifying"].includes(
+              ["queued", "generating", "verifying"].includes(
                 item.status,
               ),
             )
@@ -129,6 +143,29 @@ export function ExportsView({
     }
   };
 
+  const openOwningProject = async (projectId: string) => {
+    setOpeningProjectId(projectId);
+    try {
+      const project = (await listProjects()).find(
+        (candidate) => candidate.id === projectId,
+      );
+      if (!project) {
+        onNotify("تعذر العثور على المشروع المرتبط. افتح مكتبة المشاريع للمتابعة.");
+        onViewProjects();
+        return;
+      }
+      onOpenProject(project);
+    } catch (error) {
+      onNotify(
+        error instanceof Error
+          ? error.message
+          : "تعذر فتح المشروع المرتبط. أعد المحاولة.",
+      );
+    } finally {
+      setOpeningProjectId(undefined);
+    }
+  };
+
   return (
     <div className="projects-view page-enter">
       <section className="page-title-row">
@@ -147,7 +184,7 @@ export function ExportsView({
               item.artifact &&
               new Date(item.artifact.expiresAt).getTime() > Date.now();
             return (
-              <article className="project-row" key={item.id}>
+              <article className="project-row export-row" key={item.id}>
                 <span className="project-preview project-preview--image">
                   <Icon name="packageCheck" size={25} />
                 </span>
@@ -155,15 +192,25 @@ export function ExportsView({
                   <strong dir="ltr">
                     {item.artifact?.filename ?? `${item.format}.${item.id.slice(0, 8)}`}
                   </strong>
-                  <small>
-                    {getExportFormatPresentation(item.format).label}
-                    {item.artifact
-                      ? ` · ${formatBytes(item.artifact.sizeBytes)}`
-                      : item.attempt > 0
-                        ? ` · محاولة ${item.attempt}/${item.maxAttempts}`
-                        : ""}
-                    {item.errorCode ? ` · ${item.errorCode}` : ""}
-                  </small>
+                  {item.status === "failed" ? (
+                    <small className="export-failure-message">
+                      <span>{getExportFailureMessage(item.errorCode)}</span>
+                      {item.errorCode && (
+                        <code dir="ltr" title="رمز تشخيصي للدعم">
+                          {item.errorCode}
+                        </code>
+                      )}
+                    </small>
+                  ) : (
+                    <small>
+                      {getExportFormatPresentation(item.format).label}
+                      {item.artifact
+                        ? ` · ${formatBytes(item.artifact.sizeBytes)}`
+                        : item.attempt > 0
+                          ? ` · محاولة ${item.attempt}/${item.maxAttempts}`
+                          : ""}
+                    </small>
+                  )}
                 </div>
                 <div className="project-progress">
                   <span><i style={{ width: `${item.progress}%` }} /></span>
@@ -176,7 +223,22 @@ export function ExportsView({
                   {formatDateTime(item.updatedAt)}
                 </span>
                 <div className="export-row-actions">
-                  {["preflight", "queued", "generating"].includes(item.status) && (
+                  {item.status === "failed" && (
+                    <button
+                      className="secondary-button export-recovery-button"
+                      type="button"
+                      disabled={openingProjectId === item.projectId}
+                      onClick={() => void openOwningProject(item.projectId)}
+                    >
+                      <Icon name="arrow" size={15} />
+                      <span>
+                        {openingProjectId === item.projectId
+                          ? "جارٍ الفتح…"
+                          : "فتح المشروع"}
+                      </span>
+                    </button>
+                  )}
+                  {["queued", "generating"].includes(item.status) && (
                     <button
                       className="icon-button"
                       type="button"

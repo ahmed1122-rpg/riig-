@@ -4,6 +4,7 @@ import type {
 } from "@motionprep/contracts";
 import {
   DocumentEditCoordinator,
+  layerEditRequestHash,
   revisionConflict,
 } from "./document-edit-coordinator.js";
 import {
@@ -38,6 +39,8 @@ export interface NavigateEditHistoryInput {
   sourceVersionId: string;
   baseRevision: number;
   direction: "undo" | "redo";
+  actorUserId: string;
+  operationId: string;
 }
 
 export class PdfLayerOperations {
@@ -53,10 +56,12 @@ export class PdfLayerOperations {
       input.projectId,
       input.sourceVersionId,
     );
+    const requestHash = layerEditRequestHash("pdf-split", input);
     const replay = await this.edits.findReplay(
       document,
       input.operationId,
       "pdf-split",
+      requestHash,
     );
     if (replay) {
       return {
@@ -77,6 +82,8 @@ export class PdfLayerOperations {
       input.actorUserId,
       input.operationId,
       prepared.details,
+      "book",
+      requestHash,
     );
     return { document: updated, ...prepared.details };
   }
@@ -88,10 +95,12 @@ export class PdfLayerOperations {
       input.projectId,
       input.sourceVersionId,
     );
+    const requestHash = layerEditRequestHash("pdf-merge", input);
     const replay = await this.edits.findReplay(
       document,
       input.operationId,
       "pdf-merge",
+      requestHash,
     );
     if (replay) {
       return {
@@ -112,6 +121,8 @@ export class PdfLayerOperations {
       input.actorUserId,
       input.operationId,
       prepared.details,
+      "book",
+      requestHash,
     );
     return { document: updated, ...prepared.details };
   }
@@ -120,8 +131,17 @@ export class PdfLayerOperations {
     const document = await this.edits.requireDocument(
       input.projectId,
       input.sourceVersionId,
-      input.baseRevision,
     );
+    const requestHash = layerEditRequestHash("history-navigation", input);
+    const replay = await this.edits.findHistoryReplay(
+      document,
+      input.operationId,
+      requestHash,
+    );
+    if (replay) return replay;
+    if ((document.revision ?? 1) !== input.baseRevision) {
+      throw revisionConflict();
+    }
     const timeline = document.editTimeline;
     const targetCursor =
       input.direction === "undo"
@@ -147,14 +167,12 @@ export class PdfLayerOperations {
         "انتهت مدة الاحتفاظ بمراجعة التعديل المطلوبة.",
       );
     }
-    const currentRevision = document.revision ?? 1;
-    const restored: LayerDocument = {
-      ...snapshot,
-      revision: currentRevision + 1,
-      editTimeline: { ...timeline, cursor: targetCursor },
-    };
-    const saved = await this.documents.saveIfRevision(restored, currentRevision);
-    if (!saved) throw revisionConflict();
-    return restored;
+    return this.edits.saveHistoryNavigation(document, snapshot, {
+      cursor: targetCursor,
+      direction: input.direction,
+      actorUserId: input.actorUserId,
+      operationId: input.operationId,
+      requestHash,
+    });
   }
 }

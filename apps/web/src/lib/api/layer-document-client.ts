@@ -17,11 +17,13 @@ export function updateLayerDocument(
     zIndex: number;
     readingOrder?: number;
   }>,
+  operationId: string = crypto.randomUUID(),
 ): Promise<LayerDocumentView> {
   return request<LayerDocumentView>(
     `/v1/projects/${projectId}/layer-document`,
     {
       method: "PATCH",
+      headers: { "x-idempotency-key": operationId },
       body: JSON.stringify({
         sourceVersionId,
         baseRevision,

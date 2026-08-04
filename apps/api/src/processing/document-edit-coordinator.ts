@@ -5,6 +5,7 @@ import type {
   ProjectKind,
 } from "@motionprep/contracts";
 import { validateProductionDocument } from "@motionprep/presets";
+import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import { ProcessingDomainError } from "./processing-errors.js";
 import type { LayerDocumentRepository } from "./processing-repository.js";
 
@@ -56,11 +57,13 @@ export class DocumentEditCoordinator {
     operationId: string,
     details?: EditDetails,
     projectKind: ProjectKind = "book",
+    requestHash?: string,
   ): Promise<LayerDocument> {
     const updated = this.withTimeline(changed, original, {
       kind,
       actorUserId,
       operationId,
+      ...(requestHash ? { requestHash } : {}),
       ...details,
     });
     const issues = validateProductionDocument(updated, projectKind);
@@ -84,6 +87,7 @@ export class DocumentEditCoordinator {
       kind: LayerEditKind;
       actorUserId: string;
       operationId: string;
+      requestHash?: string;
       affectedLayerIds?: string[];
       createdLayerIds?: string[];
       removedLayerIds?: string[];
@@ -107,6 +111,9 @@ export class DocumentEditCoordinator {
       ...timeline.entries.slice(0, timeline.cursor + 1),
       {
         operationId: operation.operationId,
+        ...(operation.requestHash
+          ? { requestHash: operation.requestHash }
+          : {}),
         kind: operation.kind,
         revision: currentRevision + 1,
         actorUserId: operation.actorUserId,
@@ -125,7 +132,11 @@ export class DocumentEditCoordinator {
     return {
       ...changed,
       revision: currentRevision + 1,
-      editTimeline: { entries, cursor: entries.length - 1 },
+      editTimeline: {
+        ...timeline,
+        entries,
+        cursor: entries.length - 1,
+      },
     };
   }
 
@@ -133,14 +144,19 @@ export class DocumentEditCoordinator {
     document: LayerDocument,
     operationId: string,
     kind: LayerEditKind,
+    requestHash: string,
   ): Promise<OperationReplay | null> {
     const entry = document.editTimeline?.entries.find(
       (candidate) => candidate.operationId === operationId,
     );
     if (!entry) return null;
-    if (entry.kind !== kind) {
-      throw invalidDocumentOperation(
-        "استُخدم مفتاح العملية نفسه لتعديل مختلف.",
+    if (
+      entry.kind !== kind ||
+      (entry.requestHash !== undefined && entry.requestHash !== requestHash)
+    ) {
+      throw new ProcessingDomainError(
+        "IDEMPOTENCY_CONFLICT",
+        "استُخدم مفتاح العملية نفسه لطلب تعديل مختلف.",
       );
     }
     const replay = await this.documents.findRevision(
@@ -150,6 +166,82 @@ export class DocumentEditCoordinator {
     );
     return replay ? { document: replay, entry } : null;
   }
+
+  async findHistoryReplay(
+    document: LayerDocument,
+    operationId: string,
+    requestHash: string,
+  ): Promise<LayerDocument | null> {
+    const navigation = document.editTimeline?.navigationEntries?.find(
+      (candidate) => candidate.operationId === operationId,
+    );
+    if (!navigation) return null;
+    if (navigation.requestHash !== requestHash) {
+      throw new ProcessingDomainError(
+        "IDEMPOTENCY_CONFLICT",
+        "استُخدم مفتاح العملية نفسه لطلب تنقّل مختلف في سجل التعديلات.",
+      );
+    }
+    return this.documents.findRevision(
+      document.projectId,
+      document.sourceVersionId!,
+      navigation.resultRevision,
+    );
+  }
+
+  async saveHistoryNavigation(
+    original: LayerDocument,
+    snapshot: LayerDocument,
+    input: {
+      cursor: number;
+      direction: "undo" | "redo";
+      actorUserId: string;
+      operationId: string;
+      requestHash: string;
+    },
+  ): Promise<LayerDocument> {
+    const currentRevision = original.revision ?? 1;
+    const timeline = original.editTimeline;
+    if (!timeline) {
+      throw new ProcessingDomainError(
+        "EDIT_HISTORY_UNAVAILABLE",
+        "سجل التعديلات غير متاح.",
+      );
+    }
+    const restored: LayerDocument = {
+      ...snapshot,
+      revision: currentRevision + 1,
+      editTimeline: {
+        ...timeline,
+        cursor: input.cursor,
+        navigationEntries: [
+          ...(timeline.navigationEntries ?? []),
+          {
+            operationId: input.operationId,
+            requestHash: input.requestHash,
+            direction: input.direction,
+            fromRevision: currentRevision,
+            resultRevision: currentRevision + 1,
+            actorUserId: input.actorUserId,
+            createdAt: this.now().toISOString(),
+          },
+        ].slice(-100),
+      },
+    };
+    const saved = await this.documents.saveIfRevision(
+      restored,
+      currentRevision,
+    );
+    if (!saved) throw revisionConflict();
+    return restored;
+  }
+}
+
+export function layerEditRequestHash(
+  kind: LayerEditKind,
+  input: unknown,
+): string {
+  return requestFingerprint(`layer-edit:${kind}`, input);
 }
 
 export function invalidDocumentOperation(

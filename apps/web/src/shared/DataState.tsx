@@ -4,6 +4,7 @@ import type { DemoState } from "../types";
 interface DataStateProps {
   state: Exclude<DemoState, "ready">;
   title?: string;
+  description?: string;
   compact?: boolean;
   onRetry?: () => void;
 }
@@ -11,6 +12,7 @@ interface DataStateProps {
 export function DataState({
   state,
   title,
+  description,
   compact = false,
   onRetry,
 }: DataStateProps) {
@@ -20,7 +22,7 @@ export function DataState({
         <span className="state-spinner" />
         <div>
           <strong>{title ?? "جارٍ تجهيز مساحة العمل"}</strong>
-          <p>نقرأ الملف ونرتب الخطوات المناسبة له.</p>
+          <p>{description ?? "نقرأ الملف ونرتب الخطوات المناسبة له."}</p>
         </div>
         <div className="skeleton-lines" aria-hidden="true"><span /><span /><span /></div>
       </section>
@@ -33,7 +35,7 @@ export function DataState({
         <span className="state-icon"><Icon name="folder" size={23} /></span>
         <div>
           <strong>{title ?? "لا توجد مشاريع بعد"}</strong>
-          <p>ابدأ بملف واحد، وسنرشدك حتى النسخة الجاهزة لـ Adobe.</p>
+          <p>{description ?? "ابدأ بملف واحد، وسنرشدك حتى النسخة الجاهزة لـ Adobe."}</p>
         </div>
       </section>
     );
@@ -44,7 +46,7 @@ export function DataState({
       <span className="state-icon"><Icon name="warning" size={23} /></span>
       <div>
         <strong>{title ?? "تعذّر عرض البيانات"}</strong>
-        <p>ملفك آمن ولم يتغير. أعد المحاولة.</p>
+        <p>{description ?? "ملفك آمن ولم يتغير. أعد المحاولة."}</p>
       </div>
       {onRetry && (
         <button className="secondary-button" type="button" onClick={onRetry}>

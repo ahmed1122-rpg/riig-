@@ -73,12 +73,15 @@ describe("email outbox dispatcher", () => {
         expiresAt: "2026-08-01T12:30:00.000Z",
       },
     });
-    vi.mocked(outbox.markSent).mockResolvedValueOnce(false);
     vi.mocked(outbox.retryOrFail).mockResolvedValueOnce("failed");
     const events = vi.fn();
     const dispatcher = new EmailOutboxDispatcher(
       outbox,
-      { sendPasswordReset: vi.fn(async () => undefined) },
+      {
+        sendPasswordReset: vi.fn(async () => {
+          throw new Error("SMTP rejected the message");
+        }),
+      },
       events,
       () => new Date("2026-08-01T12:00:00.000Z"),
     );
@@ -93,6 +96,52 @@ describe("email outbox dispatcher", () => {
     );
     expect(events).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", attempt: 8 }),
+    );
+  });
+
+  it("reports lease loss instead of claiming that a retry was scheduled", async () => {
+    const outbox = fakeOutbox();
+    vi.mocked(outbox.markSent).mockResolvedValueOnce(false);
+    const events = vi.fn();
+    const dispatcher = new EmailOutboxDispatcher(
+      outbox,
+      { sendPasswordReset: vi.fn(async () => undefined) },
+      events,
+      () => new Date("2026-08-01T12:00:00.000Z"),
+    );
+
+    await expect(dispatcher.runOnce()).resolves.toBe(true);
+    expect(events).toHaveBeenCalledWith({
+      deliveryId: expect.any(String),
+      outcome: "lease_lost",
+      attempt: 1,
+      errorCode: "EMAIL_DELIVERY_LEASE_LOST",
+    });
+    expect(events).not.toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "retry" }),
+    );
+    expect(outbox.retryOrFail).not.toHaveBeenCalled();
+  });
+
+  it("does not let an observability failure change sent delivery state", async () => {
+    const outbox = fakeOutbox();
+    const observerError = vi.fn();
+    const dispatcher = new EmailOutboxDispatcher(
+      outbox,
+      { sendPasswordReset: vi.fn(async () => undefined) },
+      () => {
+        throw new Error("log sink unavailable");
+      },
+      () => new Date("2026-08-01T12:00:00.000Z"),
+      1_000,
+      observerError,
+    );
+
+    await expect(dispatcher.runOnce()).resolves.toBe(true);
+    expect(outbox.markSent).toHaveBeenCalledOnce();
+    expect(outbox.retryOrFail).not.toHaveBeenCalled();
+    expect(observerError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "log sink unavailable" }),
     );
   });
 
@@ -113,6 +162,35 @@ describe("email outbox dispatcher", () => {
 
       expect(outbox.claimNext).toHaveBeenCalledOnce();
       expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a scheduled database failure instead of swallowing it", async () => {
+    vi.useFakeTimers();
+    try {
+      const outbox = fakeOutbox();
+      const cycleError = vi.fn();
+      vi.mocked(outbox.claimNext).mockRejectedValueOnce(
+        new Error("database unavailable"),
+      );
+      const dispatcher = new EmailOutboxDispatcher(
+        outbox,
+        { sendPasswordReset: vi.fn(async () => undefined) },
+        () => {},
+        () => new Date("2026-08-01T12:00:00.000Z"),
+        1_000,
+        cycleError,
+      );
+
+      dispatcher.start();
+      await vi.advanceTimersByTimeAsync(0);
+      await dispatcher.stop();
+
+      expect(cycleError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "database unavailable" }),
+      );
     } finally {
       vi.useRealTimers();
     }

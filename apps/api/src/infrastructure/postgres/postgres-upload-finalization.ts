@@ -39,6 +39,12 @@ export class PostgresUploadFinalizationCommand
     try {
       await client.query("BEGIN");
       const current = await this.lockUpload(client, input);
+      if (
+        current.status === "ready" &&
+        current.sha256?.toLowerCase() !== input.sha256.toLowerCase()
+      ) {
+        throw new Error("Published upload checksum cannot be changed.");
+      }
       const source = await this.lockSource(client, current);
       const project = await this.lockProject(client, current.project_id);
       const published = await client.query<UploadRow>(
@@ -72,10 +78,12 @@ export class PostgresUploadFinalizationCommand
       await client.query(
         `
           UPDATE projects
-          SET current_source_version_id = CASE
-                WHEN $3 THEN $2 ELSE current_source_version_id END,
-              status = CASE WHEN $4 THEN 'queued' ELSE status END,
-              active_job_type = CASE WHEN $4 THEN NULL ELSE active_job_type END,
+            SET current_source_version_id = CASE
+                  WHEN $3 THEN $2 ELSE current_source_version_id END,
+                status = CASE WHEN $4 THEN 'queued' ELSE status END,
+                current_review_approval_id = CASE
+                  WHEN $3 THEN NULL ELSE current_review_approval_id END,
+                active_job_type = CASE WHEN $4 THEN NULL ELSE active_job_type END,
               active_job_id = CASE WHEN $4 THEN NULL ELSE active_job_id END,
               updated_at = CASE WHEN $3 OR $4
                 THEN now() ELSE updated_at END

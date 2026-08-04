@@ -27,6 +27,12 @@ const configSchema = createWorkerEnvironmentSchema({
     .min(1)
     .max(4)
     .default(1),
+  RASTER_ASSET_WRITE_CONCURRENCY: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(4)
+    .default(2),
   SHARP_CACHE_MEMORY_MB: z.coerce.number().int().min(0).max(512).default(64),
   SHARP_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
   USAGE_METERING_MODE: z

@@ -10,9 +10,11 @@ import type {
 } from "./workspaceToolRegistry";
 
 export type WorkspaceSaveState =
-  | "idle"
+  | "unavailable"
+  | "dirty"
   | "saving"
   | "saved"
+  | "conflict"
   | "error";
 export type WorkspaceMobilePanel =
   | "none"
@@ -57,13 +59,19 @@ export function WorkspaceHeader({
     : mode === "image"
       ? "مشروع صورة جديد"
       : "مشروع PDF جديد";
-  const saveLabel = persistedSource
-    ? saveState === "saving"
-      ? "جارٍ حفظ المراجعة"
-      : saveState === "error"
-        ? "تعذر حفظ آخر تعديل"
-        : "كل التعديلات محفوظة"
-    : "ارفع المصدر لبدء الحفظ";
+  const saveLabel = !persistedSource
+    ? "ارفع المصدر لبدء الحفظ"
+    : saveState === "unavailable"
+      ? "الحفظ غير متاح مؤقتًا"
+      : saveState === "dirty"
+        ? "تعديلات بانتظار الحفظ"
+        : saveState === "saving"
+          ? "جارٍ حفظ المراجعة"
+          : saveState === "conflict"
+            ? "توجد نسخة أحدث تحتاج المراجعة"
+            : saveState === "error"
+              ? "تعذر حفظ آخر تعديل"
+              : "كل التعديلات محفوظة";
 
   return (
     <header className="workspace-header pro-workspace-header">
@@ -79,7 +87,11 @@ export function WorkspaceHeader({
         </button>
         <div>
           <strong>{projectName}</strong>
-          <span>
+          <span
+            className={`save-state is-${saveState}`}
+            role="status"
+            aria-live="polite"
+          >
             <i /> {saveLabel}
           </span>
         </div>
@@ -204,13 +216,19 @@ export function WorkspaceStatusBar({
   zoom: number;
   activeLayerName?: string;
 }) {
-  const saveLabel = persistedSource
-    ? saveState === "saving"
-      ? "جارٍ الحفظ"
-      : saveState === "error"
-        ? "خطأ في الحفظ"
-        : "محفوظ"
-    : "لا يوجد مصدر";
+  const saveLabel = !persistedSource
+    ? "لا يوجد مصدر"
+    : saveState === "unavailable"
+      ? "الحفظ غير متاح"
+      : saveState === "dirty"
+        ? "بانتظار الحفظ"
+        : saveState === "saving"
+          ? "جارٍ الحفظ"
+          : saveState === "conflict"
+            ? "تعارض نسخة"
+            : saveState === "error"
+              ? "خطأ في الحفظ"
+              : "محفوظ";
   const processLabel = processing
     ? "معالجة موضعية"
     : persistedSource
@@ -223,15 +241,7 @@ export function WorkspaceStatusBar({
       aria-label="حالة مساحة العمل"
     >
       <span>
-        <i
-          className={
-            saveState === "saving"
-              ? "is-processing"
-              : persistedSource && saveState !== "error"
-                ? "is-saved"
-                : ""
-          }
-        />{" "}
+        <i className={`is-${saveState}`} />{" "}
         {saveLabel}
       </span>
       <span>

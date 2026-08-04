@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type {
+  LegalAcceptance,
   SessionView,
   UserRole,
   UserStatus,
@@ -29,6 +30,7 @@ import {
   verifyTotpCode,
 } from "./totp.js";
 import { AuthPasswordCoordinator } from "./auth-password-coordinator.js";
+import { AuthUserAccessCoordinator } from "./auth-user-access-coordinator.js";
 
 export const SESSION_COOKIE_NAME = "motionprep_session";
 
@@ -81,6 +83,7 @@ export class AuthService {
   readonly #passwordResetUrl: string;
   readonly #totpIssuer: string;
   readonly #passwordCoordinator: AuthPasswordCoordinator;
+  readonly #userAccessCoordinator: AuthUserAccessCoordinator;
 
   constructor(
     readonly repository: AuthRepository,
@@ -106,12 +109,19 @@ export class AuthService {
       requireActiveUser: (userId) => this.requireActiveUser(userId),
       domainError: (code, message) => new AuthDomainError(code, message),
     });
+    this.#userAccessCoordinator = new AuthUserAccessCoordinator({
+      repository: this.repository,
+      now: this.now,
+      publicUser: (user) => this.publicUser(user),
+      domainError: (code, message) => new AuthDomainError(code, message),
+    });
   }
 
   async register(input: {
     name: string;
     email: string;
     password: string;
+    legal: LegalAcceptance;
   }): Promise<{ session: SessionView; token: string }> {
     const email = input.email.trim().toLowerCase();
     if (await this.repository.findUserByEmail(email)) {
@@ -134,6 +144,11 @@ export class AuthService {
       recoveryCodeHashes: [],
       createdAt: timestamp,
       lastLoginAt: timestamp,
+      termsVersion: input.legal.termsVersion,
+      privacyVersion: input.legal.privacyVersion,
+      legalAcceptedAt: timestamp,
+      deletionRequestedAt: null,
+      deletedAt: null,
     };
     await this.repository.saveUser(user);
     return this.createSession(user);
@@ -163,7 +178,11 @@ export class AuthService {
         "بيانات الدخول غير صحيحة.",
       );
     }
-    if (user.status === "suspended") {
+    if (
+      user.status !== "active" ||
+      user.deletionRequestedAt ||
+      user.deletedAt
+    ) {
       throw new AuthDomainError(
         "ACCOUNT_SUSPENDED",
         "الحساب موقوف. تواصل مع الدعم.",
@@ -207,7 +226,13 @@ export class AuthService {
       );
     }
     const user = await this.repository.findUserById(challenge.userId);
-    if (!user || !user.mfaEnabled || user.status !== "active") {
+    if (
+      !user ||
+      !user.mfaEnabled ||
+      user.status !== "active" ||
+      user.deletionRequestedAt ||
+      user.deletedAt
+    ) {
       throw new AuthDomainError(
         "MFA_CHALLENGE_INVALID",
         "تحدي التحقق غير صالح.",
@@ -377,7 +402,12 @@ export class AuthService {
       throw new AuthDomainError("SESSION_INVALID", "انتهت الجلسة.");
     }
     const user = await this.repository.findUserById(record.userId);
-    if (!user || user.status !== "active") {
+    if (
+      !user ||
+      user.status !== "active" ||
+      user.deletionRequestedAt ||
+      user.deletedAt
+    ) {
       throw new AuthDomainError("SESSION_INVALID", "الجلسة غير صالحة.");
     }
     return { user: this.publicUser(user), expiresAt: record.expiresAt };
@@ -387,10 +417,18 @@ export class AuthService {
     if (token) await this.repository.deleteSession(this.hashToken(token));
   }
 
+  async verifyCurrentPassword(userId: string, password: string): Promise<void> {
+    const user = await this.requireActiveUser(userId);
+    if (!(await verifyPassword(password, user.passwordHash))) {
+      throw new AuthDomainError(
+        "CURRENT_PASSWORD_INVALID",
+        "كلمة المرور الحالية غير صحيحة.",
+      );
+    }
+  }
+
   async listUsers(): Promise<UserSummary[]> {
-    return (await this.repository.listUsers()).map((user) =>
-      this.publicUser(user),
-    );
+    return this.#userAccessCoordinator.listUsers();
   }
 
   async updateUserAccess(
@@ -398,42 +436,7 @@ export class AuthService {
     userId: string,
     changes: { role?: UserRole; status?: UserStatus },
   ): Promise<UserSummary> {
-    if (actor.role !== "admin") {
-      throw new AuthDomainError("SESSION_INVALID", "ليس لديك صلاحية كافية.");
-    }
-    const target = await this.repository.findUserById(userId);
-    if (!target) {
-      throw new AuthDomainError("USER_NOT_FOUND", "المستخدم غير موجود.");
-    }
-    const removesAdminAccess =
-      target.role === "admin" &&
-      ((changes.role !== undefined && changes.role !== "admin") ||
-        changes.status === "suspended");
-    if (removesAdminAccess) {
-      const activeAdmins = (await this.repository.listUsers()).filter(
-        (user) => user.role === "admin" && user.status === "active",
-      );
-      if (activeAdmins.length <= 1) {
-        throw new AuthDomainError(
-          "LAST_ADMIN_PROTECTED",
-          "لا يمكن إزالة صلاحية آخر مسؤول نشط.",
-        );
-      }
-    }
-    if (actor.id === userId && changes.status === "suspended") {
-      throw new AuthDomainError(
-        "LAST_ADMIN_PROTECTED",
-        "لا يمكن للمسؤول إيقاف حسابه الحالي.",
-      );
-    }
-    const updated = await this.repository.updateUser(userId, changes);
-    if (!updated) {
-      throw new AuthDomainError("USER_NOT_FOUND", "المستخدم غير موجود.");
-    }
-    if (changes.role !== undefined || changes.status === "suspended") {
-      await this.repository.deleteSessionsByUser(userId);
-    }
-    return this.publicUser(updated);
+    return this.#userAccessCoordinator.updateUserAccess(actor, userId, changes);
   }
 
   async seedUser(input: {
@@ -442,24 +445,7 @@ export class AuthService {
     password: string;
     role: UserRole;
   }): Promise<UserSummary> {
-    const existing = await this.repository.findUserByEmail(input.email);
-    if (existing) return this.publicUser(existing);
-    const timestamp = this.now().toISOString();
-    const user: UserRecord = {
-      id: crypto.randomUUID(),
-      name: input.name,
-      email: input.email.trim().toLowerCase(),
-      passwordHash: await hashPassword(input.password),
-      mfaEnabled: false,
-      mfaSecretCiphertext: null,
-      recoveryCodeHashes: [],
-      role: input.role,
-      status: "active",
-      createdAt: timestamp,
-      lastLoginAt: null,
-    };
-    await this.repository.saveUser(user);
-    return this.publicUser(user);
+    return this.#userAccessCoordinator.seedUser(input);
   }
 
   private async createSession(
@@ -492,6 +478,11 @@ export class AuthService {
       passwordHash: _passwordHash,
       mfaSecretCiphertext: _mfaSecretCiphertext,
       recoveryCodeHashes: _recoveryCodeHashes,
+      termsVersion: _termsVersion,
+      privacyVersion: _privacyVersion,
+      legalAcceptedAt: _legalAcceptedAt,
+      deletionRequestedAt: _deletionRequestedAt,
+      deletedAt: _deletedAt,
       ...summary
     } = user;
     return summary;
@@ -499,7 +490,12 @@ export class AuthService {
 
   private async requireActiveUser(userId: string): Promise<UserRecord> {
     const user = await this.repository.findUserById(userId);
-    if (!user || user.status !== "active") {
+    if (
+      !user ||
+      user.status !== "active" ||
+      user.deletionRequestedAt ||
+      user.deletedAt
+    ) {
       throw new AuthDomainError("USER_NOT_FOUND", "المستخدم غير موجود.");
     }
     return user;

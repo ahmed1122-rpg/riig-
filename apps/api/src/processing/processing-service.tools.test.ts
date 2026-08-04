@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LayerDocument } from "@motionprep/contracts";
+import type { LayerDocument, LayerStateUpdate } from "@motionprep/contracts";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { InMemoryUploadRepository } from "../uploads/upload-repository.js";
@@ -18,6 +18,55 @@ const sourceVersionId = "00000000-0000-4000-8000-000000000102";
 const actorUserId = "00000000-0000-4000-8000-000000000103";
 
 describe("ProcessingService document tools", () => {
+  it("replays an autosave operation after an ambiguous client response", async () => {
+    const { documents, service } = await createFixture();
+    const updates: LayerStateUpdate[] = [
+      {
+        id: "text-a",
+        name: "+مرحبا_بالعالم",
+        visible: false,
+        locked: false,
+        opacity: 1,
+        zIndex: 1,
+      },
+    ];
+
+    const saved = await service.updateLayerStates(
+      projectId,
+      sourceVersionId,
+      "book",
+      1,
+      updates,
+      actorUserId,
+      "autosave-operation-001",
+    );
+    const replay = await service.updateLayerStates(
+      projectId,
+      sourceVersionId,
+      "book",
+      1,
+      updates,
+      actorUserId,
+      "autosave-operation-001",
+    );
+
+    expect(saved.revision).toBe(2);
+    expect(replay.revision).toBe(2);
+    expect((await documents.findBySource(projectId, sourceVersionId))?.revision)
+      .toBe(2);
+    await expect(
+      service.updateLayerStates(
+        projectId,
+        sourceVersionId,
+        "book",
+        1,
+        [{ ...updates[0]!, visible: true }],
+        actorUserId,
+        "autosave-operation-001",
+      ),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+  });
+
   it("splits text idempotently and persists undo and redo snapshots", async () => {
     const { documents, service } = await createFixture();
     const input = {
@@ -32,11 +81,17 @@ describe("ProcessingService document tools", () => {
 
     const split = await service.splitPdfTextLayer(input);
     const replay = await service.splitPdfTextLayer(input);
+    await expect(
+      service.splitPdfTextLayer({ ...input, offset: 6 }),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
 
     expect(split.document.revision).toBe(2);
     expect(split.createdLayerIds).toHaveLength(1);
     expect(replay.createdLayerIds).toEqual(split.createdLayerIds);
     expect(replay.document.revision).toBe(2);
+    expect(split.document.editTimeline?.entries.at(-1)?.requestHash).toMatch(
+      /^[a-f0-9]{64}$/u,
+    );
     expect((await documents.findBySource(projectId, sourceVersionId))?.revision)
       .toBe(2);
     expect(textValues(split.document)).toContain("مرحبا");
@@ -47,16 +102,40 @@ describe("ProcessingService document tools", () => {
       sourceVersionId,
       baseRevision: 2,
       direction: "undo",
+      actorUserId,
+      operationId: "history-undo-split-001",
     });
     expect(undone.revision).toBe(3);
     expect(textValues(undone)).toContain("مرحبا بالعالم");
     expect(undone.editTimeline?.cursor).toBe(0);
+    await expect(
+      service.navigateEditHistory({
+        projectId,
+        sourceVersionId,
+        baseRevision: 2,
+        direction: "undo",
+        actorUserId,
+        operationId: "history-undo-split-001",
+      }),
+    ).resolves.toMatchObject({ revision: 3 });
+    await expect(
+      service.navigateEditHistory({
+        projectId,
+        sourceVersionId,
+        baseRevision: 2,
+        direction: "redo",
+        actorUserId,
+        operationId: "history-undo-split-001",
+      }),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
 
     const redone = await service.navigateEditHistory({
       projectId,
       sourceVersionId,
       baseRevision: 3,
       direction: "redo",
+      actorUserId,
+      operationId: "history-redo-split-001",
     });
     expect(redone.revision).toBe(4);
     expect(textValues(redone)).toContain("مرحبا");
@@ -87,6 +166,8 @@ describe("ProcessingService document tools", () => {
       sourceVersionId,
       baseRevision: 2,
       direction: "undo",
+      actorUserId,
+      operationId: "history-undo-merge-001",
     });
     expect(textValues(undone)).toEqual([
       "مرحبا بالعالم",
@@ -158,6 +239,8 @@ describe("ProcessingService document tools", () => {
       sourceVersionId,
       baseRevision: 2,
       direction: "undo",
+      actorUserId,
+      operationId: "history-undo-refine-001",
     });
     expect(
       undone.layers.find((layer) => layer.id === "raster-a")?.rasterAsset
@@ -230,6 +313,8 @@ describe("ProcessingService document tools", () => {
       sourceVersionId,
       baseRevision: 2,
       direction: "undo",
+      actorUserId,
+      operationId: "history-undo-image-merge-001",
     });
     expect(undone.layers.map((layer) => layer.id).sort()).toEqual([
       "raster-a",

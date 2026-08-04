@@ -155,7 +155,10 @@ export class S3ObjectStorage implements ObjectStorage {
 
   async inspect(key: string): Promise<StoredObjectMetadata | null> {
     const head = await this.#head(key);
-    return head ? metadataFromHead(key, head) : null;
+    if (!head) return null;
+    const metadata = metadataFromHead(key, head);
+    if (!metadata) throw new ObjectStorageIntegrityError(key);
+    return metadata;
   }
 
   async getStream(

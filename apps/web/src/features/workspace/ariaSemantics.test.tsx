@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ProjectsView } from "../projects/ProjectsView";
 import { LayerDock } from "./LayerDock";
-import { WorkspaceHeader } from "./WorkspaceChrome";
+import { WorkspaceHeader, WorkspaceStatusBar } from "./WorkspaceChrome";
 
 const noop = () => undefined;
 
@@ -29,7 +29,7 @@ describe("truthful selection semantics", () => {
         mode="image"
         persistedSource={false}
         sourceName="source.png"
-        saveState="idle"
+        saveState="unavailable"
         imageLayerCount={0}
         activePdfPage={1}
         pdfPageCount={1}
@@ -45,6 +45,40 @@ describe("truthful selection semantics", () => {
     expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('aria-pressed="false"');
     expect(markup).not.toContain('role="tablist"');
+  });
+
+  it("does not present dirty or conflicted review changes as saved", () => {
+    const dirtyHeader = renderToStaticMarkup(
+      <WorkspaceHeader
+        mode="image"
+        persistedSource
+        sourceName="source.png"
+        saveState="dirty"
+        imageLayerCount={1}
+        activePdfPage={1}
+        pdfPageCount={1}
+        pdfMode="lines"
+        exportTriggerRef={createRef<HTMLButtonElement>()}
+        onBack={noop}
+        onModeChange={noop}
+        onExport={noop}
+      />,
+    );
+    const conflictFooter = renderToStaticMarkup(
+      <WorkspaceStatusBar
+        saveState="conflict"
+        persistedSource
+        sourceVersion={2}
+        processing={false}
+        mode="image"
+        zoom={100}
+      />,
+    );
+
+    expect(dirtyHeader).toContain("تعديلات بانتظار الحفظ");
+    expect(dirtyHeader).not.toContain("كل التعديلات محفوظة");
+    expect(conflictFooter).toContain("تعارض نسخة");
+    expect(conflictFooter).not.toContain(">محفوظ<");
   });
 
   it("links dock tabs to a panel and exposes layers as selected list items", () => {

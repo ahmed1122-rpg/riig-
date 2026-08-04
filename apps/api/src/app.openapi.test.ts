@@ -17,7 +17,10 @@ describe("OpenAPI discovery", () => {
     expect(document.paths).toHaveProperty("/v1/health/ready");
     expect(document.paths).toHaveProperty("/v1/capabilities");
     expect(document.paths).toHaveProperty("/v1/auth/login");
+    expect(document.paths).toHaveProperty("/v1/account/export");
+    expect(document.paths).toHaveProperty("/v1/account");
     expect(document.paths).toHaveProperty("/v1/projects");
+    expect(document.paths).toHaveProperty("/v1/activity");
     expect(document.paths).not.toHaveProperty("/v1/openapi.json");
     expect(document.paths).not.toHaveProperty("/internal/metrics");
 
@@ -48,6 +51,58 @@ describe("OpenAPI discovery", () => {
       { sessionCookie: [] },
     ]);
     expect(document.paths["/v1/auth/login"].post.security).toEqual([]);
+    expect(
+      document.paths["/v1/auth/register"].post.requestBody.content[
+        "application/json"
+      ].schema.required,
+    ).toContain("legal");
+    expect(
+      document.paths["/v1/processing/jobs"].post.requestBody.content[
+        "application/json"
+      ].schema,
+    ).toMatchObject({
+      required: ["projectId", "sourceVersionId"],
+      properties: {
+        projectId: { type: "string", format: "uuid" },
+        sourceVersionId: { type: "string", format: "uuid" },
+      },
+    });
+    expect(
+      document.paths["/v1/processing/jobs"].post.requestBody.content[
+        "application/json"
+      ].schema.properties,
+    ).not.toHaveProperty("projectKind");
+    expect(document.paths).toHaveProperty("/v1/admin/exports");
+    expect(
+      document.paths["/v1/admin/exports/{jobId}/retry"].post.requestBody
+        .content["application/json"].schema.required,
+    ).toEqual(["reason"]);
+    const publicExportSchema =
+      document.paths["/v1/exports"].get.responses["200"].content[
+        "application/json"
+      ].schema.properties.data.items;
+    const adminExportSchema =
+      document.paths["/v1/admin/exports"].get.responses["200"].content[
+        "application/json"
+      ].schema.properties.data.items;
+    const processingSchema =
+      document.paths["/v1/processing/jobs"].post.responses["202"].content[
+        "application/json"
+      ].schema.properties.data;
+    expect(publicExportSchema.required).toContain("documentRevision");
+    expect(publicExportSchema.properties.artifact.properties).not.toHaveProperty(
+      "objectKey",
+    );
+    expect(adminExportSchema.required).toContain("traceId");
+    expect(adminExportSchema.properties).not.toHaveProperty("traceContext");
+    expect(adminExportSchema.properties).not.toHaveProperty("maxAttempts");
+    expect(adminExportSchema.properties).not.toHaveProperty("errorCode");
+    expect(processingSchema.required).toContain("options");
+    expect(
+      document.paths["/v1/activity"].get.responses["200"].content[
+        "application/json"
+      ].schema.properties.data.required,
+    ).toEqual(["items", "summary", "nextCursor", "generatedAt"]);
 
     await app.close();
   });

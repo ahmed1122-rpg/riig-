@@ -6,6 +6,10 @@ import { requireRole } from "../auth/authorize.js";
 import { AuthDomainError, type AuthService } from "../auth/auth-service.js";
 import type { ExportRepository } from "../exports/export-repository.js";
 import type { BillingRepository } from "../billing/billing-repository.js";
+import {
+  toAdminExportJobDto,
+  toAdminProcessingJobDto,
+} from "../jobs/job-dtos.js";
 import type { ProcessingJobRepository } from "../processing/processing-repository.js";
 import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
@@ -66,14 +70,13 @@ export async function registerAdminRoutes(
         "finance",
         "admin",
       ]);
-      const [users, uploads, exports, jobs, subscriptions, checkouts, audit] =
+      const [users, uploads, exports, processing, billing, audit] =
         await Promise.all([
         dependencies.auth.listUsers(),
-        dependencies.uploads.list(),
-        dependencies.exports.list(),
-        dependencies.processingJobs.list(200),
-        dependencies.billing.listSubscriptions(200),
-        dependencies.billing.listCheckouts(200),
+        dependencies.uploads.summarizeStatuses(),
+        dependencies.exports.summarizeStatuses(),
+        dependencies.processingJobs.summarizeStatuses(),
+        dependencies.billing.summarizeStatuses(),
         dependencies.audit.list(10),
       ]);
       return {
@@ -84,37 +87,10 @@ export async function registerAdminRoutes(
             suspended: users.filter((user) => user.status === "suspended")
               .length,
           },
-          uploads: {
-            total: uploads.length,
-            active: uploads.filter((upload) =>
-              ["validating", "uploading", "verifying"].includes(upload.status),
-            ).length,
-            failed: uploads.filter((upload) => upload.status === "failed")
-              .length,
-          },
-          exports: {
-            total: exports.length,
-            queued: exports.filter((job) => job.status === "queued").length,
-            failed: exports.filter((job) => job.status === "failed").length,
-          },
-          processing: {
-            total: jobs.length,
-            active: jobs.filter((job) =>
-              ["queued", "processing", "verifying"].includes(job.status),
-            ).length,
-            failed: jobs.filter((job) => job.status === "failed").length,
-          },
-          billing: {
-            activeSubscriptions: subscriptions.filter((subscription) =>
-              ["active", "trialing"].includes(subscription.status),
-            ).length,
-            pendingCheckouts: checkouts.filter((checkout) =>
-              ["pending", "redirect_required"].includes(checkout.status),
-            ).length,
-            paidCheckouts: checkouts.filter(
-              (checkout) => checkout.status === "paid",
-            ).length,
-          },
+          uploads,
+          exports,
+          processing,
+          billing,
           audit,
         },
         error: null,
@@ -128,7 +104,21 @@ export async function registerAdminRoutes(
     try {
       await requireRole(request, dependencies.auth, ["support", "admin"]);
       return {
-        data: await dependencies.processingJobs.list(200),
+        data: (await dependencies.processingJobs.list(200)).map(
+          toAdminProcessingJobDto,
+        ),
+        error: null,
+      };
+    } catch (error) {
+      return adminError(error, request, reply);
+    }
+  });
+
+  app.get("/v1/admin/exports", async (request, reply) => {
+    try {
+      await requireRole(request, dependencies.auth, ["support", "admin"]);
+      return {
+        data: (await dependencies.exports.list(200)).map(toAdminExportJobDto),
         error: null,
       };
     } catch (error) {
@@ -206,7 +196,10 @@ export async function registerAdminRoutes(
             concurrentlyRetried.status,
           )
         ) {
-          return { data: concurrentlyRetried, error: null };
+          return {
+            data: toAdminProcessingJobDto(concurrentlyRetried),
+            error: null,
+          };
         }
         await dependencies.projects.finishJobStatus(
           job.projectId,
@@ -232,7 +225,7 @@ export async function registerAdminRoutes(
         reason: body.data.reason,
         requestId: request.id,
       });
-      return { data: retried, error: null };
+      return { data: toAdminProcessingJobDto(retried), error: null };
     } catch (error) {
       return adminError(error, request, reply);
     }
@@ -314,13 +307,17 @@ export async function registerAdminRoutes(
             concurrentlyRetried.status,
           )
         ) {
-          return { data: concurrentlyRetried, error: null };
+          return {
+            data: toAdminExportJobDto(concurrentlyRetried),
+            error: null,
+          };
         }
         await dependencies.projects.finishJobStatus(
           job.projectId,
           job.sourceVersionId,
           { type: "export", id: job.id },
           "failed",
+          job.documentRevision,
         );
         return reply.status(409).send({
           data: null,
@@ -340,7 +337,7 @@ export async function registerAdminRoutes(
         reason: body.data.reason,
         requestId: request.id,
       });
-      return { data: retried, error: null };
+      return { data: toAdminExportJobDto(retried), error: null };
     } catch (error) {
       return adminError(error, request, reply);
     }

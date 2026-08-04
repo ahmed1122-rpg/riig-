@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 import {
+  approveCurrentReview,
   createAppTestHarness,
   registerCreator,
 } from "./app-test-helpers.js";
@@ -42,6 +43,11 @@ describe("API — التصدير", () => {
       leaseOwner: null,
       leaseExpiresAt: null,
       errorCode: null,
+      correlationId: "internal-cancel-correlation",
+      traceContext: {
+        traceparent:
+          "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+      },
       createdAt: timestamp,
       updatedAt: timestamp,
     });
@@ -52,6 +58,9 @@ describe("API — التصدير", () => {
     });
 
     expect(cancelled.json().data.status).toBe("cancelled");
+    expect(cancelled.json().data).not.toHaveProperty("correlationId");
+    expect(cancelled.json().data).not.toHaveProperty("traceContext");
+    expect(cancelled.json().data).not.toHaveProperty("leaseOwner");
   });
   it("rejects a text export for an image project", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
@@ -156,6 +165,7 @@ describe("API — التصدير", () => {
       },
       payload: { projectId, sourceVersionId },
     });
+    await approveCurrentReview(app, cookie, projectId, sourceVersionId);
     const response = await app.inject({
       method: "POST",
       url: "/v1/exports",
@@ -177,19 +187,16 @@ describe("API — التصدير", () => {
     });
 
     expect(response.statusCode).toBe(202);
-    expect(response.json().data.correlationId).toBe(
-      response.headers["x-request-id"],
-    );
-    expect(response.json().data.traceContext).toEqual({
-      traceparent:
-        "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
-    });
+    expect(response.json().data).not.toHaveProperty("correlationId");
+    expect(response.json().data).not.toHaveProperty("traceContext");
+    expect(response.json().data).not.toHaveProperty("nextAttemptAt");
+    expect(response.json().data).not.toHaveProperty("leaseOwner");
+    expect(response.json().data).not.toHaveProperty("leaseExpiresAt");
     expect(response.json().data).toMatchObject({
       status: "queued",
       progress: 0,
       attempt: 0,
       maxAttempts: 3,
-      leaseOwner: null,
     });
   });
   it("exports a verified source as a downloadable PNG layers and JSON archive", async () => {
@@ -223,6 +230,7 @@ describe("API — التصدير", () => {
       headers: { cookie, "content-type": "image/png" },
       payload: png,
     });
+    const sourceVersionId = uploaded.json().data.sourceVersionId as string;
     await app.inject({
       method: "POST",
       url: "/v1/processing/jobs",
@@ -232,9 +240,10 @@ describe("API — التصدير", () => {
       },
       payload: {
         projectId,
-        sourceVersionId: uploaded.json().data.sourceVersionId,
+        sourceVersionId,
       },
     });
+    await approveCurrentReview(app, cookie, projectId, sourceVersionId);
     const exported = await app.inject({
       method: "POST",
       url: "/v1/exports",
@@ -244,7 +253,7 @@ describe("API — التصدير", () => {
       },
       payload: {
         projectId,
-        sourceVersionId: uploaded.json().data.sourceVersionId,
+        sourceVersionId,
         format: "png-layers-json",
         scope: "full-document",
         scale: 1,
@@ -269,11 +278,46 @@ describe("API — التصدير", () => {
         namingPresetId: "character-basic",
       },
     });
+    const conflicting = await app.inject({
+      method: "POST",
+      url: "/v1/exports",
+      headers: {
+        cookie,
+        "x-idempotency-key": "fallback-export-001",
+      },
+      payload: {
+        projectId,
+        sourceVersionId,
+        format: "psd",
+        scope: "full-document",
+        scale: 1,
+        colorProfile: "sRGB",
+        namingPresetId: "character-basic",
+      },
+    });
 
     expect(exported.statusCode).toBe(202);
     expect(repeated.json().data.id).toBe(exported.json().data.id);
+    expect(conflicting.statusCode).toBe(409);
+    expect(conflicting.json().error.code).toBe("IDEMPOTENCY_CONFLICT");
     expect(exported.json().data.status).toBe("ready");
     expect(exported.json().data.artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(exported.json().data.artifact).not.toHaveProperty("objectKey");
+
+    const [listed, found] = await Promise.all([
+      app.inject({ method: "GET", url: "/v1/exports", headers: { cookie } }),
+      app.inject({
+        method: "GET",
+        url: `/v1/exports/${exported.json().data.id}`,
+        headers: { cookie },
+      }),
+    ]);
+    for (const publicJob of [listed.json().data[0], found.json().data]) {
+      expect(publicJob).not.toHaveProperty("correlationId");
+      expect(publicJob).not.toHaveProperty("traceContext");
+      expect(publicJob).not.toHaveProperty("leaseOwner");
+      expect(publicJob.artifact).not.toHaveProperty("objectKey");
+    }
 
     const download = await app.inject({
       method: "GET",
@@ -379,6 +423,7 @@ describe("API — التصدير", () => {
     expect(staleUpdate.json().error.code).toBe(
       "DOCUMENT_REVISION_CONFLICT",
     );
+    await approveCurrentReview(app, cookie, projectId, sourceVersionId);
 
     const psdExport = await app.inject({
       method: "POST",

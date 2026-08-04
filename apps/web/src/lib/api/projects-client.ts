@@ -9,9 +9,15 @@ import { getProjectLayerDocument } from "./layer-document-client";
 import { listSourceVersions } from "./source-versions-client";
 import type {
   LayerDocumentView,
+  ProcessingSummary,
   ProjectSummary,
   UploadResult,
 } from "./models";
+
+type ProcessingProgress = Pick<
+  ProcessingSummary,
+  "id" | "status" | "progress" | "errorCode"
+>;
 
 export {
   applyGuidedRefinement,
@@ -31,6 +37,21 @@ export {
 
 export function listProjects(): Promise<ProjectSummary[]> {
   return request<ProjectSummary[]>("/v1/projects");
+}
+
+export function approveProjectReview(
+  projectId: string,
+  sourceVersionId: string,
+  documentRevision: number,
+): Promise<ProjectSummary> {
+  return request<ProjectSummary>(
+    `/v1/projects/${encodeURIComponent(projectId)}/review/approve`,
+    {
+      method: "POST",
+      headers: { "x-idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({ sourceVersionId, documentRevision }),
+    },
+  );
 }
 
 function sourceContentType(file: File): string {
@@ -101,12 +122,7 @@ export async function createAndUploadSource(
       signal,
       options.onUploadProgress,
     );
-  const processing = await request<{
-    id: string;
-    status: "queued" | "processing" | "verifying" | "ready" | "failed";
-    progress: number;
-    errorCode: string | null;
-  }>("/v1/processing/jobs", {
+  const processing = await request<ProcessingProgress>("/v1/processing/jobs", {
     method: "POST",
     signal,
     headers: { "x-idempotency-key": crypto.randomUUID() },
@@ -183,12 +199,7 @@ export async function reanalyzePdfSource(
     onProgress?: (progress: number) => void;
   } = {},
 ): Promise<LayerDocumentView> {
-  const job = await request<{
-    id: string;
-    status: "queued" | "processing" | "verifying" | "ready" | "failed";
-    progress: number;
-    errorCode: string | null;
-  }>("/v1/processing/jobs", {
+  const job = await request<ProcessingProgress>("/v1/processing/jobs", {
     method: "POST",
     signal: options.signal,
     headers: { "x-idempotency-key": crypto.randomUUID() },
@@ -345,12 +356,7 @@ export async function runPdfRegionOcr(
     onProgress?: (progress: number) => void;
   } = {},
 ): Promise<LayerDocumentView> {
-  const job = await request<{
-    id: string;
-    status: "queued" | "processing" | "verifying" | "ready" | "failed";
-    progress: number;
-    errorCode: string | null;
-  }>(
+  const job = await request<ProcessingProgress>(
     `/v1/projects/${encodeURIComponent(projectId)}/layer-document/text/region-ocr`,
     {
       method: "POST",

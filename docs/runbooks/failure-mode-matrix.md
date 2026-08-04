@@ -16,6 +16,9 @@ gates because local emulators cannot prove managed-service behavior.
 | Processing | media worker restart | active lease is drained or reclaimed and work remains replay-safe | production topology gate |
 | Export | export worker stopped after enqueue | job stays durable and completes once the worker returns | production topology gate |
 | Upload finalization | database command fails after object write | transaction rolls back; reconciliation/replay publishes once | PostgreSQL/S3 integration test |
+| Upload cancellation | cancellation races with finalization or object deletion is retried | one serialized terminal state, project status is restored, and object purge converges | cancellation and S3 integration tests |
+| Project review | a source or layer revision changes after approval | approval is invalidated and export is rejected until the exact revision is approved again | project-review and export route tests |
+| Checkout creation | provider succeeds but the database result is ambiguous | the durable pending checkout reuses one provider identity and converges without a duplicate session | checkout recovery tests |
 | Billing webhook | duplicate signed event across API replicas | subscription/audit state changes once | production topology gate |
 | Managed database | provider failover | no lost committed project state; RPO/RTO remain within policy | staging recovery drill required |
 | Managed object storage | regional/provider incident | versioned object restore matches database recovery point | signed recovery drill required |
@@ -23,5 +26,8 @@ gates because local emulators cannot prove managed-service behavior.
 For every staging drill, retain the release Git SHA, immutable image digests,
 failure start/recovery timestamps, affected job IDs, queue depth before/after,
 and the signed recovery or rollback manifest. A 200 health response alone is
-not sufficient: complete one authenticated PDF upload, processing, export, and
-download after recovery.
+not sufficient: complete one authenticated PDF upload, processing, exact-revision
+review approval, export, and download after recovery. The topology gate also
+persists a caller-supplied `traceparent` and verifies that both the original
+request ID and trace identity survive an idempotent replay through another API
+replica.

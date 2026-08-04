@@ -7,6 +7,7 @@ import {
   sendApiError,
   sendProjectNotFound,
 } from "../http/api-response.js";
+import { requestIdempotencyKey } from "../http/request-metadata.js";
 import type { ProjectRepository } from "./project-repository.js";
 import type { SourceVersionRepository } from "../sources/source-version-repository.js";
 import {
@@ -14,6 +15,10 @@ import {
   type SourceVersionRestoreCommand,
 } from "../sources/source-version-restore.js";
 import { createDomainErrorResponder } from "../http/domain-route-error.js";
+import {
+  ProjectReviewDomainError,
+  type ProjectReviewCommand,
+} from "./project-review.js";
 
 const createProjectSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -30,6 +35,13 @@ const restoreSourceVersionSchema = z.object({
 const restoreHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
+const approveReviewParamsSchema = z.object({
+  projectId: z.string().uuid(),
+});
+const approveReviewSchema = z.object({
+  sourceVersionId: z.string().uuid(),
+  documentRevision: z.number().int().positive(),
+});
 
 export async function registerProjectRoutes(
   app: FastifyInstance,
@@ -37,6 +49,7 @@ export async function registerProjectRoutes(
   auth: AuthService,
   sourceVersions: SourceVersionRepository,
   sourceVersionRestores: SourceVersionRestoreCommand,
+  projectReviews: ProjectReviewCommand,
 ): Promise<void> {
   app.get("/v1/projects", async (request, reply) => {
     try {
@@ -92,6 +105,37 @@ export async function registerProjectRoutes(
       return authError(error, request, reply);
     }
   });
+
+  app.post(
+    "/v1/projects/:projectId/review/approve",
+    async (request, reply) => {
+      try {
+        const user = await requireUser(request, auth);
+        const params = approveReviewParamsSchema.safeParse(request.params);
+        const body = approveReviewSchema.safeParse(request.body);
+        if (!params.success || !body.success) {
+          return sendApiError(
+            reply,
+            request.id,
+            400,
+            "VALIDATION_FAILED",
+            "بيانات اعتماد المراجعة غير صالحة.",
+          );
+        }
+
+        const result = await projectReviews.approve({
+          projectId: params.data.projectId,
+          sourceVersionId: body.data.sourceVersionId,
+          documentRevision: body.data.documentRevision,
+          actorUserId: user.id,
+          operationId: requestIdempotencyKey(request),
+        });
+        return reply.status(200).send({ data: result.project, error: null });
+      } catch (error) {
+        return reviewError(error, request, reply);
+      }
+    },
+  );
 
   app.get(
     "/v1/projects/:projectId/source-version-restores",
@@ -149,7 +193,8 @@ export async function registerProjectRoutes(
           expectedCurrentSourceVersionId:
             body.data.expectedCurrentSourceVersionId,
           reason: body.data.reason,
-          requestId: idempotencyKey,
+          idempotencyKey: requestIdempotencyKey(request),
+          originatingRequestId: request.id,
         });
         return reply.status(result.replayed ? 200 : 201).send({
           data: result,
@@ -176,6 +221,34 @@ function restoreError(
   reply: FastifyReply,
 ) {
   return restoreDomainError(error, request, reply);
+}
+
+function reviewError(
+  error: unknown,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  if (error instanceof ProjectReviewDomainError) {
+    if (error.code === "REVIEW_PREFLIGHT_FAILED") {
+      return reply.status(422).send({
+        data: null,
+        error: {
+          code: error.code,
+          message: error.message,
+          requestId: request.id,
+          issues: error.issues,
+        },
+      });
+    }
+    return sendApiError(
+      reply,
+      request.id,
+      error.code === "PROJECT_NOT_FOUND" ? 404 : 409,
+      error.code,
+      error.message,
+    );
+  }
+  return authError(error, request, reply);
 }
 
 function authError(

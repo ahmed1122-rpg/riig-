@@ -18,6 +18,22 @@ describe("processing worker object-storage configuration", () => {
     expect(config.OBJECT_STORAGE_ACCESS_KEY).toBeUndefined();
     expect(config.OBJECT_STORAGE_SECRET_KEY).toBeUndefined();
     expect(config.PROCESSING_DRAIN_TIMEOUT_MS).toBe(30_000);
+    expect(config.RASTER_ASSET_WRITE_CONCURRENCY).toBe(2);
+  });
+
+  it("bounds per-job raster write concurrency", () => {
+    expect(
+      loadProcessingWorkerConfig({
+        ...baseEnvironment,
+        RASTER_ASSET_WRITE_CONCURRENCY: "4",
+      }).RASTER_ASSET_WRITE_CONCURRENCY,
+    ).toBe(4);
+    expect(() =>
+      loadProcessingWorkerConfig({
+        ...baseEnvironment,
+        RASTER_ASSET_WRITE_CONCURRENCY: "5",
+      }),
+    ).toThrow();
   });
 
   it("accepts temporary explicit credentials", () => {

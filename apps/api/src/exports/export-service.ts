@@ -1,19 +1,19 @@
-import { createHash } from "node:crypto";
 import { supportsExportFormat } from "@motionprep/contracts";
 import type {
   ExportJob,
   ExportRequest,
+  LayerDocument,
   ProjectKind,
   TraceContext,
 } from "@motionprep/contracts";
 import {
   ExportAdapterError,
 } from "@motionprep/export-adapters";
-import { validateProductionDocument } from "@motionprep/presets";
 import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
+import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
 import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import type {
@@ -23,12 +23,11 @@ import type {
 } from "../storage/object-storage.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
 import type { ExportRepository } from "./export-repository.js";
-import type { GeneratedArtifact } from "./export-artifact-helpers.js";
-import { ExportArtifactBuilder } from "./export-artifact-builder.js";
 import {
-  ExportArtifactReader,
-  exportArtifactKey,
-} from "./export-artifact-reader.js";
+  ExportArtifactProcessor,
+  ExportLeaseLostError,
+} from "./export-artifact-processor.js";
+import { ExportArtifactReader } from "./export-artifact-reader.js";
 import { ExportDomainError, ExportExecutionError } from "./export-errors.js";
 
 export { ExportDomainError, ExportExecutionError } from "./export-errors.js";
@@ -43,6 +42,8 @@ export interface ExportClaimLifecycle {
 }
 
 export class ExportService {
+  readonly #artifactProcessor: ExportArtifactProcessor;
+
   constructor(
     private readonly repository: ExportRepository,
     private readonly now: () => Date = () => new Date(),
@@ -52,7 +53,20 @@ export class ExportService {
     private readonly storage?: ObjectStorage,
     private readonly layerDocuments?: LayerDocumentRepository,
     private readonly executeInline = true,
-  ) {}
+    private readonly onArtifactCleanupError?: (
+      error: unknown,
+      objectKey: string,
+    ) => void,
+  ) {
+    this.#artifactProcessor = new ExportArtifactProcessor(
+      repository,
+      now,
+      uploads,
+      storage,
+      layerDocuments,
+      onArtifactCleanupError,
+    );
+  }
 
   async create(
     input: ExportRequest,
@@ -61,6 +75,7 @@ export class ExportService {
     onQueued?: (job: ExportJob) => Promise<boolean>,
     correlationId?: string,
     traceContext?: TraceContext,
+    reviewApproved = true,
   ): Promise<ExportJob> {
     if (input.scale !== 1 || input.colorProfile !== "sRGB") {
       throw new ExportDomainError(
@@ -95,17 +110,30 @@ export class ExportService {
         "نسخة المصدر لا تتبع المشروع أو لم تكتمل جاهزيتها.",
       );
     }
+    if (!reviewApproved) {
+      throw new ExportDomainError(
+        "REVIEW_APPROVAL_REQUIRED",
+        "اعتمد مراجعة أحدث إصدار من وثيقة الطبقات قبل التصدير.",
+      );
+    }
 
     const scopedIdempotencyKey = `${input.projectId}:${idempotencyKey}`;
     const exportId = crypto.randomUUID();
-    const claimedId = await this.idempotency.claim(
+    const claim = await this.idempotency.claimRequest(
       "export",
       scopedIdempotencyKey,
       exportId,
+      requestFingerprint("export", { input, projectKind }),
       24 * 60 * 60,
     );
-    if (claimedId !== exportId) {
-      const existing = await this.repository.findById(claimedId);
+    if (claim.outcome === "conflict") {
+      throw new ExportDomainError(
+        "IDEMPOTENCY_CONFLICT",
+        "استُخدم مفتاح منع التكرار نفسه لطلب تصدير مختلف.",
+      );
+    }
+    if (claim.outcome === "replayed") {
+      const existing = await this.repository.findById(claim.resourceId);
       if (existing) return existing;
       throw new ExportDomainError(
         "EXPORT_REQUEST_IN_PROGRESS",
@@ -114,12 +142,22 @@ export class ExportService {
     }
 
     const timestamp = this.now().toISOString();
-    const requestedDocument = this.layerDocuments
-      ? await this.layerDocuments.findBySource(
-          input.projectId,
-          input.sourceVersionId,
-        )
-      : null;
+    let requestedDocument: LayerDocument | null;
+    try {
+      requestedDocument = this.layerDocuments
+        ? await this.layerDocuments.findBySource(
+            input.projectId,
+            input.sourceVersionId,
+          )
+        : null;
+    } catch (error) {
+      await this.idempotency.release(
+        "export",
+        scopedIdempotencyKey,
+        exportId,
+      );
+      throw error;
+    }
     if (
       input.documentRevision !== undefined &&
       (!requestedDocument ||
@@ -174,7 +212,7 @@ export class ExportService {
         );
       }
       if (!this.executeInline) return job;
-      return await this.generateArtifact(
+      return await this.#artifactProcessor.generate(
         job,
         projectKind,
         input.namingPresetId,
@@ -201,19 +239,22 @@ export class ExportService {
   }
 
   async artifact(id: string): Promise<StoredObject> {
-    return new ExportArtifactReader(this.storage, this.now).read(
-      await this.find(id),
-    );
+    return new ExportArtifactReader(
+      this.storage,
+      this.now,
+      this.onArtifactCleanupError,
+    ).read(await this.find(id));
   }
 
   async artifactStream(
     id: string,
     signal?: AbortSignal,
   ): Promise<StoredObjectStream> {
-    return new ExportArtifactReader(this.storage, this.now).stream(
-      await this.find(id),
-      signal,
-    );
+    return new ExportArtifactReader(
+      this.storage,
+      this.now,
+      this.onArtifactCleanupError,
+    ).stream(await this.find(id), signal);
   }
 
   async find(id: string): Promise<ExportJob> {
@@ -227,8 +268,11 @@ export class ExportService {
     return job;
   }
 
-  async listByProjectIds(projectIds: string[]): Promise<ExportJob[]> {
-    return this.repository.listByProjectIds(projectIds);
+  async listByProjectIds(
+    projectIds: string[],
+    limit = 200,
+  ): Promise<ExportJob[]> {
+    return this.repository.listByProjectIds(projectIds, limit);
   }
 
   async cancel(id: string): Promise<ExportJob> {
@@ -288,7 +332,7 @@ export class ExportService {
     }, leaseMilliseconds);
     try {
       const run = () =>
-        this.generateArtifact(
+        this.#artifactProcessor.generate(
           job,
           job.projectKind,
           job.namingPresetId,
@@ -337,141 +381,6 @@ export class ExportService {
     }
   }
 
-  private async generateArtifact(
-    job: ExportJob,
-    projectKind: ProjectKind,
-    namingPresetId: string,
-    workerId?: string,
-  ): Promise<ExportJob> {
-    if (!this.storage || !this.layerDocuments) {
-      throw new Error("Object storage and LayerDocument persistence are required.");
-    }
-    const document = await this.layerDocuments.findBySource(
-      job.projectId,
-      job.sourceVersionId,
-    );
-    if (!document) {
-      throw new ExportDomainError(
-        "EXPORT_DOCUMENT_NOT_READY",
-        "يجب إكمال معالجة وثيقة الطبقات قبل التصدير.",
-      );
-    }
-    if (
-      job.documentRevision !== undefined &&
-      (document.revision ?? 1) !== job.documentRevision
-    ) {
-      throw new ExportDomainError(
-        "EXPORT_DOCUMENT_REVISION_CONFLICT",
-        "تغيرت وثيقة الطبقات بعد إنشاء مهمة التصدير. أنشئ تصديرًا جديدًا من أحدث مراجعة.",
-      );
-    }
-    const issues = validateProductionDocument(document, projectKind);
-    if (issues.length > 0) {
-      throw new ExportDomainError(
-        "EXPORT_PREFLIGHT_FAILED",
-        issues[0]?.message ?? "فشل فحص وثيقة الطبقات.",
-      );
-    }
-
-    const generating = await this.transition(
-      job,
-      "generating",
-      35,
-      workerId,
-    );
-    let artifact: GeneratedArtifact;
-    try {
-      artifact = await new ExportArtifactBuilder(
-        this.uploads,
-        this.storage,
-      ).create(
-        job,
-        projectKind,
-        document,
-        namingPresetId,
-      );
-    } catch (error) {
-      if (error instanceof ExportAdapterError) {
-        throw new ExportDomainError(
-          "EXPORT_PREFLIGHT_FAILED",
-          error.message,
-        );
-      }
-      throw error;
-    }
-    const verifying = await this.transition(
-      generating,
-      "verifying",
-      90,
-      workerId,
-    );
-    const expiresAt = new Date(
-      this.now().getTime() + 24 * 60 * 60_000,
-    ).toISOString();
-    const ready: ExportJob = {
-      ...verifying,
-      status: "ready",
-      progress: 100,
-      updatedAt: this.now().toISOString(),
-      artifact: {
-        filename: artifact.filename,
-        sizeBytes: artifact.body.byteLength,
-        sha256: createHash("sha256").update(artifact.body).digest("hex"),
-        expiresAt,
-      },
-      leaseOwner: workerId ? null : verifying.leaseOwner,
-      leaseExpiresAt: workerId ? null : verifying.leaseExpiresAt,
-      errorCode: null,
-    };
-    await this.storage.put({
-      key: exportArtifactKey(ready),
-      contentType: artifact.contentType,
-      sizeBytes: artifact.body.byteLength,
-      body: artifact.body,
-    });
-    if (!workerId) {
-      await this.repository.save(ready);
-      return ready;
-    }
-    const persisted = await this.repository.updateClaim(
-      ready.id,
-      workerId,
-      ready,
-      ready.updatedAt,
-    );
-    if (!persisted) {
-      await this.storage.delete(exportArtifactKey(ready));
-      throw new ExportLeaseLostError();
-    }
-    return persisted;
-  }
-
-  private async transition(
-    job: ExportJob,
-    status: ExportJob["status"],
-    progress: number,
-    workerId?: string,
-  ): Promise<ExportJob> {
-    const updated = {
-      ...job,
-      status,
-      progress,
-      updatedAt: this.now().toISOString(),
-    };
-    if (!workerId) {
-      await this.repository.save(updated);
-      return updated;
-    }
-    const persisted = await this.repository.updateClaim(
-      job.id,
-      workerId,
-      { status, progress },
-      updated.updatedAt,
-    );
-    if (!persisted) throw new ExportLeaseLostError();
-    return persisted;
-  }
-
   private async fail(job: ExportJob, errorCode: string): Promise<void> {
     await this.repository.save({
       ...job,
@@ -479,12 +388,6 @@ export class ExportService {
       errorCode,
       updatedAt: this.now().toISOString(),
     });
-  }
-}
-
-class ExportLeaseLostError extends Error {
-  constructor() {
-    super("Export job lease was lost or the job was cancelled.");
   }
 }
 

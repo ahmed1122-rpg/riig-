@@ -135,10 +135,27 @@ const emailOutboxDispatcher =
           process.stdout.write(
             `${JSON.stringify({
               timestamp: new Date().toISOString(),
-              level: event.outcome === "failed" ? "error" : "info",
+              level: ["failed", "lease_lost"].includes(event.outcome)
+                ? "error"
+                : "info",
               service: "motionprep-api",
               message: `email.outbox_${event.outcome}`,
               context: event,
+            })}\n`,
+          );
+        },
+        () => new Date(),
+        1_000,
+        (error) => {
+          process.stderr.write(
+            `${JSON.stringify({
+              timestamp: new Date().toISOString(),
+              level: "error",
+              service: "motionprep-api",
+              message: "email.outbox_cycle_failed",
+              context: {
+                error: error instanceof Error ? error.message : String(error),
+              },
             })}\n`,
           );
         },

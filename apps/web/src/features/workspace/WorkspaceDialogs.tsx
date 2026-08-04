@@ -26,8 +26,14 @@ import type {
   SourceVersionRestoreResult,
   SourceVersionSummary,
 } from "../../lib/api";
+import type { WorkspaceToolController } from "./useWorkspaceToolController";
+import type {
+  WorkspaceEditorState,
+  WorkspaceReviewState,
+  WorkspaceSourceState,
+} from "./useWorkspaceStateControllers";
 
-interface WorkspaceDialogsProps {
+interface WorkspaceDialogsModel {
   mode: ProjectMode;
   maxUploadBytes: number;
   persistedSource: boolean;
@@ -90,7 +96,84 @@ interface WorkspaceDialogsProps {
   onNotify: (message: string) => void;
 }
 
-export function WorkspaceDialogs(props: WorkspaceDialogsProps) {
+interface WorkspaceDialogsProps {
+  context: {
+    mode: ProjectMode;
+    maxUploadBytes: number;
+    onNotify: (message: string) => void;
+  };
+  source: WorkspaceSourceState;
+  review: WorkspaceReviewState;
+  editor: WorkspaceEditorState;
+  tools: WorkspaceToolController;
+  actions: {
+    onRestoreSourceVersion: WorkspaceDialogsModel["onRestoreSourceVersion"];
+    onExport: WorkspaceDialogsModel["onExport"];
+    layerCheckSummary: LayerCheckSummary;
+    onApplyPdfTextOperation: WorkspaceDialogsModel["onApplyPdfTextOperation"];
+    pdfRegionOcrLayer: Layer | undefined;
+    pdfRegionOcrPageSize: WorkspaceDialogsModel["pdfRegionOcrPageSize"];
+    onApplyPdfRegionOcr: WorkspaceDialogsModel["onApplyPdfRegionOcr"];
+    onApplyImageRasterOperation: WorkspaceDialogsModel["onApplyImageRasterOperation"];
+    exportReturnFocusTo: HTMLElement | null;
+    onRetrySave: WorkspaceDialogsModel["onRetrySave"];
+    onCreateExport: WorkspaceDialogsModel["onCreateExport"];
+  };
+}
+
+export function WorkspaceDialogs({
+  context,
+  source,
+  review,
+  editor,
+  tools,
+  actions,
+}: WorkspaceDialogsProps) {
+  const props: WorkspaceDialogsModel = {
+    mode: context.mode,
+    maxUploadBytes: context.maxUploadBytes,
+    persistedSource: source.persistedSource,
+    projectId: source.projectId,
+    sourceVersionId: source.sourceVersionId,
+    sourceVersionsOpen: tools.sourceVersionsOpen,
+    onCloseSourceVersions: () => tools.setSourceVersionsOpen(false),
+    onRestoreSourceVersion: actions.onRestoreSourceVersion,
+    mobilePanel: editor.mobilePanel,
+    onMobilePanelChange: editor.setMobilePanel,
+    onExport: actions.onExport,
+    tools: tools.workspaceTools,
+    activeTool: tools.activeTool,
+    layers: review.layers,
+    selectedIds: review.selectedIds,
+    activeLayerId: review.activeLayerId,
+    layerCheckSummary: actions.layerCheckSummary,
+    onUseTool: tools.useTool,
+    onSelectLayer: review.selectLayer,
+    pdfTextOperation: tools.pdfTextOperation,
+    onClosePdfTextOperation: () => tools.setPdfTextOperation(undefined),
+    onApplyPdfTextOperation: actions.onApplyPdfTextOperation,
+    bookLayers: review.bookLayers,
+    pdfRegionOcrLayer: actions.pdfRegionOcrLayer,
+    pdfRegionOcrPageSize: actions.pdfRegionOcrPageSize,
+    onClosePdfRegionOcr: () => tools.setPdfRegionOcrLayerId(undefined),
+    onApplyPdfRegionOcr: actions.onApplyPdfRegionOcr,
+    imageRasterOperation: tools.imageRasterOperation,
+    imageLayers: review.imageLayers,
+    onCloseImageRasterOperation: () =>
+      tools.setImageRasterOperation(undefined),
+    onApplyImageRasterOperation: actions.onApplyImageRasterOperation,
+    exportOpen: editor.exportOpen,
+    onCloseExport: () => editor.setExportOpen(false),
+    exportReturnFocusTo: actions.exportReturnFocusTo,
+    saveState: review.saveState,
+    onRetrySave: actions.onRetrySave,
+    imageCanvasSize: source.imageCanvasSize,
+    pdfPages: source.pdfPages,
+    sourcePreviewUrl: source.sourcePreviewUrl,
+    onLayersChange: review.setLayers,
+    onCreateExport: actions.onCreateExport,
+    onNotify: context.onNotify,
+  };
   return (
     <>
       {props.sourceVersionsOpen &&

@@ -6,14 +6,17 @@ import {
   ApiError,
   getAdminAudit,
   getAdminBilling,
+  getAdminExports,
   getAdminOverview,
   getAdminProcessing,
   getAdminSystem,
   getAdminUsers,
+  retryAdminExport,
   retryAdminProcessing,
   updateAdminUserAccess,
   type AdminAuditEvent,
   type AdminBillingData,
+  type AdminExportJob,
   type AdminOverview as AdminOverviewData,
   type AdminProcessingJob,
   type AdminSystemStatus,
@@ -23,6 +26,16 @@ import { Dialog } from "../../shared/Dialog";
 import { formatDateTime } from "../../shared/formatters";
 import { Icon, type IconName } from "../../shared/Icon";
 import type { AdminView, UserRole } from "../../types";
+import { Exports, Processing } from "./AdminJobViews";
+import {
+  DataFeedback,
+  outcomeTone,
+  Search,
+  Status,
+} from "./AdminPrimitives";
+
+export { Exports, Processing } from "./AdminJobViews";
+export { DataFeedback, outcomeTone, Status } from "./AdminPrimitives";
 
 interface AdminPanelProps {
   role: Exclude<UserRole, "creator">;
@@ -36,6 +49,10 @@ interface AdminNavItem {
   icon: IconName;
   roles: UserRole[];
 }
+
+type RetryTarget =
+  | { kind: "processing"; job: AdminProcessingJob }
+  | { kind: "export"; job: AdminExportJob };
 
 const roleLabels: Record<UserRole, string> = {
   creator: "صانع محتوى",
@@ -53,51 +70,15 @@ const accountStatusLabels: Record<AdminUser["status"], string> = {
 const navigation: AdminNavItem[] = [
   { id: "overview", label: "نظرة عامة", icon: "gauge", roles: ["support", "finance", "admin"] },
   { id: "processing", label: "المعالجة", icon: "activity", roles: ["support", "admin"] },
+  { id: "exports", label: "التصديرات", icon: "download", roles: ["support", "admin"] },
   { id: "users", label: "المستخدمون", icon: "users", roles: ["support", "admin"] },
   { id: "billing", label: "الفوترة", icon: "creditCard", roles: ["finance", "admin"] },
   { id: "audit", label: "سجل التدقيق", icon: "history", roles: ["support", "finance", "admin"] },
   { id: "system", label: "التشغيل", icon: "settings", roles: ["admin"] },
 ];
 
-type Tone = "ready" | "review" | "danger" | "processing" | undefined;
-
-export function Status({ children, tone }: { children: React.ReactNode; tone?: Tone }) {
-  return (
-    <span className={`status ${tone ? `status--${tone}` : ""}`}>
-      {children}
-    </span>
-  );
-}
-
-export function DataFeedback({
-  loading,
-  error,
-  empty,
-  onRetry,
-}: {
-  loading: boolean;
-  error: string | null;
-  empty?: boolean;
-  onRetry: () => void;
-}) {
-  if (loading) {
-    return <div className="admin-empty" role="status"><Icon name="activity" size={24} /><strong>جارٍ تحميل البيانات الفعلية…</strong></div>;
-  }
-  if (error) {
-    return <div className="admin-empty" role="alert"><Icon name="warning" size={24} /><strong>تعذر تحميل البيانات</strong><span>{error}</span><button className="secondary-button" type="button" onClick={onRetry}>إعادة المحاولة</button></div>;
-  }
-  if (empty) {
-    return <div className="admin-empty"><Icon name="folder" size={24} /><strong>لا توجد بيانات حتى الآن</strong><span>ستظهر السجلات هنا عند بدء الاستخدام.</span></div>;
-  }
-  return null;
-}
-
 function formatDate(value: string | null): string {
   return formatDateTime(value, "لم يسجّل دخوله");
-}
-
-export function outcomeTone(outcome: AdminAuditEvent["outcome"]): Tone {
-  return outcome === "success" ? "ready" : outcome === "denied" ? "review" : "danger";
 }
 
 export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) {
@@ -114,6 +95,7 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
   const [error, setError] = useState<string | null>(null);
   const [overview, setOverview] = useState<AdminOverviewData | null>(null);
   const [jobs, setJobs] = useState<AdminProcessingJob[]>([]);
+  const [exportJobs, setExportJobs] = useState<AdminExportJob[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [billing, setBilling] = useState<AdminBillingData | null>(null);
   const [audit, setAudit] = useState<AdminAuditEvent[]>([]);
@@ -125,7 +107,7 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [lastSuccessfulAt, setLastSuccessfulAt] = useState<Date>();
-  const [retryingJob, setRetryingJob] = useState<AdminProcessingJob>();
+  const [retryTarget, setRetryTarget] = useState<RetryTarget>();
   const [retryReason, setRetryReason] = useState("");
   const [retrying, setRetrying] = useState(false);
 
@@ -151,6 +133,8 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
         ? overview !== null
         : effectiveView === "processing"
           ? jobs.length > 0
+          : effectiveView === "exports"
+            ? exportJobs.length > 0
           : effectiveView === "users"
             ? users.length > 0
             : effectiveView === "billing"
@@ -170,6 +154,8 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
         ? getAdminOverview().then((data) => setOverview(data))
         : effectiveView === "processing"
           ? getAdminProcessing().then(setJobs)
+          : effectiveView === "exports"
+            ? getAdminExports().then(setExportJobs)
           : effectiveView === "users"
             ? getAdminUsers().then(setUsers)
             : effectiveView === "billing"
@@ -202,18 +188,28 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
 
   const retry = () => setReloadKey((value) => value + 1);
 
-  const retryProcessingJob = async () => {
-    if (!retryingJob || retryReason.trim().length < 10) return;
+  const retryOperationalJob = async () => {
+    if (!retryTarget || retryReason.trim().length < 10) return;
     setRetrying(true);
     try {
-      const updated = await retryAdminProcessing(
-        retryingJob.id,
-        retryReason.trim(),
-      );
-      setJobs((current) =>
-        current.map((job) => (job.id === updated.id ? updated : job)),
-      );
-      setRetryingJob(undefined);
+      if (retryTarget.kind === "processing") {
+        const updated = await retryAdminProcessing(
+          retryTarget.job.id,
+          retryReason.trim(),
+        );
+        setJobs((current) =>
+          current.map((job) => (job.id === updated.id ? updated : job)),
+        );
+      } else {
+        const updated = await retryAdminExport(
+          retryTarget.job.id,
+          retryReason.trim(),
+        );
+        setExportJobs((current) =>
+          current.map((job) => (job.id === updated.id ? updated : job)),
+        );
+      }
+      setRetryTarget(undefined);
       setRetryReason("");
       onNotify("أُعيدت المهمة إلى الطابور وسُجل السبب في سجل التدقيق.");
     } catch (caught) {
@@ -290,7 +286,8 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
         </header>
         <main className="admin-content">
           {effectiveView === "overview" && <Overview data={overview} loading={loading} error={error} onRetry={retry} />}
-          {effectiveView === "processing" && <Processing jobs={jobs} query={query} onQuery={setQuery} loading={loading} error={error} onRetry={retry} canRetry={role === "admin"} onRetryJob={(job) => { setRetryingJob(job); setRetryReason(""); }} />}
+          {effectiveView === "processing" && <Processing jobs={jobs} query={query} onQuery={setQuery} loading={loading} error={error} onRetry={retry} canRetry={role === "admin"} onRetryJob={(job) => { setRetryTarget({ kind: "processing", job }); setRetryReason(""); }} />}
+          {effectiveView === "exports" && <Exports jobs={exportJobs} query={query} onQuery={setQuery} loading={loading} error={error} onRetry={retry} canRetry={role === "admin"} onRetryJob={(job) => { setRetryTarget({ kind: "export", job }); setRetryReason(""); }} />}
           {effectiveView === "users" && <Users users={users} query={query} onQuery={setQuery} canEdit={role === "admin"} onOpen={openUser} loading={loading} error={error} onRetry={retry} />}
           {effectiveView === "billing" && <Billing data={billing} loading={loading} error={error} onRetry={retry} />}
           {effectiveView === "audit" && <Audit rows={audit} query={query} onQuery={setQuery} onNotify={onNotify} loading={loading} error={error} onRetry={retry} />}
@@ -311,14 +308,14 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
           <label className="dialog-field">سبب الإجراء<textarea rows={4} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="اكتب سببًا واضحًا من 10 أحرف على الأقل" /></label>
         </Dialog>
       )}
-      {retryingJob && (
+      {retryTarget && (
         <Dialog
           role="alertdialog"
-          title="إعادة مهمة المعالجة إلى الطابور؟"
+          title={`إعادة مهمة ${retryTarget.kind === "processing" ? "المعالجة" : "التصدير"} إلى الطابور؟`}
           description="ينفذ الخادم الإجراء فقط إذا ظلت المهمة فاشلة ومصدرها هو الإصدار الحالي الجاهز."
-          onClose={() => !retrying && setRetryingJob(undefined)}
+          onClose={() => !retrying && setRetryTarget(undefined)}
           className="confirm-dialog"
-          footer={<><button type="button" className="secondary-button" disabled={retrying} onClick={() => setRetryingJob(undefined)}>إلغاء</button><button type="button" className="danger-button" disabled={retrying || retryReason.trim().length < 10} onClick={() => void retryProcessingJob()}>{retrying ? "جارٍ الإعادة…" : "إعادة إلى الطابور"}</button></>}
+          footer={<><button type="button" className="secondary-button" disabled={retrying} onClick={() => setRetryTarget(undefined)}>إلغاء</button><button type="button" className="danger-button" disabled={retrying || retryReason.trim().length < 10} onClick={() => void retryOperationalJob()}>{retrying ? "جارٍ الإعادة…" : "إعادة إلى الطابور"}</button></>}
         >
           <label className="dialog-field">سبب إعادة المحاولة<textarea rows={4} value={retryReason} onChange={(event) => setRetryReason(event.target.value)} placeholder="اشرح سبب التدخل اليدوي في 10 أحرف على الأقل" /></label>
         </Dialog>
@@ -356,40 +353,6 @@ function Overview({ data, loading, error, onRetry }: { data: AdminOverviewData |
           {data.audit.length > 0 ? <div className="admin-recent-audit">{data.audit.slice(0, 4).map((event) => <article key={event.id}><span><strong>{event.action}</strong><small>{formatDate(event.createdAt)}</small></span><Status tone={outcomeTone(event.outcome)}>{event.outcome}</Status></article>)}</div> : <div className="admin-empty admin-empty--compact"><Icon name="history" size={24} /><strong>لا توجد إجراءات إدارية مسجلة</strong><span>سيظهر هنا أحدث نشاط موثق مع بدء التشغيل.</span></div>}
         </section>
       </div>
-    </section>
-  );
-}
-
-export function Processing({ jobs, query, onQuery, loading, error, onRetry, canRetry, onRetryJob }: { jobs: AdminProcessingJob[]; query: string; onQuery: (value: string) => void; loading: boolean; error: string | null; onRetry: () => void; canRetry: boolean; onRetryJob: (job: AdminProcessingJob) => void }) {
-  const debouncedQuery = useDebounce(query, 250);
-  const visible = jobs.filter((job) => `${job.id} ${job.projectId} ${job.status} ${job.errorCode ?? ""}`.toLowerCase().includes(debouncedQuery.toLowerCase()));
-  return (
-    <section className="admin-view page-enter">
-      <header className="admin-page-heading"><div><span className="eyebrow">طابور المعالجة</span><h1>المعالجة</h1><p>قراءة مباشرة للحالة؛ المدير فقط يستطيع إعادة مهمة فاشلة ذات مصدر حالي جاهز مع سبب مدقق.</p></div></header>
-      <Search value={query} onChange={onQuery} placeholder="رقم المهمة أو المشروع أو رمز الخطأ…" />
-      <DataFeedback loading={loading} error={error} empty={!loading && !error && visible.length === 0} onRetry={onRetry} />
-      {!loading && !error && visible.length > 0 && (
-        <div className="admin-data-table processing-table" role="table" aria-label="مهام المعالجة">
-          <div className="admin-data-head" role="row">
-            <span role="columnheader">المهمة</span>
-            <span role="columnheader">النوع</span>
-            <span role="columnheader">الحالة</span>
-            <span role="columnheader">التقدم</span>
-            <span role="columnheader">آخر تحديث</span>
-            <span role="columnheader">الإجراء</span>
-          </div>
-          {visible.map((job) => (
-            <div className="admin-data-row" role="row" key={job.id}>
-              <span role="cell"><strong><bdi>{job.id.slice(0, 12)}</bdi></strong><small><bdi>{job.projectId.slice(0, 12)}</bdi></small></span>
-              <span role="cell">{job.projectKind === "image" ? "صورة" : "PDF"}</span>
-              <span role="cell"><Status tone={job.status === "ready" ? "ready" : job.status === "failed" ? "danger" : "processing"}>{job.status}</Status></span>
-              <span role="cell"><bdi>{job.progress}%</bdi></span>
-              <span role="cell">{formatDate(job.updatedAt)}</span>
-              <span role="cell">{canRetry && job.status === "failed" ? <button type="button" className="admin-row-action" onClick={() => onRetryJob(job)}>إعادة</button> : job.errorCode ? <abbr title={job.errorCode}>!</abbr> : null}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </section>
   );
 }
@@ -522,8 +485,4 @@ export function System({
       )}
     </section>
   );
-}
-
-function Search({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
-  return <div className="admin-table-toolbar"><label className="admin-search"><Icon name="search" size={16} /><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label="بحث" /></label></div>;
 }

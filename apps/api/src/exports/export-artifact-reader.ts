@@ -11,7 +11,26 @@ import {
 } from "../storage/object-integrity.js";
 import { ExportDomainError } from "./export-errors.js";
 
-export function exportArtifactKey(job: ExportJob): string {
+function exportArtifactKey(job: ExportJob): string {
+  return job.artifact?.objectKey ?? legacyExportArtifactKey(job);
+}
+
+export function exportArtifactGenerationKey(
+  job: Pick<ExportJob, "id" | "projectId">,
+  generationId: string,
+  filename: string,
+): string {
+  return [
+    "artifacts",
+    encodeURIComponent(job.projectId),
+    encodeURIComponent(job.id),
+    "generations",
+    encodeURIComponent(generationId),
+    encodeURIComponent(filename),
+  ].join("/");
+}
+
+function legacyExportArtifactKey(job: ExportJob): string {
   return `artifacts/${job.projectId}/${job.id}/${job.artifact?.filename ?? "pending"}`;
 }
 
@@ -19,6 +38,10 @@ export class ExportArtifactReader {
   constructor(
     private readonly storage?: ObjectStorage,
     private readonly now: () => Date = () => new Date(),
+    private readonly onCleanupError?: (
+      error: unknown,
+      objectKey: string,
+    ) => void,
   ) {}
 
   async read(job: ExportJob): Promise<StoredObject> {
@@ -80,7 +103,16 @@ export class ExportArtifactReader {
     storage: ObjectStorage,
   ): Promise<void> {
     if (Date.parse(job.artifact!.expiresAt) > this.now().getTime()) return;
-    await storage.delete(exportArtifactKey(job)).catch(() => undefined);
+    const objectKey = exportArtifactKey(job);
+    try {
+      await storage.delete(objectKey);
+    } catch (error) {
+      try {
+        this.onCleanupError?.(error, objectKey);
+      } catch {
+        // Expiration remains authoritative even if observability is degraded.
+      }
+    }
     throw new ExportDomainError(
       "EXPORT_ARTIFACT_NOT_READY",
       "انتهت مدة الاحتفاظ بملف التصدير.",

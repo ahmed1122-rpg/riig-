@@ -4,16 +4,11 @@ import type {
   ProjectKind,
 } from "@motionprep/contracts";
 import {
-  DocumentProcessingError,
   LocalArabicPdfOcrEngine,
   preparePdfSource,
 } from "@motionprep/document-processing";
-import {
-  MediaProcessingError,
-  prepareImageSource,
-} from "@motionprep/media-processing";
+import { prepareImageSource } from "@motionprep/media-processing";
 import type { Pool, PoolClient } from "pg";
-import { z } from "zod";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { isObjectStorageIntegrityFailure } from "../storage/object-storage.js";
 import { S3ObjectStorage } from "../storage/s3-object-storage.js";
@@ -24,30 +19,15 @@ import { updateProjectStatusForJob } from "../projects/project-job-status.js";
 import { getProcessingRetryPolicy } from "./processing-worker-policy.js";
 import {
   applyPdfRegionOcr,
-  PdfRegionOcrError,
 } from "./pdf-region-ocr.js";
-
-const jobOptionsSchema = z.object({
-  pdfSeparationMode: z
-    .enum(["heading", "topic", "sentence", "line", "word", "character"])
-    .default("sentence"),
-  pdfRegionOcr: z
-    .object({
-      pageNumber: z.number().int().positive().max(250),
-      start: z.object({
-        x: z.number().finite().min(0).max(1),
-        y: z.number().finite().min(0).max(1),
-      }),
-      end: z.object({
-        x: z.number().finite().min(0).max(1),
-        y: z.number().finite().min(0).max(1),
-      }),
-      baseRevision: z.number().int().positive(),
-      actorUserId: z.string().uuid(),
-      operationId: z.string().min(1).max(256),
-    })
-    .optional(),
-});
+import {
+  ProcessingLeaseLostError,
+  ProcessingWorkerError,
+  processingErrorCode,
+} from "./processing-worker-errors.js";
+import { cleanupRasterAssets } from "./raster-asset-cleanup.js";
+import { writeProcessingRasterAssets } from "./processing-raster-asset-writes.js";
+import { processingJobOptionsSchema } from "./processing-job-options.js";
 
 export interface ProcessingJobExecutionContext {
   pool: Pool;
@@ -55,6 +35,7 @@ export interface ProcessingJobExecutionContext {
   projectKind: ProjectKind;
   workerId: string;
   leaseMilliseconds: number;
+  rasterAssetWriteConcurrency: number;
   pdfOcrEngine: LocalArabicPdfOcrEngine | null;
   usageMeter: PostgresUsageMeter;
   log: (
@@ -97,7 +78,7 @@ export async function processClaimedJob(
       [job.projectId, job.sourceVersionId],
     );
     const readyUpload = upload.rows[0];
-    if (!readyUpload) throw new WorkerError("SOURCE_NOT_READY");
+    if (!readyUpload) throw new ProcessingWorkerError("SOURCE_NOT_READY");
 
     let response;
     try {
@@ -106,11 +87,11 @@ export async function processClaimedJob(
       });
     } catch (error) {
       if (isObjectStorageIntegrityFailure(error)) {
-        throw new WorkerError("SOURCE_INTEGRITY_FAILED");
+        throw new ProcessingWorkerError("SOURCE_INTEGRITY_FAILED");
       }
       throw error;
     }
-    if (!response) throw new WorkerError("SOURCE_NOT_READY");
+    if (!response) throw new ProcessingWorkerError("SOURCE_NOT_READY");
     if (
       !readyUpload.sha256 ||
       !hasExpectedObjectIntegrity(response, {
@@ -119,11 +100,11 @@ export async function processClaimedJob(
         sha256: readyUpload.sha256,
       })
     ) {
-      throw new WorkerError("SOURCE_INTEGRITY_FAILED");
+      throw new ProcessingWorkerError("SOURCE_INTEGRITY_FAILED");
     }
     const source = response.body;
 
-    const parsedOptions = jobOptionsSchema.parse(job.options);
+    const parsedOptions = processingJobOptionsSchema.parse(job.options);
     let sourceDocument: LayerDocument;
     let regionalExpectedRevision: number | undefined;
     if (job.projectKind === "image") {
@@ -132,19 +113,19 @@ export async function processClaimedJob(
         sourceVersionId: job.sourceVersionId,
         source,
       });
-      for (const asset of prepared.rasterAssets) {
-        if (heartbeat.leaseLost()) throw new ProcessingLeaseLostError();
-        await context.storage.put({
-          key: asset.objectKey,
-          body: asset.body,
-          contentType: asset.contentType,
-          sizeBytes: asset.sizeBytes,
-        });
-        storedRasterAssetKeys.push(asset.objectKey);
-      }
+      storedRasterAssetKeys.push(
+        ...(await writeProcessingRasterAssets(
+          context,
+          job.id,
+          prepared.rasterAssets,
+          () => {
+            if (heartbeat.leaseLost()) throw new ProcessingLeaseLostError();
+          },
+        )),
+      );
       sourceDocument = prepared.document;
     } else if (parsedOptions.pdfRegionOcr) {
-      if (!context.pdfOcrEngine) throw new WorkerError("OCR_FAILED");
+      if (!context.pdfOcrEngine) throw new ProcessingWorkerError("OCR_FAILED");
       const current = await context.pool.query<{ document: LayerDocument }>(
         `SELECT document
          FROM layer_documents
@@ -153,7 +134,7 @@ export async function processClaimedJob(
       );
       const currentDocument = current.rows[0]?.document;
       if (!currentDocument) {
-        throw new WorkerError("INVALID_DOCUMENT_OPERATION");
+        throw new ProcessingWorkerError("INVALID_DOCUMENT_OPERATION");
       }
       const result = await applyPdfRegionOcr({
         source,
@@ -195,7 +176,7 @@ export async function processClaimedJob(
         (!previousDocument ||
           previousDocument.revision !== regionalExpectedRevision)
       ) {
-        throw new WorkerError("DOCUMENT_REVISION_CONFLICT");
+        throw new ProcessingWorkerError("DOCUMENT_REVISION_CONFLICT");
       }
       const document =
         regionalExpectedRevision === undefined
@@ -249,16 +230,30 @@ export async function processClaimedJob(
         ],
       );
       await client.query(
-        `DELETE FROM layer_document_revisions
-         WHERE project_id = $1
-           AND source_version_id = $2
-           AND revision < $3
-           AND NOT (revision = ANY($4::integer[]))`,
+        `DELETE FROM layer_document_revisions AS stored_revision
+         WHERE stored_revision.project_id = $1
+           AND stored_revision.source_version_id = $2
+           AND stored_revision.revision < $3
+           AND NOT (stored_revision.revision = ANY($4::integer[]))
+           AND NOT EXISTS (
+             SELECT 1
+             FROM export_jobs AS export_job
+             WHERE export_job.project_id = stored_revision.project_id
+               AND export_job.source_version_id = stored_revision.source_version_id
+               AND export_job.document_revision = stored_revision.revision
+           )`,
         [
           job.projectId,
           job.sourceVersionId,
           Math.max(1, (document.revision ?? 1) - 100),
-          document.editTimeline?.entries.map((entry) => entry.revision) ?? [],
+          [
+            ...(document.editTimeline?.entries.map(
+              (entry) => entry.revision,
+            ) ?? []),
+            ...(document.editTimeline?.navigationEntries?.map(
+              (entry) => entry.resultRevision,
+            ) ?? []),
+          ],
         ],
       );
       const completed = await client.query(
@@ -311,8 +306,19 @@ export async function processClaimedJob(
       !documentPersisted &&
       storedRasterAssetKeys.length > 0
     ) {
-      await Promise.allSettled(
-        storedRasterAssetKeys.map((key) => context.storage.delete(key)),
+      await cleanupRasterAssets(
+        context.storage,
+        storedRasterAssetKeys,
+        (cleanupError, objectKey) => {
+          context.log("error", "processing.asset_cleanup_failed", {
+            job_id: job.id,
+            object_key: objectKey,
+            error:
+              cleanupError instanceof Error
+                ? cleanupError.message
+                : "unknown",
+          });
+        },
       );
     }
     if (isLeaseLoss) {
@@ -320,7 +326,14 @@ export async function processClaimedJob(
         workerType: context.projectKind === "image" ? "media" : "document",
         eventType: "lease_lost",
         jobId: job.id,
-      }).catch(() => undefined);
+      }).catch((eventError: unknown) => {
+        context.log("error", "worker.event_record_failed", {
+          job_id: job.id,
+          event_type: "lease_lost",
+          error:
+            eventError instanceof Error ? eventError.message : "unknown",
+        });
+      });
       context.log("warning", "processing.lease_lost", {
         job_id: job.id,
         correlation_id: job.correlationId,
@@ -329,7 +342,7 @@ export async function processClaimedJob(
       });
       return;
     }
-    const errorCode = toErrorCode(error);
+    const errorCode = processingErrorCode(error);
     const result = await retryOrFail(
       context.pool,
       job,
@@ -346,7 +359,19 @@ export async function processClaimedJob(
             : "failed",
       jobId: job.id,
       durationMs: Date.now() - startedAt,
-    }).catch(() => undefined);
+    }).catch((eventError: unknown) => {
+      context.log("error", "worker.event_record_failed", {
+        job_id: job.id,
+        event_type:
+          result === "queued"
+            ? "retry"
+            : result === "lease_lost"
+              ? "lease_lost"
+              : "failed",
+        error:
+          eventError instanceof Error ? eventError.message : "unknown",
+      });
+    });
     context.log(
       result === "queued" ? "warning" : "error",
       result === "queued"
@@ -468,32 +493,4 @@ async function retryOrFail(
     });
   }
   return status;
-}
-
-function toErrorCode(error: unknown): string {
-  if (error instanceof DocumentProcessingError) return error.code;
-  if (error instanceof PdfRegionOcrError) return error.code;
-  if (error instanceof MediaProcessingError) return error.code;
-  if (error instanceof WorkerError) return error.code;
-  if (error instanceof z.ZodError) return "INVALID_PROCESSING_OPTIONS";
-  return "WORKER_FAILED";
-}
-
-class WorkerError extends Error {
-  constructor(
-    readonly code:
-      | "SOURCE_NOT_READY"
-      | "SOURCE_INTEGRITY_FAILED"
-      | "OCR_FAILED"
-      | "INVALID_DOCUMENT_OPERATION"
-      | "DOCUMENT_REVISION_CONFLICT",
-  ) {
-    super(code);
-  }
-}
-
-class ProcessingLeaseLostError extends Error {
-  constructor() {
-    super("Processing job lease was lost.");
-  }
 }

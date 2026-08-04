@@ -4,6 +4,13 @@
 
 - Active upload age exceeds 15 minutes.
 - Upload verification failure rate exceeds 5% for 10 minutes.
+- `MotionPrepUploadIntegrityFailure`: treat any terminal missing/corrupt source
+  as a data-integrity incident; correlate the upload, source version, and
+  project identifiers from the structured reconciliation log.
+- `MotionPrepUploadReconciliationFailures` or
+  `MotionPrepUploadReconciliationStalled`: verify PostgreSQL and object-storage
+  readiness before replaying. Provider timeouts are retryable and must not be
+  relabeled as object corruption.
 - Export queue wait p95 exceeds the plan SLO.
 - Export retry rate exceeds 2% or `lease_lost` appears.
 - Export verification failure rate exceeds 2%.
@@ -43,6 +50,11 @@
 - Upload: the current API accepts one request up to 30 MiB and does not use
   multipart transfer. If the session is invalid, cancel it and create a new
   source version.
+- Missing or corrupt upload: the reconciler atomically marks the upload and
+  source failed and fails the project only when that source is still current.
+  Do not manually restore `ready`; create a new source version. The immutable
+  `upload_integrity_events` record preserves the reason after ordinary upload
+  retention removes the failed object metadata.
 - Export: let the expired lease be reclaimed, then replay from the last
   approved `LayerDocument`; never rerun AI/OCR unless that version is missing.
 - Checksum mismatch: quarantine the artifact, alert, and regenerate with the same exporter version before considering a rollback.

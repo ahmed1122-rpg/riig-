@@ -1,4 +1,5 @@
 import type { FastifyError, FastifyInstance } from "fastify";
+import { InvalidIdempotencyKeyError } from "./request-metadata.js";
 
 interface PublicErrorDescriptor {
   statusCode: number;
@@ -29,6 +30,14 @@ export function registerHttpErrorHandler(app: FastifyInstance): void {
 function publicErrorDescriptor(
   error: unknown,
 ): PublicErrorDescriptor {
+  if (error instanceof InvalidIdempotencyKeyError) {
+    return {
+      statusCode: 400,
+      code: "IDEMPOTENCY_KEY_INVALID",
+      message:
+        "يجب أن يتكون مفتاح منع التكرار من 8 إلى 128 حرفًا بلا محارف تحكم أو مسافات طرفية.",
+    };
+  }
   const fastifyError = error instanceof Error ? (error as FastifyError) : null;
   if (fastifyError?.validation) {
     return {

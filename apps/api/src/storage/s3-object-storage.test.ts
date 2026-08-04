@@ -219,6 +219,42 @@ describe("S3ObjectStorage", () => {
     expect(commands[3]).toBeInstanceOf(DeleteObjectCommand);
   });
 
+  it("distinguishes a missing object from corrupt persisted metadata", async () => {
+    const missing = storageWith(async (command) => {
+      if (command instanceof HeadObjectCommand) {
+        const error = new Error("missing") as Error & {
+          $metadata: { httpStatusCode: number };
+        };
+        error.$metadata = { httpStatusCode: 404 };
+        throw error;
+      }
+      return {};
+    });
+    const corrupt = storageWith(async (command) => {
+      if (command instanceof HeadObjectCommand) {
+        return { ContentLength: 12, ContentType: "image/png" };
+      }
+      return {};
+    });
+
+    await expect(missing.inspect("sources/project/missing.png")).resolves.toBeNull();
+    await expect(
+      corrupt.inspect("sources/project/corrupt.png"),
+    ).rejects.toBeInstanceOf(ObjectStorageIntegrityError);
+  });
+
+  it("does not relabel a provider outage as object corruption", async () => {
+    const unavailable = new Error("provider unavailable");
+    const storage = storageWith(async (command) => {
+      if (command instanceof HeadObjectCommand) throw unavailable;
+      return {};
+    });
+
+    await expect(
+      storage.inspect("sources/project/source.png"),
+    ).rejects.toBe(unavailable);
+  });
+
   it("streams a verified object and preserves chunk boundaries for backpressure", async () => {
     const source = Buffer.from("motionprep-stream");
     const storage = storageWith(async (command) => {

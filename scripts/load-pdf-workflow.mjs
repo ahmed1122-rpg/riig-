@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { loadPdfConfiguration } from "./load-pdf-config.mjs";
+import { currentLegalAcceptance } from "./legal-acceptance.mjs";
 import {
   runWithConcurrency,
   summarizeDurations,
@@ -168,6 +169,7 @@ async function executeJourney(index) {
           name: `Load User ${index}`,
           email: `load-${suffix}@example.test`,
           password: "Load-Test-2026!",
+          legal: currentLegalAcceptance,
         },
         expectedStatus: 201,
       }),
@@ -217,12 +219,28 @@ async function executeJourney(index) {
     await measure("processing-ready", () =>
       waitForJob(`/v1/processing/jobs/${processing.body.data.id}`, "processing"),
     );
+    const layerDocument = await measure("review-document", () =>
+      api(
+        `/v1/projects/${projectId}/layer-document?sourceVersionId=${sourceVersionId}`,
+        { expectedStatus: 200 },
+      ),
+    );
+    const documentRevision = layerDocument.body.data.revision;
+    await measure("review-approve", () =>
+      api(`/v1/projects/${projectId}/review/approve`, {
+        method: "POST",
+        json: { sourceVersionId, documentRevision },
+        headers: { "x-idempotency-key": `approve-${suffix}` },
+        expectedStatus: 200,
+      }),
+    );
     const exportJob = await measure("export-submit", () =>
       api("/v1/exports", {
         method: "POST",
         json: {
           projectId,
           sourceVersionId,
+          documentRevision,
           format: "psd",
           scope: "full-document",
           scale: 1,

@@ -3,27 +3,16 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { AppShell } from "../shared/AppShell";
-import type { DemoState, ProjectMode, ViewId } from "../types";
-import {
-  getApplicationCapabilities,
-  getSession,
-  unavailableApplicationCapabilities,
-  type ApplicationCapabilities,
-  type ProjectSummary,
-  type SessionUser,
-} from "../lib/api";
+import type { DemoState, ProjectMode } from "../types";
+import type { ProjectSummary } from "../lib/api";
 import { Icon } from "../shared/Icon";
-import {
-  buildViewSearch,
-  resolveEntryIntent,
-  resolveRootSurface,
-  type SessionPhase,
-  type WorkspaceEntry,
-} from "../features/marketing/entryState";
+import { resolveEntryIntent, resolveRootSurface } from "../features/marketing/entryState";
+import { useApplicationLifecycle } from "./useApplicationLifecycle";
+import { useAppDisplayPreferences } from "./useAppDisplayPreferences";
+import { useGuardedAppNavigation } from "./useGuardedAppNavigation";
 
 const LandingPage = lazy(() => import("../features/marketing/LandingPage"));
 const AuthGateway = lazy(() => import("../features/auth/AuthGateway"));
@@ -61,8 +50,6 @@ const SettingsView = lazy(() =>
     ({ SettingsView: component }) => ({ default: component }),
   ),
 );
-const MOBILE_SHELL_QUERY = "(max-width: 900px)";
-
 function FeatureLoading() {
   return (
     <div className="feature-loading" role="status" aria-live="polite">
@@ -96,207 +83,42 @@ export function App() {
       import.meta.env.DEV &&
       new URLSearchParams(window.location.search).get("debugStates") === "1",
   );
-  const [view, setView] = useState<ViewId>(entryIntent.initialView);
-  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
-  const [sessionPhase, setSessionPhase] =
-    useState<SessionPhase>("checking");
-  const [capabilities, setCapabilities] = useState<ApplicationCapabilities>(
-    unavailableApplicationCapabilities,
-  );
+  const [notice, setNotice] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(entryIntent.passwordReset);
   const [guestStudioOpen, setGuestStudioOpen] = useState(false);
-  const [projectMode, setProjectMode] = useState<ProjectMode>(
-    entryIntent.workspace.mode,
-  );
-  const [workspaceProject, setWorkspaceProject] = useState<Pick<
-    ProjectSummary,
-    | "id"
-    | "name"
-    | "currentSourceVersionId"
-    | "currentSourceVersionNumber"
-  > | null>(entryIntent.workspace.project);
   const [demoState, setDemoState] = useState<DemoState>("ready");
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [lightTheme, setLightTheme] = useState(() => {
-    try {
-      return window.localStorage.getItem("motionprep.settings.light-theme") !==
-        "false";
-    } catch {
-      return true;
-    }
-  });
-  const [notice, setNotice] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_SHELL_QUERY).matches);
-  const workspaceNavigationGuardRef = useRef<
-    (() => Promise<boolean>) | null
-  >(null);
-  const navigationSequenceRef = useRef(0);
-  const viewRef = useRef(view);
-  const committedLocationRef = useRef(
-    `${window.location.pathname}${window.location.search}`,
-  );
-  viewRef.current = view;
-  const registerWorkspaceNavigationGuard = useCallback(
-    (guard: (() => Promise<boolean>) | null) => {
-      workspaceNavigationGuardRef.current = guard;
-    },
-    [],
-  );
+  const {
+    sessionUser,
+    sessionPhase,
+    capabilities,
+    refreshSessionAfterAuthentication,
+    clearSession,
+  } = useApplicationLifecycle(setNotice);
+  const {
+    view,
+    projectMode,
+    workspaceProject,
+    navigateView,
+    registerWorkspaceNavigationGuard,
+  } = useGuardedAppNavigation(entryIntent);
+  const {
+    mobileNavOpen,
+    lightTheme,
+    isMobile,
+    closeMobileNavigation,
+    toggleMobileNavigation,
+    toggleTheme,
+  } = useAppDisplayPreferences(view);
   const openAuth = useCallback(() => {
-    setMobileNavOpen(false);
+    closeMobileNavigation();
     setAuthOpen(true);
-  }, []);
-
-  useEffect(() => {
-    void getSession()
-      .then((user) => {
-        setSessionUser(user);
-        setSessionPhase("resolved");
-      })
-      .catch(() => {
-        setNotice("تعذر التحقق من جلسة الخادم.");
-        setSessionPhase("resolved");
-      });
-  }, []);
-
-  useEffect(() => {
-    void getApplicationCapabilities()
-      .then(setCapabilities)
-      .catch(() => setCapabilities(unavailableApplicationCapabilities));
-  }, []);
-
-  useEffect(() => {
-    const mobileQuery = window.matchMedia(MOBILE_SHELL_QUERY);
-    const syncViewport = (event: MediaQueryListEvent | MediaQueryList) => {
-      setIsMobile(event.matches);
-      setMobileNavOpen(false);
-    };
-    syncViewport(mobileQuery);
-    mobileQuery.addEventListener("change", syncViewport);
-    return () => mobileQuery.removeEventListener("change", syncViewport);
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = lightTheme ? "light" : "dark";
-    try {
-      window.localStorage.setItem(
-        "motionprep.settings.light-theme",
-        String(lightTheme),
-      );
-    } catch {
-      // Theme remains usable when local storage is unavailable.
-    }
-  }, [lightTheme]);
-
-  useEffect(() => {
-    if (view === "workspace") return;
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-  }, [view]);
-
-  useEffect(() => {
-    try {
-      const reducedMotion = JSON.parse(
-        window.localStorage.getItem("motionprep.settings.reduced-motion") ??
-          "false",
-      ) as boolean;
-      document.documentElement.dataset.motion = reducedMotion
-        ? "reduced"
-        : "full";
-    } catch {
-      document.documentElement.dataset.motion = "full";
-    }
-  }, []);
+  }, [closeMobileNavigation]);
 
   useEffect(() => {
     if (!notice) return;
     const timeout = window.setTimeout(() => setNotice(null), 2800);
     return () => window.clearTimeout(timeout);
   }, [notice]);
-
-  useEffect(() => {
-    const restoreLocation = () => {
-      const intent = resolveEntryIntent(window.location.search);
-      const requestedLocation =
-        `${window.location.pathname}${window.location.search}`;
-      const applyLocation = () => {
-        setView(intent.initialView);
-        viewRef.current = intent.initialView;
-        setProjectMode(intent.workspace.mode);
-        setWorkspaceProject(intent.workspace.project);
-        committedLocationRef.current = requestedLocation;
-      };
-      const guard =
-        viewRef.current === "workspace"
-          ? workspaceNavigationGuardRef.current
-          : null;
-      if (!guard) {
-        applyLocation();
-        return;
-      }
-      const sequence = ++navigationSequenceRef.current;
-      void guard().then((allowed) => {
-        if (sequence !== navigationSequenceRef.current) return;
-        if (allowed) {
-          applyLocation();
-          return;
-        }
-        window.history.pushState(
-          null,
-          "",
-          committedLocationRef.current,
-        );
-      });
-    };
-    window.addEventListener("popstate", restoreLocation);
-    return () => window.removeEventListener("popstate", restoreLocation);
-  }, []);
-
-  const navigateView = (
-    nextView: ViewId,
-    workspace?: WorkspaceEntry,
-    replace = false,
-  ) => {
-    const commitNavigation = () => {
-      if (nextView === "workspace" && workspace) {
-        setProjectMode(workspace.mode);
-        setWorkspaceProject(workspace.project);
-      }
-      setView(nextView);
-      viewRef.current = nextView;
-      const search = buildViewSearch(
-        window.location.search,
-        nextView,
-        workspace ??
-          (nextView === "workspace"
-            ? { mode: projectMode, project: workspaceProject }
-            : undefined),
-      );
-      const nextUrl = `${window.location.pathname}${search}`;
-      if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
-        window.history[replace ? "replaceState" : "pushState"](
-          null,
-          "",
-          nextUrl,
-        );
-      }
-      committedLocationRef.current = nextUrl;
-    };
-    const guard =
-      viewRef.current === "workspace"
-        ? workspaceNavigationGuardRef.current
-        : null;
-    if (!guard) {
-      commitNavigation();
-      return;
-    }
-    const sequence = ++navigationSequenceRef.current;
-    void guard().then((allowed) => {
-      if (allowed && sequence === navigationSequenceRef.current) {
-        commitNavigation();
-      }
-    });
-  };
 
   const openWorkspace = (
     mode: ProjectMode,
@@ -330,14 +152,11 @@ export function App() {
       <Suspense fallback={<FeatureLoading />}>
         <AuthGateway
           onAuthenticated={() => {
-            void getSession().then((user) => {
-              setSessionUser(user);
+            void refreshSessionAfterAuthentication().then((refreshed) => {
+              if (!refreshed) return;
               setGuestStudioOpen(false);
               setAuthOpen(false);
-              setMobileNavOpen(false);
-              setNotice("تم فتح جلسة آمنة بنجاح");
-            }).catch(() => {
-              setNotice("تم الدخول، لكن تعذر تحديث بيانات الجلسة.");
+              closeMobileNavigation();
             });
           }}
           onBack={() => setAuthOpen(false)}
@@ -398,10 +217,10 @@ export function App() {
       user={sessionUser}
       onNavigate={(nextView) => {
         navigateView(nextView);
-        setMobileNavOpen(false);
+        closeMobileNavigation();
       }}
-      onToggleMobile={() => setMobileNavOpen((value) => !value)}
-      onToggleTheme={() => setLightTheme((value) => !value)}
+      onToggleMobile={toggleMobileNavigation}
+      onToggleTheme={toggleTheme}
       onDemoStateChange={setDemoState}
       showDemoStateControls={showDemoStateControls}
       onOpenAuth={openAuth}
@@ -411,6 +230,17 @@ export function App() {
         <Dashboard
           onOpenWorkspace={openWorkspace}
           onNavigateProjects={() => navigateView("projects")}
+          onNavigateExports={() => navigateView("exports")}
+          authenticated={authenticated}
+          onRequireAuth={openAuth}
+          onOpenActivityProject={(item) =>
+            openWorkspace(item.project.kind, {
+              id: item.project.id,
+              name: item.project.name,
+              currentSourceVersionId: item.sourceVersionId,
+              currentSourceVersionNumber: null,
+            })
+          }
         />
       )}
       {view === "projects" && (
@@ -446,6 +276,14 @@ export function App() {
           onRequireAuth={openAuth}
           onCreateProject={() => openWorkspace("image")}
           onViewProjects={() => navigateView("projects")}
+          onOpenProject={(project) =>
+            openWorkspace(project.kind, {
+              id: project.id,
+              name: project.name,
+              currentSourceVersionId: project.currentSourceVersionId,
+              currentSourceVersionNumber: project.currentSourceVersionNumber,
+            })
+          }
           onNotify={setNotice}
         />
       )}
@@ -459,15 +297,22 @@ export function App() {
         </Suspense>
       )}
       {view === "security" && <Suspense fallback={<FeatureLoading />}><SessionSecurity user={sessionUser} onOpenAuth={openAuth} onSessionEnded={() => {
-        setSessionUser(null);
+        clearSession();
         setGuestStudioOpen(false);
         navigateView("dashboard");
       }} onNotify={setNotice} /></Suspense>}
       {view === "settings" && (
         <SettingsView
+          authenticated={authenticated}
           lightTheme={lightTheme}
-          onToggleTheme={() => setLightTheme((value) => !value)}
+          onToggleTheme={toggleTheme}
+          onRequireAuth={openAuth}
           onNotify={setNotice}
+          onSessionEnded={() => {
+            clearSession();
+            setGuestStudioOpen(false);
+            navigateView("dashboard");
+          }}
         />
       )}
       {view === "help" && <HelpView />}

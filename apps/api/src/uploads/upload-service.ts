@@ -1,5 +1,6 @@
 import {
   MAX_UPLOAD_BYTES,
+  type ProjectStatus,
   type SourceType,
   type UploadIntentInput,
   type UploadSession,
@@ -8,15 +9,27 @@ import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
+import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import type { UploadRepository } from "./upload-repository.js";
-import type { ObjectStorage } from "../storage/object-storage.js";
+import {
+  ObjectStorageIntegrityError,
+  type ObjectStorage,
+  type StoredObjectMetadata,
+} from "../storage/object-storage.js";
 import { inspectSource } from "./source-inspection.js";
 import type { SourceVersionRepository } from "../sources/source-version-repository.js";
 import type { UploadFinalizationCommand } from "./upload-finalization.js";
+import type {
+  UploadIntegrityFailureCode,
+  UploadIntegrityFailureCommand,
+} from "./upload-integrity-failure.js";
+import { classifyUploadIntegrityFailure } from "./upload-integrity.js";
+import { resolveUploadFinalizationOutcome } from "./upload-finalization-recovery.js";
 import {
   assertUploadLimit,
   formatUploadMebibytes,
 } from "./upload-limits.js";
+import type { UploadCancellationCommand } from "./upload-cancellation.js";
 
 export class UploadDomainError extends Error {
   constructor(
@@ -29,7 +42,8 @@ export class UploadDomainError extends Error {
       | "UPLOAD_HASH_INVALID"
       | "UPLOAD_CONTENT_INVALID"
       | "UPLOAD_STORAGE_MISMATCH"
-      | "UPLOAD_REQUEST_IN_PROGRESS",
+      | "UPLOAD_REQUEST_IN_PROGRESS"
+      | "IDEMPOTENCY_CONFLICT",
     message: string,
   ) {
     super(message);
@@ -58,6 +72,21 @@ export class UploadService {
     private readonly sourceVersions?: SourceVersionRepository,
     private readonly finalization?: UploadFinalizationCommand,
     private readonly maxUploadBytes = MAX_UPLOAD_BYTES,
+    private readonly integrityFailures?: UploadIntegrityFailureCommand,
+    private readonly cancellations?: UploadCancellationCommand,
+    private readonly onOperationalError?: (
+      error: unknown,
+      context: {
+        stage:
+          | "repository_read"
+          | "storage_inspect"
+          | "integrity_failure_record"
+          | "object_cleanup"
+          | "failure_transition";
+        uploadId: string;
+        objectKey: string;
+      },
+    ) => void,
   ) {
     assertUploadLimit(maxUploadBytes);
   }
@@ -101,6 +130,7 @@ export class UploadService {
       );
     }
 
+    let objectVerified = false;
     try {
       const stored = await this.storage.put({
         key: session.objectKey,
@@ -119,17 +149,68 @@ export class UploadService {
           "تعذر إثبات سلامة الملف بعد تخزينه. أعد الرفع لاحقًا.",
         );
       }
+      objectVerified = true;
       return await this.completeVerified(session, inspection.sha256);
     } catch (error) {
-      await this.storage.delete(session.objectKey).catch(() => undefined);
-      await this.fail(session).catch(() => undefined);
+      if (objectVerified && this.finalization) {
+        const resolution = await resolveUploadFinalizationOutcome({
+          attempted: session,
+          expectedSha256: inspection.sha256,
+          uploads: this.repository,
+          storage: this.storage,
+          ...(this.integrityFailures
+            ? { integrityFailures: this.integrityFailures }
+            : {}),
+          onObservationError: (recoveryError, stage) => {
+            this.reportOperationalError(recoveryError, session, stage);
+          },
+        });
+        if (resolution.kind === "published") return resolution.session;
+        if (resolution.kind === "unknown") throw error;
+      }
+      try {
+        await this.storage.delete(session.objectKey);
+      } catch (cleanupError) {
+        this.reportOperationalError(cleanupError, session, "object_cleanup");
+      }
+      try {
+        await this.fail(session);
+      } catch (transitionError) {
+        this.reportOperationalError(
+          transitionError,
+          session,
+          "failure_transition",
+        );
+      }
       throw error;
+    }
+  }
+
+  private reportOperationalError(
+    error: unknown,
+    session: UploadSession,
+    stage:
+      | "repository_read"
+      | "storage_inspect"
+      | "integrity_failure_record"
+      | "object_cleanup"
+      | "failure_transition",
+  ): void {
+    try {
+      this.onOperationalError?.(error, {
+        stage,
+        uploadId: session.uploadId,
+        objectKey: session.objectKey,
+      });
+    } catch {
+      // Observability cannot replace the durable upload outcome.
     }
   }
 
   async createIntent(
     input: UploadIntentInput,
     idempotencyKey: string,
+    projectStatusBeforeUpload?: ProjectStatus,
   ): Promise<UploadSession> {
     if (input.sizeBytes > this.maxUploadBytes) {
       throw new UploadDomainError(
@@ -142,14 +223,21 @@ export class UploadService {
     }
     const scopedIdempotencyKey = `${input.projectId}:${idempotencyKey}`;
     const uploadId = crypto.randomUUID();
-    const claimedId = await this.idempotency.claim(
+    const claim = await this.idempotency.claimRequest(
       "upload",
       scopedIdempotencyKey,
       uploadId,
+      requestFingerprint("upload", input),
       24 * 60 * 60,
     );
-    if (claimedId !== uploadId) {
-      const existing = await this.repository.findById(claimedId);
+    if (claim.outcome === "conflict") {
+      throw new UploadDomainError(
+        "IDEMPOTENCY_CONFLICT",
+        "استُخدم مفتاح منع التكرار نفسه لطلب رفع مختلف.",
+      );
+    }
+    if (claim.outcome === "replayed") {
+      const existing = await this.repository.findById(claim.resourceId);
       if (existing) return existing;
       throw new UploadDomainError(
         "UPLOAD_REQUEST_IN_PROGRESS",
@@ -158,20 +246,14 @@ export class UploadService {
     }
 
     const expiredAt = this.now().toISOString();
-    const expired = await this.repository.expireActiveByProject(
+    const expired = await this.repository.findExpiredActiveByProject(
       input.projectId,
       expiredAt,
     );
-    await Promise.all(
-      expired.map(async (session) => {
-        if (session.sourceVersionId) {
-          await this.sourceVersions?.update(session.sourceVersionId, {
-            status: "cancelled",
-          });
-        }
-        await this.storage?.delete(session.objectKey);
-      }),
-    );
+    const expiredBaseline = expired[0]
+      ? await this.repository.findProjectStatusBeforeUpload(expired[0].uploadId)
+      : null;
+    await Promise.all(expired.map((session) => this.cancelSession(session)));
 
     const active = await this.repository.findActiveByProject(input.projectId);
     if (active) {
@@ -223,7 +305,21 @@ export class UploadService {
     };
 
     try {
-      await this.repository.save(session);
+      const effectiveProjectStatusBeforeUpload =
+        expiredBaseline ??
+        (projectStatusBeforeUpload === "uploading"
+          ? input.replaceSourceVersion === true
+            ? "needs_review"
+            : "draft"
+          : projectStatusBeforeUpload);
+      await this.repository.save(session, {
+        ...(effectiveProjectStatusBeforeUpload === undefined
+          ? {}
+          : {
+              projectStatusBeforeUpload:
+                effectiveProjectStatusBeforeUpload,
+            }),
+      });
       return session;
     } catch (error) {
       await this.sourceVersions.update(sourceVersion.id, {
@@ -272,14 +368,24 @@ export class UploadService {
     if (!this.storage || !session.sha256) {
       throw new Error("Ready upload is missing durable verification metadata.");
     }
-    const stored = await this.storage.inspect(session.objectKey);
-    if (
-      !stored ||
-      stored.contentType !== session.contentType ||
-      stored.sizeBytes !== session.expectedSizeBytes ||
-      stored.sha256 !== session.sha256
-    ) {
-      await this.fail(session);
+    let stored: StoredObjectMetadata | null;
+    try {
+      stored = await this.storage.inspect(session.objectKey);
+    } catch (error) {
+      if (!(error instanceof ObjectStorageIntegrityError)) throw error;
+      await this.markIntegrityFailure(
+        session,
+        "UPLOAD_OBJECT_METADATA_INVALID",
+        null,
+      );
+      throw new UploadDomainError(
+        "UPLOAD_STORAGE_MISMATCH",
+        "Stored upload metadata failed its integrity check. Upload the source again.",
+      );
+    }
+    const failureCode = classifyUploadIntegrityFailure(session, stored);
+    if (failureCode) {
+      await this.markIntegrityFailure(session, failureCode, stored);
       throw new UploadDomainError(
         "UPLOAD_STORAGE_MISMATCH",
         "تعذر إثبات سلامة الملف المخزن عند استئناف إتمام الرفع. أعد رفع المصدر.",
@@ -287,13 +393,28 @@ export class UploadService {
     }
     return this.finalization.finalize({
       session,
-      sha256: session.sha256,
+      sha256: stored!.sha256,
     });
+  }
+
+  private async markIntegrityFailure(
+    session: UploadSession,
+    code: UploadIntegrityFailureCode,
+    observed: StoredObjectMetadata | null,
+  ): Promise<void> {
+    if (this.integrityFailures) {
+      await this.integrityFailures.markIntegrityFailure({
+        session,
+        code,
+        observed,
+      });
+      return;
+    }
+    await this.fail(session);
   }
 
   async cancel(uploadId: string): Promise<UploadSession> {
     const session = await this.requireSession(uploadId);
-    if (session.status === "cancelled") return session;
     if (session.status === "ready") {
       throw new UploadDomainError(
         "UPLOAD_NOT_COMPLETABLE",
@@ -301,15 +422,7 @@ export class UploadService {
       );
     }
 
-    const cancelled = this.updated(session, { status: "cancelled" });
-    await this.repository.save(cancelled);
-    if (session.sourceVersionId) {
-      await this.sourceVersions?.update(session.sourceVersionId, {
-        status: "cancelled",
-      });
-    }
-    await this.storage?.delete(session.objectKey);
-    return cancelled;
+    return this.cancelSession(session);
   }
 
   async find(uploadId: string): Promise<UploadSession> {
@@ -351,5 +464,39 @@ export class UploadService {
         status: "failed",
       });
     }
+  }
+
+  private async cancelSession(session: UploadSession): Promise<UploadSession> {
+    let cancelled: UploadSession;
+    if (this.cancellations) {
+      const result = await this.cancellations.cancel({ session });
+      if (result.outcome === "already_published") {
+        throw new UploadDomainError(
+          "UPLOAD_NOT_COMPLETABLE",
+          "The upload completed before cancellation acquired the transition lock.",
+        );
+      }
+      if (result.outcome === "stale_session") {
+        throw new UploadDomainError(
+          "UPLOAD_NOT_COMPLETABLE",
+          "Upload metadata changed before cancellation could be applied.",
+        );
+      }
+      cancelled = result.session;
+    } else {
+      cancelled = this.updated(session, { status: "cancelled" });
+      await this.repository.save(cancelled);
+      if (session.sourceVersionId) {
+        await this.sourceVersions?.update(session.sourceVersionId, {
+          status: "cancelled",
+        });
+      }
+    }
+    await this.storage?.delete(cancelled.objectKey);
+    await this.repository.markObjectPurged(
+      cancelled.uploadId,
+      this.now().toISOString(),
+    );
+    return cancelled;
   }
 }

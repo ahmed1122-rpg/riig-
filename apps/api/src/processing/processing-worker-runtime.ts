@@ -148,6 +148,8 @@ export async function runProcessingWorker(
       project_kind: options.projectKind,
       sharp_cache_memory_mb: config.SHARP_CACHE_MEMORY_MB,
       sharp_concurrency: config.SHARP_CONCURRENCY,
+      raster_asset_write_concurrency:
+        config.RASTER_ASSET_WRITE_CONCURRENCY,
     });
     const heartbeat = await startWorkerHeartbeat(pool, {
       instanceId,
@@ -171,6 +173,8 @@ export async function runProcessingWorker(
             projectKind: options.projectKind,
             workerId: `${instanceId}:${index + 1}`,
             leaseMilliseconds: config.PROCESSING_LEASE_MS,
+            rasterAssetWriteConcurrency:
+              config.RASTER_ASSET_WRITE_CONCURRENCY,
             pollMilliseconds: config.PROCESSING_POLL_MS,
             pdfOcrEngine,
             usageMeter,

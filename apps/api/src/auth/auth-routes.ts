@@ -1,4 +1,6 @@
 import {
+  CURRENT_PRIVACY_VERSION,
+  CURRENT_TERMS_VERSION,
   isStrongPassword,
   PASSWORD_MAX_LENGTH,
 } from "@motionprep/contracts";
@@ -26,6 +28,11 @@ const registerSchema = z.object({
   name: z.string().trim().min(2).max(100),
   email: z.string().trim().email().max(254),
   password: strongPasswordSchema,
+  legal: z.object({
+    accepted: z.literal(true),
+    termsVersion: z.literal(CURRENT_TERMS_VERSION),
+    privacyVersion: z.literal(CURRENT_PRIVACY_VERSION),
+  }),
 });
 
 const loginSchema = z.object({

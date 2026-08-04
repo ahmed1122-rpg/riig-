@@ -134,7 +134,6 @@ export type UploadStatus =
   | "cancelled";
 export type SourceVersionStatus = UploadStatus;
 export type ExportJobStatus =
-  | "preflight"
   | "queued"
   | "generating"
   | "verifying"

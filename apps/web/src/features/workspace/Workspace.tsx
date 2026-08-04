@@ -1,23 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useConfirmation } from "../../shared/useConfirmation";
 import { ShortcutsModal } from "../../shared/ShortcutsModal";
-import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
-import type { PreviewBackground, PreviewQuality } from "./PreviewToolbar";
-import type { UploadState } from "./SourceUploadStatus";
+import type { Layer, ProjectMode } from "../../types";
 import {
   WorkspaceHeader,
   WorkspacePipeline,
   WorkspaceStatusBar,
-  type WorkspaceMobilePanel,
-  type WorkspaceSaveState,
 } from "./WorkspaceChrome";
-import { useWorkspacePreference } from "./useWorkspacePreference";
 import { getLayerCheckSummary } from "./layerChecks";
-import { storedPdfSegmentation } from "./pdfSegmentation";
-import { storedPreviewQuality } from "./workspaceDocument";
 import { getWorkspacePipeline } from "./workspacePresentation";
 import { isWorkspaceRevisionConflict } from "./workspaceConflict";
-import type { LayerDocumentView } from "../../lib/api";
 import { useWorkspaceReviewAutosave } from "./useWorkspaceReviewAutosave";
 import { useWorkspaceToolController } from "./useWorkspaceToolController";
 import { WorkspaceEditorLayout } from "./WorkspaceEditorLayout";
@@ -27,6 +19,11 @@ import { useWorkspaceCommands } from "./useWorkspaceCommands";
 import { useWorkspaceNavigationGuard } from "./useWorkspaceNavigationGuard";
 import { useWorkspaceShortcutHelp } from "./useWorkspaceShortcutHelp";
 import type { WorkspaceProps } from "./Workspace.types";
+import {
+  useWorkspaceEditorState,
+  useWorkspaceReviewState,
+  useWorkspaceSourceState,
+} from "./useWorkspaceStateControllers";
 
 export function Workspace({
   mode,
@@ -39,77 +36,78 @@ export function Workspace({
   onNotify,
   initialProject,
 }: WorkspaceProps) {
-  const [imageLayers, setImageLayers] = useState<Layer[]>([]);
-  const [bookLayers, setBookLayers] = useState<Layer[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [activeLayerId, setActiveLayerId] = useState("");
-  const [mobilePanel, setMobilePanel] = useState<WorkspaceMobilePanel>("none");
-  const [pdfMode, setPdfMode] = useState<PdfSegmentation>(storedPdfSegmentation);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [zoom, setZoom] = useState(100);
-  const [previewBackground, setPreviewBackground] = useState<PreviewBackground>(mode === "image" ? "dark" : "white");
-  const [previewQuality, setPreviewQuality] = useState<PreviewQuality>(storedPreviewQuality);
-  const [grid, setGrid] = useState(true);
-  const [safeBounds, setSafeBounds] = useState(true);
-  const [solo, setSolo] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [layerLoading, setLayerLoading] = useState(false);
-  const [sourceName, setSourceName] = useState(mode === "image" ? "اختر صورة واحدة" : "اختر ملف PDF واحدًا");
-  const [sourceVersion, setSourceVersion] = useState(0);
-  const [uploadState, setUploadState] = useState<UploadState>("empty");
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState<string>();
-  const [uploadDetailsOpen, setUploadDetailsOpen] = useState(false);
-  const [projectId, setProjectId] = useState<string>();
-  const [sourceVersionId, setSourceVersionId] = useState<string>();
-  const [sourceHash, setSourceHash] = useState<string>();
-  const [sourcePreviewUrl, setSourcePreviewUrl] = useState<string>();
-  const [imageCanvasSize, setImageCanvasSize] = useState<{
-    width: number;
-    height: number;
-  }>();
-  const [imagePreparation, setImagePreparation] = useState<LayerDocumentView["imagePreparation"]>();
-  const [ocrReview, setOcrReview] = useState<LayerDocumentView["ocrReview"]>();
-  const [layerDocumentRevision, setLayerDocumentRevision] = useState<number>();
-  const [guidanceRevision, setGuidanceRevision] = useState(0);
-  const [saveState, setSaveState] = useState<WorkspaceSaveState>("idle");
-  const [pdfPageSize, setPdfPageSize] = useState<{
-    width: number;
-    height: number;
-  }>();
-  const [pdfPages, setPdfPages] = useState<Array<{ pageNumber: number; width: number; height: number }>>([]);
-  const [activePdfPage, setActivePdfPage] = useState(1);
-  const [pdfPageCount, setPdfPageCount] = useState(1);
-  const [toolCollapsed, setToolCollapsed] = useWorkspacePreference("motionprep.workspace.tools-collapsed", false);
-  const [layersCollapsed, setLayersCollapsed] = useWorkspacePreference("motionprep.workspace.layers-collapsed", false);
-  const [layerWidth, setLayerWidth] = useWorkspacePreference("motionprep.workspace.layers-width", 326);
+  const review = useWorkspaceReviewState(mode);
+  const source = useWorkspaceSourceState(mode);
+  const editor = useWorkspaceEditorState(mode);
+  const {
+    imageLayers,
+    setImageLayers,
+    bookLayers,
+    setBookLayers,
+    layers,
+    selectedIds,
+    setSelectedIds,
+    activeLayerId,
+    setActiveLayerId,
+    activeLayer,
+    layerDocumentRevision,
+    setLayerDocumentRevision,
+    saveState,
+    setSaveState,
+    resetSelection,
+    prepareMode,
+  } = review;
+  const {
+    processing,
+    setProcessing,
+    sourceName,
+    setSourceName,
+    sourceVersion,
+    setSourceVersion,
+    setUploadState,
+    setUploadProgress,
+    setUploadError,
+    setUploadDetailsOpen,
+    projectId,
+    setProjectId,
+    sourceVersionId,
+    setSourceVersionId,
+    setSourceHash,
+    sourcePreviewUrl,
+    setSourcePreviewUrl,
+    imageCanvasSize,
+    setImageCanvasSize,
+    setImagePreparation,
+    setOcrReview,
+    guidanceRevision,
+    setGuidanceRevision,
+    pdfPageSize,
+    setPdfPageSize,
+    pdfPages,
+    setPdfPages,
+    activePdfPage,
+    setActivePdfPage,
+    pdfPageCount,
+    setPdfPageCount,
+    persistedSource,
+  } = source;
+  const {
+    pdfMode,
+    setPdfMode,
+    setExportOpen,
+    zoom,
+    solo,
+    focusMode,
+    toolCollapsed,
+    layersCollapsed,
+    layerWidth,
+  } = editor;
   const fileRef = useRef<HTMLInputElement>(null);
   const exportTriggerRef = useRef<HTMLButtonElement | null>(null);
   const { requestConfirmation, confirmationDialog } = useConfirmation();
   const { shortcutsOpen, closeShortcuts } = useWorkspaceShortcutHelp();
 
-  const layers = mode === "image" ? imageLayers : bookLayers;
-  const setLayers = mode === "image" ? setImageLayers : setBookLayers;
-  const activeLayer = useMemo(() => layers.find((layer) => layer.id === activeLayerId) ?? layers[0], [activeLayerId, layers]);
-  const persistedSource = Boolean(projectId && sourceVersionId);
-  const {
-    activeTool,
-    arrangeReadingOrder,
-    editorCommand,
-    imageRasterOperation,
-    pdfRegionOcrLayerId,
-    pdfTextOperation,
-    resetToolState,
-    selectEditorTool,
-    setImageRasterOperation,
-    setPdfRegionOcrLayerId,
-    setPdfTextOperation,
-    setSourceVersionsOpen,
-    sourceVersionsOpen,
-    useTool,
-    workspaceTools,
-  } = useWorkspaceToolController({
+  const toolController = useWorkspaceToolController({
     mode,
     persistedSource,
     features: capabilities.features,
@@ -120,6 +118,12 @@ export function Workspace({
     setBookLayers,
     onNotify,
   });
+  const {
+    imageRasterOperation,
+    pdfRegionOcrLayerId,
+    pdfTextOperation,
+    resetToolState,
+  } = toolController;
   const pdfRegionOcrLayer = useMemo(
     () => bookLayers.find((layer) => layer.id === pdfRegionOcrLayerId),
     [bookLayers, pdfRegionOcrLayerId],
@@ -194,12 +198,10 @@ export function Workspace({
 
   const resetLayerSelection = useCallback(
     (preparedLayers: readonly Layer[]) => {
-      const firstLayerId = preparedLayers[0]?.id ?? "";
-      setActiveLayerId(firstLayerId);
-      setSelectedIds(firstLayerId ? [firstLayerId] : []);
+      resetSelection(preparedLayers);
       resetToolState(mode);
     },
-    [mode, resetToolState],
+    [mode, resetSelection, resetToolState],
   );
   const { applyPreparedDocument, cancelUpload, chooseSource, replaceLayerAssetUrls } =
     useWorkspaceProjectLifecycle({
@@ -289,38 +291,14 @@ export function Workspace({
     onNotify,
   });
 
-  useEffect(() => {
-    setLayerLoading(true);
-    const timer = window.setTimeout(() => setLayerLoading(false), 260);
-    return () => window.clearTimeout(timer);
-  }, [mode]);
-
   const switchMode = (nextMode: ProjectMode) => {
     replaceLayerAssetUrls([]);
     onModeChange(nextMode);
-    const nextLayers = nextMode === "image" ? imageLayers : bookLayers;
-    const nextLayerId = nextLayers[0]?.id ?? "";
-    setActiveLayerId(nextLayerId);
-    setSelectedIds(nextLayerId ? [nextLayerId] : []);
+    prepareMode(nextMode);
     resetToolState(nextMode);
-    setSourceName(nextMode === "image" ? "اختر صورة واحدة" : "اختر ملف PDF واحدًا");
-    setSourceVersion(0);
-    setPreviewBackground(nextMode === "image" ? "dark" : "white");
-    setUploadState("empty");
-    setUploadProgress(0);
-    setProjectId(undefined);
-    setSourceVersionId(undefined);
-    setSourceHash(undefined);
-    setSourcePreviewUrl(undefined);
-    setImageCanvasSize(undefined);
-    setImagePreparation(undefined);
-    setOcrReview(undefined);
+    source.resetForMode(nextMode);
+    editor.resetForMode(nextMode);
     resetSavedReview();
-    setGuidanceRevision(0);
-    setPdfPageSize(undefined);
-    setPdfPages([]);
-    setActivePdfPage(1);
-    setPdfPageCount(1);
   };
 
   const openExportReview = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -354,87 +332,28 @@ export function Workspace({
       />
 
       <WorkspaceEditorLayout
-        mode={mode}
-        authenticated={authenticated}
-        maxUploadBytes={capabilities.limits.maxUploadBytes}
-        persistedSource={persistedSource}
-        sourceName={sourceName}
-        sourceVersion={sourceVersion}
-        sourceHash={sourceHash}
-        uploadState={uploadState}
-        uploadProgress={uploadProgress}
-        uploadDetailsOpen={uploadDetailsOpen}
-        uploadError={uploadError}
-        fileRef={fileRef}
-        chooseSource={chooseSource}
-        cancelUpload={cancelUpload}
-        onToggleUploadDetails={() =>
-          setUploadDetailsOpen((value) => !value)
-        }
-        tools={workspaceTools}
-        activeTool={activeTool}
-        toolCollapsed={toolCollapsed}
-        onToolCollapsedChange={setToolCollapsed}
-        onUseTool={useTool}
-        zoom={zoom}
-        previewBackground={previewBackground}
-        previewQuality={previewQuality}
-        grid={grid}
-        safeBounds={safeBounds}
-        solo={solo}
-        focusMode={focusMode}
-        onZoomChange={setZoom}
-        onPreviewBackgroundChange={setPreviewBackground}
-        onPreviewQualityChange={setPreviewQuality}
-        onGridChange={setGrid}
-        onSafeBoundsChange={setSafeBounds}
-        onSoloChange={setSolo}
-        onFocusModeChange={setFocusMode}
-        imageLayers={imageLayers}
-        bookLayers={bookLayers}
-        layers={layers}
-        hiddenLayers={hiddenLayers}
-        selectedIds={selectedIds}
-        activeLayerId={activeLayerId}
-        onSelectLayer={(id) => {
-          setActiveLayerId(id);
-          setSelectedIds([id]);
+        context={{
+          mode,
+          authenticated,
+          maxUploadBytes: capabilities.limits.maxUploadBytes,
+          onRequireAuth,
+          onNotify,
         }}
-        onLayerSelectionChange={(ids, activeId) => {
-          setSelectedIds(ids);
-          setActiveLayerId(activeId);
+        source={source}
+        review={review}
+        editor={editor}
+        tools={toolController}
+        actions={{
+          fileRef,
+          chooseSource,
+          cancelUpload,
+          hiddenLayers,
+          onApplyImageGuide: applyImageGuide,
+          onApplyPdfGuide: applyPdfGuide,
+          onHistoryNavigate: navigateDocumentHistory,
+          onPdfSegmentationChange: changePdfSegmentation,
+          onConfirm: requestConfirmation,
         }}
-        onLayersChange={setLayers}
-        layersCollapsed={layersCollapsed}
-        layerWidth={layerWidth}
-        layerLoading={layerLoading}
-        onLayersCollapsedChange={setLayersCollapsed}
-        onLayerWidthChange={setLayerWidth}
-        onArrangeReadingOrder={arrangeReadingOrder}
-        guidanceRevision={guidanceRevision}
-        imagePreparation={imagePreparation}
-        ocrReview={ocrReview}
-        imageCanvasSize={imageCanvasSize}
-        sourcePreviewUrl={sourcePreviewUrl}
-        pdfMode={pdfMode}
-        pdfPages={pdfPages}
-        activePdfPage={activePdfPage}
-        pdfPageCount={pdfPageCount}
-        pdfPageSize={pdfPageSize}
-        processing={processing}
-        editorCommand={editorCommand}
-        onApplyImageGuide={applyImageGuide}
-        onApplyPdfGuide={applyPdfGuide}
-        onHistoryNavigate={navigateDocumentHistory}
-        onPdfSegmentationChange={changePdfSegmentation}
-        onPdfPageChange={(page, size) => {
-          setActivePdfPage(page);
-          setPdfPageSize(size);
-        }}
-        onConfirm={requestConfirmation}
-        onToolSelect={selectEditorTool}
-        onRequireAuth={onRequireAuth}
-        onNotify={onNotify}
       />
 
       <WorkspaceStatusBar
@@ -452,55 +371,30 @@ export function Workspace({
       />
 
       <WorkspaceDialogs
-        mode={mode}
-        maxUploadBytes={capabilities.limits.maxUploadBytes}
-        persistedSource={persistedSource}
-        projectId={projectId}
-        sourceVersionId={sourceVersionId}
-        sourceVersionsOpen={sourceVersionsOpen}
-        onCloseSourceVersions={() => setSourceVersionsOpen(false)}
-        onRestoreSourceVersion={restoreSourceVersion}
-        mobilePanel={mobilePanel}
-        onMobilePanelChange={setMobilePanel}
-        onExport={openExportReview}
-        tools={workspaceTools}
-        activeTool={activeTool}
-        layers={layers}
-        selectedIds={selectedIds}
-        activeLayerId={activeLayerId}
-        layerCheckSummary={layerCheckSummary}
-        onUseTool={useTool}
-        onSelectLayer={(id) => {
-          setActiveLayerId(id);
-          setSelectedIds([id]);
+        context={{
+          mode,
+          maxUploadBytes: capabilities.limits.maxUploadBytes,
+          onNotify,
         }}
-        pdfTextOperation={pdfTextOperation}
-        onClosePdfTextOperation={() => setPdfTextOperation(undefined)}
-        onApplyPdfTextOperation={applyPdfTextOperation}
-        bookLayers={bookLayers}
-        pdfRegionOcrLayer={pdfRegionOcrLayer}
-        pdfRegionOcrPageSize={pdfRegionOcrPageSize}
-        onClosePdfRegionOcr={() => setPdfRegionOcrLayerId(undefined)}
-        onApplyPdfRegionOcr={applyPdfRegionOcr}
-        imageRasterOperation={imageRasterOperation}
-        imageLayers={imageLayers}
-        onCloseImageRasterOperation={() =>
-          setImageRasterOperation(undefined)
-        }
-        onApplyImageRasterOperation={applyImageRasterOperation}
-        exportOpen={exportOpen}
-        onCloseExport={() => setExportOpen(false)}
-        exportReturnFocusTo={exportTriggerRef.current}
-        saveState={saveState}
-        onRetrySave={async () => {
-          await flushLayerReview();
+        source={source}
+        review={review}
+        editor={editor}
+        tools={toolController}
+        actions={{
+          onRestoreSourceVersion: restoreSourceVersion,
+          onExport: openExportReview,
+          layerCheckSummary,
+          onApplyPdfTextOperation: applyPdfTextOperation,
+          pdfRegionOcrLayer,
+          pdfRegionOcrPageSize,
+          onApplyPdfRegionOcr: applyPdfRegionOcr,
+          onApplyImageRasterOperation: applyImageRasterOperation,
+          exportReturnFocusTo: exportTriggerRef.current,
+          onRetrySave: async () => {
+            await flushLayerReview();
+          },
+          onCreateExport: createExport,
         }}
-        imageCanvasSize={imageCanvasSize}
-        pdfPages={pdfPages}
-        sourcePreviewUrl={sourcePreviewUrl}
-        onLayersChange={setLayers}
-        onCreateExport={createExport}
-        onNotify={onNotify}
       />
       <ShortcutsModal open={shortcutsOpen} onClose={closeShortcuts} />
       {confirmationDialog}

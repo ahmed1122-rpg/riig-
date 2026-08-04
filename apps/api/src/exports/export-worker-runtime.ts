@@ -81,6 +81,12 @@ export async function runExportWorker(
     storage,
     new PostgresLayerDocumentRepository(database.pool),
     false,
+    (error, objectKey) => {
+      log("error", "export.artifact_cleanup_failed", {
+        object_key: objectKey,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    },
   );
   const workerId =
     config.workerId ??
@@ -225,6 +231,9 @@ export async function runExportWorker(
             jobId: job.id,
             status: "completed",
             finished: true,
+            ...(job.documentRevision === undefined
+              ? {}
+              : { documentRevision: job.documentRevision }),
           });
         } else if (job.status === "failed") {
           await updateProjectStatusForJob(database.pool, {
@@ -234,6 +243,9 @@ export async function runExportWorker(
             jobId: job.id,
             status: "failed",
             finished: true,
+            ...(job.documentRevision === undefined
+              ? {}
+              : { documentRevision: job.documentRevision }),
           });
         }
         log("info", "export.cycle_completed", {
