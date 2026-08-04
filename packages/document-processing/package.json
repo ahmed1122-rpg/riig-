@@ -27,7 +27,7 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
-    "@types/node": "^24.0.10",
+    "@types/node": "^26.1.2",
     "pdf-lib": "^1.17.1",
     "typescript": "^5.8.3",
     "vitest": "^4.1.10"
