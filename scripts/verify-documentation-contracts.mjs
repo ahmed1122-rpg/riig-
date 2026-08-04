@@ -11,10 +11,31 @@ const uploadRoutesPath = new URL(
   "../apps/api/src/uploads/upload-routes.ts",
   import.meta.url,
 );
-const [buildMap, contracts, uploadRoutes] = await Promise.all([
+const authBillingAdminPath = new URL(
+  "../docs/api/auth-billing-admin.md",
+  import.meta.url,
+);
+const securityPolicyPath = new URL("../SECURITY.md", import.meta.url);
+const securityRoutePaths = [
+  "../apps/api/src/auth/auth-routes.ts",
+  "../apps/api/src/privacy/account-privacy-routes.ts",
+  "../apps/api/src/billing/billing-routes.ts",
+  "../apps/api/src/admin/admin-routes.ts",
+].map((path) => new URL(path, import.meta.url));
+const [
+  buildMap,
+  contracts,
+  uploadRoutes,
+  authBillingAdmin,
+  securityPolicy,
+  securityRouteSources,
+] = await Promise.all([
   readFile(buildMapPath, "utf8"),
   readFile(contractsPath, "utf8"),
   readFile(uploadRoutesPath, "utf8"),
+  readFile(authBillingAdminPath, "utf8"),
+  readFile(securityPolicyPath, "utf8"),
+  Promise.all(securityRoutePaths.map((path) => readFile(path, "utf8"))),
 ]);
 const violations = [];
 
@@ -58,6 +79,43 @@ if (buildMap.includes("/v1/projects/:projectId/uploads")) {
   );
 }
 
+const registeredSecurityRoutes = securityRouteSources.flatMap((source) =>
+  [
+    ...source.matchAll(
+      /\b(?:app|webhookApp)\.(get|post|patch|delete)\(\s*"([^"]+)"/gu,
+    ),
+  ].map((match) => `${match[1].toUpperCase()} ${match[2]}`),
+);
+if (registeredSecurityRoutes.length === 0) {
+  violations.push("Could not discover auth, account, billing, or admin routes.");
+}
+for (const route of registeredSecurityRoutes) {
+  if (!authBillingAdmin.includes(`\`${route}\``)) {
+    violations.push(`docs/api/auth-billing-admin.md must document ${route}.`);
+  }
+}
+
+for (const staleClaim of [
+  "Authentication and payment flows are development/sandbox implementations.",
+  "provider adapters and signed webhook verification exist",
+  "Live providers and provider-specific signed webhooks must be added",
+]) {
+  if (securityPolicy.includes(staleClaim) || authBillingAdmin.includes(staleClaim)) {
+    violations.push(`Security documentation contains a retired claim: ${staleClaim}`);
+  }
+}
+for (const requiredSecurityControl of [
+  "PostgreSQL",
+  "TLS-enabled Redis",
+  "PAYMENT_MODE=live",
+  "raw-body signature verification",
+  "digest-qualified images",
+]) {
+  if (!securityPolicy.includes(requiredSecurityControl)) {
+    violations.push(`SECURITY.md must retain the ${requiredSecurityControl} control.`);
+  }
+}
+
 const capabilityBlock = buildMap.match(
   /<!-- export-capabilities:start -->([\s\S]*?)<!-- export-capabilities:end -->/,
 )?.[1];
@@ -91,5 +149,5 @@ if (violations.length > 0) {
   for (const violation of violations) console.error(`- ${violation}`);
   process.exitCode = 1;
 } else {
-  console.log("Upload and export documentation contracts verified.");
+  console.log("Product and security documentation contracts verified.");
 }
