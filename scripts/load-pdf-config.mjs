@@ -27,6 +27,12 @@ export function loadPdfConfiguration(environment) {
       "LOAD_REQUIRE_METRICS requires the protected metrics endpoint.",
     );
   }
+  const reviewFlow = environment.LOAD_REVIEW_FLOW?.trim() || "approval-required";
+  if (!new Set(["approval-required", "pre-approval"]).has(reviewFlow)) {
+    throw new Error(
+      "LOAD_REVIEW_FLOW must be approval-required or pre-approval.",
+    );
+  }
   const concurrency = parsePositiveInteger(
     environment.LOAD_CONCURRENCY,
     1,
@@ -140,6 +146,7 @@ export function loadPdfConfiguration(environment) {
       60_000,
     ),
     requireMetrics: environment.LOAD_REQUIRE_METRICS === "true",
+    reviewFlow,
     metricsUrl,
     metricsToken,
   };

@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   createRollbackEvidence,
   loadReleaseDescriptor,
+  reviewFlowForDrillStage,
   signatureIdentity,
   validateDrillInputs,
   validateSignatureEvidenceUri,
@@ -55,6 +56,12 @@ test("records that rollback retains additive migrations", () => {
   assert.equal(evidence.durationMs, 60_000);
   assert.equal(evidence.migrationPolicy.rollbackMigrationsRun, false);
   assert.equal(evidence.outcome, "passed");
+});
+
+test("uses the review flow implemented by each drilled release", () => {
+  assert.equal(reviewFlowForDrillStage("candidate"), "approval-required");
+  assert.equal(reviewFlowForDrillStage("rollback"), "pre-approval");
+  assert.throws(() => reviewFlowForDrillStage("unknown"), /drill stage/u);
 });
 
 test("accepts only an explicit GitHub Actions run as external signature evidence", () => {

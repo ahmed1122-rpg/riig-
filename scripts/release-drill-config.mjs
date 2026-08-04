@@ -46,6 +46,12 @@ export function signatureIdentity(repository, releaseTag) {
   return `https://github.com/${repository}/.github/workflows/release-images.yml@refs/tags/${releaseTag}`;
 }
 
+export function reviewFlowForDrillStage(stage) {
+  if (stage === "candidate") return "approval-required";
+  if (stage === "rollback") return "pre-approval";
+  throw new Error("Release drill stage must be candidate or rollback.");
+}
+
 export function validateSignatureEvidenceUri(value) {
   if (!value) return null;
   const url = new URL(value);

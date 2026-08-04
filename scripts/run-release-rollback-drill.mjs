@@ -5,6 +5,7 @@ import { createDockerWorkspace } from "./docker-workspace.mjs";
 import {
   createRollbackEvidence,
   loadReleaseDescriptor,
+  reviewFlowForDrillStage,
   signatureIdentity,
   validateDrillInputs,
   validateSignatureEvidenceUri,
@@ -243,6 +244,7 @@ function runPdfJourney(stage) {
       LOAD_REQUEST_ORIGIN: "http://127.0.0.1:5173",
       LOAD_CONCURRENCY: "1",
       LOAD_ITERATIONS: "1",
+      LOAD_REVIEW_FLOW: reviewFlowForDrillStage(stage),
       LOAD_METRICS_URL: "http://127.0.0.1:54101/internal/metrics",
       LOAD_METRICS_BEARER_TOKEN:
         "metrics-integration-token-at-least-32-characters",
