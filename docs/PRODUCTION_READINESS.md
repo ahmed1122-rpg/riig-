@@ -1,17 +1,17 @@
 # Production readiness
 
-Status on 2026-08-04: releases `v0.1.1` and `v0.1.2` were published as
-signed digest-qualified runtime and web images after their protected exact-SHA
-release workflows passed. The production-observability and recovery changes
-merged from PR #18 at `bc03e7d4f9647235f9d78ecc7019579807cebb1c`
-post-date `v0.1.2`; they are therefore versioned as the unreleased `0.1.3`
-candidate and require newly signed image digests. Regional OCR remains disabled
-because its independent holdout evidence is stale and the historical generation
-failed its holdout target. Application deployment approval remains withheld
-until the protected provider/staging workflows pass against real managed
-services and the selected `0.1.3` candidate digests complete staging and
-rollback exercises. Recovery, licensed Adobe-version validation, and
-representative load/memory exercises remain explicit launch gates.
+Status on 2026-08-04: releases `v0.1.1`, `v0.1.2`, and `v0.1.3` were published
+as signed digest-qualified runtime and web images after their protected
+exact-SHA release workflows passed. Release `v0.1.3` contains the corrected
+production-remediation baseline at
+`452cd9941bd085fcad88c08bec7284f94d6f9db9`; its immutable coordinates and
+hosted evidence are recorded below. A protected application-only rollback drill
+from `v0.1.3` to `v0.1.2` also passed. Regional OCR remains disabled because its
+independent holdout evidence is stale and the historical generation failed its
+holdout target. Application deployment approval remains withheld until the
+protected provider and staging workflows pass against real managed services.
+Managed recovery, licensed Adobe-version validation, and representative
+load/memory exercises remain explicit launch gates.
 
 The 2026-08-03 corrected-remediation pass adds revision-bound project review
 approvals, request-fingerprint idempotency conflicts, atomic upload-integrity
@@ -127,6 +127,32 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
 - Historical only: a local OCI release was published from source commit `0a2103addf1c71ed6402d955a9a59d8da0d17485`, and tag `v0.1.0` was published from `48bdfd9b53b0c955a93f5a121660ea9b3e546df4`. Their retained verification records remain useful evidence for the signing mechanism, but their digests do **not** contain this candidate and must not be deployed as its release.
 
+## Hosted release evidence — v0.1.3
+
+- PR #22 passed the complete protected check set and was squash-merged to
+  `main` at `452cd9941bd085fcad88c08bec7284f94d6f9db9`.
+- Protected release run `30904738809` rechecked the exact tag SHA, quality,
+  production dependency audit, browser E2E, concurrent migrations, durable
+  PostgreSQL/S3 integration, production topology, dependency fault recovery,
+  and concurrent PDF smoke journeys before publication was approved.
+- Runtime: `ghcr.io/ahmed1122-rpg/motionprep-runtime@sha256:b7afc62ded55d7b3c6808c92adf367a5c089175f12807cb8ee48555e53360d0e`.
+- Web: `ghcr.io/ahmed1122-rpg/motionprep-web@sha256:00159a357e13abd8c021f877ec20c5b075668ec0da1df08cbf1358d384bd8804`.
+- The published images passed hardened clean-runner smoke tests and
+  High/Critical Trivy scans, contain SBOM/provenance attestations, and were
+  keylessly signed and verified against the repository-bound GitHub OIDC
+  identity.
+- The first rollback run exposed a harness incompatibility: the current load
+  client called a review-approval route that did not exist in `v0.1.2`. PR #24
+  made the rollback journey use the target release's pre-approval flow while
+  retaining approval-required review as the current default.
+- Corrected protected rollback run `30907536496`, sourced from
+  `0bb93a19ac166d0b5a8b35514a81591cab6b72ae`, verified both releases'
+  signatures and images, candidate and rollback readiness/web health, a PDF
+  journey on each release, and application-only rollback without reversing the
+  additive schema. Both journeys had a 0% error rate; candidate workflow p95
+  was 1,258 ms and rollback workflow p95 was 1,206 ms. These one-journey
+  results prove the rollback path, not representative capacity.
+
 ## Hosted release evidence — v0.1.1
 
 - PR #14 passed all nine required checks and was squash-merged to protected
@@ -147,8 +173,13 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 ## Evidence still required
 
 1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
-2. Deployment of the selected signed release digests to staging and rollback without rebuilding. Candidate 0.1.3 requires new digests after the PR #18 merge; v0.1.2 digests do not contain the latest observability and recovery changes.
-3. A signed isolated recovery drill proving RPO ≤15 minutes and RTO ≤4 hours (deferred by product decision).
+2. Deployment of the selected signed `v0.1.3` digests to managed staging and a
+   complete application smoke without rebuilding. The local and signed-image
+   rollback path has passed, but this does not substitute for the deployed
+   staging smoke.
+3. A signed isolated backup/restore recovery drill against production-shaped
+   managed storage proving RPO ≤15 minutes and RTO ≤4 hours. The completed
+   application rollback drill does not prove backup restoration.
 4. Golden PSD/After Effects validation in licensed target Adobe versions (deferred by product decision).
 5. Representative load and memory validation against the configured container ceilings. The automated PDF workflow and evidence format exist, but local smoke evidence is not a representative managed-staging capacity result. Tune `RASTER_ASSET_WRITE_CONCURRENCY` between 1 and 4 from the structured `processing.raster_asset_write_observed` event, which records asset count, bytes, duration, concurrency, and outcome in both inline and worker paths.
 
@@ -156,12 +187,18 @@ The OCR scope gate is resolved for the current candidate by keeping
 `PDF_REGION_OCR_ENABLED=false`. Re-enabling it requires a newly sealed holdout
 that meets CER <= 25% or a separately approved claim and review policy.
 
-The historical external-state audit after PR #12 found no configured provider
-secrets or completed staging/provider readiness runs. That observation is not a
-current provider attestation and must be rechecked by the protected workflows;
-no paid or account-owned staging resource should be inferred or created from
-the local evidence alone.
+The external-state audit on 2026-08-04 found no secrets in the protected
+`production-readiness` environment and no provider/staging variables beyond
+release, rollback, and OCR coordinates. Therefore the provider, staging,
+staging-application, and representative-performance workflows were not started:
+they would be guaranteed preflight failures rather than provider evidence.
+Required configuration includes managed `DATABASE_URL` and `REDIS_URL`, SMTP
+coordinates and credentials, S3 endpoint/region/bucket/encryption plus either
+OIDC role or explicit temporary credentials, recovery manifest/signing public
+key, staging origin/host/metrics URL, metrics bearer token, representative PDF
+URL/digest/size, and explicit p95/memory/queue thresholds. No paid or
+account-owned staging resource is inferred or created from local evidence.
 
-The corrected 0.1.3 implementation report is in `artifacts/corrected-remediation-final-report-2026-08-04.md`. Historical 0.1.2 evidence is in `artifacts/production-hardening-0.1.2-implementation-report-2026-08-01.md`; the current candidate controls and local evidence are documented in this file and the retained topology/fault reports. The earlier remediation report is in `artifacts/final-remediation-implementation-report-2026-08-01.md`. Historical release and OCR evidence remains in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
+The corrected 0.1.3 implementation report is in `artifacts/corrected-remediation-final-report-2026-08-04.md`; the final hosted release and rollback record is in `artifacts/release-v0.1.3-production-evidence-2026-08-04.md`. Historical 0.1.2 evidence is in `artifacts/production-hardening-0.1.2-implementation-report-2026-08-01.md`; current controls and local evidence are documented in this file and the retained topology/fault reports. The earlier remediation report is in `artifacts/final-remediation-implementation-report-2026-08-01.md`. Historical release and OCR evidence remains in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
 
 The current completion matrix, remaining priorities, acceptance criteria, and PDF fixture inventory are in `artifacts/completion-audit-and-execution-plan-2026-07-31.md`.
