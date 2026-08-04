@@ -71,7 +71,7 @@
     "zod": "^3.25.67"
   },
   "devDependencies": {
-    "@types/node": "^24.0.10",
+    "@types/node": "^26.1.2",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "ag-psd": "31.0.2",
