@@ -77,15 +77,15 @@
     "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^10.0.4",
     "eslint": "^10.8.0",
-    "globals": "^17.8.0",
-    "knip": "^6.29.0",
+    "globals": "^17.9.0",
+    "knip": "^6.31.0",
     "pdf-lib": "^1.17.1",
     "pg": "8.22.0",
     "sharp": "^0.35.3",
     "stripe": "22.3.2",
     "stylelint": "17.14.1",
     "tesseract.js": "7.0.0",
-    "typescript-eslint": "^8.65.0",
+    "typescript-eslint": "^8.66.0",
     "yaml": "^2.9.0"
   }
 }

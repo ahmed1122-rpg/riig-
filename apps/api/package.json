@@ -73,10 +73,10 @@
   "devDependencies": {
     "@types/node": "^24.0.10",
     "@types/nodemailer": "^8.0.1",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.20.3",
     "ag-psd": "31.0.2",
     "pdf-lib": "^1.17.1",
-    "tsx": "^4.20.3",
+    "tsx": "^4.23.5",
     "typescript": "^5.8.3",
     "vitest": "^4.1.10"
   }
