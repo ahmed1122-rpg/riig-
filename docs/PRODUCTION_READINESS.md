@@ -1,6 +1,7 @@
 # Production readiness
 
-Status on 2026-08-04: releases `v0.1.1`, `v0.1.2`, and `v0.1.3` were published
+Status through 2026-08-10: releases `v0.1.1`, `v0.1.2`, `v0.1.3`, and
+`v0.1.5` were published
 as signed digest-qualified runtime and web images after their protected
 exact-SHA release workflows passed. Release `v0.1.3` contains the corrected
 production-remediation baseline at
@@ -13,7 +14,7 @@ protected provider and staging workflows pass against real managed services.
 Managed recovery and representative load/memory exercises remain explicit
 launch gates. The licensed Adobe-version gate completed on 2026-08-10.
 
-Candidate security remediation on 2026-08-10 upgrades the PDF parser to
+Security remediation on 2026-08-10 upgrades the PDF parser to
 `pdfjs-dist` 6.2.108, the first patched release for
 `GHSA-hq66-cqwq-w95j`/`CVE-2026-16633`, refreshes the vulnerable transitive
 build dependency `nanoid` to 3.3.18, and moves every development, CI, and
@@ -21,20 +22,20 @@ container runtime to the single `.node-version` value `24.18.1`. A daily audit
 of the complete runtime/build/test dependency tree now detects advisories that
 appear after a green push build. The signed `v0.1.3` images predate this
 remediation and are retained only as historical release evidence; they must not
-be deployed. Publication requires a new exact-SHA signed release after the
-protected gates pass.
+be deployed. The `v0.1.5` images contain the remediation, but its release
+evidence status requires the correction described below.
 
 The remediation was merged to `main` at
 `104ce83234a0150d28e4e5a5b8996fab65d8b53a`. The `v0.1.4` tag points to that
 commit, but its release workflow was cancelled before image publication after
 licensed Adobe validation exposed two additional exporter defects: host-font
 dependent PDF text pixels and PSD records written in the opposite order from
-Adobe's Layers panels. The pending follow-up bundles the complete Noto Sans
+Adobe's Layers panels. The follow-up merged at
+`6c7a2de557cf59f69049a27745031e16076e6a01`; it bundles the complete Noto Sans
 Arabic TTF from `@expo-google-fonts/noto-sans-arabic@0.4.3`, installs
 fontconfig in the pinned runtime, reproduces the reviewed PSD bytes during
 every runtime build, and writes bottom-to-top PSD records. No `v0.1.4`
-runtime or web image is eligible for deployment; publish a new immutable tag
-only after this follow-up merges and its exact-SHA gates pass.
+runtime or web image is eligible for deployment.
 
 The licensed Adobe gate passed on 2026-08-10 with Photoshop 2026 (27.8.0) and
 After Effects 2026 (26.3x87). Both PSDs opened as RGB/8 at the expected
@@ -51,8 +52,13 @@ The first read-only GitHub audit on 2026-08-10 observed
 `main` to `104ce83234a0150d28e4e5a5b8996fab65d8b53a`, and all required hosted CI
 and CodeQL jobs passed on that exact SHA. The `production-readiness` and
 `production-release` environments retain required-reviewer and branch
-policies. The newest published release and release deployment remain
-`v0.1.3`; `v0.1.4` was cancelled before publication, and no post-remediation
+policies. The `v0.1.5` workflow published signed post-remediation images from
+`6c7a2de557cf59f69049a27745031e16076e6a01`, but its generated evidence
+incorrectly retained `licensedAdobeGolden: pending` after that gate had passed.
+Those immutable images remain valid build evidence, but `v0.1.5` is not the
+final deployment evidence bundle. The corrected generator requires a later
+immutable release and records `licensed-adobe-golden` as completed only after
+`verify:adobe-golden` checks both application result files. No post-remediation
 managed-staging deployment exists. Public metadata cannot prove protected
 secret contents or provider ownership, so the 2026-08-04 authenticated
 environment audit and the external evidence gates below remain controlling.

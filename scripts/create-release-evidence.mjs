@@ -48,6 +48,7 @@ export function createReleaseEvidence(environment, generatedAt = new Date()) {
       "production-shaped-topology",
       "dependency-fault-recovery",
       "concurrent-pdf-smoke-load",
+      "licensed-adobe-golden",
       "container-hardening",
       "trivy-high-critical",
       "sbom-provenance",
@@ -59,7 +60,6 @@ export function createReleaseEvidence(environment, generatedAt = new Date()) {
       rollbackDrill: "pending",
       signedRecoveryDrill: "pending",
       representativeLoadMemory: "pending",
-      licensedAdobeGolden: "pending",
     },
   };
 }
