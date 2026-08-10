@@ -20,6 +20,8 @@ test("creates immutable evidence while leaving external gates truthful", () => {
   assert.equal(evidence.images.runtime, environment.RUNTIME_IMAGE_REF);
   assert.equal(evidence.externalGates.rollbackDrill, "pending");
   assert.ok(evidence.completedGates.includes("dependency-fault-recovery"));
+  assert.ok(evidence.completedGates.includes("licensed-adobe-golden"));
+  assert.equal("licensedAdobeGolden" in evidence.externalGates, false);
 });
 
 test("rejects mutable images and abbreviated commits", () => {

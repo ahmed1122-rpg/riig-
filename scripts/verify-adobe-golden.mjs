@@ -6,12 +6,8 @@ import { fileURLToPath } from "node:url";
 import { readPsd } from "ag-psd";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const generatedDirectory = join(
-  root,
-  "artifacts",
-  "adobe-golden",
-  "generated",
-);
+const adobeGoldenDirectory = join(root, "artifacts", "adobe-golden");
+const generatedDirectory = join(adobeGoldenDirectory, "generated");
 const manifest = JSON.parse(
   await readFile(join(generatedDirectory, "manifest.json"), "utf8"),
 );
@@ -63,7 +59,56 @@ for (const entry of manifest.files) {
 }
 
 assert(expectedFiles.size === 0, "Adobe Golden manifest is incomplete.");
-console.log("Adobe Golden manifest, hashes, and PSD structure are valid.");
+
+const photoshopEvidence = await readEvidence("photoshop-result.txt");
+assertEvidence(
+  photoshopEvidence,
+  "Photoshop",
+  [
+    "APP|Adobe Photoshop|27.8.0",
+    "FILE|image-layers.psd|640|360|DocumentMode.RGB|BitsPerChannelType.EIGHT",
+    "FILE|book-pages.psd|640|720|DocumentMode.RGB|BitsPerChannelType.EIGHT",
+    "RESULT|PASS",
+  ],
+);
+
+const afterEffectsEvidence = await readEvidence("after-effects-result.txt");
+assertEvidence(
+  afterEffectsEvidence,
+  "After Effects",
+  [
+    "APP|Adobe After Effects|26.3x87",
+    "FILE|image-layers.psd|true|640|360|2",
+    "FILE|book-pages.psd|true|640|720|2",
+    "CLEANUP|0|0",
+    "RESULT|PASS",
+  ],
+);
+
+console.log(
+  "Adobe Golden manifest, hashes, PSD structure, and licensed-app evidence are valid.",
+);
+
+async function readEvidence(filename) {
+  return (await readFile(join(adobeGoldenDirectory, filename), "utf8")).replaceAll(
+    "\r\n",
+    "\n",
+  );
+}
+
+function assertEvidence(body, application, requiredLines) {
+  const lines = new Set(body.trimEnd().split("\n"));
+  assert(
+    !body.includes("FAIL|"),
+    `${application} Golden evidence contains a failure.`,
+  );
+  for (const line of requiredLines) {
+    assert(
+      lines.has(line),
+      `${application} Golden evidence is missing: ${line}`,
+    );
+  }
+}
 
 function assert(condition, message) {
   if (!condition) {
