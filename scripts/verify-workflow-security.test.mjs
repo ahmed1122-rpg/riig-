@@ -57,3 +57,41 @@ test("requires setup-node in every job that invokes the Node or npm CLI", () => 
     /job container runs Node\/npm without setup-node/u,
   );
 });
+
+test("detects chained and prefixed Node package-manager commands", () => {
+  for (const command of [
+    "echo ready && npm run verify:alerts",
+    "NODE_ENV=test node scripts/check.mjs",
+    "if npx eslint .; then echo ok; fi",
+    "corepack npm --version",
+  ]) {
+    const workflow = [
+      ordinaryWorkflow,
+      "  composite-command:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      `      - run: ${command}`,
+    ].join("\n");
+
+    assert.match(
+      verifyWorkflowSecurity([workflow]).join("\n"),
+      /job composite-command runs Node\/npm without setup-node/u,
+      command,
+    );
+  }
+});
+
+test("does not treat quoted npm help text as a CLI invocation", () => {
+  const workflow = [
+    ordinaryWorkflow,
+    "  documentation:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    `      - run: echo 'npm run quality'`,
+  ].join("\n");
+
+  assert.doesNotMatch(
+    verifyWorkflowSecurity([workflow]).join("\n"),
+    /job documentation runs Node\/npm without setup-node/u,
+  );
+});
