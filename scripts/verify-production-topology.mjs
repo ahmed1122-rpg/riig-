@@ -4,8 +4,11 @@ import { spawnSync } from "node:child_process";
 import { Pool } from "pg";
 import Stripe from "stripe";
 import { currentLegalAcceptance } from "./legal-acceptance.mjs";
+import { integrationEndpoints } from "./integration-endpoints.mjs";
 
-const apiOrigins = ["http://127.0.0.1:54101", "http://127.0.0.1:54102"];
+const { apiOrigins, mailpitOrigin, databaseUrl } = integrationEndpoints(
+  process.env,
+);
 const email = `topology-${Date.now()}@example.test`;
 const password = "Topology-Test-2026!";
 const webhookSecret = "whsec_motionprep_topology_only";
@@ -53,7 +56,7 @@ await api(1, "/v1/auth/password-reset/request", {
   expectedStatus: 202,
 });
 await waitFor(async () => {
-  const response = await fetch("http://127.0.0.1:58025/api/v1/messages");
+  const response = await fetch(`${mailpitOrigin}/api/v1/messages`);
   if (!response.ok) return false;
   const messages = await response.json();
   return JSON.stringify(messages).includes(email);
@@ -267,10 +270,7 @@ async function verifyStripeWebhookIdempotency(targetUserId) {
   const checkoutReference = `cs_topology_${providerSuffix}`;
   const customerReference = `cus_topology_${providerSuffix}`;
   const subscriptionReference = `sub_topology_${providerSuffix}`;
-  const pool = new Pool({
-    connectionString:
-      "postgresql://motionprep:motionprep-integration@127.0.0.1:55432/motionprep",
-  });
+  const pool = new Pool({ connectionString: databaseUrl });
   try {
     await pool.query(
       `INSERT INTO checkout_sessions (
@@ -335,10 +335,7 @@ async function verifyStripeWebhookIdempotency(targetUserId) {
   if (!first.body.data.processed || !duplicate.body.data.duplicate) {
     throw new Error("Signed Stripe webhook was not idempotent across replicas.");
   }
-  const verificationPool = new Pool({
-    connectionString:
-      "postgresql://motionprep:motionprep-integration@127.0.0.1:55432/motionprep",
-  });
+  const verificationPool = new Pool({ connectionString: databaseUrl });
   try {
     const verification = await verificationPool.query(
       `SELECT
@@ -401,10 +398,7 @@ async function verifyJobTraceIdentity(
   if (!new Set(["processing_jobs", "export_jobs"]).has(table)) {
     throw new Error(`Unsupported job table ${table}.`);
   }
-  const pool = new Pool({
-    connectionString:
-      "postgresql://motionprep:motionprep-integration@127.0.0.1:55432/motionprep",
-  });
+  const pool = new Pool({ connectionString: databaseUrl });
   try {
     const result = await pool.query(
       `SELECT correlation_id, trace_parent FROM ${table} WHERE id = $1`,

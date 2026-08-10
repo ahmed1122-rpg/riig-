@@ -39,7 +39,8 @@ Photoshop وAfter Effects يحتاج اختبارات Adobe Golden على الإ
 
 ## التشغيل
 
-المتطلبات: Node.js 22.12.0 أو أحدث وnpm 10+.
+المتطلبات: Node.js 24.18.1 وnpm 11.16.0. استخدم `.node-version` بوصفه المرجع الوحيد
+لنسخة Node في التطوير وCI وصور الإنتاج.
 
 ```bash
 npm install

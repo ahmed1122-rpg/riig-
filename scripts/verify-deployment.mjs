@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { verifyObservabilityArtifacts } from "./verify-observability-artifacts.mjs";
 import { requiredDeploymentFiles } from "./deployment-required-files.mjs";
+import { verifyNodeToolchain } from "./verify-node-toolchain.mjs";
+import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const violations = [];
+const nodeVersion = (await readFile(join(root, ".node-version"), "utf8")).trim();
 
 for (const file of requiredDeploymentFiles) {
   try {
@@ -37,6 +40,7 @@ const [
   objectStorageContract,
   objectStorageSmoke,
   packageManifest,
+  npmConfig,
   localCompose,
   apiPackageManifest,
   deploymentContract,
@@ -65,6 +69,7 @@ const [
       "docs/OBJECT_STORAGE.md",
       "scripts/verify-object-storage.mjs",
       "package.json",
+      ".npmrc",
       "compose.yaml",
       "apps/api/package.json",
       "docs/DEPLOYMENT.md",
@@ -83,26 +88,11 @@ const workflowSources = await Promise.all(
     ".github/workflows/performance-readiness.yml",
     ".github/workflows/staging-application-readiness.yml",
     ".github/workflows/release-rollback-drill.yml",
+    ".github/workflows/dependency-audit.yml",
   ].map((file) => readFile(join(root, file), "utf8")),
 );
 violations.push(...(await verifyObservabilityArtifacts(root)));
-for (const [index, workflow] of workflowSources.entries()) {
-  try {
-    parse(workflow);
-  } catch (error) {
-    violations.push(
-      `Workflow ${index + 1} is invalid YAML: ${error instanceof Error ? error.message : "unknown error"}`,
-    );
-  }
-  for (const match of workflow.matchAll(/uses:\s+([^@\s]+)@([^\s#]+)/gu)) {
-    const [, action, reference] = match;
-    if (!/^[a-f0-9]{40}$/u.test(reference ?? "")) {
-      violations.push(
-        `GitHub Action ${action ?? "unknown"} is not pinned by commit SHA: ${reference ?? "missing"}`,
-      );
-    }
-  }
-}
+violations.push(...verifyWorkflowSecurity(workflowSources));
 const ciWorkflow = workflowSources[0];
 try {
   const ciDocument = parse(ciWorkflow);
@@ -267,7 +257,14 @@ if (!runtimeDockerfile.includes("rm -rf /usr/local/lib/node_modules/npm")) {
 }
 if (
   !runtimeDockerfile.includes(
-    "COPY package.json package-lock.json tsconfig.node.json ./",
+    "npm prune --omit=dev --ignore-scripts --no-audit --no-fund",
+  )
+) {
+  violations.push("Runtime dependency pruning must not execute lifecycle scripts.");
+}
+if (
+  !runtimeDockerfile.includes(
+    "COPY package.json package-lock.json tsconfig.node.json .npmrc ./",
   )
 ) {
   violations.push(
@@ -356,13 +353,14 @@ for (const image of ["postgres", "redis", "minio/minio", "minio/mc", "axllent/ma
     violations.push(`Local ${image} image must be pinned by digest.`);
   }
 }
-for (const dockerfile of [runtimeDockerfile, webDockerfile]) {
-  for (const line of dockerfile.split(/\r?\n/u)) {
-    if (/^FROM /u.test(line) && !line.includes("@sha256:")) {
-      violations.push(`Dockerfile base image must be pinned by digest: ${line}`);
-    }
-  }
-}
+violations.push(
+  ...verifyNodeToolchain({
+    nodeVersion,
+    packageManifest,
+    npmConfig,
+    dockerfiles: [runtimeDockerfile, webDockerfile],
+  }),
+);
 if (!webApiClient.includes("location.origin")) {
   violations.push("Production web builds must default to the same-origin API.");
 }
