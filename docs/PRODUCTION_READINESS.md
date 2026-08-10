@@ -1,7 +1,7 @@
 # Production readiness
 
 Status through 2026-08-10: releases `v0.1.1`, `v0.1.2`, `v0.1.3`, `v0.1.5`,
-and `v0.1.6` were published
+`v0.1.6`, and `v0.1.7` were published
 as signed digest-qualified runtime and web images after their protected
 exact-SHA release workflows passed. Release `v0.1.3` contains the corrected
 production-remediation baseline at
@@ -22,8 +22,9 @@ container runtime to the single `.node-version` value `24.18.1`. A daily audit
 of the complete runtime/build/test dependency tree now detects advisories that
 appear after a green push build. The signed `v0.1.3` images predate this
 remediation and are retained only as historical release evidence; they must not
-be deployed. The signed `v0.1.6` images contain the remediation and the
-corrected Adobe release evidence described below.
+be deployed. The signed `v0.1.7` images contain the remediation, the corrected
+Adobe release evidence, and fail-closed Node/npm toolchain enforcement described
+below.
 
 The remediation was merged to `main` at
 `104ce83234a0150d28e4e5a5b8996fab65d8b53a`. The `v0.1.4` tag points to that
@@ -57,12 +58,15 @@ policies. The `v0.1.5` workflow published signed post-remediation images from
 incorrectly retained `licensedAdobeGolden: pending` after that gate had passed.
 Those immutable images remain valid build evidence, but `v0.1.5` is not the
 final deployment evidence bundle. Release `v0.1.6` at
-`f0de756573741f3d9ecd610645347818bb118fde` supersedes it and records
+`f0de756573741f3d9ecd610645347818bb118fde` superseded it and recorded
 `licensed-adobe-golden` as completed only after `verify:adobe-golden` checks
-both application result files. No post-remediation managed-staging deployment
-exists. Public metadata cannot prove protected secret contents or provider
-ownership, so the authenticated environment audit and the external evidence
-gates below remain controlling.
+both application result files. Release `v0.1.7` at
+`86ad51f81098db1d36c714dd4c5ab63cf2da9613` supersedes `v0.1.6` as the current
+candidate after making `.node-version` authoritative for every npm invocation,
+including CLI steps in separate CI and release jobs. No post-remediation
+managed-staging deployment exists. Public metadata cannot prove protected
+secret contents or provider ownership, so the authenticated environment audit
+and the external evidence gates below remain controlling.
 
 The 2026-08-03 corrected-remediation pass adds revision-bound project review
 approvals, request-fingerprint idempotency conflicts, atomic upload-integrity
@@ -212,25 +216,25 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
 - Historical only: a local OCI release was published from source commit `0a2103addf1c71ed6402d955a9a59d8da0d17485`, and tag `v0.1.0` was published from `48bdfd9b53b0c955a93f5a121660ea9b3e546df4`. Their retained verification records remain useful evidence for the signing mechanism, but their digests do **not** contain this candidate and must not be deployed as its release.
 
-## Hosted release evidence — v0.1.6
+## Hosted release evidence — v0.1.7
 
-- PR #36 was squash-merged to `main` at
-  `f0de756573741f3d9ecd610645347818bb118fde`; all exact-SHA CI, CodeQL,
+- PR #37 was squash-merged to `main` at
+  `86ad51f81098db1d36c714dd4c5ab63cf2da9613`; all exact-SHA CI, CodeQL,
   secret-scan, E2E, durable integration, release fixture, topology, container,
   and Trivy gates passed.
-- Protected release run `31424255582` rechecked the exact tag source and
+- Protected release run `31428698318` rechecked the exact tag source and
   published SBOM/provenance-bearing images after repository-bound Cosign
   signing and verification.
-- Runtime: `ghcr.io/ahmed1122-rpg/motionprep-runtime@sha256:b99ec00bb0493cc571f3fcb6eacd38e3a60e0c7dd4b877a5aaefb5a0d52e601e`.
-- Web: `ghcr.io/ahmed1122-rpg/motionprep-web@sha256:b74eb3adf7f955d7c4fea413d9d380b250ba72f96b6483e76d721eed5c516840`.
+- Runtime: `ghcr.io/ahmed1122-rpg/motionprep-runtime@sha256:a7883a1b3180e8da9c4b461aaf23adac0fac4bc49b84bd2ceae89724bef7ff56`.
+- Web: `ghcr.io/ahmed1122-rpg/motionprep-web@sha256:31c43f772d43a34f10600d50958538340edbd45c81b96aeca2af8a413c813cfd`.
 - Its immutable evidence names `licensed-adobe-golden` as completed, omits the
   stale external Adobe status, and records passing topology and dependency
   fault recovery.
-- Protected rollback run `31425718748` verified candidate and rollback image
-  signatures, ran the `v0.1.6` PDF journey, performed application-only rollback
+- Protected rollback run `31429820987` verified candidate and rollback image
+  signatures, ran the `v0.1.7` PDF journey, performed application-only rollback
   to `v0.1.2` while retaining additive migrations, and passed the rollback PDF
-  journey. Both error rates were 0%; workflow times were 1,286 ms and 1,274 ms.
-  The environment now binds `ROLLBACK_DRILL_STATUS=passed` to the exact v0.1.6
+  journey. Both error rates were 0%; workflow times were 1,148 ms and 1,358 ms.
+  The environment now binds `ROLLBACK_DRILL_STATUS=passed` to the exact v0.1.7
   source SHA and run URL.
 
 ## Hosted release evidence — v0.1.3
@@ -284,7 +288,7 @@ security.
 ## Evidence still required
 
 1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
-2. Deployment of the signed `v0.1.6` digests above to managed staging and a
+2. Deployment of the signed `v0.1.7` digests above to managed staging and a
    complete application smoke without rebuilding. The signed-image rollback
    path has passed for the same exact source, but this does not substitute for
    the deployed staging smoke.
@@ -300,7 +304,7 @@ that meets CER <= 25% or a separately approved claim and review policy.
 The external-state audit repeated on 2026-08-10 found no secrets in the protected
 `production-readiness` environment and no provider/staging variables beyond
 release, rollback, application-version, and OCR coordinates. The release
-coordinates now reference `v0.1.6`, and its protected rollback drill is current.
+coordinates now reference `v0.1.7`, and its protected rollback drill is current.
 The provider, staging,
 staging-application, and representative-performance workflows were not started:
 they would be guaranteed preflight failures rather than provider evidence.
