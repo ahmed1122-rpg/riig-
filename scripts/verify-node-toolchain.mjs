@@ -26,15 +26,21 @@ export function verifyNodeToolchain({
 
   const expectedNodeImage = `node:${nodeVersion}-bookworm-slim@sha256:`;
   for (const dockerfile of dockerfiles) {
+    const definedStages = new Set();
     for (const line of dockerfile.split(/\r?\n/u)) {
-      if (/^FROM /u.test(line) && !line.includes("@sha256:")) {
+      const from = /^FROM\s+(\S+)(?:\s+AS\s+(\S+))?$/iu.exec(line.trim());
+      if (!from) continue;
+      const source = from[1];
+      const internalStage = definedStages.has(source.toLowerCase());
+      if (!internalStage && !source.includes("@sha256:")) {
         violations.push(`Dockerfile base image must be pinned by digest: ${line}`);
       }
-      if (/^FROM node:/u.test(line) && !line.includes(expectedNodeImage)) {
+      if (source.startsWith("node:") && !source.includes(expectedNodeImage)) {
         violations.push(
           `Dockerfile Node.js base must match .node-version (${nodeVersion}): ${line}`,
         );
       }
+      if (from[2]) definedStages.add(from[2].toLowerCase());
     }
   }
   return violations;

@@ -314,12 +314,19 @@ describe("createPdfPagePsd", () => {
 
     expect(decoded.width).toBe(320);
     expect(decoded.height).toBe(180);
-    expect(decoded.children?.map((child) => child.name)).toEqual([
+    expect(adobeLayerNames(decoded.children)).toEqual([
       "+العنوان",
       "+page_001_background",
     ]);
-    expect(decoded.children?.[0]?.rawData?.channels.length).toBeGreaterThan(0);
-    expect(decoded.children?.[1]?.protected).toMatchObject({
+    expect(
+      decoded.children?.find((child) => child.name === "+العنوان")?.rawData
+        ?.channels.length,
+    ).toBeGreaterThan(0);
+    expect(
+      decoded.children?.find(
+        (child) => child.name === "+page_001_background",
+      )?.protected,
+    ).toMatchObject({
       position: true,
       composite: true,
       transparency: true,
@@ -387,13 +394,15 @@ describe("createPdfPagePsd", () => {
       skipThumbnail: true,
     });
 
-    expect(decoded.children?.map((child) => child.name)).toEqual([
+    expect(adobeLayerNames(decoded.children)).toEqual([
       "+heading_001",
       "+page_001_background",
     ]);
-    expect(decoded.children?.[0]?.children?.map((child) => child.name)).toEqual(
-      ["+عنوان_المشهد"],
-    );
+    expect(
+      decoded.children
+        ?.find((child) => child.name === "+heading_001")
+        ?.children?.map((child) => child.name),
+    ).toEqual(["+عنوان_المشهد"]);
   });
 
   it("rejects an unknown page and a page without its fixed white background", async () => {
@@ -449,7 +458,7 @@ describe("createPdfDocumentPsd", () => {
     });
 
     expect(decoded).toMatchObject({ width: 30, height: 22 });
-    expect(decoded.children?.map((child) => child.name)).toEqual([
+    expect(adobeLayerNames(decoded.children)).toEqual([
       "+page_001",
       "+page_002",
     ]);
@@ -517,3 +526,9 @@ describe("createPdfDocumentPsd", () => {
     } satisfies Partial<ExportAdapterError>);
   });
 });
+
+function adobeLayerNames(
+  layers: readonly { name?: string }[] | undefined,
+): Array<string | undefined> {
+  return [...(layers ?? [])].reverse().map((layer) => layer.name);
+}

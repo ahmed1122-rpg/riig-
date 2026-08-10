@@ -5,7 +5,7 @@
     {
       "filename": "image-layers.psd",
       "sizeBytes": 39442,
-      "sha256": "911446050af4db447a752b41eabf7b7f9429817b911286080eafafe5d04187c0",
+      "sha256": "68f60e7b40123dec534e2b1ea0b707ebeba80751638a3b2663330b52b3fe7588",
       "expected": {
         "width": 640,
         "height": 360,
@@ -19,8 +19,8 @@
     },
     {
       "filename": "book-pages.psd",
-      "sizeBytes": 111150,
-      "sha256": "5ec9bf8d901f0f901b68d3ad2fd7dd96208435c4ff764bd2e5d271dcd15b3585",
+      "sizeBytes": 118980,
+      "sha256": "2352d3f2ec6c41d001daa90690e5b46a7ffc96455c36553c49cfbe7a478fb436",
       "expected": {
         "width": 640,
         "height": 720,

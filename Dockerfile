@@ -27,10 +27,32 @@ RUN npm run build
 RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 COPY scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
-FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS runtime
+FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS runtime-base
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000
+
+# Sharp/Pango requires a fontconfig configuration even when every exported
+# text layer supplies its own reviewed font file. Keep discovery deterministic
+# and avoid production warnings from the slim base image.
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends fontconfig \
+  && rm -rf /var/lib/apt/lists/*
+
+# Generates the reviewed Adobe fixtures in the exact Linux/font stack used by
+# production. The host command targets this stage so Windows and macOS cannot
+# silently rewrite text pixels with their local Pango/fontconfig versions.
+FROM runtime-base AS adobe-golden-generator
+COPY --from=build /workspace/package.json /workspace/package-lock.json ./
+COPY --from=build /workspace/node_modules ./node_modules
+COPY --from=build /workspace/packages/contracts/package.json ./packages/contracts/package.json
+COPY --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
+COPY --from=build /workspace/packages/export-adapters/package.json ./packages/export-adapters/package.json
+COPY --from=build /workspace/packages/export-adapters/dist ./packages/export-adapters/dist
+COPY scripts/generate-adobe-golden.mjs ./scripts/generate-adobe-golden.mjs
+CMD ["node", "--conditions=production", "scripts/generate-adobe-golden.mjs"]
+
+FROM runtime-base AS runtime
 
 COPY --from=build /workspace/package.json /workspace/package-lock.json ./
 COPY --from=build /workspace/node_modules ./node_modules
@@ -58,6 +80,19 @@ COPY --from=build /workspace/packages/media-processing/package.json ./packages/m
 COPY --from=build /workspace/packages/media-processing/dist ./packages/media-processing/dist
 COPY --from=build /workspace/packages/presets/package.json ./packages/presets/package.json
 COPY --from=build /workspace/packages/presets/dist ./packages/presets/dist
+
+# Every production image must reproduce the reviewed PSD bytes. Application
+# compatibility is tested separately in Adobe, while this catches font or
+# native-library drift in the deployed runtime itself.
+COPY scripts/generate-adobe-golden.mjs ./scripts/generate-adobe-golden.mjs
+COPY artifacts/adobe-golden/generated /tmp/adobe-golden-expected
+RUN ADOBE_GOLDEN_OUTPUT_DIRECTORY=/tmp/adobe-golden-actual \
+      node --conditions=production scripts/generate-adobe-golden.mjs \
+      >/tmp/adobe-golden-manifest.log \
+  && node --input-type=module -e \
+    'import { readFile } from "node:fs/promises"; for (const file of ["image-layers.psd", "book-pages.psd", "manifest.json"]) { const expected = await readFile(`/tmp/adobe-golden-expected/${file}`); const actual = await readFile(`/tmp/adobe-golden-actual/${file}`); if (!expected.equals(actual)) throw new Error(`Adobe Golden drift: ${file}`); }' \
+  && rm -rf /tmp/adobe-golden-actual /tmp/adobe-golden-expected \
+    /tmp/adobe-golden-manifest.log ./scripts/generate-adobe-golden.mjs
 
 # The runtime invokes Node directly and must not ship build/package-manager
 # tooling. Removing it also reduces the vulnerability and mutation surface.

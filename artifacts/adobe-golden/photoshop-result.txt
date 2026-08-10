@@ -1,0 +1,12 @@
+APP|Adobe Photoshop|27.8.0
+FILE|image-layers.psd|640|360|DocumentMode.RGB|BitsPerChannelType.EIGHT
+LAYER|0|0|+البطاقة|ArtLayer|72.156862745098|true|false,false,false
+LAYER|0|1|+الخلفية|ArtLayer|100|true|true,true,true
+FILE|book-pages.psd|640|720|DocumentMode.RGB|BitsPerChannelType.EIGHT
+LAYER|1|0|+page_001|LayerSet|100|true|n/a
+CHILD|1|0|0|+عنوان_عربي
+CHILD|1|0|1|+page_001_background
+LAYER|1|1|+page_002|LayerSet|100|true|n/a
+CHILD|1|1|0|+English_title
+CHILD|1|1|1|+page_002_background
+RESULT|PASS

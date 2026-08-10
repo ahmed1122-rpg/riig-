@@ -46,7 +46,8 @@
     "benchmark:ocr:development": "npm run build --workspace @motionprep/contracts && npm run build --workspace @motionprep/presets && npm run build --workspace @motionprep/document-processing && node --conditions=production scripts/benchmark-ocr-corpus.mjs --exclude-holdout --summary",
     "benchmark:ocr:holdout:open": "node scripts/open-ocr-holdout.mjs",
     "benchmark:ocr:selector": "node scripts/evaluate-ocr-selector.mjs",
-    "golden:adobe:generate": "npm run build --workspace @motionprep/contracts && npm run build --workspace @motionprep/export-adapters && node --conditions=production scripts/generate-adobe-golden.mjs",
+    "golden:adobe:generate": "node scripts/generate-adobe-golden-container.mjs",
+    "verify:adobe-golden": "node scripts/verify-adobe-golden.mjs",
     "verify:architecture": "node --test scripts/import-cycle-detector.test.mjs && node scripts/verify-architecture.mjs",
     "verify:maintainability": "node --test scripts/verify-maintainability.test.mjs && node scripts/verify-maintainability.mjs",
     "verify:deployment": "node --test scripts/check-worker-health.test.mjs scripts/verify-node-toolchain.test.mjs scripts/verify-workflow-security.test.mjs && node scripts/verify-deployment.mjs",
@@ -69,7 +70,7 @@
     "test:topology": "node scripts/verify-production-topology.mjs",
     "test:faults:topology": "node scripts/verify-runtime-fault-recovery.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run verify:adobe-golden && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=24.18.1 <25",
@@ -78,10 +79,11 @@
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
     "@eslint/js": "^10.0.1",
-    "@napi-rs/canvas": "^1.0.3",
+    "@napi-rs/canvas": "1.0.3",
     "@playwright/test": "1.62.1",
     "@tesseract.js-data/ara": "1.0.0",
     "@vitest/coverage-v8": "^4.1.10",
+    "ag-psd": "31.0.2",
     "concurrently": "^10.0.4",
     "eslint": "^10.8.0",
     "globals": "^17.8.0",

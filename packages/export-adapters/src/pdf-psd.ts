@@ -1,5 +1,6 @@
 import type { LayerDocument, LayerNode } from "@motionprep/contracts";
 import { writePsdBuffer, type Layer as PsdLayer, type Psd } from "ag-psd";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 import { mapWithConcurrency } from "./concurrency.js";
@@ -15,6 +16,16 @@ import {
 
 const PDF_PAGE_RENDER_CONCURRENCY = 2;
 const PDF_TEXT_RENDER_CONCURRENCY = 4;
+const PDF_TEXT_FONT = {
+  font: "Noto Sans Arabic",
+  // Use one complete TTF rather than Unicode-subset webfonts. Mixed Arabic,
+  // Latin, and numeric text must never fall back to a host system font.
+  fontfile: fileURLToPath(
+    import.meta.resolve(
+      "@expo-google-fonts/noto-sans-arabic/400Regular/NotoSansArabic_400Regular.ttf",
+    ),
+  ),
+} as const;
 
 interface PreparedPdfText {
   layer: LayerNode;
@@ -111,7 +122,7 @@ async function createPdfPsd(
       page,
       pageOffset,
     );
-    const pageChildren = [...textLayers, backgroundLayer];
+    const pageChildren = [backgroundLayer, ...textLayers];
     if (groupPages) {
       rootChildren.push({
         name: `+page_${String(page.pageNumber).padStart(3, "0")}`,
@@ -159,7 +170,9 @@ async function createPdfPsd(
     width,
     height,
     imageData: pixelData(composite, width, height),
-    children: rootChildren,
+    // PSD stores records bottom-to-top; reverse page groups so Photoshop and
+    // After Effects present page 1 before page 2 in their layer panels.
+    children: groupPages ? rootChildren.reverse() : rootChildren,
     imageResources: createPsdImageResources(),
   };
 
@@ -187,7 +200,7 @@ function buildPdfTextLayerTree(
   for (const group of groups) {
     const children = page.rendered
       .filter((item) => item.layer.parentId === group.id)
-      .sort((left, right) => right.layer.zIndex - left.layer.zIndex);
+      .sort((left, right) => left.layer.zIndex - right.layer.zIndex);
     if (children.length === 0) continue;
     children.forEach((item) => groupedTextIds.add(item.layer.id));
     entries.push({
@@ -222,7 +235,7 @@ function buildPdfTextLayerTree(
     });
   }
   return entries
-    .sort((left, right) => right.zIndex - left.zIndex)
+    .sort((left, right) => left.zIndex - right.zIndex)
     .map((entry) => entry.psdLayer);
 }
 
@@ -327,7 +340,7 @@ async function renderPdfTextLayer(
     decoded = await sharp({
       text: {
         text: escapePango(layer.fullText),
-        font: "sans",
+        ...PDF_TEXT_FONT,
         width: maxWidth,
         height: maxHeight,
         align: layer.direction === "rtl" ? "right" : "left",

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createPdfDocumentPsd,
@@ -9,7 +9,9 @@ import {
 import sharp from "sharp";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const outputDirectory = join(root, "artifacts", "adobe-golden", "generated");
+const outputDirectory = process.env.ADOBE_GOLDEN_OUTPUT_DIRECTORY
+  ? resolve(process.env.ADOBE_GOLDEN_OUTPUT_DIRECTORY)
+  : join(root, "artifacts", "adobe-golden", "generated");
 await mkdir(outputDirectory, { recursive: true });
 
 const imageDocument = {
@@ -91,7 +93,7 @@ const bookDocument = {
     textLayer(
       "golden-arabic",
       "+عنوان_عربي",
-      "كتاب الحركة",
+      "كتاب 2026 Motion",
       1,
       "rtl",
       1,

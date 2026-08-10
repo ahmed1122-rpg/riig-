@@ -10,8 +10,8 @@ from `v0.1.3` to `v0.1.2` also passed. Regional OCR remains disabled because its
 independent holdout evidence is stale and the historical generation failed its
 holdout target. Application deployment approval remains withheld until the
 protected provider and staging workflows pass against real managed services.
-Managed recovery, licensed Adobe-version validation, and representative
-load/memory exercises remain explicit launch gates.
+Managed recovery and representative load/memory exercises remain explicit
+launch gates. The licensed Adobe-version gate completed on 2026-08-10.
 
 Candidate security remediation on 2026-08-10 upgrades the PDF parser to
 `pdfjs-dist` 6.2.108, the first patched release for
@@ -24,15 +24,38 @@ remediation and are retained only as historical release evidence; they must not
 be deployed. Publication requires a new exact-SHA signed release after the
 protected gates pass.
 
-A read-only GitHub audit on 2026-08-10 confirmed that `main` still resolves to
-`9cd4737b30b9e8cd974ea7b93578efc6da4b0e9d`, with successful hosted `quality`
-and CodeQL runs for that SHA. The `production-readiness` and
-`production-release` environments both retain required-reviewer and branch
+The remediation was merged to `main` at
+`104ce83234a0150d28e4e5a5b8996fab65d8b53a`. The `v0.1.4` tag points to that
+commit, but its release workflow was cancelled before image publication after
+licensed Adobe validation exposed two additional exporter defects: host-font
+dependent PDF text pixels and PSD records written in the opposite order from
+Adobe's Layers panels. The pending follow-up bundles the complete Noto Sans
+Arabic TTF from `@expo-google-fonts/noto-sans-arabic@0.4.3`, installs
+fontconfig in the pinned runtime, reproduces the reviewed PSD bytes during
+every runtime build, and writes bottom-to-top PSD records. No `v0.1.4`
+runtime or web image is eligible for deployment; publish a new immutable tag
+only after this follow-up merges and its exact-SHA gates pass.
+
+The licensed Adobe gate passed on 2026-08-10 with Photoshop 2026 (27.8.0) and
+After Effects 2026 (26.3x87). Both PSDs opened as RGB/8 at the expected
+dimensions and layer order, After Effects accepted
+`Composition - Retain Layer Sizes`, and full-resolution preview comparison was
+exact for `image-layers.psd`; `book-pages.psd` had mean absolute channel delta
+0.015290 and maximum delta 1/255. Its RTL Golden layer deliberately combines
+Arabic, ASCII digits, and Latin text to prove the complete bundled TTF avoids
+host-font fallback. Machine-readable evidence and SHA-256 values
+are stored in `artifacts/adobe-golden/`.
+
+The first read-only GitHub audit on 2026-08-10 observed
+`9cd4737b30b9e8cd974ea7b93578efc6da4b0e9d`; PR #31 subsequently advanced
+`main` to `104ce83234a0150d28e4e5a5b8996fab65d8b53a`, and all required hosted CI
+and CodeQL jobs passed on that exact SHA. The `production-readiness` and
+`production-release` environments retain required-reviewer and branch
 policies. The newest published release and release deployment remain
-`v0.1.3`; no post-remediation release or managed-staging deployment exists in
-the public deployment record. Public metadata cannot prove protected secret
-contents or provider ownership, so the 2026-08-04 authenticated environment
-audit and the external evidence gates below remain controlling.
+`v0.1.3`; `v0.1.4` was cancelled before publication, and no post-remediation
+managed-staging deployment exists. Public metadata cannot prove protected
+secret contents or provider ownership, so the 2026-08-04 authenticated
+environment audit and the external evidence gates below remain controlling.
 
 The 2026-08-03 corrected-remediation pass adds revision-bound project review
 approvals, request-fingerprint idempotency conflicts, atomic upload-integrity
@@ -236,8 +259,7 @@ security.
 3. A signed isolated backup/restore recovery drill against production-shaped
    managed storage proving RPO ≤15 minutes and RTO ≤4 hours. The completed
    application rollback drill does not prove backup restoration.
-4. Golden PSD/After Effects validation in licensed target Adobe versions (deferred by product decision).
-5. Representative load and memory validation against the configured container ceilings. The automated PDF workflow and evidence format exist, but local smoke evidence is not a representative managed-staging capacity result. Tune `RASTER_ASSET_WRITE_CONCURRENCY` between 1 and 4 from the structured `processing.raster_asset_write_observed` event, which records asset count, bytes, duration, concurrency, and outcome in both inline and worker paths.
+4. Representative load and memory validation against the configured container ceilings. The automated PDF workflow and evidence format exist, but local smoke evidence is not a representative managed-staging capacity result. Tune `RASTER_ASSET_WRITE_CONCURRENCY` between 1 and 4 from the structured `processing.raster_asset_write_observed` event, which records asset count, bytes, duration, concurrency, and outcome in both inline and worker paths.
 
 The OCR scope gate is resolved for the current candidate by keeping
 `PDF_REGION_OCR_ENABLED=false`. Re-enabling it requires a newly sealed holdout
