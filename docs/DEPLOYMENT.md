@@ -120,7 +120,11 @@ When Stripe is enabled, configure:
 `.node-version` is the authoritative Node.js runtime version. GitHub Actions
 reads it through `node-version-file`, while `npm run verify:deployment` rejects
 any mismatch in `package.json` or the digest-pinned Docker base images. Do not
-introduce a second hard-coded CI version.
+introduce a second hard-coded CI version. Root `devEngines` requires the exact
+Node and npm versions with `onFail=error` before npm `install`, `ci`, and `run`
+commands, while `.npmrc` sets `engine-strict=true` so dependency installation
+also fails on an incompatible runtime. Do not bypass either contract with
+`--force`.
 
 The repository also enables npm's strict install-script policy in `.npmrc`.
 Only the exact reviewed `esbuild` postinstall and macOS-only `fsevents` native

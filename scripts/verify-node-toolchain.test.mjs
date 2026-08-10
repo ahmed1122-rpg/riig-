@@ -12,7 +12,12 @@ const validManifest = JSON.stringify({
     "tesseract.js": false,
   },
   engines: { node: ">=24.18.1 <25", npm: ">=11.16.0 <12" },
+  devEngines: {
+    runtime: { name: "node", version: "24.18.1", onFail: "error" },
+    packageManager: { name: "npm", version: "11.16.0", onFail: "error" },
+  },
 });
+const validNpmConfig = "engine-strict=true\nstrict-allow-scripts=true\n";
 const validDockerfile = [
   "FROM node:24.18.1-bookworm-slim@sha256:abc AS build",
   "FROM build AS runtime-base",
@@ -25,7 +30,7 @@ test("accepts one Node and npm toolchain across manifests and images", () => {
     verifyNodeToolchain({
       nodeVersion: "24.18.1",
       packageManifest: validManifest,
-      npmConfig: "strict-allow-scripts=true\n",
+      npmConfig: validNpmConfig,
       dockerfiles: [validDockerfile],
     }),
     [],
@@ -45,6 +50,9 @@ test("reports version drift and unpinned Docker bases", () => {
 
   assert.match(violations.join("\n"), /engines\.node must be/u);
   assert.match(violations.join("\n"), /engines\.npm must be/u);
+  assert.match(violations.join("\n"), /devEngines\.runtime/u);
+  assert.match(violations.join("\n"), /devEngines\.packageManager/u);
+  assert.match(violations.join("\n"), /engine-strict/u);
   assert.match(violations.join("\n"), /strict-allow-scripts/u);
   assert.match(violations.join("\n"), /allowScripts/u);
   assert.match(violations.join("\n"), /must be pinned by digest/u);
@@ -55,7 +63,7 @@ test("rejects an undefined stage alias as an unpinned external image", () => {
   const violations = verifyNodeToolchain({
     nodeVersion: "24.18.1",
     packageManifest: validManifest,
-    npmConfig: "strict-allow-scripts=true\n",
+    npmConfig: validNpmConfig,
     dockerfiles: [
       `${validDockerfile}FROM untrusted-runtime AS final\n`,
     ],

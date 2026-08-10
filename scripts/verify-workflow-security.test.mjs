@@ -41,3 +41,19 @@ test("reports mutable actions, Node drift, and missing scheduled audit", () => {
   assert.match(violations.join("\n"), /must not hard-code/u);
   assert.match(violations.join("\n"), /Scheduled dependency audit/u);
 });
+
+test("requires setup-node in every job that invokes the Node or npm CLI", () => {
+  const workflow = [
+    ordinaryWorkflow,
+    "  container:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: npm run verify:alerts",
+  ].join("\n");
+  const violations = verifyWorkflowSecurity([workflow]);
+
+  assert.match(
+    violations.join("\n"),
+    /job container runs Node\/npm without setup-node/u,
+  );
+});
