@@ -1,7 +1,7 @@
 # Production readiness
 
-Status through 2026-08-10: releases `v0.1.1`, `v0.1.2`, `v0.1.3`, and
-`v0.1.5` were published
+Status through 2026-08-10: releases `v0.1.1`, `v0.1.2`, `v0.1.3`, `v0.1.5`,
+and `v0.1.6` were published
 as signed digest-qualified runtime and web images after their protected
 exact-SHA release workflows passed. Release `v0.1.3` contains the corrected
 production-remediation baseline at
@@ -22,8 +22,8 @@ container runtime to the single `.node-version` value `24.18.1`. A daily audit
 of the complete runtime/build/test dependency tree now detects advisories that
 appear after a green push build. The signed `v0.1.3` images predate this
 remediation and are retained only as historical release evidence; they must not
-be deployed. The `v0.1.5` images contain the remediation, but its release
-evidence status requires the correction described below.
+be deployed. The signed `v0.1.6` images contain the remediation and the
+corrected Adobe release evidence described below.
 
 The remediation was merged to `main` at
 `104ce83234a0150d28e4e5a5b8996fab65d8b53a`. The `v0.1.4` tag points to that
@@ -56,12 +56,13 @@ policies. The `v0.1.5` workflow published signed post-remediation images from
 `6c7a2de557cf59f69049a27745031e16076e6a01`, but its generated evidence
 incorrectly retained `licensedAdobeGolden: pending` after that gate had passed.
 Those immutable images remain valid build evidence, but `v0.1.5` is not the
-final deployment evidence bundle. The corrected generator requires a later
-immutable release and records `licensed-adobe-golden` as completed only after
-`verify:adobe-golden` checks both application result files. No post-remediation
-managed-staging deployment exists. Public metadata cannot prove protected
-secret contents or provider ownership, so the 2026-08-04 authenticated
-environment audit and the external evidence gates below remain controlling.
+final deployment evidence bundle. Release `v0.1.6` at
+`f0de756573741f3d9ecd610645347818bb118fde` supersedes it and records
+`licensed-adobe-golden` as completed only after `verify:adobe-golden` checks
+both application result files. No post-remediation managed-staging deployment
+exists. Public metadata cannot prove protected secret contents or provider
+ownership, so the authenticated environment audit and the external evidence
+gates below remain controlling.
 
 The 2026-08-03 corrected-remediation pass adds revision-bound project review
 approvals, request-fingerprint idempotency conflicts, atomic upload-integrity
@@ -185,6 +186,11 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
   ran separately on the Windows host because the production-slim test image
   intentionally has no Git; the protected release job re-runs the single
   `npm run quality` command on Node 24 from `.node-version`.
+- Root `devEngines` now requires exact Node 24.18.1 and npm 11.16.0 with
+  `onFail=error`, and `.npmrc` enables `engine-strict=true`. A Windows host on
+  Node 26.2.0 was rejected with `EBADDEVENGINES`, while the pinned Node 24
+  Docker build completed `npm ci` (553 packages, zero vulnerabilities) and
+  built every workspace.
 - API tests: 305/305 across 73 files; web tests: 126/126 across 33 files; the remaining workspaces also passed. All configured coverage gates passed. Complete-source API coverage is 67.18% statements, 58.00% branches, 69.56% functions, and 68.53% lines; complete-source web coverage is 35.68%, 35.49%, 27.35%, and 36.71% respectively.
 - Playwright E2E: 12/12 passed again locally on 2026-08-10 across desktop and
   mobile Chromium, including Axe checks, a real PDF upload/process journey,
@@ -205,6 +211,27 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
   `no-new-privileges` health smoke; the runtime ran as UID 1000 with npm absent.
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
 - Historical only: a local OCI release was published from source commit `0a2103addf1c71ed6402d955a9a59d8da0d17485`, and tag `v0.1.0` was published from `48bdfd9b53b0c955a93f5a121660ea9b3e546df4`. Their retained verification records remain useful evidence for the signing mechanism, but their digests do **not** contain this candidate and must not be deployed as its release.
+
+## Hosted release evidence — v0.1.6
+
+- PR #36 was squash-merged to `main` at
+  `f0de756573741f3d9ecd610645347818bb118fde`; all exact-SHA CI, CodeQL,
+  secret-scan, E2E, durable integration, release fixture, topology, container,
+  and Trivy gates passed.
+- Protected release run `31424255582` rechecked the exact tag source and
+  published SBOM/provenance-bearing images after repository-bound Cosign
+  signing and verification.
+- Runtime: `ghcr.io/ahmed1122-rpg/motionprep-runtime@sha256:b99ec00bb0493cc571f3fcb6eacd38e3a60e0c7dd4b877a5aaefb5a0d52e601e`.
+- Web: `ghcr.io/ahmed1122-rpg/motionprep-web@sha256:b74eb3adf7f955d7c4fea413d9d380b250ba72f96b6483e76d721eed5c516840`.
+- Its immutable evidence names `licensed-adobe-golden` as completed, omits the
+  stale external Adobe status, and records passing topology and dependency
+  fault recovery.
+- Protected rollback run `31425718748` verified candidate and rollback image
+  signatures, ran the `v0.1.6` PDF journey, performed application-only rollback
+  to `v0.1.2` while retaining additive migrations, and passed the rollback PDF
+  journey. Both error rates were 0%; workflow times were 1,286 ms and 1,274 ms.
+  The environment now binds `ROLLBACK_DRILL_STATUS=passed` to the exact v0.1.6
+  source SHA and run URL.
 
 ## Hosted release evidence — v0.1.3
 
@@ -257,11 +284,10 @@ security.
 ## Evidence still required
 
 1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
-2. Publication of new post-remediation signed image digests, followed by their
-   deployment to managed staging and a complete application smoke without
-   rebuilding. The historical `v0.1.3` digests are explicitly ineligible. The
-   local and signed-image rollback path has passed, but this does not substitute
-   for the deployed staging smoke.
+2. Deployment of the signed `v0.1.6` digests above to managed staging and a
+   complete application smoke without rebuilding. The signed-image rollback
+   path has passed for the same exact source, but this does not substitute for
+   the deployed staging smoke.
 3. A signed isolated backup/restore recovery drill against production-shaped
    managed storage proving RPO ≤15 minutes and RTO ≤4 hours. The completed
    application rollback drill does not prove backup restoration.
@@ -271,9 +297,11 @@ The OCR scope gate is resolved for the current candidate by keeping
 `PDF_REGION_OCR_ENABLED=false`. Re-enabling it requires a newly sealed holdout
 that meets CER <= 25% or a separately approved claim and review policy.
 
-The external-state audit on 2026-08-04 found no secrets in the protected
+The external-state audit repeated on 2026-08-10 found no secrets in the protected
 `production-readiness` environment and no provider/staging variables beyond
-release, rollback, and OCR coordinates. Therefore the provider, staging,
+release, rollback, application-version, and OCR coordinates. The release
+coordinates now reference `v0.1.6`, and its protected rollback drill is current.
+The provider, staging,
 staging-application, and representative-performance workflows were not started:
 they would be guaranteed preflight failures rather than provider evidence.
 Required configuration includes managed `DATABASE_URL` and `REDIS_URL`, SMTP

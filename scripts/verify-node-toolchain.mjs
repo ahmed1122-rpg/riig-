@@ -19,7 +19,7 @@ export function verifyNodeToolchain({
         `package.json engines.node must be ${expectedNodeEngine} to match .node-version.`,
       );
     }
-    violations.push(...verifyNpmPolicy(packageDocument, npmConfig));
+    violations.push(...verifyNpmPolicy(packageDocument, npmConfig, nodeVersion));
   } catch {
     violations.push("package.json must be valid JSON before deployment.");
   }
@@ -46,7 +46,7 @@ export function verifyNodeToolchain({
   return violations;
 }
 
-function verifyNpmPolicy(packageDocument, npmConfig) {
+function verifyNpmPolicy(packageDocument, npmConfig, nodeVersion) {
   const violations = [];
   const packageManagerMatch = /^npm@(\d+\.\d+\.\d+)$/u.exec(
     packageDocument.packageManager ?? "",
@@ -62,6 +62,29 @@ function verifyNpmPolicy(packageDocument, npmConfig) {
         `package.json engines.npm must be ${expectedNpmEngine} to match packageManager.`,
       );
     }
+    const packageManager = packageDocument.devEngines?.packageManager;
+    if (
+      packageManager?.name !== "npm" ||
+      packageManager.version !== npmVersion ||
+      packageManager.onFail !== "error"
+    ) {
+      violations.push(
+        `package.json devEngines.packageManager must require npm ${npmVersion} with onFail=error.`,
+      );
+    }
+  }
+  const runtime = packageDocument.devEngines?.runtime;
+  if (
+    runtime?.name !== "node" ||
+    runtime.version !== nodeVersion ||
+    runtime.onFail !== "error"
+  ) {
+    violations.push(
+      `package.json devEngines.runtime must require Node ${nodeVersion} with onFail=error.`,
+    );
+  }
+  if (!/^engine-strict=true$/mu.test(npmConfig)) {
+    violations.push(".npmrc must fail closed with engine-strict=true.");
   }
   if (!/^strict-allow-scripts=true$/mu.test(npmConfig)) {
     violations.push(".npmrc must fail closed with strict-allow-scripts=true.");
