@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createDockerWorkspace } from "./docker-workspace.mjs";
+import { integrationEndpoints } from "./integration-endpoints.mjs";
 
 const compose = ["compose", "-f", "compose.integration.yaml"];
 const sourceWorkingDirectory = process.cwd();
@@ -8,10 +9,13 @@ const releaseVersion =
   process.env.RELEASE_VERSION ??
   process.env.INTEGRATION_RELEASE_VERSION ??
   "integration";
+const endpoints = integrationEndpoints(process.env);
 const topologyEnvironment = {
   ...process.env,
   RELEASE_VERSION: releaseVersion,
   INTEGRATION_RELEASE_VERSION: releaseVersion,
+  MOTIONPREP_API_ORIGIN:
+    process.env.MOTIONPREP_API_ORIGIN ?? endpoints.apiOrigins[0],
 };
 const buildEnvironment = {
   ...topologyEnvironment,
@@ -46,8 +50,13 @@ try {
       ...topologyEnvironment,
       LOAD_CONCURRENCY: "2",
       LOAD_ITERATIONS: "1",
-      LOAD_REQUEST_ORIGIN: "http://127.0.0.1:5173",
-      LOAD_METRICS_URL: "http://127.0.0.1:54101/internal/metrics",
+      LOAD_TARGET_ORIGIN:
+        process.env.LOAD_TARGET_ORIGIN ?? endpoints.apiOrigins[0],
+      LOAD_REQUEST_ORIGIN:
+        process.env.LOAD_REQUEST_ORIGIN ?? "http://127.0.0.1:5173",
+      LOAD_METRICS_URL:
+        process.env.LOAD_METRICS_URL ??
+        `${endpoints.apiOrigins[0]}/internal/metrics`,
       LOAD_METRICS_BEARER_TOKEN:
         "metrics-integration-token-at-least-32-characters",
       LOAD_METRICS_SAMPLE_INTERVAL_MS: "1000",

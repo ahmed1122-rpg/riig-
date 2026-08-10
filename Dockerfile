@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS build
+# Keep the explicit image version aligned with .node-version. The deployment
+# verifier rejects drift while the digest preserves immutable builds.
+FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS build
 WORKDIR /workspace
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
 
-COPY package.json package-lock.json tsconfig.node.json ./
+COPY package.json package-lock.json tsconfig.node.json .npmrc ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY apps/worker-document/package.json ./apps/worker-document/package.json
@@ -17,15 +19,15 @@ COPY packages/export-adapters/package.json ./packages/export-adapters/package.js
 COPY packages/guidance/package.json ./packages/guidance/package.json
 COPY packages/media-processing/package.json ./packages/media-processing/package.json
 COPY packages/presets/package.json ./packages/presets/package.json
-RUN npm ci
+RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
 
 COPY apps ./apps
 COPY packages ./packages
 RUN npm run build
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 COPY scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
-FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS runtime
+FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000

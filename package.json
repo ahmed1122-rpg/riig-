@@ -2,7 +2,14 @@
   "name": "motionprep-studio",
   "version": "0.1.3",
   "private": true,
-  "packageManager": "npm@11.13.0",
+  "packageManager": "npm@11.16.0",
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.2": true,
+    "fsevents@2.3.3": true,
+    "protobufjs": false,
+    "tesseract.js": false
+  },
   "license": "UNLICENSED",
   "description": "Prepare images and books as animation-ready layered assets.",
   "workspaces": [
@@ -23,7 +30,7 @@
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
-    "test:load:utils": "node --test scripts/load-test-utils.test.mjs scripts/load-pdf-config.test.mjs scripts/load-test-metrics.test.mjs scripts/load-release-identity.test.mjs",
+    "test:load:utils": "node --test scripts/load-test-utils.test.mjs scripts/load-pdf-config.test.mjs scripts/load-test-metrics.test.mjs scripts/load-release-identity.test.mjs scripts/integration-endpoints.test.mjs",
     "test:load:pdf": "node scripts/load-pdf-workflow.mjs",
     "fetch:representative-pdf": "node scripts/fetch-representative-pdf.mjs",
     "test:representative-pdf": "node --test scripts/fetch-representative-pdf.test.mjs",
@@ -42,7 +49,7 @@
     "golden:adobe:generate": "npm run build --workspace @motionprep/contracts && npm run build --workspace @motionprep/export-adapters && node --conditions=production scripts/generate-adobe-golden.mjs",
     "verify:architecture": "node --test scripts/import-cycle-detector.test.mjs && node scripts/verify-architecture.mjs",
     "verify:maintainability": "node --test scripts/verify-maintainability.test.mjs && node scripts/verify-maintainability.mjs",
-    "verify:deployment": "node --test scripts/check-worker-health.test.mjs && node scripts/verify-deployment.mjs",
+    "verify:deployment": "node --test scripts/check-worker-health.test.mjs scripts/verify-node-toolchain.test.mjs scripts/verify-workflow-security.test.mjs && node scripts/verify-deployment.mjs",
     "verify:alerts": "node scripts/verify-prometheus-rules.mjs",
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
     "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
@@ -65,8 +72,8 @@
     "quality": "npm run verify:architecture && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
-    "node": ">=22.12.0",
-    "npm": ">=10"
+    "node": ">=24.18.1 <25",
+    "npm": ">=11.16.0 <12"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",

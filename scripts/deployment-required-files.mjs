@@ -1,4 +1,6 @@
 export const requiredDeploymentFiles = [
+  ".node-version",
+  ".npmrc",
   "Dockerfile",
   "Dockerfile.web",
   "compose.production.yaml",
@@ -55,6 +57,7 @@ export const requiredDeploymentFiles = [
   "apps/api/migrations/032_upload_integrity_failures.sql",
   "apps/api/migrations/036_upload_cancellation_convergence.sql",
   ".github/workflows/ci.yml",
+  ".github/workflows/dependency-audit.yml",
   ".github/workflows/release-images.yml",
   ".github/workflows/codeql.yml",
   ".github/workflows/provider-readiness.yml",

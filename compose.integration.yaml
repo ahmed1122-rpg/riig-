@@ -67,7 +67,7 @@ services:
       POSTGRES_USER: motionprep
       POSTGRES_PASSWORD: motionprep-integration
     ports:
-      - "55432:5432"
+      - "${INTEGRATION_POSTGRES_PORT:-55432}:5432"
     networks:
       - integration
     healthcheck:
@@ -123,7 +123,7 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
     ports:
-      - "58025:8025"
+      - "${INTEGRATION_MAILPIT_PORT:-58025}:8025"
     networks:
       - integration
     healthcheck:
@@ -155,7 +155,7 @@ services:
       mailpit:
         condition: service_healthy
     ports:
-      - "54101:4000"
+      - "${INTEGRATION_API_A_PORT:-54101}:4000"
     networks:
       integration:
         aliases:
@@ -174,7 +174,7 @@ services:
     <<: *runtime
     depends_on: *application-dependencies
     ports:
-      - "54102:4000"
+      - "${INTEGRATION_API_B_PORT:-54102}:4000"
     healthcheck: *api-healthcheck
 
   worker-media:

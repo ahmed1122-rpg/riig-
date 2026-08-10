@@ -13,6 +13,27 @@ protected provider and staging workflows pass against real managed services.
 Managed recovery, licensed Adobe-version validation, and representative
 load/memory exercises remain explicit launch gates.
 
+Candidate security remediation on 2026-08-10 upgrades the PDF parser to
+`pdfjs-dist` 6.2.108, the first patched release for
+`GHSA-hq66-cqwq-w95j`/`CVE-2026-16633`, refreshes the vulnerable transitive
+build dependency `nanoid` to 3.3.18, and moves every development, CI, and
+container runtime to the single `.node-version` value `24.18.1`. A daily audit
+of the complete runtime/build/test dependency tree now detects advisories that
+appear after a green push build. The signed `v0.1.3` images predate this
+remediation and are retained only as historical release evidence; they must not
+be deployed. Publication requires a new exact-SHA signed release after the
+protected gates pass.
+
+A read-only GitHub audit on 2026-08-10 confirmed that `main` still resolves to
+`9cd4737b30b9e8cd974ea7b93578efc6da4b0e9d`, with successful hosted `quality`
+and CodeQL runs for that SHA. The `production-readiness` and
+`production-release` environments both retain required-reviewer and branch
+policies. The newest published release and release deployment remain
+`v0.1.3`; no post-remediation release or managed-staging deployment exists in
+the public deployment record. Public metadata cannot prove protected secret
+contents or provider ownership, so the 2026-08-04 authenticated environment
+audit and the external evidence gates below remain controlling.
+
 The 2026-08-03 corrected-remediation pass adds revision-bound project review
 approvals, request-fingerprint idempotency conflicts, atomic upload-integrity
 failure and cancellation convergence, immutable export-generation identity,
@@ -130,20 +151,38 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 ## Local evidence
 
 - `npm run quality`: passed on 2026-08-04 after the account-privacy remediation.
+- The 2026-08-10 dependency/toolchain remediation passed every configured
+  quality component on Node 24.18.1/npm 11.16.0. The clean-worktree contract
+  ran separately on the Windows host because the production-slim test image
+  intentionally has no Git; the protected release job re-runs the single
+  `npm run quality` command on Node 24 from `.node-version`.
 - API tests: 305/305 across 73 files; web tests: 126/126 across 33 files; the remaining workspaces also passed. All configured coverage gates passed. Complete-source API coverage is 67.18% statements, 58.00% branches, 69.56% functions, and 68.53% lines; complete-source web coverage is 35.68%, 35.49%, 27.35%, and 36.71% respectively.
-- Playwright E2E: 12/12 across desktop and mobile Chromium, including Axe checks, a real PDF upload/process journey, account-data export, resumable deletion, and the complete review/export journey.
-- Web bundle: 157.4 KiB JavaScript and 42.2 KiB CSS, gzip.
-- `npm audit --omit=dev --audit-level=high`: 0 known production vulnerabilities.
+- Playwright E2E: 12/12 passed again locally on 2026-08-10 across desktop and
+  mobile Chromium, including Axe checks, a real PDF upload/process journey,
+  account-data export, resumable deletion, and the complete review/export
+  journey. The protected release gate repeats this on Node 24.
+- Web bundle: 157.5 KiB JavaScript and 42.2 KiB CSS, gzip.
+- `npm audit --audit-level=high`: 0 known vulnerabilities across runtime, build, and test dependencies
+  on the 2026-08-10 post-remediation lockfile. The same command now runs daily,
+  in addition to push, pull-request, and protected release gates.
 - Fixture verification after opening: 91 OCR samples, 20 books, 136 dimensions. The holdout-content digest still matches; the implementation digest is intentionally stale after later dependency and application changes, so the release gate remains disabled.
 - Executable TODO/FIXME/HACK/NotImplemented scan: zero findings.
 - `node scripts/verify-concurrent-migrations.mjs`: candidate 0.1.3 passed with two concurrent runners and idempotent replay after migrations 001-037. This is local candidate evidence and is not retroactively attributed to a hosted release.
 - Durable PostgreSQL/S3 suite: 20/20, including project-review approval/invalidation, upload integrity and cancellation convergence, source restoration, lease reclamation, active-job exclusivity, ordered billing events, reference-safe retention, object round trips, a real export worker, and account deletion across PostgreSQL and versioned object storage.
-- `npm run test:topology:full`: passed on 2026-08-04 from a clean image build with migration 037, two API replicas, PostgreSQL, shared Redis rate limits, versioned MinIO, Mailpit/outbox delivery, all three workers, restart recovery, revision-approved export, trace identity, metrics, and a signed Stripe webhook. The same run injected and recovered Redis, MinIO, Mailpit, and PostgreSQL outages, then completed 2/2 concurrent PDF smoke journeys with a 0% error rate, 1,375 ms workflow p95, zero final queue depth, and zero worker RSS growth. The 1,278-byte fixture is workflow evidence, not representative capacity evidence.
-- Docker runtime and web images build from digest-pinned bases. The web image passed a read-only, non-root, `cap-drop ALL`, `no-new-privileges` health smoke.
+- `npm run test:topology:full`: passed again on 2026-08-10 from the final strict-install image with migration 037, two API replicas, PostgreSQL, shared Redis rate limits, versioned MinIO, Mailpit/outbox delivery, all three workers, restart recovery, revision-approved export, trace identity, metrics, and a signed Stripe webhook. The run injected and recovered Redis, MinIO, Mailpit, and PostgreSQL outages, then completed 2/2 concurrent PDF smoke journeys with a 0% error rate, 1,347 ms workflow p95, zero final queue depth, a 28,672-byte API RSS peak delta, and a 7,352,320-byte worker RSS peak delta. The 1,278-byte fixture is workflow evidence, not representative capacity evidence.
+- Docker runtime and web images build from digest-pinned bases with a strict
+  install-script allowlist. Both passed current High/Critical Trivy 0.72.0
+  scans. The web image passed a read-only, non-root, `cap-drop ALL`,
+  `no-new-privileges` health smoke; the runtime ran as UID 1000 with npm absent.
 - The Windows topology runner now creates and cleans a temporary ASCII junction when the workspace path contains Unicode; the official command passed from this Arabic workspace path.
 - Historical only: a local OCI release was published from source commit `0a2103addf1c71ed6402d955a9a59d8da0d17485`, and tag `v0.1.0` was published from `48bdfd9b53b0c955a93f5a121660ea9b3e546df4`. Their retained verification records remain useful evidence for the signing mechanism, but their digests do **not** contain this candidate and must not be deployed as its release.
 
 ## Hosted release evidence — v0.1.3
+
+This release is historical and is no longer deployment-eligible because its
+locked `pdfjs-dist` 6.1.200 predates the security fix in 6.2.108. Its records
+continue to prove the release and rollback mechanisms, not current dependency
+security.
 
 - PR #22 passed the complete protected check set and was squash-merged to
   `main` at `452cd9941bd085fcad88c08bec7284f94d6f9db9`.
@@ -189,10 +228,11 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 ## Evidence still required
 
 1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
-2. Deployment of the selected signed `v0.1.3` digests to managed staging and a
-   complete application smoke without rebuilding. The local and signed-image
-   rollback path has passed, but this does not substitute for the deployed
-   staging smoke.
+2. Publication of new post-remediation signed image digests, followed by their
+   deployment to managed staging and a complete application smoke without
+   rebuilding. The historical `v0.1.3` digests are explicitly ineligible. The
+   local and signed-image rollback path has passed, but this does not substitute
+   for the deployed staging smoke.
 3. A signed isolated backup/restore recovery drill against production-shaped
    managed storage proving RPO ≤15 minutes and RTO ≤4 hours. The completed
    application rollback drill does not prove backup restoration.

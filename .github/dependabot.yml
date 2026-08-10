@@ -4,7 +4,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    # Keep routine major updates from starving production security patches.
+    open-pull-requests-limit: 10
     groups:
       production-minor-patch:
         dependency-type: production
