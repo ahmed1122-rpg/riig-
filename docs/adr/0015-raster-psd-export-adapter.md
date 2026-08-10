@@ -43,7 +43,10 @@
 
 - Unit: توقيع PSD، البنية، الاسم، الرؤية، الشفافية، حد الأبعاد وPNG/RGBA.
 - Integration: رفع ومعالجة صورة عبر HTTP، ثم إنشاء وتنزيل PSD وحزمة PNG.
-- مؤجل: Golden فتح فعلي في Photoshop وAfter Effects على Windows/macOS.
+- اكتمل في 2026-08-10: Golden فتح فعلي على Windows في Photoshop 2026
+  (27.8.0) وAfter Effects 2026 (26.3x87)، مع استيراد Retain Layer Sizes
+  ومقارنة معاينة كاملة الدقة. يظل macOS بوابة مستقلة إذا أضيف إلى نطاق
+  الأنظمة المدعومة.
 
 ## الرجوع
 

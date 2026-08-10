@@ -119,7 +119,7 @@ jobs:
       - run: npm run fixtures:generate
       - run: npm run verify:fixtures
       - run: npm run benchmark:ocr
-      - run: npm run golden:adobe:generate
+      - run: npm run verify:adobe-golden
       - name: Ensure deterministic fixtures remain unchanged
         run: git diff --exit-code -- artifacts/fixtures assets/manifests/corpus.json
       - name: Upload release validation evidence

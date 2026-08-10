@@ -17,6 +17,7 @@
     "coverage": "vitest run --coverage --coverage.thresholds.statements=90 --coverage.thresholds.branches=85 --coverage.thresholds.functions=85 --coverage.thresholds.lines=90"
   },
   "dependencies": {
+    "@expo-google-fonts/noto-sans-arabic": "0.4.3",
     "@motionprep/contracts": "*",
     "ag-psd": "31.0.2",
     "sharp": "^0.35.3"

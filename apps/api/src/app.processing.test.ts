@@ -626,7 +626,9 @@ describe("API — المعالجة ووثائق الطبقات", () => {
     expect(psdExport.statusCode).toBe(202);
     expect(psdExport.json().data.status).toBe("ready");
     expect(psdDownload.headers["content-type"]).toContain("application/zip");
-    expect(pagePsd.children?.map((layer) => layer.name)).toEqual([
+    expect(
+      [...(pagePsd.children ?? [])].reverse().map((layer) => layer.name),
+    ).toEqual([
       "+line",
       "+motion",
       "+heading_000",
@@ -637,7 +639,11 @@ describe("API — المعالجة ووثائق الطبقات", () => {
         ?.find((layer) => layer.name === "+heading_000")
         ?.children?.map((layer) => layer.name),
     ).toEqual(["+First"]);
-    expect(pagePsd.children?.at(-1)?.protected).toMatchObject({
+    expect(
+      pagePsd.children?.find(
+        (layer) => layer.name === "+page_001_background",
+      )?.protected,
+    ).toMatchObject({
       position: true,
       composite: true,
       transparency: true,

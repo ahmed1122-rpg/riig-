@@ -8,8 +8,14 @@ node_modules
 **/node_modules
 **/dist
 coverage
-artifacts
+artifacts/*
+!artifacts/adobe-golden
+artifacts/adobe-golden/*
+!artifacts/adobe-golden/generated
+artifacts/adobe-golden/generated/*
+!artifacts/adobe-golden/generated/image-layers.psd
+!artifacts/adobe-golden/generated/book-pages.psd
+!artifacts/adobe-golden/generated/manifest.json
 *.log
 Thumbs.db
 .DS_Store
-

@@ -60,7 +60,10 @@ export async function createRasterPsd(
     imageData: pixelData(composite, document.width, document.height),
     children: prepared
       .slice()
-      .sort((left, right) => right.layer.zIndex - left.layer.zIndex)
+      // PSD layer records are stored bottom-to-top. Photoshop reverses this
+      // sequence in its Layers panel, so ascending z-index preserves the
+      // product's logical top-to-bottom order in Adobe applications.
+      .sort((left, right) => left.layer.zIndex - right.layer.zIndex)
       .map(toPsdLayer),
     imageResources: createPsdImageResources(),
   };
