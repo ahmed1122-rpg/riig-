@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
+import {
+  approvedGitHubActionPins,
+  verifyWorkflowSecurity,
+} from "./verify-workflow-security.mjs";
 
-const pinnedSha = "1".repeat(40);
 const ordinaryWorkflow = [
   "name: ci",
   "on: push",
@@ -10,7 +12,8 @@ const ordinaryWorkflow = [
   "  test:",
   "    runs-on: ubuntu-latest",
   "    steps:",
-  `      - uses: actions/setup-node@${pinnedSha}`,
+  `      - uses: actions/checkout@${approvedGitHubActionPins["actions/checkout"]}`,
+  `      - uses: actions/setup-node@${approvedGitHubActionPins["actions/setup-node"]}`,
   "        with:",
   "          node-version-file: .node-version",
 ].join("\n");
@@ -40,6 +43,17 @@ test("reports mutable actions, Node drift, and missing scheduled audit", () => {
   assert.match(violations.join("\n"), /must read Node\.js/u);
   assert.match(violations.join("\n"), /must not hard-code/u);
   assert.match(violations.join("\n"), /Scheduled dependency audit/u);
+});
+
+test("rejects stale checkout and setup-node action runtimes", () => {
+  const stalePin = "1".repeat(40);
+  const staleWorkflow = ordinaryWorkflow
+    .replace(approvedGitHubActionPins["actions/checkout"], stalePin)
+    .replace(approvedGitHubActionPins["actions/setup-node"], stalePin);
+  const violations = verifyWorkflowSecurity([staleWorkflow]);
+
+  assert.match(violations.join("\n"), /actions\/checkout must use/u);
+  assert.match(violations.join("\n"), /actions\/setup-node must use/u);
 });
 
 test("requires setup-node in every job that invokes the Node or npm CLI", () => {

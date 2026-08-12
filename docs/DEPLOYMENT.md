@@ -130,12 +130,22 @@ When Stripe is enabled, configure:
 
 `.node-version` is the authoritative Node.js runtime version. GitHub Actions
 reads it through `node-version-file`, while `npm run verify:deployment` rejects
-any mismatch in `package.json` or the digest-pinned Docker base images. Do not
-introduce a second hard-coded CI version. Root `devEngines` requires the exact
-Node and npm versions with `onFail=error` before npm `install`, `ci`, and `run`
-commands, while `.npmrc` sets `engine-strict=true` so dependency installation
-also fails on an incompatible runtime. Do not bypass either contract with
-`--force`.
+any mismatch in `package.json` or the digest-pinned Docker base images. The
+reviewed production baseline is Node.js 24.18.1 (Krypton Active LTS) with its
+bundled npm 11.16.0. Node.js 26 remains outside the production baseline until
+that major reaches LTS and passes the complete release gate. Do not introduce a
+second hard-coded CI version or install a different npm globally. Root
+`devEngines` requires the exact Node and npm versions with `onFail=error` before
+npm `install`, `ci`, and `run` commands, while `.npmrc` sets
+`engine-strict=true` so dependency installation also fails on an incompatible
+runtime. Do not bypass either contract with `--force`.
+
+GitHub workflows use one reviewed `actions/setup-node` commit and one reviewed
+`actions/checkout` commit, both running on the Node 24 Actions runtime. The
+workflow security verifier rejects an older or divergent pin, and the toolchain
+verifier requires every Dockerfile to use the same immutable Node image digest.
+Patch upgrades must update `.node-version`, the root manifest, Docker image
+references, tests, and evidence together in one pull request.
 
 The repository also enables npm's strict install-script policy in `.npmrc`.
 Only the exact reviewed `esbuild` postinstall and macOS-only `fsevents` native

@@ -25,6 +25,7 @@ export function verifyNodeToolchain({
   }
 
   const expectedNodeImage = `node:${nodeVersion}-bookworm-slim@sha256:`;
+  const nodeImageReferences = new Set();
   for (const dockerfile of dockerfiles) {
     const definedStages = new Set();
     for (const line of dockerfile.split(/\r?\n/u)) {
@@ -32,16 +33,24 @@ export function verifyNodeToolchain({
       if (!from) continue;
       const source = from[1];
       const internalStage = definedStages.has(source.toLowerCase());
-      if (!internalStage && !source.includes("@sha256:")) {
+      if (!internalStage && !/@sha256:[a-f0-9]{64}$/iu.test(source)) {
         violations.push(`Dockerfile base image must be pinned by digest: ${line}`);
       }
-      if (source.startsWith("node:") && !source.includes(expectedNodeImage)) {
-        violations.push(
-          `Dockerfile Node.js base must match .node-version (${nodeVersion}): ${line}`,
-        );
+      if (source.startsWith("node:")) {
+        nodeImageReferences.add(source);
+        if (!source.includes(expectedNodeImage)) {
+          violations.push(
+            `Dockerfile Node.js base must match .node-version (${nodeVersion}): ${line}`,
+          );
+        }
       }
       if (from[2]) definedStages.add(from[2].toLowerCase());
     }
+  }
+  if (nodeImageReferences.size > 1) {
+    violations.push(
+      "Every Dockerfile must use one identical digest-pinned Node.js base image.",
+    );
   }
   return violations;
 }
