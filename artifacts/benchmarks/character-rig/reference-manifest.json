@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "reference": {
+    "role": "semantic-structure-reference",
+    "releaseGolden": false,
+    "rightsClassification": "user-provided-private-reference",
+    "binaryStoredInRepository": false,
+    "sizeBytes": 24715202,
+    "sha256": "b7ff99caa058793d5f2dec1b65e9a31540fb668ead7ba8610ad32c1814bc4b9f"
+  },
+  "observed": {
+    "width": 1500,
+    "height": 1500,
+    "colorMode": 3,
+    "bitsPerChannel": 16,
+    "layerRecords": 52,
+    "groups": 18,
+    "leaves": 34,
+    "hiddenLayers": 13,
+    "masks": 2,
+    "maxDepth": 6,
+    "rootStoredOrder": [
+      "+adam",
+      "Layer 3",
+      "Hue/Saturation 1"
+    ],
+    "presentCanonicalViews": [
+      "frontal",
+      "left-quarter"
+    ]
+  },
+  "target": {
+    "canonicalViews": [
+      "frontal",
+      "left-quarter",
+      "left-profile",
+      "right-quarter",
+      "right-profile"
+    ],
+    "colorMode": "RGB",
+    "bitsPerChannel": 8,
+    "hierarchicalPsd": true,
+    "characterAnimatorGoldenRequired": true
+  },
+  "limitations": [
+    "The reference has two of the five target canonical views.",
+    "The reference is RGB/16-bit while the current supported export target is RGB/8-bit.",
+    "Rights permit local analysis for this task; the binary must not be committed or redistributed."
+  ]
+}

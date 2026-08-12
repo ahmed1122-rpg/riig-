@@ -51,6 +51,7 @@ export interface AuthSecurityOptions {
   emailSender?: EmailSender;
   passwordResetUrl?: string;
   totpIssuer?: string;
+  registrationRoleForEmail?: (email: string) => UserRole;
 }
 
 export class AuthDomainError extends Error {
@@ -82,6 +83,7 @@ export class AuthService {
   readonly #emailSender: EmailSender;
   readonly #passwordResetUrl: string;
   readonly #totpIssuer: string;
+  readonly #registrationRoleForEmail: (email: string) => UserRole;
   readonly #passwordCoordinator: AuthPasswordCoordinator;
   readonly #userAccessCoordinator: AuthUserAccessCoordinator;
 
@@ -99,6 +101,8 @@ export class AuthService {
     this.#passwordResetUrl =
       security.passwordResetUrl ?? "http://localhost:5173/auth/reset";
     this.#totpIssuer = security.totpIssuer ?? "MotionPrep";
+    this.#registrationRoleForEmail =
+      security.registrationRoleForEmail ?? (() => "creator");
     this.#passwordCoordinator = new AuthPasswordCoordinator({
       repository: this.repository,
       now: this.now,
@@ -136,7 +140,7 @@ export class AuthService {
       id: crypto.randomUUID(),
       name: input.name.trim(),
       email,
-      role: "creator",
+      role: this.#registrationRoleForEmail(email),
       status: "active",
       passwordHash: await hashPassword(input.password),
       mfaEnabled: false,

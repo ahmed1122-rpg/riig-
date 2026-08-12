@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { createDatabase } from "./database.js";
+import { createDatabase, rollbackTransaction } from "./database.js";
 
 describe("database pool lifecycle", () => {
   it("handles idle-client errors without an unhandled error event", async () => {
@@ -43,5 +43,35 @@ describe("database pool lifecycle", () => {
     database.pool.emit("release", undefined as never, client);
     expect(client.listenerCount("error")).toBe(0);
     await database.close();
+  });
+});
+
+describe("transaction rollback", () => {
+  it("preserves the original transaction failure when rollback succeeds", async () => {
+    const transactionError = new Error("write failed");
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+
+    await expect(
+      rollbackTransaction({ query } as Pick<PoolClient, "query">, transactionError),
+    ).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledWith("ROLLBACK");
+  });
+
+  it("surfaces both the transaction and rollback failures", async () => {
+    const transactionError = new Error("write failed");
+    const rollbackError = new Error("connection lost");
+    const query = vi.fn().mockRejectedValue(rollbackError);
+
+    const failure = await rollbackTransaction(
+      { query } as Pick<PoolClient, "query">,
+      transactionError,
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([
+      transactionError,
+      rollbackError,
+    ]);
+    expect((failure as AggregateError).cause).toBe(rollbackError);
   });
 });

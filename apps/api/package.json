@@ -15,6 +15,11 @@
       "production": "./dist/processing/processing-worker-runtime.js",
       "default": "./src/processing/processing-worker-runtime.ts"
     },
+    "./character-worker": {
+      "types": "./src/character-rig/character-worker-runtime.ts",
+      "production": "./dist/character-rig/character-worker-runtime.js",
+      "default": "./src/character-rig/character-worker-runtime.ts"
+    },
     "./object-storage-environment": {
       "types": "./src/storage/object-storage-environment.ts",
       "production": "./dist/storage/object-storage-environment.js",

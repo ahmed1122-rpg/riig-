@@ -86,6 +86,14 @@ describe("migration integrity", () => {
       path.join(directory, "037_account_privacy.sql"),
       "utf8",
     );
+    const characterRigMigration = await readFile(
+      path.join(directory, "038_character_rig_context.sql"),
+      "utf8",
+    );
+    const characterWorkerObservabilityMigration = await readFile(
+      path.join(directory, "039_character_worker_observability.sql"),
+      "utf8",
+    );
 
     expect(() => assertMigrationNames(files)).not.toThrow();
     expect(sourceVersionMigration).not.toMatch(
@@ -178,5 +186,33 @@ describe("migration integrity", () => {
     expect(accountPrivacyMigration).toContain(
       "ADD COLUMN IF NOT EXISTS legal_accepted_at",
     );
+    expect(characterRigMigration).not.toMatch(
+      /RENAME\s+COLUMN|DROP\s+(TABLE|COLUMN)/iu,
+    );
+    expect(characterRigMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS character_bibles",
+    );
+    expect(characterRigMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS character_generation_attempts",
+    );
+    expect(characterRigMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS character_jobs",
+    );
+    expect(characterRigMigration).toContain(
+      "FOREIGN KEY (bible_id, project_id)",
+    );
+    expect(characterWorkerObservabilityMigration).not.toMatch(
+      /RENAME\s+COLUMN|DROP\s+(TABLE|COLUMN)/iu,
+    );
+    expect(characterWorkerObservabilityMigration).toContain(
+      "worker_heartbeats_worker_type_check",
+    );
+    expect(characterWorkerObservabilityMigration).toContain(
+      "worker_events_worker_type_check",
+    );
+    expect(characterWorkerObservabilityMigration).toContain(
+      "worker_duration_metrics_worker_type_check",
+    );
+    expect(characterWorkerObservabilityMigration.match(/'character'/gu)).toHaveLength(3);
   });
 });

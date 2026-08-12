@@ -4,7 +4,8 @@ export type ExportAdapterErrorCode =
   | "TIFF_PIXEL_BUDGET_EXCEEDED"
   | "RASTER_LAYER_REQUIRED"
   | "RASTER_ASSET_MISMATCH"
-  | "RASTER_DECODE_FAILED";
+  | "RASTER_DECODE_FAILED"
+  | "CHARACTER_RIG_TEMPLATE_INVALID";
 
 export class ExportAdapterError extends Error {
   constructor(

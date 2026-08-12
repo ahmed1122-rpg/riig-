@@ -22,6 +22,8 @@ import { PostgresOperationalStatusProvider } from "./postgres-operational-status
 import { PostgresSourceVersionRestoreCommand } from "./postgres-source-version-restore.js";
 import { PostgresEmailOutboxRepository } from "./postgres-email-outbox.js";
 import { PostgresAccountPrivacyRepository } from "./postgres-account-privacy-repository.js";
+import { PostgresCharacterRigRepository } from "./postgres-character-rig-repository.js";
+import { PostgresCharacterJobRepository } from "./postgres-character-job-repository.js";
 
 export function createPostgresPersistence(config: AppConfig) {
   if (!config.DATABASE_URL) {
@@ -54,6 +56,8 @@ export function createPostgresPersistence(config: AppConfig) {
       processingJobs: new PostgresProcessingJobRepository(database.pool),
       layerDocuments: new PostgresLayerDocumentRepository(database.pool),
       accountPrivacy: new PostgresAccountPrivacyRepository(database.pool),
+      characterRigs: new PostgresCharacterRigRepository(database.pool),
+      characterJobs: new PostgresCharacterJobRepository(database.pool),
     },
     adminAccess: new PostgresAdminAccessCommand(database.pool),
     usageMeter: new PostgresUsageMeter(

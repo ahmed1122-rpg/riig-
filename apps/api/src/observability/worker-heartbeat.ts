@@ -8,7 +8,7 @@ export async function startWorkerHeartbeat(
   pool: Pool,
   input: {
     instanceId: string;
-    workerType: "media" | "document" | "export";
+    workerType: "media" | "document" | "export" | "character";
     releaseVersion: string;
     concurrency: number;
     onError?: (error: unknown) => void;

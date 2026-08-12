@@ -12,6 +12,12 @@ export const unavailableApplicationCapabilities: ApplicationCapabilities = {
     maxImageLayers: 0,
   },
   features: {
+    characterRig: {
+      enabled: false,
+      unavailableReason:
+        "تعذر التحقق من جاهزية Character Studio؛ أوقفت الميزة لحماية بيانات الشخصية.",
+      requiredCanonicalViews: 5,
+    },
     pdfRegionOcr: {
       enabled: false,
       unavailableReason:

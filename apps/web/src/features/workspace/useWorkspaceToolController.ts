@@ -61,6 +61,7 @@ export function useWorkspaceToolController(
     useState<string>();
   const [imageRasterOperation, setImageRasterOperation] =
     useState<ImageRasterOperation>();
+  const [characterStudioOpen, setCharacterStudioOpen] = useState(false);
   const commandSequenceRef = useRef(0);
 
   const workspaceTools = useMemo(
@@ -202,6 +203,10 @@ export function useWorkspaceToolController(
         });
         return;
       }
+      if (dispatch.kind === "character-rig") {
+        setCharacterStudioOpen(true);
+        return;
+      }
       if (dispatch.selectPrompt) setActiveTool(dispatch.id);
       commandSequenceRef.current += 1;
       setEditorCommand({
@@ -225,6 +230,7 @@ export function useWorkspaceToolController(
   const resetToolState = useCallback((mode: ProjectMode) => {
     setActiveTool(initialTool(mode));
     setEditorCommand(undefined);
+    setCharacterStudioOpen(false);
   }, []);
 
   useEffect(() => {
@@ -245,12 +251,14 @@ export function useWorkspaceToolController(
   return {
     activeTool,
     arrangeReadingOrder,
+    characterStudioOpen,
     editorCommand,
     imageRasterOperation,
     pdfRegionOcrLayerId,
     pdfTextOperation,
     resetToolState,
     selectEditorTool,
+    setCharacterStudioOpen,
     setImageRasterOperation,
     setPdfRegionOcrLayerId,
     setPdfTextOperation,

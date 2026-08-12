@@ -21,7 +21,8 @@ are never authorization credentials.
 
 Grant the API and every worker the minimum bucket-scoped permissions needed to
 check the bucket and to get, put, and delete objects under `sources/`,
-`derived/`, and `artifacts/`. Production startup only checks an existing
+`derived/`, `artifacts/`, and the narrow `projects/*/character-rig/*` path.
+Do not grant a worker the broader `projects/*` prefix. Production startup only checks an existing
 bucket; it never creates one. Development may create a missing bucket.
 
 ## Object layout and retention
@@ -31,6 +32,7 @@ bucket; it never creates one. Development may create a missing bucket.
 | `sources/` | Validated image or PDF bytes for a source version | Retain while the source-version record exists |
 | `derived/` | Immutable normalized raster layers and guided refinements | Retain while a referencing `LayerDocument` exists |
 | `artifacts/` | Generated PSD, TIFF, ZIP, or text exports | Application access expires after 24 hours |
+| `projects/<projectId>/character-rig/` | Private identity references, generated candidates, manifests, and rig PSDs | Retain only while referenced by the project; reference metadata carries a bounded expiry |
 
 Do not apply a blanket time-based expiry to `sources/` or `derived/`; doing so
 would break review and regeneration for live source versions. Project/source
@@ -44,9 +46,16 @@ delayed lifecycle sweep cannot extend user access. If bucket versioning is
 enabled, also expire non-current artifact versions according to the approved
 recovery policy.
 
-Monitor total bytes and object count separately for all three prefixes. Review
+Monitor total bytes and object count separately for every prefix. Review
 unreferenced `derived/` objects before removal; a prefix-wide expiry is unsafe
 because live layer documents reference those objects.
+
+Character objects are never public URLs. API reads are ownership-checked and
+the worker exchanges only scoped object metadata with the private inference
+service. Account deletion collects object keys from Character references,
+generation attempts, and rig versions before deleting project rows. Do not
+enable Character Studio broadly until the scheduled reference-expiry sweep is
+deployed and exercised against the selected object provider.
 
 ## Encryption and integrity
 

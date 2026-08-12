@@ -5,7 +5,7 @@ import type {
   AccountPrivacyRepository,
   PrepareAccountDeletionResult,
 } from "../../privacy/account-privacy.js";
-import { toIso } from "./database.js";
+import { rollbackTransaction, toIso } from "./database.js";
 
 interface DeletionRow {
   id: string;
@@ -120,7 +120,7 @@ export class PostgresAccountPrivacyRepository
         auditEvents: audits.rows,
       };
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await rollbackTransaction(client, error);
       throw error;
     } finally {
       client.release();
@@ -184,7 +184,7 @@ export class PostgresAccountPrivacyRepository
       await client.query("COMMIT");
       return { kind: "ready", request: mapDeletion(saved.rows[0]!) };
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await rollbackTransaction(client, error);
       throw error;
     } finally {
       client.release();
@@ -259,7 +259,7 @@ export class PostgresAccountPrivacyRepository
       );
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await rollbackTransaction(client, error);
       throw error;
     } finally {
       client.release();
@@ -289,6 +289,24 @@ export class PostgresAccountPrivacyRepository
          FROM layer_document_revisions revision
          JOIN projects project ON project.id = revision.project_id,
               LATERAL jsonb_path_query(revision.document, '$.**.objectKey') value
+         WHERE project.owner_user_id = $1
+         UNION ALL
+         SELECT value #>> '{}'
+         FROM character_reference_assets reference
+         JOIN projects project ON project.id = reference.project_id,
+              LATERAL jsonb_path_query(reference.document, '$.**.objectKey') value
+         WHERE project.owner_user_id = $1
+         UNION ALL
+         SELECT value #>> '{}'
+         FROM character_generation_attempts generation
+         JOIN projects project ON project.id = generation.project_id,
+              LATERAL jsonb_path_query(generation.document, '$.**.objectKey') value
+         WHERE project.owner_user_id = $1
+         UNION ALL
+         SELECT value #>> '{}'
+         FROM character_rig_versions rig
+         JOIN projects project ON project.id = rig.project_id,
+              LATERAL jsonb_path_query(rig.document, '$.**.objectKey') value
          WHERE project.owner_user_id = $1
        ) owned WHERE object_key IS NOT NULL AND object_key <> ''`,
       [userId],

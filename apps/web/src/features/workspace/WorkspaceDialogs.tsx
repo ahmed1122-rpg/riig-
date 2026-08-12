@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { lazy, Suspense, type MouseEvent } from "react";
 import type { ExportFormat } from "@motionprep/contracts";
 import type { Layer, ProjectMode } from "../../types";
 import { ExportReview } from "./ExportReview";
@@ -33,6 +33,11 @@ import type {
   WorkspaceSourceState,
 } from "./useWorkspaceStateControllers";
 
+const CharacterStudioDialog = lazy(async () => {
+  const module = await import("./CharacterStudioDialog");
+  return { default: module.CharacterStudioDialog };
+});
+
 interface WorkspaceDialogsModel {
   mode: ProjectMode;
   maxUploadBytes: number;
@@ -40,6 +45,8 @@ interface WorkspaceDialogsModel {
   projectId: string | undefined;
   sourceVersionId: string | undefined;
   sourceVersionsOpen: boolean;
+  characterStudioOpen: boolean;
+  onCloseCharacterStudio: () => void;
   onCloseSourceVersions: () => void;
   onRestoreSourceVersion: (
     result: SourceVersionRestoreResult,
@@ -136,6 +143,8 @@ export function WorkspaceDialogs({
     projectId: source.projectId,
     sourceVersionId: source.sourceVersionId,
     sourceVersionsOpen: tools.sourceVersionsOpen,
+    characterStudioOpen: tools.characterStudioOpen,
+    onCloseCharacterStudio: () => tools.setCharacterStudioOpen(false),
     onCloseSourceVersions: () => tools.setSourceVersionsOpen(false),
     onRestoreSourceVersion: actions.onRestoreSourceVersion,
     mobilePanel: editor.mobilePanel,
@@ -186,6 +195,25 @@ export function WorkspaceDialogs({
             onNotify={props.onNotify}
             onRestored={props.onRestoreSourceVersion}
           />
+        )}
+
+      {props.characterStudioOpen &&
+        props.projectId &&
+        props.sourceVersionId && (
+          <Suspense fallback={null}>
+            <CharacterStudioDialog
+              projectId={props.projectId}
+              sourceVersionId={props.sourceVersionId}
+              {...(props.imageCanvasSize
+                ? { canvasSize: props.imageCanvasSize }
+                : {})}
+              {...(props.sourcePreviewUrl
+                ? { sourcePreviewUrl: props.sourcePreviewUrl }
+                : {})}
+              onClose={props.onCloseCharacterStudio}
+              onNotify={props.onNotify}
+            />
+          </Suspense>
         )}
 
       <WorkspaceMobileDock

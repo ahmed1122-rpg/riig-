@@ -136,8 +136,32 @@ services:
       start_period: 30s
       retries: 3
 
+  worker-character:
+    <<: *runtime
+    profiles:
+      - character-rig
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-character/dist/index.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: ${CHARACTER_MEMORY_LIMIT:-2g}
+    cpus: ${CHARACTER_CPU_LIMIT:-2.0}
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "character"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
   web:
     image: ${WEB_IMAGE_REF:?Set WEB_IMAGE_REF to an immutable registry digest}
+    environment:
+      # Source CIDR of the immediate TLS load balancer, never a public-client range.
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:?Set TRUSTED_PROXY_CIDR to the immediate load balancer source CIDR}
     depends_on:
       api:
         condition: service_healthy
@@ -150,6 +174,7 @@ services:
     cap_drop:
       - ALL
     tmpfs:
+      - /etc/nginx/conf.d:size=1m,mode=1777
       - /var/cache/nginx:size=32m,mode=1777
       - /var/run:size=1m,mode=1777
       - /tmp:size=16m

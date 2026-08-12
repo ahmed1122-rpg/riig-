@@ -10,6 +10,7 @@ import {
   uploadColumns,
   type UploadRow,
 } from "./postgres-upload-record.js";
+import { rollbackTransaction } from "./database.js";
 
 interface CancellationUploadRow extends UploadRow {
   project_status_before_upload: ProjectStatus | null;
@@ -113,7 +114,7 @@ export class PostgresUploadCancellationCommand
         session: mapUpload(cancelled),
       };
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await rollbackTransaction(client, error);
       throw error;
     } finally {
       client.release();

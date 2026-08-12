@@ -18,6 +18,7 @@ type WorkspaceToolId =
   | "pdf.reading-order"
   | "image.edge-refine"
   | "image.merge"
+  | "image.turntable"
   | "pdf.region-ocr"
   | "pdf.split"
   | "pdf.merge"
@@ -58,7 +59,8 @@ export interface ReadyWorkspaceTool extends WorkspaceToolBase {
     | "pdf-merge"
     | "pdf-region-ocr"
     | "image-edge-refine"
-    | "image-merge";
+    | "image-merge"
+    | "character-rig";
   requiresSource: true;
 }
 
@@ -250,6 +252,16 @@ const tools: readonly ReadyWorkspaceTool[] = [
     requiresSource: true,
   },
   {
+    id: "image.turntable",
+    mode: "image",
+    label: "Character Turntable",
+    icon: "refresh",
+    group: "document",
+    availability: "ready",
+    action: "character-rig",
+    requiresSource: true,
+  },
+  {
     id: "pdf.region-ocr",
     mode: "book",
     label: "إعادة OCR للمنطقة",
@@ -317,6 +329,15 @@ export function getReadyWorkspaceTools(
           "إعادة OCR لمنطقة محددة غير متاحة في بيئة التشغيل الحالية.",
       };
     }
+    if (tool.id === "image.turntable" && !features.characterRig.enabled) {
+      return {
+        ...tool,
+        available: false,
+        unavailableReason:
+          features.characterRig.unavailableReason ??
+          "Character Studio is unavailable in the current runtime.",
+      };
+    }
     return { ...tool, available: true };
   });
 }
@@ -368,6 +389,7 @@ export type WorkspaceToolDispatch =
   | { kind: "pdf-region-ocr" }
   | { kind: "image-edge-refine" }
   | { kind: "image-merge" }
+  | { kind: "character-rig" }
   | {
       kind: "editor";
       id: ReadyWorkspaceToolId;
@@ -392,6 +414,7 @@ export function resolveWorkspaceToolDispatch(
     return { kind: "image-edge-refine" };
   }
   if (tool.action === "image-merge") return { kind: "image-merge" };
+  if (tool.action === "character-rig") return { kind: "character-rig" };
   return {
     kind: "editor",
     id: tool.id,

@@ -47,10 +47,18 @@ export class PostgresRetentionRunner {
         }
         return report;
       } catch (error) {
-        await this.recordFailure(
-          new Date(),
-          error instanceof Error ? error.message : String(error),
-        ).catch(() => undefined);
+        try {
+          await this.recordFailure(
+            new Date(),
+            error instanceof Error ? error.message : String(error),
+          );
+        } catch (recordingError) {
+          throw new AggregateError(
+            [error, recordingError],
+            "Retention cleanup failed and its failure status could not be persisted.",
+            { cause: recordingError },
+          );
+        }
         throw error;
       }
     } finally {

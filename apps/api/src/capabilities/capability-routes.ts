@@ -10,6 +10,7 @@ import {
 interface CapabilityRouteOptions {
   maxUploadBytes: number;
   pdfRegionOcrEnabled: boolean;
+  characterRigEnabled: boolean;
 }
 
 export async function registerCapabilityRoutes(
@@ -25,6 +26,13 @@ export async function registerCapabilityRoutes(
       maxImageLayers: MAX_IMAGE_LAYERS,
     },
     features: {
+      characterRig: {
+        enabled: options.characterRigEnabled,
+        unavailableReason: options.characterRigEnabled
+          ? null
+          : "Character Studio is disabled until its private inference worker and release Golden are configured.",
+        requiredCanonicalViews: 5,
+      },
       pdfRegionOcr: {
         enabled: options.pdfRegionOcrEnabled,
         unavailableReason: options.pdfRegionOcrEnabled

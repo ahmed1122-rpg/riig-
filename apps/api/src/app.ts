@@ -57,6 +57,7 @@ import {
   InMemoryAccountPrivacyRepository,
 } from "./privacy/account-privacy.js";
 import { registerAccountPrivacyRoutes } from "./privacy/account-privacy-routes.js";
+import { registerCharacterRigFeature } from "./character-rig/character-rig-feature.js";
 
 const APPLICATION_VERSION = "0.1.3";
 
@@ -164,6 +165,7 @@ export async function buildApp(
         { name: "projects" },
         { name: "uploads" },
         { name: "processing" },
+        { name: "character-rig" },
         { name: "exports" },
         { name: "billing" },
         { name: "admin" },
@@ -372,6 +374,10 @@ export async function buildApp(
         config.PASSWORD_RESET_URL ??
         new URL("/auth/reset", config.WEB_ORIGIN).toString(),
       totpIssuer: config.TOTP_ISSUER,
+      ...(config.E2E_ADMIN_EMAIL ? {
+        registrationRoleForEmail: (email: string) =>
+          email === config.E2E_ADMIN_EMAIL ? "admin" as const : "creator" as const,
+      } : {}),
     },
   );
   const accountPrivacyRepository =
@@ -416,6 +422,7 @@ export async function buildApp(
   await registerCapabilityRoutes(app, {
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     pdfRegionOcrEnabled: config.PDF_REGION_OCR_ENABLED,
+    characterRigEnabled: config.CHARACTER_RIG_ENABLED,
   });
 
   await registerAuthRoutes(app, authService, {
@@ -431,6 +438,19 @@ export async function buildApp(
     sourceVersionRestores,
     projectReviews,
   );
+  await registerCharacterRigFeature(app, {
+    projects,
+    auth: authService,
+    uploads: uploadRepository,
+    storage: objectStorage,
+    audit: auditService,
+    enabled: config.CHARACTER_RIG_ENABLED,
+    ...(dependencies.now ? { now: dependencies.now } : {}),
+    repositories: {
+      ...(dependencies.characterRigs ? { rigs: dependencies.characterRigs } : {}),
+      ...(dependencies.characterJobs ? { jobs: dependencies.characterJobs } : {}),
+    },
+  });
   await registerActivityRoutes(
     app,
     new ActivityService(

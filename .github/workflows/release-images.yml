@@ -170,6 +170,8 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges \
             --add-host api:127.0.0.1 \
+            --env TRUSTED_PROXY_CIDR=127.0.0.1/32 \
+            --tmpfs /etc/nginx/conf.d:rw,size=1m,mode=1777 \
             --tmpfs /var/cache/nginx:rw,size=32m,mode=1777 \
             --tmpfs /var/run:rw,size=1m,mode=1777 \
             --tmpfs /tmp:rw,size=16m \

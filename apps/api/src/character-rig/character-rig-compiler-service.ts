@@ -1,0 +1,245 @@
+import type {
+  CharacterCanonicalView,
+  CharacterGenerationAttempt,
+  CharacterRigNode,
+  CharacterRigVersion,
+} from "@motionprep/contracts";
+import {
+  characterCanonicalViews,
+  characterRequiredFrontalBodyParts,
+  characterRequiredHeadParts,
+} from "@motionprep/contracts";
+import { createHash } from "node:crypto";
+import type { CharacterJobRepository } from "./character-job-repository.js";
+import { CharacterJobService } from "./character-job-service.js";
+import type { CharacterRigRepository } from "./character-rig-repository.js";
+
+export interface QueueCharacterRigCompilationInput {
+  projectId: string;
+  bibleId: string;
+  width: number;
+  height: number;
+  idempotencyKey: string;
+  requestedAt: string;
+}
+
+export class CharacterRigCompilerService {
+  readonly #jobs: CharacterJobService;
+
+  constructor(
+    private readonly repository: CharacterRigRepository,
+    jobs: CharacterJobRepository,
+  ) {
+    this.#jobs = new CharacterJobService(jobs);
+  }
+
+  async queue(input: QueueCharacterRigCompilationInput) {
+    const bible = await this.repository.findBible(input.projectId, input.bibleId);
+    if (!bible || bible.status !== "approved") {
+      throw new CharacterRigCompilerError("CHARACTER_BIBLE_NOT_APPROVED");
+    }
+    const attempts = await this.repository.listGenerationAttempts(
+      input.projectId,
+      bible.id,
+    );
+    const approvedParts = indexApprovedParts(attempts);
+    const missing = requiredPartKeys().filter((key) => !approvedParts.has(key));
+    if (missing.length > 0) {
+      throw new CharacterRigCompilerError(
+        "CHARACTER_RIG_PARTS_INCOMPLETE",
+        missing,
+      );
+    }
+    const sourceFingerprint = createHash("sha256")
+      .update(
+        [...approvedParts.entries()]
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, attempt]) => `${key}:${attempt.outputArtifact!.sha256}`)
+          .join("|"),
+      )
+      .digest("hex");
+    const requestHash = createHash("sha256")
+      .update(bible.id)
+      .update(String(input.width))
+      .update(String(input.height))
+      .update(sourceFingerprint)
+      .digest("hex");
+    const operationKey = `rig-compile:${input.idempotencyKey}`;
+    const latest = await this.repository.findLatestRigVersion(
+      input.projectId,
+      bible.id,
+    );
+    const matching =
+      latest?.nodes
+        .filter((node) => node.artifact)
+        .map((node) => node.artifact!.sha256)
+        .sort()
+        .join(":") ===
+      [...approvedParts.values()]
+        .map((attempt) => attempt.outputArtifact!.sha256)
+        .sort()
+        .join(":");
+    const rig = matching && latest
+      ? latest
+      : createRigVersion({
+          projectId: input.projectId,
+          bibleId: bible.id,
+          version: (latest?.version ?? 0) + 1,
+          approvedParts,
+          now: input.requestedAt,
+        });
+    if (!matching) await this.repository.saveRigVersion(rig);
+    const job = await this.#jobs.enqueue({
+      projectId: input.projectId,
+      type: "compile-rig",
+      operationKey,
+      requestHash,
+      payload: {
+        rigVersionId: rig.id,
+        width: input.width,
+        height: input.height,
+      },
+      now: input.requestedAt,
+      maxAttempts: 2,
+    });
+    return { rig, job, replayed: matching };
+  }
+}
+
+export class CharacterRigCompilerError extends Error {
+  constructor(
+    readonly code: string,
+    readonly missingParts: string[] = [],
+  ) {
+    super(code);
+  }
+}
+
+function indexApprovedParts(attempts: CharacterGenerationAttempt[]) {
+  const result = new Map<string, CharacterGenerationAttempt>();
+  for (const attempt of attempts) {
+    if (
+      attempt.status !== "approved" ||
+      attempt.target.kind !== "part" ||
+      !attempt.outputArtifact
+    ) {
+      continue;
+    }
+    const key = partKey(attempt.target.view, attempt.target.partName);
+    if (!result.has(key)) result.set(key, attempt);
+  }
+  return result;
+}
+
+function requiredPartKeys(): string[] {
+  return characterCanonicalViews.flatMap((view) =>
+    [
+      ...characterRequiredHeadParts,
+      ...(view === "frontal" ? characterRequiredFrontalBodyParts : []),
+    ].map((part) => partKey(view, part)),
+  );
+}
+
+function partKey(view: CharacterCanonicalView, part: string): string {
+  return `${view}:${part}`;
+}
+
+function createRigVersion(input: {
+  projectId: string;
+  bibleId: string;
+  version: number;
+  approvedParts: ReadonlyMap<string, CharacterGenerationAttempt>;
+  now: string;
+}): CharacterRigVersion {
+  const rootId = crypto.randomUUID();
+  const nodes: CharacterRigNode[] = [
+    groupNode(rootId, null, "+Character", null, "character-root", 0),
+  ];
+  for (const [viewIndex, view] of characterCanonicalViews.entries()) {
+    const viewId = crypto.randomUUID();
+    nodes.push(
+      groupNode(
+        viewId,
+        rootId,
+        `+${titleCase(view)}`,
+        view,
+        "view",
+        viewIndex,
+      ),
+    );
+    const parts = [
+      ...characterRequiredHeadParts,
+      ...(view === "frontal" ? characterRequiredFrontalBodyParts : []),
+    ];
+    for (const [partIndex, part] of parts.entries()) {
+      const attempt = input.approvedParts.get(partKey(view, part));
+      if (!attempt?.outputArtifact) {
+        throw new CharacterRigCompilerError("CHARACTER_RIG_PARTS_INCOMPLETE", [
+          partKey(view, part),
+        ]);
+      }
+      nodes.push({
+        id: crypto.randomUUID(),
+        parentId: viewId,
+        kind: "raster",
+        name: `+${titleCase(part)}`,
+        canonicalView: view,
+        semanticPart: part,
+        sourceGenerationAttemptId: attempt.id,
+        artifact: attempt.outputArtifact,
+        bounds: null,
+        visible: view === "frontal",
+        locked: false,
+        opacity: 1,
+        zIndex: partIndex,
+      });
+    }
+  }
+  return {
+    schemaVersion: "1.0",
+    id: crypto.randomUUID(),
+    projectId: input.projectId,
+    bibleId: input.bibleId,
+    version: input.version,
+    status: "draft",
+    nodes,
+    psdArtifact: null,
+    manifestArtifact: null,
+    approvedByUserId: null,
+    approvedAt: null,
+    createdAt: input.now,
+    updatedAt: input.now,
+  };
+}
+
+function groupNode(
+  id: string,
+  parentId: string | null,
+  name: `+${string}`,
+  canonicalView: CharacterCanonicalView | null,
+  semanticPart: string,
+  zIndex: number,
+): CharacterRigNode {
+  return {
+    id,
+    parentId,
+    kind: "group",
+    name,
+    canonicalView,
+    semanticPart,
+    sourceGenerationAttemptId: null,
+    artifact: null,
+    bounds: null,
+    visible: canonicalView === null || canonicalView === "frontal",
+    locked: false,
+    opacity: 1,
+    zIndex,
+  };
+}
+
+function titleCase(value: string): string {
+  return value
+    .split("-")
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
