@@ -15,7 +15,7 @@
   "dependencies": {
     "@motionprep/contracts": "*",
     "@motionprep/presets": "*",
-    "lucide-react": "^0.468.0",
+    "lucide-react": "^1.30.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
