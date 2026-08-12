@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { isIP } from "node:net";
 import {
   assertOpenedHoldoutPolicy,
   computeOcrHoldoutContentDigest,
@@ -47,6 +48,8 @@ export function validateProductionEnvironment(
     "COOKIE_SECURE",
     "METRICS_BEARER_TOKEN",
     "WEB_ORIGIN",
+    "TRUSTED_PROXY_CIDR",
+    "TRUST_PROXY_HOPS",
     "PASSWORD_RESET_URL",
     "EMAIL_DELIVERY_MODE",
     "SMTP_HOST",
@@ -74,6 +77,7 @@ export function validateProductionEnvironment(
   requireExact(values, violations, "NODE_ENV", "production");
   requireExact(values, violations, "PERSISTENCE_MODE", "postgres");
   requireExact(values, violations, "COOKIE_SECURE", "true");
+  requireExact(values, violations, "TRUST_PROXY_HOPS", "1");
   requireExact(values, violations, "EMAIL_DELIVERY_MODE", "smtp");
   requireExact(values, violations, "OBJECT_STORAGE_MODE", "s3");
   requireExact(values, violations, "OBJECT_STORAGE_REQUIRE_VERSIONING", "true");
@@ -84,6 +88,7 @@ export function validateProductionEnvironment(
   validateUrl(values, violations, "PASSWORD_RESET_URL", ["https:"]);
   validateUrl(values, violations, "REDIS_URL", ["rediss:"]);
   validateDatabaseUrl(values, violations);
+  validateTrustedProxyCidr(values, violations);
 
   const metricsToken = values.get("METRICS_BEARER_TOKEN") ?? "";
   if (metricsToken && metricsToken.length < 32) {
@@ -201,6 +206,32 @@ function validateDatabaseUrl(values, violations) {
     }
   } catch {
     violations.push("DATABASE_URL must be a valid URL.");
+  }
+}
+
+function validateTrustedProxyCidr(values, violations) {
+  const value = values.get("TRUSTED_PROXY_CIDR");
+  if (!value) return;
+  const [address, prefix, extra] = value.split("/");
+  const version = isIP(address ?? "");
+  const prefixNumber = Number(prefix);
+  const maximumPrefix = version === 4 ? 32 : 128;
+  if (
+    extra !== undefined ||
+    version === 0 ||
+    prefix === undefined ||
+    !Number.isInteger(prefixNumber) ||
+    prefixNumber < 0 ||
+    prefixNumber > maximumPrefix
+  ) {
+    violations.push("TRUSTED_PROXY_CIDR must be one valid IPv4 or IPv6 CIDR.");
+    return;
+  }
+  if (
+    (version === 4 && prefixNumber === 0) ||
+    (version === 6 && prefixNumber === 0)
+  ) {
+    violations.push("TRUSTED_PROXY_CIDR cannot trust the entire internet.");
   }
 }
 

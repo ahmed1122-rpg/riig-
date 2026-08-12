@@ -15,6 +15,11 @@ describe("runtime capabilities", () => {
       schemaVersion: "1.0",
       limits: { maxUploadBytes: 30 * 1024 * 1024, maxPdfPages: 250 },
       features: {
+        characterRig: {
+          enabled: false,
+          unavailableReason: expect.any(String),
+          requiredCanonicalViews: 5,
+        },
         pdfRegionOcr: {
           enabled: false,
           unavailableReason: expect.any(String),
@@ -22,6 +27,20 @@ describe("runtime capabilities", () => {
       },
     });
 
+    await app.close();
+  });
+
+  it("advertises Character Studio only after an explicit runtime opt-in", async () => {
+    const app = await buildApp(
+      loadConfig({ NODE_ENV: "test", CHARACTER_RIG_ENABLED: "true" }),
+    );
+    const response = await app.inject({ method: "GET", url: "/v1/capabilities" });
+
+    expect(response.json().data.features.characterRig).toEqual({
+      enabled: true,
+      unavailableReason: null,
+      requiredCanonicalViews: 5,
+    });
     await app.close();
   });
 

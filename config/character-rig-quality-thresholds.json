@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "canonicalViews": [
+    "frontal",
+    "left-quarter",
+    "left-profile",
+    "right-quarter",
+    "right-profile"
+  ],
+  "landmarks": {
+    "meanHeadWidthRatioMax": 0.02,
+    "criticalPointHeadWidthRatioMax": 0.04
+  },
+  "proportions": {
+    "maxDeviationRatio": 0.03
+  },
+  "palette": {
+    "meanDeltaE00Max": 3,
+    "heroMaterialDeltaE00Max": 5
+  },
+  "humanReview": {
+    "crossViewIdentityLinkRateMin": 0.9
+  },
+  "partRegeneration": {
+    "outsideMaskChangedPixelRatioMax": 0,
+    "defaultMaskFeatherRadiusPixels": 2
+  },
+  "rig": {
+    "requiredTemplateCoverageMin": 1,
+    "severeDefectsMax": 0,
+    "animationQaDurationSeconds": 30
+  },
+  "targetExport": {
+    "colorMode": "RGB",
+    "colorModeCode": 3,
+    "bitsPerChannel": 8
+  }
+}

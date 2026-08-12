@@ -6,16 +6,25 @@ import { gzipSync } from "node:zlib";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const assetsDirectory = path.join(root, "apps/web/dist/assets");
 const budgets = {
-  ".js": 160 * 1024,
+  // Character Studio adds a measured 5.7 KiB gzip lazy chunk plus its small
+  // registry/dialog integration. Keep a narrow total ratchet around the
+  // reviewed 164.5 KiB candidate and retain the per-chunk ceiling below.
+  ".js": 168 * 1024,
   ".css": 50 * 1024,
 };
+const maximumJavaScriptChunk = 64 * 1024;
 const totals = new Map(Object.keys(budgets).map((extension) => [extension, 0]));
+const javascriptChunks = [];
 
 for (const filename of await readdir(assetsDirectory)) {
   const extension = path.extname(filename);
   if (!totals.has(extension)) continue;
   const source = await readFile(path.join(assetsDirectory, filename));
-  totals.set(extension, (totals.get(extension) ?? 0) + gzipSync(source).byteLength);
+  const compressedBytes = gzipSync(source).byteLength;
+  totals.set(extension, (totals.get(extension) ?? 0) + compressedBytes);
+  if (extension === ".js") {
+    javascriptChunks.push({ filename, compressedBytes });
+  }
 }
 
 const violations = [];
@@ -24,6 +33,13 @@ for (const [extension, maximum] of Object.entries(budgets)) {
   if (actual > maximum) {
     violations.push(
       `${extension.slice(1).toUpperCase()} gzip total ${formatKiB(actual)} exceeds ${formatKiB(maximum)}.`,
+    );
+  }
+}
+for (const chunk of javascriptChunks) {
+  if (chunk.compressedBytes > maximumJavaScriptChunk) {
+    violations.push(
+      `JS chunk ${chunk.filename} is ${formatKiB(chunk.compressedBytes)}; maximum is ${formatKiB(maximumJavaScriptChunk)}.`,
     );
   }
 }

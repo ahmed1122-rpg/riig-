@@ -7,6 +7,11 @@ import {
 
 describe("workspace tool registry", () => {
   const enabledFeatures = {
+    characterRig: {
+      enabled: true,
+      unavailableReason: null,
+      requiredCanonicalViews: 5,
+    },
     pdfRegionOcr: { enabled: true, unavailableReason: null },
   };
 
@@ -21,6 +26,7 @@ describe("workspace tool registry", () => {
       "image.redo",
       "image.edge-refine",
       "image.merge",
+      "image.turntable",
       "source.versions",
     ]);
     expect(tools.every((tool) => tool.available)).toBe(true);
@@ -90,6 +96,11 @@ describe("workspace tool registry", () => {
         imageTools.find((tool) => tool.id === "image.merge")!,
       ),
     ).toEqual({ kind: "image-merge" });
+    expect(
+      resolveWorkspaceToolDispatch(
+        imageTools.find((tool) => tool.id === "image.turntable")!,
+      ),
+    ).toEqual({ kind: "character-rig" });
   });
 
   it("matches exactly the displayed shortcuts without H/R conflicts", () => {
@@ -123,6 +134,7 @@ describe("workspace tool registry", () => {
 
   it("disables regional OCR when the runtime capability is unavailable", () => {
     const tools = getReadyWorkspaceTools("book", true, {
+      characterRig: enabledFeatures.characterRig,
       pdfRegionOcr: {
         enabled: false,
         unavailableReason: "الدليل الإنتاجي غير صالح بعد.",

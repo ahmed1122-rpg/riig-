@@ -14,8 +14,13 @@ RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
 RUN npm run build --workspace @motionprep/web
 
 FROM nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46
-COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+RUN rm -f /etc/nginx/conf.d/default.conf \
+  && mkdir -p /etc/nginx/templates /etc/nginx/snippets \
+  && chown -R nginx:nginx /etc/nginx/conf.d /etc/nginx/templates
+COPY --chown=nginx:nginx deploy/nginx.conf /etc/nginx/templates/default.conf.template
+COPY deploy/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /workspace/apps/web/dist /usr/share/nginx/html
+ENV NGINX_ENVSUBST_FILTER=TRUSTED_PROXY_CIDR
 USER nginx
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \

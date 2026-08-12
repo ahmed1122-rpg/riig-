@@ -93,4 +93,34 @@ describe("retention scheduling", () => {
     expect(lockQuery.mock.calls[1]?.[0]).toContain("pg_advisory_unlock");
     expect(release).toHaveBeenCalledOnce();
   });
+
+  it("surfaces both cleanup and failure-status persistence errors", async () => {
+    const cleanupError = new Error("object storage unavailable");
+    const recordingError = new Error("database unavailable");
+    const lockQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ acquired: true }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const release = vi.fn();
+    const statusQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(recordingError);
+    const pool = {
+      connect: vi.fn().mockResolvedValue({ query: lockQuery, release }),
+      query: statusQuery,
+    } as unknown as Pool;
+    const cleanup = { run: vi.fn().mockRejectedValue(cleanupError) };
+    const runner = new PostgresRetentionRunner(pool, cleanup as never, 60_000);
+
+    const failure = await runner.run().catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([
+      cleanupError,
+      recordingError,
+    ]);
+    expect(lockQuery.mock.calls[1]?.[0]).toContain("pg_advisory_unlock");
+    expect(release).toHaveBeenCalledOnce();
+  });
 });

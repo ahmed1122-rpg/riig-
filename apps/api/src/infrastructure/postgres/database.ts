@@ -87,3 +87,18 @@ export function createDatabase(
 export function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
+
+export async function rollbackTransaction(
+  client: Pick<PoolClient, "query">,
+  transactionError: unknown,
+): Promise<void> {
+  try {
+    await client.query("ROLLBACK");
+  } catch (rollbackError) {
+    throw new AggregateError(
+      [transactionError, rollbackError],
+      "Database transaction failed and its rollback also failed.",
+      { cause: rollbackError },
+    );
+  }
+}

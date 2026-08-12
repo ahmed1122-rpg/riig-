@@ -6,6 +6,7 @@
 @import url("./features/workspace-foundation.css") layer(features);
 @import url("./export-review.css") layer(features);
 @import url("./guided-editors.css") layer(features);
+@import url("./character-studio.css") layer(features);
 @import url("./workspace.css") layer(features);
 @import url("./account-admin.css") layer(features);
 @import url("./feature-pages.css") layer(features);

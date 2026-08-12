@@ -8,6 +8,7 @@ import {
   uploadSelect,
   type UploadRow,
 } from "./postgres-upload-record.js";
+import { rollbackTransaction } from "./database.js";
 
 interface SourceRow {
   id: string;
@@ -166,7 +167,7 @@ export class PostgresUploadIntegrityFailureCommand
       await client.query("COMMIT");
       return { outcome: "transitioned" };
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await rollbackTransaction(client, error);
       throw error;
     } finally {
       client.release();

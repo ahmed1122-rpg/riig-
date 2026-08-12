@@ -66,6 +66,24 @@ class AlwaysFailStorage extends InMemoryObjectStorage {
 }
 
 describe("API — المصادقة والصلاحيات", () => {
+  it("seeds the configured E2E administrator only in the test runtime", async () => {
+    const app = await harness.build(
+      loadConfig({
+        NODE_ENV: "test",
+        E2E_ADMIN_EMAIL: "playwright-admin@example.test",
+      }),
+    );
+    const cookie = await registerCreator(app, "playwright-admin@example.test");
+    const session = await app.inject({
+      method: "GET",
+      url: "/v1/auth/session",
+      headers: { cookie },
+    });
+
+    expect(session.statusCode).toBe(200);
+    expect(session.json().data.user.role).toBe("admin");
+  });
+
   it("requires authentication and prevents cross-account project access", async () => {
     const exports = new InMemoryExportRepository();
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }), { exports });

@@ -40,6 +40,7 @@ const emptyCounts: RetentionDatabaseCounts = {
   uploadSessions: 0,
   sourceVersions: 0,
   uploadIntegrityEvents: 0,
+  characterJobs: 0,
 };
 
 describe("retention cleanup", () => {
@@ -56,6 +57,12 @@ describe("retention cleanup", () => {
       contentType: "application/octet-stream",
       sizeBytes: 1,
       body: Buffer.from([2]),
+    });
+    await storage.put({
+      key: "projects/project/character-rig/references/reference.png",
+      contentType: "image/png",
+      sizeBytes: 1,
+      body: Buffer.from([3]),
     });
     const marked: string[] = [];
     const store: RetentionStore = {
@@ -83,6 +90,16 @@ describe("retention cleanup", () => {
         marked.push(id);
         return true;
       },
+      async listExpiredCharacterReferences() {
+        return [{
+          referenceId: "reference",
+          objectKey: "projects/project/character-rig/references/reference.png",
+        }];
+      },
+      async markCharacterReferencePurged(id) {
+        marked.push(id);
+        return true;
+      },
       async pruneDatabase() {
         return emptyCounts;
       },
@@ -99,12 +116,16 @@ describe("retention cleanup", () => {
       checkedAt: "2026-07-28T12:00:00.000Z",
       uploadsPurged: 1,
       artifactsPurged: 1,
+      characterReferencesPurged: 1,
       failures: [],
     });
-    expect(marked).toEqual(["upload", "export"]);
+    expect(marked).toEqual(["upload", "export", "reference"]);
     await expect(storage.get("sources/project/upload.png")).resolves.toBeNull();
     await expect(
       storage.get("artifacts/project/export/result.psd"),
+    ).resolves.toBeNull();
+    await expect(
+      storage.get("projects/project/character-rig/references/reference.png"),
     ).resolves.toBeNull();
   });
 
@@ -123,6 +144,12 @@ describe("retention cleanup", () => {
       },
       async markArtifactPurged() {
         return true;
+      },
+      async listExpiredCharacterReferences() {
+        return [];
+      },
+      async markCharacterReferencePurged() {
+        return false;
       },
       async pruneDatabase() {
         return emptyCounts;
@@ -191,6 +218,8 @@ describe("retention cleanup", () => {
       async markUploadPurged() { return false; },
       async listExpiredArtifacts() { return []; },
       async markArtifactPurged() { return false; },
+      async listExpiredCharacterReferences() { return []; },
+      async markCharacterReferencePurged() { return false; },
       async pruneDatabase() { return emptyCounts; },
     };
 

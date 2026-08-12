@@ -121,7 +121,14 @@ try {
 } finally {
   await client
     .query("SELECT pg_advisory_unlock(hashtext('motionprep_schema_migrations'))")
-    .catch(() => undefined);
+    .catch((error: unknown) => {
+      process.stderr.write(
+        `${JSON.stringify({
+          event: "migration_advisory_unlock_failed",
+          message: error instanceof Error ? error.message : String(error),
+        })}\n`,
+      );
+    });
   client.release();
   await database.close();
 }

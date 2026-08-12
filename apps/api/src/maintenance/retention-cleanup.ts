@@ -5,6 +5,12 @@ import type {
   AccountDeletionProcessor,
   AccountPrivacyRepository,
 } from "../privacy/account-privacy.js";
+import {
+  pruneRetentionDatabase,
+  type RetentionDatabaseCounts,
+} from "./prune-retention-database.js";
+
+export type { RetentionDatabaseCounts } from "./prune-retention-database.js";
 
 export interface ExpiredUploadObject {
   uploadId: string;
@@ -16,23 +22,9 @@ export interface ExpiredExportArtifact {
   objectKey: string;
 }
 
-export interface RetentionDatabaseCounts {
-  sessions: number;
-  mfaEnrollments: number;
-  mfaChallenges: number;
-  passwordResetTokens: number;
-  emailOutbox: number;
-  idempotencyKeys: number;
-  checkoutSessionsCancelled: number;
-  workerHeartbeats: number;
-  workerEvents: number;
-  usageLedgerEvents: number;
-  auditEvents: number;
-  processingJobs: number;
-  exportJobs: number;
-  uploadSessions: number;
-  sourceVersions: number;
-  uploadIntegrityEvents: number;
+export interface ExpiredCharacterReference {
+  referenceId: string;
+  objectKey: string;
 }
 
 export interface RetentionStore {
@@ -46,6 +38,14 @@ export interface RetentionStore {
     limit: number,
   ): Promise<ExpiredExportArtifact[]>;
   markArtifactPurged(exportId: string, now: string): Promise<boolean>;
+  listExpiredCharacterReferences(
+    now: string,
+    limit: number,
+  ): Promise<ExpiredCharacterReference[]>;
+  markCharacterReferencePurged(
+    referenceId: string,
+    now: string,
+  ): Promise<boolean>;
   pruneDatabase(
     now: string,
     config: RetentionConfig,
@@ -56,6 +56,7 @@ export interface RetentionCleanupReport {
   checkedAt: string;
   uploadsPurged: number;
   artifactsPurged: number;
+  characterReferencesPurged: number;
   database: RetentionDatabaseCounts;
   failures: Array<{ key: string; message: string }>;
 }
@@ -78,6 +79,10 @@ export class RetentionCleanup {
     await this.resumeAccountDeletions(failures);
     const uploadsPurged = await this.purgeUploads(checkedAt, failures);
     const artifactsPurged = await this.purgeArtifacts(checkedAt, failures);
+    const characterReferencesPurged = await this.purgeCharacterReferences(
+      checkedAt,
+      failures,
+    );
     const database = await this.store.pruneDatabase(
       checkedAt,
       this.config,
@@ -86,6 +91,7 @@ export class RetentionCleanup {
       checkedAt,
       uploadsPurged,
       artifactsPurged,
+      characterReferencesPurged,
       database,
       failures,
     };
@@ -163,6 +169,36 @@ export class RetentionCleanup {
     }
     return purged;
   }
+
+  private async purgeCharacterReferences(
+    now: string,
+    failures: RetentionCleanupReport["failures"],
+  ): Promise<number> {
+    const references = await this.store.listExpiredCharacterReferences(
+      now,
+      this.config.RETENTION_BATCH_SIZE,
+    );
+    let purged = 0;
+    for (const reference of references) {
+      try {
+        await this.storage.delete(reference.objectKey);
+        if (
+          await this.store.markCharacterReferencePurged(
+            reference.referenceId,
+            now,
+          )
+        ) {
+          purged += 1;
+        }
+      } catch (error) {
+        failures.push({
+          key: reference.objectKey,
+          message: errorMessage(error),
+        });
+      }
+    }
+    return purged;
+  }
 }
 
 interface UploadCleanupRow {
@@ -175,6 +211,11 @@ interface ArtifactCleanupRow {
   project_id: string;
   filename: string;
   object_key: string | null;
+}
+
+interface CharacterReferenceCleanupRow {
+  id: string;
+  object_key: string;
 }
 
 export class PostgresRetentionStore implements RetentionStore {
@@ -279,207 +320,52 @@ export class PostgresRetentionStore implements RetentionStore {
     return result.rowCount === 1;
   }
 
+  async listExpiredCharacterReferences(
+    now: string,
+    limit: number,
+  ): Promise<ExpiredCharacterReference[]> {
+    const result = await this.pool.query<CharacterReferenceCleanupRow>(
+      `SELECT reference.id, reference.artifact->>'objectKey' AS object_key
+       FROM character_reference_assets reference
+       WHERE reference.retention_expires_at <= $1
+         AND reference.artifact ? 'objectKey'
+         AND NOT EXISTS (
+           SELECT 1 FROM character_identity_model_versions model
+           WHERE model.bible_id = reference.bible_id
+             AND model.status IN ('draft', 'training')
+         )
+       ORDER BY reference.retention_expires_at, reference.id
+       LIMIT $2`,
+      [now, limit],
+    );
+    return result.rows.map((row) => ({
+      referenceId: row.id,
+      objectKey: row.object_key,
+    }));
+  }
+
+  async markCharacterReferencePurged(
+    referenceId: string,
+    now: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM character_reference_assets
+       WHERE id = $1 AND retention_expires_at <= $2
+         AND NOT EXISTS (
+           SELECT 1 FROM character_identity_model_versions model
+           WHERE model.bible_id = character_reference_assets.bible_id
+             AND model.status IN ('draft', 'training')
+         )`,
+      [referenceId, now],
+    );
+    return result.rowCount === 1;
+  }
+
   async pruneDatabase(
     now: string,
     config: RetentionConfig,
   ): Promise<RetentionDatabaseCounts> {
-    const jobCutoff = daysBefore(now, config.JOB_RETENTION_DAYS);
-    const auditCutoff = daysBefore(now, config.AUDIT_RETENTION_DAYS);
-    const usageCutoff = daysBefore(
-      now,
-      config.USAGE_LEDGER_RETENTION_DAYS,
-    );
-    const heartbeatCutoff = daysBefore(
-      now,
-      config.WORKER_HEARTBEAT_RETENTION_DAYS,
-    );
-    const workerEventCutoff = daysBefore(
-      now,
-      config.WORKER_EVENT_RETENTION_DAYS,
-    );
-    const client = await this.pool.connect();
-    const count = async (sql: string, values: unknown[]) => {
-      const result = await client.query(sql, values);
-      return result.rowCount ?? 0;
-    };
-
-    try {
-      await client.query("BEGIN");
-      const counts = {
-      sessions: await count(
-        `DELETE FROM sessions WHERE ctid IN (
-          SELECT ctid FROM sessions WHERE expires_at <= $1 LIMIT $2
-        )`,
-        [now, config.RETENTION_BATCH_SIZE],
-      ),
-      mfaEnrollments: await count(
-        `DELETE FROM mfa_enrollments WHERE ctid IN (
-          SELECT ctid FROM mfa_enrollments WHERE expires_at <= $1 LIMIT $2
-        )`,
-        [now, config.RETENTION_BATCH_SIZE],
-      ),
-      mfaChallenges: await count(
-        `DELETE FROM mfa_challenges WHERE ctid IN (
-          SELECT ctid FROM mfa_challenges WHERE expires_at <= $1 LIMIT $2
-        )`,
-        [now, config.RETENTION_BATCH_SIZE],
-      ),
-      passwordResetTokens: await count(
-        `DELETE FROM password_reset_tokens WHERE ctid IN (
-          SELECT ctid FROM password_reset_tokens
-          WHERE expires_at <= $1 LIMIT $2
-        )`,
-        [now, config.RETENTION_BATCH_SIZE],
-      ),
-      emailOutbox: await count(
-        `DELETE FROM email_outbox WHERE ctid IN (
-          SELECT ctid FROM email_outbox
-          WHERE status IN ('sent', 'failed')
-            AND updated_at <= $1::timestamptz - interval '7 days'
-          LIMIT $2
-        )`,
-        [now, config.RETENTION_BATCH_SIZE],
-      ),
-      idempotencyKeys: await count(
-        `DELETE FROM idempotency_keys WHERE ctid IN (
-          SELECT ctid FROM idempotency_keys WHERE expires_at <= $1 LIMIT $2
-        )`,
-        [now, config.RETENTION_BATCH_SIZE],
-      ),
-      checkoutSessionsCancelled: await count(
-        `
-          UPDATE checkout_sessions
-          SET status = 'cancelled'
-          WHERE ctid IN (
-            SELECT ctid FROM checkout_sessions
-            WHERE expires_at <= $1
-              AND status IN ('pending', 'redirect_required')
-            LIMIT $2
-          )
-        `,
-        [now, config.RETENTION_BATCH_SIZE],
-      ),
-      workerHeartbeats: await count(
-        `DELETE FROM worker_heartbeats WHERE ctid IN (
-          SELECT ctid FROM worker_heartbeats WHERE last_seen_at <= $1 LIMIT $2
-        )`,
-        [heartbeatCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      workerEvents: await count(
-        `DELETE FROM worker_events WHERE ctid IN (
-          SELECT ctid FROM worker_events WHERE created_at <= $1 LIMIT $2
-        )`,
-        [workerEventCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      usageLedgerEvents: await count(
-        `DELETE FROM usage_ledger WHERE ctid IN (
-          SELECT ctid FROM usage_ledger WHERE created_at <= $1 LIMIT $2
-        )`,
-        [usageCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      auditEvents: await count(
-        `DELETE FROM audit_events WHERE ctid IN (
-          SELECT ctid FROM audit_events WHERE created_at <= $1 LIMIT $2
-        )`,
-        [auditCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      processingJobs: await count(
-        `
-          DELETE FROM processing_jobs
-          WHERE ctid IN (
-            SELECT ctid FROM processing_jobs
-            WHERE updated_at <= $1
-              AND status IN ('failed', 'cancelled')
-            LIMIT $2
-          )
-        `,
-        [jobCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      exportJobs: await count(
-        `
-          DELETE FROM export_jobs
-          WHERE ctid IN (
-            SELECT ctid FROM export_jobs
-            WHERE updated_at <= $1
-              AND (
-                status IN ('failed', 'cancelled')
-                OR (status = 'ready' AND artifact_purged_at IS NOT NULL)
-              )
-            LIMIT $2
-          )
-        `,
-        [jobCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      uploadSessions: await count(
-        `
-          DELETE FROM upload_sessions
-          WHERE ctid IN (
-            SELECT ctid FROM upload_sessions
-            WHERE updated_at <= $1
-              AND status IN ('failed', 'cancelled')
-              AND object_purged_at IS NOT NULL
-            LIMIT $2
-          )
-        `,
-        [jobCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      sourceVersions: await count(
-        `
-          DELETE FROM source_versions AS source
-          WHERE source.ctid IN (
-            SELECT candidate.ctid
-            FROM source_versions AS candidate
-            WHERE candidate.updated_at <= $1
-              AND candidate.status IN ('failed', 'cancelled')
-              AND NOT EXISTS (
-                SELECT 1 FROM projects AS project
-                WHERE project.current_source_version_id = candidate.id
-              )
-              AND NOT EXISTS (
-                SELECT 1 FROM upload_sessions AS upload
-                WHERE upload.source_version_id = candidate.id
-              )
-              AND NOT EXISTS (
-                SELECT 1 FROM processing_jobs AS job
-                WHERE job.project_id = candidate.project_id
-                  AND job.source_version_id = candidate.id
-              )
-              AND NOT EXISTS (
-                SELECT 1 FROM export_jobs AS job
-                WHERE job.project_id = candidate.project_id
-                  AND job.source_version_id = candidate.id
-              )
-              AND NOT EXISTS (
-                SELECT 1 FROM layer_documents AS document
-                WHERE document.project_id = candidate.project_id
-                  AND document.source_version_id = candidate.id
-              )
-              AND NOT EXISTS (
-                SELECT 1 FROM source_version_restore_events AS restore
-                WHERE restore.from_source_version_id = candidate.id
-                  OR restore.to_source_version_id = candidate.id
-              )
-            LIMIT $2
-          )
-        `,
-        [jobCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      uploadIntegrityEvents: await count(
-        `DELETE FROM upload_integrity_events WHERE ctid IN (
-          SELECT ctid FROM upload_integrity_events
-          WHERE created_at <= $1 LIMIT $2
-        )`,
-        [auditCutoff, config.RETENTION_BATCH_SIZE],
-      ),
-      };
-      await client.query("COMMIT");
-      return counts;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    return pruneRetentionDatabase(this.pool, now, config);
   }
 }
 
@@ -489,10 +375,6 @@ export function exportArtifactKey(
   filename: string,
 ): string {
   return `artifacts/${projectId}/${exportId}/${filename}`;
-}
-
-function daysBefore(now: string, days: number): string {
-  return new Date(Date.parse(now) - days * 24 * 60 * 60_000).toISOString();
 }
 
 function errorMessage(error: unknown): string {

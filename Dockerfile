@@ -12,6 +12,7 @@ COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY apps/worker-document/package.json ./apps/worker-document/package.json
 COPY apps/worker-export/package.json ./apps/worker-export/package.json
+COPY apps/worker-character/package.json ./apps/worker-character/package.json
 COPY apps/worker-media/package.json ./apps/worker-media/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY packages/document-processing/package.json ./packages/document-processing/package.json
@@ -66,6 +67,8 @@ COPY --from=build /workspace/apps/worker-document/package.json ./apps/worker-doc
 COPY --from=build /workspace/apps/worker-document/dist ./apps/worker-document/dist
 COPY --from=build /workspace/apps/worker-export/package.json ./apps/worker-export/package.json
 COPY --from=build /workspace/apps/worker-export/dist ./apps/worker-export/dist
+COPY --from=build /workspace/apps/worker-character/package.json ./apps/worker-character/package.json
+COPY --from=build /workspace/apps/worker-character/dist ./apps/worker-character/dist
 COPY --from=build /workspace/scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
 COPY --from=build /workspace/packages/contracts/package.json ./packages/contracts/package.json

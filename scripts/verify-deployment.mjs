@@ -5,6 +5,12 @@ import { parse } from "yaml";
 import { verifyObservabilityArtifacts } from "./verify-observability-artifacts.mjs";
 import { requiredDeploymentFiles } from "./deployment-required-files.mjs";
 import { verifyNodeToolchain } from "./verify-node-toolchain.mjs";
+import {
+  verifyNginxDeployment,
+  verifyNginxRuntimeWiring,
+} from "./verify-nginx-deployment.mjs";
+import { verifyProductionEnvironmentTemplate } from "./verify-production-environment-template.mjs";
+import { verifyRuntimeImageContract } from "./verify-runtime-image-contract.mjs";
 import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -24,6 +30,7 @@ const [
   webDockerfile,
   compose,
   nginx,
+  securityHeaders,
   gitignore,
   exampleEnvironment,
   webApiClient,
@@ -35,6 +42,8 @@ const [
   documentWorkerEntry,
   exportWorkerEntry,
   exportWorkerConfig,
+  characterWorkerEntry,
+  characterWorkerConfig,
   objectStorageEnvironment,
   s3Storage,
   objectStorageContract,
@@ -46,6 +55,7 @@ const [
   deploymentContract,
   securityPolicy,
   incidentResponseRunbook,
+  productionComposeRunner,
 ] =
   await Promise.all(
     [
@@ -53,6 +63,7 @@ const [
       "Dockerfile.web",
       "compose.production.yaml",
       "deploy/nginx.conf",
+      "deploy/security-headers.conf",
       ".gitignore",
       ".env.production.example",
       "apps/web/src/lib/api/transport.ts",
@@ -64,6 +75,8 @@ const [
       "apps/worker-document/src/index.ts",
       "apps/worker-export/src/index.ts",
       "apps/worker-export/src/config.ts",
+      "apps/worker-character/src/index.ts",
+      "apps/worker-character/src/config.ts",
       "apps/api/src/storage/object-storage-environment.ts",
       "apps/api/src/storage/s3-object-storage.ts",
       "docs/OBJECT_STORAGE.md",
@@ -75,6 +88,7 @@ const [
       "docs/DEPLOYMENT.md",
       "SECURITY.md",
       "docs/runbooks/incident-response.md",
+      "scripts/run-production-compose.mjs",
     ].map((file) => readFile(join(root, file), "utf8")),
   );
 
@@ -93,6 +107,7 @@ const workflowSources = await Promise.all(
 );
 violations.push(...(await verifyObservabilityArtifacts(root)));
 violations.push(...verifyWorkflowSecurity(workflowSources));
+violations.push(...verifyProductionEnvironmentTemplate(exampleEnvironment));
 const ciWorkflow = workflowSources[0];
 try {
   const ciDocument = parse(ciWorkflow);
@@ -112,11 +127,6 @@ try {
   if (fixtureSteps.includes("Scan web image")) {
     violations.push(
       "The fixture job cannot scan an image built on another runner.",
-    );
-  }
-  if (!ciWorkflow.includes("--add-host api:127.0.0.1")) {
-    violations.push(
-      "The CI hardened web smoke must provide the API hostname expected by nginx.",
     );
   }
   if (!ciWorkflow.includes("npm run verify:alerts")) {
@@ -165,7 +175,6 @@ for (const token of [
   "@${{ steps.runtime.outputs.digest }}",
   "sbom: true",
   "provenance: mode=max",
-  "--add-host api:127.0.0.1",
 ]) {
   if (!releaseWorkflow.includes(token)) {
     violations.push(`Release workflow is missing immutable supply-chain token: ${token}`);
@@ -287,6 +296,12 @@ try {
     `Production compose is invalid YAML: ${error instanceof Error ? error.message : "unknown error"}`,
   );
 }
+violations.push(
+  ...verifyRuntimeImageContract({
+    dockerfile: runtimeDockerfile,
+    composeDocument,
+  }),
+);
 for (const service of [
   "migrate",
   "maintenance",
@@ -295,6 +310,7 @@ for (const service of [
   "worker-media",
   "worker-document",
   "worker-export",
+  "worker-character",
   "web",
 ]) {
   if (!composeDocument?.services?.[service]) {
@@ -322,20 +338,24 @@ if (compose.includes("IMAGE_TAG") || /^\s+build:/mu.test(compose)) {
     "Production compose must consume prebuilt digest references and must not build or deploy tags.",
   );
 }
+for (const token of [
+  "validateProductionEnvironment",
+  'spawnSync("docker"',
+  'new Set(["config", "pull", "up", "ps", "run"])',
+]) {
+  if (!productionComposeRunner.includes(token)) {
+    violations.push(`Production Compose runner is missing safety token: ${token}`);
+  }
+}
 for (const token of ["no-new-privileges:true", "cap_drop:", "read_only: true"]) {
   if (!compose.includes(token)) {
     violations.push(`Production containers are missing hardening token: ${token}`);
   }
 }
-if (!nginx.includes("client_max_body_size 30m")) {
-  violations.push("Nginx upload limit must match the 30 MiB application limit.");
-}
-if (!nginx.includes("proxy_pass http://api:4000")) {
-  violations.push("Nginx must proxy the versioned API to the API service.");
-}
-if (!nginx.includes("proxy_set_header X-Forwarded-For $remote_addr;")) {
-  violations.push("Nginx must replace untrusted forwarded-IP chains.");
-}
+violations.push(...verifyNginxDeployment(nginx, securityHeaders));
+violations.push(
+  ...verifyNginxRuntimeWiring({ compose, ciWorkflow, releaseWorkflow }),
+);
 for (const token of [
   ".env.*",
   "!.env.example",
@@ -378,9 +398,16 @@ if (!processingRuntimeSources.includes("hasExpectedObjectIntegrity")) {
 if (!exportWorkerEntry.includes("loadExportWorkerConfig")) {
   violations.push("Export worker must use its validated storage configuration.");
 }
+if (
+  !characterWorkerEntry.includes("@motionprep/api/character-worker") ||
+  !characterWorkerEntry.includes("loadCharacterWorkerConfig")
+) {
+  violations.push("Character worker must use its validated shared runtime.");
+}
 for (const [name, runtime] of [
   ["processing", `${processingWorkerConfig}\n${objectStorageEnvironment}`],
   ["export", `${exportWorkerConfig}\n${objectStorageEnvironment}`],
+  ["character", `${characterWorkerConfig}\n${objectStorageEnvironment}`],
 ]) {
   if (!runtime.includes("OBJECT_STORAGE_SESSION_TOKEN")) {
     violations.push(`${name} worker must support temporary S3 credentials.`);
@@ -433,11 +460,6 @@ for (const [name, source] of [
     violations.push(`${name} documentation must link the incident response runbook.`);
   }
 }
-if (!/^PDF_REGION_OCR_ENABLED=false$/mu.test(exampleEnvironment)) {
-  violations.push(
-    "Regional PDF OCR must remain disabled in the production template until the holdout gate passes.",
-  );
-}
 if (nginx.includes("location /internal")) {
   violations.push("Internal metrics must not be exposed by the public web proxy.");
 }
@@ -460,30 +482,6 @@ for (const [name, entry] of [
   }
   if (entry.includes("@aws-sdk") || entry.includes('from "pg"')) {
     violations.push(`${name} worker entry duplicates runtime infrastructure.`);
-  }
-}
-
-for (const key of [
-  "DATABASE_URL",
-  "RELEASE_GIT_SHA",
-  "REDIS_URL",
-  "AUTH_ENCRYPTION_KEY",
-  "SMTP_PASSWORD",
-  "OBJECT_STORAGE_SECRET_KEY",
-  "OBJECT_STORAGE_SESSION_TOKEN",
-  "OBJECT_STORAGE_ENCRYPTION_MODE",
-  "OBJECT_STORAGE_REQUIRE_VERSIONING",
-  "PAYMENT_MODE",
-  "PDF_OCR_MODE",
-  "EXPORT_EXECUTION_MODE",
-  "PROCESSING_LEASE_MS",
-  "EXPORT_LEASE_MS",
-  "WORKER_EVENT_RETENTION_DAYS",
-  "RUNTIME_IMAGE_REF",
-  "WEB_IMAGE_REF",
-]) {
-  if (!exampleEnvironment.includes(`${key}=`)) {
-    violations.push(`Production environment template is missing ${key}.`);
   }
 }
 

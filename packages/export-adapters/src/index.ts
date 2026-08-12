@@ -19,6 +19,13 @@ import {
 } from "./psd-buffer.js";
 
 export { ExportAdapterError } from "./export-adapter-error.js";
+export {
+  createCharacterRigPsd,
+  validateCharacterRigTemplate,
+  type CharacterRigPsdResult,
+  type CharacterRigRasterAsset,
+  type CreateCharacterRigPsdInput,
+} from "./character-rig-psd.js";
 export { createPdfDocumentPsd, createPdfPagePsd } from "./pdf-psd.js";
 
 const TIFF_TOTAL_PIXEL_BUDGET = 32_000_000;

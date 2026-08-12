@@ -12,6 +12,7 @@ human owner.
 | Uploads and source versions | `apps/api/src/uploads`, `apps/api/src/sources`, object storage | Multipart limits, integrity, reconciliation, retention | S3 integration, interrupted-upload recovery, lifecycle proof |
 | Media and document processing | `apps/api/src/processing`, `apps/worker-media`, `apps/worker-document` | Queue leases, OCR review, resource ceilings, retries | Worker integration, representative PDF load, fault recovery |
 | Export | `apps/api/src/exports`, `apps/worker-export`, `packages/export-adapters` | Preflight, artifact integrity, Adobe compatibility, expiry | Export tests, signed Adobe golden evidence, load profile |
+| Character identity and rigging | `apps/api/src/character-rig`, `apps/worker-character`, `packages/export-adapters/src/character-rig-psd.ts` | Reference rights, identity gates, provider isolation, review audit, rig integrity | Character benchmark, worker integration, Character Animator Golden |
 | Billing | `apps/api/src/billing`, web billing feature | Provider callbacks, entitlements, usage ledger | Signed-webhook tests, reconciliation, live-provider staging |
 | Workspace UX | `apps/web/src/features/workspace` | Autosave, interruption recovery, review and export flows | Unit tests, Playwright critical journeys, accessibility scan |
 | Operations and release | `compose.production.yaml`, `deploy`, `.github/workflows`, runbooks | Deployment, monitoring, backup, rollback, incident response | Staging smoke, signed images, recovery and rollback drills |

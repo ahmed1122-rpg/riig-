@@ -97,6 +97,29 @@ describe("production configuration", () => {
     expect(config.OBJECT_STORAGE_ENCRYPTION_MODE).toBe("bucket-default");
     expect(config.PDF_OCR_MODE).toBe("local");
     expect(config.PDF_REGION_OCR_ENABLED).toBe(false);
+    expect(config.CHARACTER_RIG_ENABLED).toBe(false);
+  });
+
+  it("requires an explicit opt-in for Character Studio", () => {
+    expect(
+      loadConfig({ NODE_ENV: "test", CHARACTER_RIG_ENABLED: "true" })
+        .CHARACTER_RIG_ENABLED,
+    ).toBe(true);
+  });
+
+  it("allows the E2E administrator seed only in the test environment", () => {
+    expect(
+      loadConfig({
+        NODE_ENV: "test",
+        E2E_ADMIN_EMAIL: "Admin@Example.Test",
+      }).E2E_ADMIN_EMAIL,
+    ).toBe("admin@example.test");
+    expect(() =>
+      loadConfig({
+        ...durableProductionEnvironment,
+        E2E_ADMIN_EMAIL: "admin@example.test",
+      }),
+    ).toThrow(/allowed only when NODE_ENV=test/u);
   });
 
   it("requires an explicit opt-in for regional OCR", () => {

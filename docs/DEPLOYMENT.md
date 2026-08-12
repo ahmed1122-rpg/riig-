@@ -59,7 +59,8 @@ window, owned follow-ups, and Ed25519 attestation metadata.
 - Private S3-compatible bucket with encryption and lifecycle policies.
 - SMTP account dedicated to security messages.
 - Stripe account only when `PAYMENT_MODE=live`.
-- Reverse proxy or load balancer terminating HTTPS before port 8080.
+- A load balancer terminating HTTPS before port 8080, with a stable private
+  source CIDR and controlled `X-Forwarded-For`/`X-Forwarded-Proto` behavior.
 
 The application never accepts card numbers. Stripe Checkout is hosted by Stripe,
 subscription state is accepted only from signed webhooks, and account changes
@@ -97,6 +98,16 @@ use Stripe Customer Portal.
     `artifacts/` after no more than two days and never blindly expire live
     `sources/` or `derived/`.
 12. Store the completed environment in a secrets manager. Do not commit it.
+13. Keep `CHARACTER_RIG_ENABLED=false` by default. To enable the optional
+    identity-preserving pipeline, configure the private HTTPS inference
+    endpoint and secret, pass the Character benchmark and Adobe Golden, then
+    start `worker-character` with the `character-rig` Compose profile. Follow
+     [`runbooks/character-rig-operations.md`](runbooks/character-rig-operations.md).
+14. Set `TRUSTED_PROXY_CIDR` to the narrow source CIDR used by the immediate TLS
+    load balancer when it connects to Nginx. The load balancer must overwrite
+    `X-Forwarded-Proto` and append the socket client address to
+    `X-Forwarded-For`. Restrict port 8080 to that CIDR at the provider firewall;
+    never use `0.0.0.0/0` or `::/0`.
 
 Password-reset tokens and their email deliveries are inserted in one database
 transaction. Each API replica may run the outbox dispatcher: rows are claimed
@@ -155,9 +166,21 @@ fallbacks.
 
 ```bash
 node scripts/verify-release-environment.mjs .env.production
-docker compose --env-file .env.production -f compose.production.yaml pull
-docker compose --env-file .env.production -f compose.production.yaml up -d
-docker compose --env-file .env.production -f compose.production.yaml ps
+node scripts/run-production-compose.mjs .env.production pull
+node scripts/run-production-compose.mjs .env.production up -d
+node scripts/run-production-compose.mjs .env.production ps
+```
+
+The wrapper revalidates the complete production environment before every
+approved Compose operation. This is the mandatory path: Compose's non-empty
+variable syntax alone accepts mutable tags, while the wrapper rejects anything
+other than digest-qualified runtime/web references and an exact release SHA.
+
+Character Studio is a separately gated profile:
+
+```bash
+node scripts/run-production-compose.mjs .env.production \
+  --profile character-rig up -d worker-character
 ```
 
 The `migrate` service applies additive SQL migrations before the API and workers
@@ -233,7 +256,7 @@ For platforms with a native scheduler, disable the Compose scheduler and run
 the same idempotent one-shot command at least hourly:
 
 ```bash
-docker compose --env-file .env.production -f compose.production.yaml \
+node scripts/run-production-compose.mjs .env.production \
   --profile maintenance run --rm maintenance
 ```
 
@@ -251,9 +274,15 @@ restore history.
 ## Security controls
 
 - The API image runs as a non-root user and all application containers use a
-  read-only filesystem with a bounded temporary directory.
+  read-only filesystem with bounded temporary directories. The web service
+  gives `/etc/nginx/conf.d` a 1 MiB tmpfs solely for rendering its validated
+  proxy template at startup; the image filesystem remains read-only.
 - Cookies are Secure and HttpOnly in production.
-- The public proxy enforces the 30 MiB request limit and security headers.
+- The public proxy enforces the 30 MiB request limit and emits HSTS and the
+  remaining security headers on HTML, assets, health, and proxied API paths.
+  Mirror HSTS at the TLS load balancer so edge-generated error responses carry
+  it as well. The CSP deliberately retains `style-src 'unsafe-inline'` for the
+  current React dynamic-style surface; do not describe it as a strict CSP.
 - PostgreSQL, Redis, S3, SMTP, and authentication secrets are injected at
   runtime and are not baked into images.
 - Browser object transfers pass through the authenticated API. The bucket has
@@ -270,8 +299,11 @@ restore history.
 - Artifact responses stream from object storage with backpressure and cancel
   the upstream read when the client disconnects. Metadata is checked before
   headers and SHA-256 is checked across the streamed bytes.
-- `TRUST_PROXY_HOPS=1` is correct only when exactly one trusted reverse proxy is
-  in front of the web/API path. Adjust it to the real topology.
+- Keep `TRUST_PROXY_HOPS=1` for the documented LB -> Nginx -> API topology.
+  Nginx accepts forwarded metadata only from `TRUSTED_PROXY_CIDR`, resolves the
+  nearest untrusted client address, and collapses the upstream chain to the one
+  sanitized hop that Fastify trusts. If the topology changes, update the Nginx
+  trust boundary and this hop count together and rerun the spoofing tests.
 - Restrict database, Redis, and storage access to the application network or
   provider firewall.
 

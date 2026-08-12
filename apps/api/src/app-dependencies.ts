@@ -6,6 +6,8 @@ import type { LoginAttemptStore } from "./auth/login-attempt-store.js";
 import type { AuthRepository } from "./auth/auth-repository.js";
 import type { SecretProtector } from "./auth/secret-protector.js";
 import type { BillingRepository } from "./billing/billing-repository.js";
+import type { CharacterRigRepository } from "./character-rig/character-rig-repository.js";
+import type { CharacterJobRepository } from "./character-rig/character-job-repository.js";
 import type { PaymentProvider } from "./billing/payment-provider.js";
 import type { UsageMeter } from "./billing/usage-meter.js";
 import type { ExportRepository } from "./exports/export-repository.js";
@@ -28,6 +30,9 @@ import type { UploadIntegrityFailureCommand } from "./uploads/upload-integrity-f
 import type { UploadRepository } from "./uploads/upload-repository.js";
 
 export interface AppDependencies {
+  now?: () => Date;
+  characterRigs?: CharacterRigRepository;
+  characterJobs?: CharacterJobRepository;
   projects?: ProjectRepository;
   uploads?: UploadRepository;
   uploadFinalization?: UploadFinalizationCommand;

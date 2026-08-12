@@ -29,6 +29,8 @@ for (const path of [
   "tmp",
   ".tmp",
   "artifacts/runtime-qa",
+  "artifacts/playwright",
+  "artifacts/playwright-report",
   "artifacts/test-results",
   "artifacts/screenshots",
   "artifacts/dogfood-alpha-segmentation/videos",

@@ -29,8 +29,8 @@ cosign verify \
   --certificate-identity 'https://github.com/<owner>/<repo>/.github/workflows/release-images.yml@refs/tags/<release-tag>' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$WEB_IMAGE_REF"
-docker compose --env-file .env.production -f compose.production.yaml pull
-docker compose --env-file .env.production -f compose.production.yaml up -d
+node scripts/run-production-compose.mjs .env.production pull
+node scripts/run-production-compose.mjs .env.production up -d
 ```
 
 Check `/healthz`, `/v1/health/live`, and `/v1/health/ready`; readiness must report
@@ -50,9 +50,9 @@ If health or the core journey fails:
    introduced after that image was built. Recreate only the application layer:
 
    ```bash
-   docker compose --env-file .env.production -f compose.production.yaml pull \
+   node scripts/run-production-compose.mjs .env.production pull \
      api worker-media worker-document worker-export web maintenance-scheduler
-   docker compose --env-file .env.production -f compose.production.yaml up -d \
+   node scripts/run-production-compose.mjs .env.production up -d \
      --no-deps --force-recreate \
      api worker-media worker-document worker-export web maintenance-scheduler
    ```

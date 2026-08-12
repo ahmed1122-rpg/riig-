@@ -66,6 +66,11 @@ export interface ApplicationCapabilities {
     maxImageLayers: number;
   };
   features: {
+    characterRig: {
+      enabled: boolean;
+      unavailableReason: string | null;
+      requiredCanonicalViews: number;
+    };
     pdfRegionOcr: {
       enabled: boolean;
       unavailableReason: string | null;

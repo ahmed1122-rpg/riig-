@@ -17,6 +17,10 @@ const environmentSchema = z
     RELEASE_VERSION: z.string().trim().min(1).max(128).default("development"),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(4_000),
     WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
+    E2E_ADMIN_EMAIL: z.preprocess(
+      blankToUndefined,
+      z.string().trim().email().transform((value) => value.toLowerCase()).optional(),
+    ),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
     MAX_UPLOAD_BYTES: z.coerce
       .number()
@@ -61,6 +65,10 @@ const environmentSchema = z
       .default("inline"),
     PDF_OCR_MODE: z.enum(["disabled", "local"]).default("disabled"),
     PDF_REGION_OCR_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    CHARACTER_RIG_ENABLED: z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
@@ -111,6 +119,13 @@ const environmentSchema = z
     ),
   })
   .superRefine((value, context) => {
+    if (value.E2E_ADMIN_EMAIL && value.NODE_ENV !== "test") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["E2E_ADMIN_EMAIL"],
+        message: "E2E_ADMIN_EMAIL is allowed only when NODE_ENV=test.",
+      });
+    }
     if (
       value.NODE_ENV === "production" &&
       !/^[a-f0-9]{40}$/u.test(value.RELEASE_VERSION)

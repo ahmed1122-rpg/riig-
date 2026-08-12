@@ -8,6 +8,15 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   acceptedSourceTypes,
+  characterBibleStatuses,
+  characterCanonicalViews,
+  characterGenerationStatuses,
+  characterJobStatuses,
+  characterJobTypes,
+  characterModelStatuses,
+  characterRigStatuses,
+  characterRequiredFrontalBodyParts,
+  characterRequiredHeadParts,
   evaluatePasswordRequirements,
   exportFormats,
   exportFormatsByProjectKind,
@@ -158,6 +167,33 @@ describe("upload contract", () => {
       zIndex: 0,
     };
     expect(layerLayoutMetadata(minimalLayer)).toEqual({});
+  });
+});
+
+describe("character-rig contract", () => {
+  it("locks the MVP to five canonical views and explicit lifecycle states", () => {
+    expect(characterCanonicalViews).toEqual([
+      "frontal",
+      "left-quarter",
+      "left-profile",
+      "right-quarter",
+      "right-profile",
+    ]);
+    expect(characterBibleStatuses).toEqual(["draft", "approved", "retired"]);
+    expect(characterModelStatuses).toContain("training");
+    expect(characterGenerationStatuses).toContain("needs-review");
+    expect(characterRigStatuses).toContain("exported");
+    expect(characterRequiredHeadParts).toContain("mouth");
+    expect(characterRequiredFrontalBodyParts).toContain("left-hand");
+    expect(characterJobTypes).toContain("repair-part");
+    expect(characterJobStatuses).toEqual([
+      "queued",
+      "processing",
+      "verifying",
+      "succeeded",
+      "failed",
+      "cancelled",
+    ]);
   });
 });
 

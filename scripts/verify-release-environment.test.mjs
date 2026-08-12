@@ -65,6 +65,8 @@ function completeEnvironment() {
     "COOKIE_SECURE=true",
     "METRICS_BEARER_TOKEN=metrics-token-with-at-least-32-characters",
     "WEB_ORIGIN=https://studio.example.com",
+    "TRUSTED_PROXY_CIDR=10.20.0.0/24",
+    "TRUST_PROXY_HOPS=1",
     "PASSWORD_RESET_URL=https://studio.example.com/auth/reset",
     "EMAIL_DELIVERY_MODE=smtp",
     "SMTP_HOST=smtp.example.com",
