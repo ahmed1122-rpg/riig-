@@ -3,6 +3,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { DocumentProcessingError } from "./document-processing-error.js";
 import { clamp } from "./pdf-layout.js";
+import { deterministicPdfJsOptions } from "./pdfjs-options.js";
 
 const OCR_TARGET_LONG_EDGE = 1_600;
 const OCR_MAX_RENDER_PIXELS = 24_000_000;
@@ -45,8 +46,7 @@ export async function renderPdfRegion(
 
   const loadingTask = getDocument({
     data: new Uint8Array(input.source),
-    disableFontFace: true,
-    useSystemFonts: false,
+    ...deterministicPdfJsOptions,
   });
   let pdf: Awaited<typeof loadingTask.promise>;
   try {

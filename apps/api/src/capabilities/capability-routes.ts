@@ -32,6 +32,7 @@ export async function registerCapabilityRoutes(
           ? null
           : "Character Studio is disabled until its private inference worker and release Golden are configured.",
         requiredCanonicalViews: 5,
+        supportedProjectKinds: ["image"],
       },
       pdfRegionOcr: {
         enabled: options.pdfRegionOcrEnabled,

@@ -5,11 +5,9 @@ import { parse } from "yaml";
 import { verifyObservabilityArtifacts } from "./verify-observability-artifacts.mjs";
 import { requiredDeploymentFiles } from "./deployment-required-files.mjs";
 import { verifyNodeToolchain } from "./verify-node-toolchain.mjs";
-import {
-  verifyNginxDeployment,
-  verifyNginxRuntimeWiring,
-} from "./verify-nginx-deployment.mjs";
+import { verifyNginxDeployment, verifyNginxRuntimeWiring } from "./verify-nginx-deployment.mjs";
 import { verifyProductionEnvironmentTemplate } from "./verify-production-environment-template.mjs";
+import { verifyQaImageContract } from "./verify-qa-image-contract.mjs";
 import { verifyRuntimeImageContract } from "./verify-runtime-image-contract.mjs";
 import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
 
@@ -27,11 +25,13 @@ for (const file of requiredDeploymentFiles) {
 
 const [
   runtimeDockerfile,
+  qaDockerfile,
   webDockerfile,
   compose,
   nginx,
   securityHeaders,
   gitignore,
+  dockerignore,
   exampleEnvironment,
   webApiClient,
   processingRuntime,
@@ -60,11 +60,13 @@ const [
   await Promise.all(
     [
       "Dockerfile",
+      "Dockerfile.qa",
       "Dockerfile.web",
       "compose.production.yaml",
       "deploy/nginx.conf",
       "deploy/security-headers.conf",
       ".gitignore",
+      ".dockerignore",
       ".env.production.example",
       "apps/web/src/lib/api/transport.ts",
       "apps/api/src/processing/processing-worker-runtime.ts",
@@ -109,6 +111,7 @@ violations.push(...(await verifyObservabilityArtifacts(root)));
 violations.push(...verifyWorkflowSecurity(workflowSources));
 violations.push(...verifyProductionEnvironmentTemplate(exampleEnvironment));
 const ciWorkflow = workflowSources[0];
+violations.push(...verifyQaImageContract({ dockerfile: qaDockerfile, ciWorkflow, dockerignore }));
 try {
   const ciDocument = parse(ciWorkflow);
   const containerSteps =
@@ -379,6 +382,7 @@ violations.push(
     packageManifest,
     npmConfig,
     dockerfiles: [runtimeDockerfile, webDockerfile],
+    qaDockerfiles: [qaDockerfile],
   }),
 );
 if (!webApiClient.includes("location.origin")) {

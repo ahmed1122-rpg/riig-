@@ -198,15 +198,15 @@ export function WorkspaceDialogs({
         )}
 
       {props.characterStudioOpen &&
+        props.mode === "image" &&
+        props.imageCanvasSize &&
         props.projectId &&
         props.sourceVersionId && (
           <Suspense fallback={null}>
             <CharacterStudioDialog
               projectId={props.projectId}
               sourceVersionId={props.sourceVersionId}
-              {...(props.imageCanvasSize
-                ? { canvasSize: props.imageCanvasSize }
-                : {})}
+              canvasSize={props.imageCanvasSize}
               {...(props.sourcePreviewUrl
                 ? { sourcePreviewUrl: props.sourcePreviewUrl }
                 : {})}

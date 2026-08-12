@@ -204,6 +204,10 @@ export function useWorkspaceToolController(
         return;
       }
       if (dispatch.kind === "character-rig") {
+        if (options.mode !== "image") {
+          options.onNotify("Character Turntable يعالج الصور فقط ولا يقبل ملفات PDF.");
+          return;
+        }
         setCharacterStudioOpen(true);
         return;
       }
@@ -219,6 +223,7 @@ export function useWorkspaceToolController(
       options.activeLayer,
       options.bookLayers,
       options.imageLayers,
+      options.mode,
       options.onNotify,
       options.selectedIds,
     ],

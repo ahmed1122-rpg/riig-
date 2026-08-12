@@ -1,5 +1,16 @@
 # Production readiness
 
+Working-candidate status on 2026-08-12: the sequenced local remediation and
+Character Rig hardening are complete on top of the `0.1.7` package line. The
+Turntable/Character Studio surface is deliberately image-only: capabilities
+advertise only `image`, the web tool is absent from book/PDF workspaces, and all
+nine Character API operations fail closed for a book project. The working tree
+is not the hosted `v0.1.7` release: only its eventual Git SHA and signed image
+digests can identify the new candidate. Local tests prove source correctness,
+not managed-provider, deployed-staging, recovery, or representative-load
+readiness. Keep `CHARACTER_RIG_ENABLED=false` until the ordered external gates
+in [`EXTERNAL_GATE_INPUTS.md`](EXTERNAL_GATE_INPUTS.md) have passed.
+
 Status through 2026-08-10: releases `v0.1.1`, `v0.1.2`, `v0.1.3`, `v0.1.5`,
 `v0.1.6`, and `v0.1.7` were published
 as signed digest-qualified runtime and web images after their protected
@@ -139,9 +150,10 @@ their hosted results remain evidence gates rather than assumptions.
 - `/v1/capabilities` is the server-authoritative feature contract. Web tools
   fail closed when regional OCR is unavailable, and display the server reason
   instead of exposing a decorative or non-operational action.
-- OpenAPI now documents all 55 registered v1 operations with summaries, tags,
+- OpenAPI now documents all 71 registered v1 operations with summaries, tags,
   security, standard error envelopes, path parameters, and the principal write
-  bodies. Internal metrics remain excluded.
+  bodies. All nine Character Rig operations have explicit bodies and success
+  schemas. Internal metrics remain excluded.
 - The web application has a top-level recovery boundary and explicit revision
   conflict recovery. Large processing and workspace concerns were separated
   into inline-runner, PDF text-operation, raster-renderer, error, layer-bound,
@@ -184,23 +196,39 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 
 ## Local evidence
 
-- `npm run quality`: passed on 2026-08-04 after the account-privacy remediation.
+- The current Windows host reports Node `24.18.1` and npm `11.16.0`; the former
+  Node 26 installation has been removed. Root `devEngines`, `.node-version`,
+  `.npmrc`, every workspace version, and digest-pinned Docker stages agree on
+  the enforced Node/npm policy.
+- The final `motionprep-qa` image ran the complete `npm run quality` chain on
+  2026-08-12 and passed in 226,630 ms. Its retained
+  `artifacts/qa/quality-summary.json` records application `0.1.7`, Node
+  `v24.18.1`, exit code 0, and outcome `passed`. The clean QA install contained
+  554 packages with zero npm audit findings.
+- Contract and maintainability gates report 71 HTTP operations, 39 immutable
+  migrations, 397 production source files, zero oversized files, and zero exact
+  clone blocks. ESLint, Stylelint, Knip, all workspace typechecks, all coverage
+  thresholds, all 12 workspace builds, and the Adobe/Character benchmark gates
+  passed in the same QA execution.
+- Character lease, idempotency, result-fencing, and PostgreSQL convergence were
+  repeated three times against a fresh PostgreSQL 17 database after migrations
+  001-039. Every repetition passed 13 unit race cases and 4 real PostgreSQL
+  integration cases. A deployment-contract test prevents the integration file
+  from being silently excluded by Vitest again.
+- The current web bundle is 165.2 KiB JavaScript and 43.2 KiB CSS, gzip, within
+  the enforced budget.
+- Historical: `npm run quality` passed on 2026-08-04 after the account-privacy remediation.
 - The 2026-08-10 dependency/toolchain remediation passed every configured
   quality component on Node 24.18.1/npm 11.16.0. The clean-worktree contract
   ran separately on the Windows host because the production-slim test image
   intentionally has no Git; the protected release job re-runs the single
   `npm run quality` command on Node 24 from `.node-version`.
-- Root `devEngines` now requires exact Node 24.18.1 and npm 11.16.0 with
-  `onFail=error`, and `.npmrc` enables `engine-strict=true`. A Windows host on
-  Node 26.2.0 was rejected with `EBADDEVENGINES`, while the pinned Node 24
-  Docker build completed `npm ci` (553 packages, zero vulnerabilities) and
-  built every workspace.
-- API tests: 305/305 across 73 files; web tests: 126/126 across 33 files; the remaining workspaces also passed. All configured coverage gates passed. Complete-source API coverage is 67.18% statements, 58.00% branches, 69.56% functions, and 68.53% lines; complete-source web coverage is 35.68%, 35.49%, 27.35%, and 36.71% respectively.
+- Historical 2026-08-10 evidence used the same exact Node/npm policy and passed
+  the then-current API/web suites and configured coverage thresholds.
 - Playwright E2E: 12/12 passed again locally on 2026-08-10 across desktop and
   mobile Chromium, including Axe checks, a real PDF upload/process journey,
   account-data export, resumable deletion, and the complete review/export
   journey. The protected release gate repeats this on Node 24.
-- Web bundle: 157.5 KiB JavaScript and 42.2 KiB CSS, gzip.
 - `npm audit --audit-level=high`: 0 known vulnerabilities across runtime, build, and test dependencies
   on the 2026-08-10 post-remediation lockfile. The same command now runs daily,
   in addition to push, pull-request, and protected release gates.

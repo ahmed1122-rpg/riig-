@@ -1,0 +1,298 @@
+{
+  "composeServices": {
+    "compose.integration.yaml": {
+      "api-a": [],
+      "api-b": [],
+      "mailpit": [],
+      "migrate": [],
+      "minio": [],
+      "minio-init": [],
+      "postgres": [],
+      "redis": [],
+      "release-web": ["release-drill"],
+      "worker-document": [],
+      "worker-export": [],
+      "worker-media": []
+    },
+    "compose.production.yaml": {
+      "api": [],
+      "maintenance": ["maintenance"],
+      "maintenance-scheduler": [],
+      "migrate": [],
+      "web": [],
+      "worker-character": ["character-rig"],
+      "worker-document": [],
+      "worker-export": [],
+      "worker-media": []
+    },
+    "compose.yaml": {
+      "mailpit": [],
+      "minio": [],
+      "minio-init": [],
+      "postgres": [],
+      "redis": []
+    }
+  },
+  "dockerTargets": {
+    "Dockerfile": [
+      {
+        "base": "node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7",
+        "target": "build"
+      },
+      {
+        "base": "node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7",
+        "target": "runtime-base"
+      },
+      { "base": "runtime-base", "target": "adobe-golden-generator" },
+      { "base": "runtime-base", "target": "runtime" }
+    ],
+    "Dockerfile.qa": [
+      {
+        "base": "node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7",
+        "target": "qa-dependencies"
+      },
+      {
+        "base": "node:24.18.1-bookworm@sha256:19cd848a0e073d34bd8cd5545a1b6b4d28489b3e3b607366621ced442bd5f6b4",
+        "target": "qa"
+      }
+    ],
+    "Dockerfile.web": [
+      {
+        "base": "node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7",
+        "target": "build"
+      },
+      {
+        "base": "nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46",
+        "target": "<final-2>"
+      }
+    ]
+  },
+  "dynamicEntrypoints": {
+    "apiPackageExports": [
+      "./character-worker",
+      "./export-worker",
+      "./object-storage-environment",
+      "./processing-worker",
+      "./tracing"
+    ],
+    "knipIgnoredPatterns": [
+      "scripts/adobe/**",
+      "scripts/generate-adobe-golden.mjs",
+      "scripts/run-quality-qa.mjs"
+    ]
+  },
+  "featureFlags": {
+    "CHARACTER_RIG_ENABLED": "false",
+    "PDF_REGION_OCR_ENABLED": "false"
+  },
+  "migrations": {
+    "001_initial.sql": "13040da7f285bdfe2ff333335e8f7319e163cd238c3b2f759cb9ce18580ec53b",
+    "002_idempotency.sql": "3ff3bdb1148497d7d7388e38da366c415c3cb4660548a32b90735277c1a03bd8",
+    "003_processing.sql": "d646788ae393a7956ec465a5834bc2ae409748602e426bf4e15fb186a22e2a85",
+    "004_auth_security.sql": "023cbb5f0403d06be7bcfdd59c0f1127f58394de11812bc97e682d56f26d9379",
+    "005_stripe_billing.sql": "8f3c893f8f6623ab4ef0f69959b36fb3c5453261c06d2b36cd5f0ce444907045",
+    "006_pdf_psd_export.sql": "ed5d95303181ba47c8903958003f8d965cd5d0c138050d20c7034347cbea4f85",
+    "007_subscription_lifecycle.sql": "ec1ea5e6ca3950cfa229962539933dcbcc81ab3cc796f7c1f738633738f4b707",
+    "008_extended_image_sources.sql": "3b4ee82debb9ce11dc069f091e349b01475703c63ab776e250f1f016c992dcf5",
+    "009_source_versions.sql": "8c55ce42a811a56518923998169a01a9e9f58e96e3c737aff244c1c5b2f5fcb2",
+    "010_export_worker_leases.sql": "24ce4302263301e0446c0d4b71af866ea36d23393f220079d4a37dd8d301466c",
+    "011_processing_reanalysis.sql": "e59018585047c18fa4126162265f5b5331caf7aed8f9fe7e0d114953d962097e",
+    "012_processing_worker_leases.sql": "3454fb0672e31c7b10feb0f15d0ff4129f23743368d11f464b45f4818a3b15ec",
+    "013_export_document_revision.sql": "dce722cdd6653367360715ea1551af08d0063a18fe3341668f8385c16eb5be6b",
+    "014_usage_ledger.sql": "2214795237cfff7d51037c8c301202127a19ffb858a93e0bd8167b6d6ebd7fd6",
+    "015_worker_heartbeats.sql": "80058947fbef5a28fb6ebb5ac0f28a7d42d07326eb5ee0bdcd249074d01bf7e7",
+    "016_retention_cleanup.sql": "e2b1efa16c6a31530e46ea0bd4b4fbf647fe1524b63f42794db2851b535bc585",
+    "017_processing_options.sql": "7c6539bdcda1af5d4733753b60ca24e7872548a3929fbc41a7d03a9b51cb3b67",
+    "018_worker_events.sql": "9cd80e0ed3f2ae7e2c5503b6669a07eebc62f05c9658ede0677f2f6bc1b64cec",
+    "019_upload_url_compatibility.sql": "a32edf5ae09e071f587bd241555ed030a8bd17b40ab384a27dbf9a1b47505612",
+    "020_worker_duration_metrics.sql": "0e9669d5021f6f77200d8db4a0d017230077c0027d500f8d17d1a82ae9a02ba5",
+    "021_source_version_restores.sql": "98c6f264cf2043fe08aa3c81e16bddc4cecfc0dd4d7546ed7d4140bb754ea319",
+    "022_layer_document_revisions.sql": "96ea843c7b2b19657b846fd63a876cdc3fa8263148bc942a297fc518a15d7339",
+    "023_project_job_fencing.sql": "a7f747ac4dbac9463db8801e3445816ebebed7f7009a253d4b8324724d9fd50c",
+    "024_billing_webhook_ordering.sql": "548b67f589a98c0b97d5ef9c4cc4d22f309030163f40c0a3acc1bad41f0a4fca",
+    "025_retention_reference_indexes.sql": "b4c53b6a42a0f12863ffa6c63a08b400a2bb7fb01e6501c731486dc9c05c17e3",
+    "026_maintenance_status.sql": "c001f5d2037a4455e4ab92fcb9ccf7da40b8418b5c13529163d5484bc5b457bf",
+    "027_email_outbox.sql": "ae83adf8570603e29de3c4c0dcfa29cee79684354665c98ed82c8051f2ea1cd1",
+    "028_job_correlation.sql": "74b824c7f84972654bbe76164b94a50ace7f8a4f32b43ddad204090f57ecfc2a",
+    "029_job_trace_context.sql": "47d40be71c9fd3d45b3913a0a879e8044a95df9ee0146e4f1fd59eb7b36fbd0a",
+    "030_worker_resource_metrics.sql": "076feb8843f715382719ab989d2d24c16c28030aba82c37212761f19cd8fe46e",
+    "031_project_review_approvals.sql": "905a4e74b5d9fcba94a2dac515573dcbc9180c9eba202323dbe1031f38b06c3f",
+    "032_upload_integrity_failures.sql": "c6950e1d282db81d72cd8ad658a39e101f932733c423e57443c96b8729e54fab",
+    "033_idempotency_request_fingerprints.sql": "9e8eae19a1e18b933518429b17dc19eaf2852a0c881df310b4201aa0b16f8838",
+    "034_remove_export_preflight_status.sql": "2e57ee2e0123b751deb55e9d96afae930876d4c1ba16aa120d80b006977b77c2",
+    "035_source_version_restore_identity.sql": "3983d809fd495cc3c0110518bcd4e0fb98efb610c18150206e6d635ad5e53339",
+    "036_upload_cancellation_convergence.sql": "9bb14138e925630e8417f827dc84c876d6cd9ee7632c5f28f0dd3ef20579c65d",
+    "037_account_privacy.sql": "087cf7300e4a090cff1be10f31758c73be0fd4f7f370c14d137f91aa41c4d28b",
+    "038_character_rig_context.sql": "de58d6136547b3a9279dd03bc49f650bc7011d6c85eab780aeec5357a2f7d9fc",
+    "039_character_worker_observability.sql": "dc338fb9a648fbc17e1d12a20ef383cc9c7fe969e9ecef9f9049c3cd5425e1fb"
+  },
+  "openApiOperations": [
+    "DELETE /v1/account",
+    "GET /v1/account/export",
+    "GET /v1/activity",
+    "GET /v1/admin/audit",
+    "GET /v1/admin/billing",
+    "GET /v1/admin/exports",
+    "GET /v1/admin/overview",
+    "GET /v1/admin/processing",
+    "GET /v1/admin/system",
+    "GET /v1/admin/users",
+    "GET /v1/auth/session",
+    "GET /v1/billing/checkouts/{checkoutId}",
+    "GET /v1/billing/config",
+    "GET /v1/billing/subscription",
+    "GET /v1/capabilities",
+    "GET /v1/exports",
+    "GET /v1/exports/{exportId}",
+    "GET /v1/exports/{exportId}/download",
+    "GET /v1/health",
+    "GET /v1/health/live",
+    "GET /v1/health/ready",
+    "GET /v1/processing/jobs/{jobId}",
+    "GET /v1/projects",
+    "GET /v1/projects/{projectId}/character-rig",
+    "GET /v1/projects/{projectId}/character-rig/generations/{generationAttemptId}/artifact",
+    "GET /v1/projects/{projectId}/layer-document",
+    "GET /v1/projects/{projectId}/layers/{layerId}/asset",
+    "GET /v1/projects/{projectId}/source-version-restores",
+    "GET /v1/projects/{projectId}/source-versions",
+    "GET /v1/uploads/{uploadId}",
+    "PATCH /v1/admin/users/{userId}/access",
+    "PATCH /v1/projects/{projectId}/layer-document",
+    "POST /v1/admin/exports/{jobId}/retry",
+    "POST /v1/admin/processing/{jobId}/retry",
+    "POST /v1/auth/login",
+    "POST /v1/auth/logout",
+    "POST /v1/auth/mfa/challenge",
+    "POST /v1/auth/mfa/disable",
+    "POST /v1/auth/mfa/setup",
+    "POST /v1/auth/mfa/setup/confirm",
+    "POST /v1/auth/password-reset/confirm",
+    "POST /v1/auth/password-reset/request",
+    "POST /v1/auth/password/change",
+    "POST /v1/auth/register",
+    "POST /v1/billing/checkouts",
+    "POST /v1/billing/checkouts/{checkoutId}/complete-sandbox",
+    "POST /v1/billing/portal",
+    "POST /v1/billing/webhooks/{providerId}",
+    "POST /v1/exports",
+    "POST /v1/exports/{exportId}/cancel",
+    "POST /v1/processing/jobs",
+    "POST /v1/projects",
+    "POST /v1/projects/{projectId}/character-rig/bible/approve",
+    "POST /v1/projects/{projectId}/character-rig/compile",
+    "POST /v1/projects/{projectId}/character-rig/generations",
+    "POST /v1/projects/{projectId}/character-rig/generations/{generationAttemptId}/reviews",
+    "POST /v1/projects/{projectId}/character-rig/identity-model",
+    "POST /v1/projects/{projectId}/character-rig/references/current-source",
+    "POST /v1/projects/{projectId}/guided-refinements",
+    "POST /v1/projects/{projectId}/layer-document/history",
+    "POST /v1/projects/{projectId}/layer-document/image/merge",
+    "POST /v1/projects/{projectId}/layer-document/image/refine-edges",
+    "POST /v1/projects/{projectId}/layer-document/text/merge",
+    "POST /v1/projects/{projectId}/layer-document/text/region-ocr",
+    "POST /v1/projects/{projectId}/layer-document/text/split",
+    "POST /v1/projects/{projectId}/review/approve",
+    "POST /v1/projects/{projectId}/source-versions/{versionId}/restore",
+    "POST /v1/uploads/intents",
+    "POST /v1/uploads/{uploadId}/cancel",
+    "PUT /v1/projects/{projectId}/character-rig/bible",
+    "PUT /v1/uploads/{uploadId}/content"
+  ],
+  "packageExports": {
+    "@motionprep/api": {
+      "./character-worker": {
+        "default": "./src/character-rig/character-worker-runtime.ts",
+        "production": "./dist/character-rig/character-worker-runtime.js",
+        "types": "./src/character-rig/character-worker-runtime.ts"
+      },
+      "./export-worker": {
+        "default": "./src/exports/export-worker-runtime.ts",
+        "production": "./dist/exports/export-worker-runtime.js",
+        "types": "./src/exports/export-worker-runtime.ts"
+      },
+      "./object-storage-environment": {
+        "default": "./src/storage/object-storage-environment.ts",
+        "production": "./dist/storage/object-storage-environment.js",
+        "types": "./src/storage/object-storage-environment.ts"
+      },
+      "./processing-worker": {
+        "default": "./src/processing/processing-worker-runtime.ts",
+        "production": "./dist/processing/processing-worker-runtime.js",
+        "types": "./src/processing/processing-worker-runtime.ts"
+      },
+      "./tracing": {
+        "default": "./src/observability/tracing.ts",
+        "production": "./dist/observability/tracing.js",
+        "types": "./src/observability/tracing.ts"
+      }
+    },
+    "@motionprep/contracts": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
+    "@motionprep/document-processing": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
+    "@motionprep/export-adapters": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
+    "@motionprep/guidance": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
+    "@motionprep/media-processing": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
+    "@motionprep/presets": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } }
+  },
+  "rootScripts": [
+    "benchmark:character-rig", "benchmark:ocr", "benchmark:ocr:corpus",
+    "benchmark:ocr:development", "benchmark:ocr:holdout:open", "benchmark:ocr:selector",
+    "build", "clean", "coverage", "deadcode", "dev", "dev:api", "dev:stack",
+    "dev:web", "dev:worker-character", "dev:worker-document", "dev:worker-export",
+    "dev:worker-media", "fetch:representative-pdf", "fixture:ocr:corpus:fetch",
+    "fixture:ocr:generate", "fixtures:generate", "golden:adobe:generate", "lint",
+    "lint:css", "production:compose", "quality", "test", "test:character-rig:benchmark",
+    "test:e2e", "test:e2e:install", "test:faults:topology", "test:load:pdf",
+    "test:load:utils", "test:release-drill:utils", "test:release-rollback",
+    "test:representative-pdf", "test:topology", "test:topology:full", "typecheck",
+    "verify:adobe-golden", "verify:alerts", "verify:architecture", "verify:bundle",
+    "verify:character-rig:benchmark", "verify:clean", "verify:contracts", "verify:css",
+    "verify:deployment", "verify:fixtures", "verify:incident", "verify:maintainability",
+    "verify:object-storage", "verify:ocr-corpus", "verify:recovery", "verify:release-env",
+    "verify:release-env:test", "verify:release-evidence:test", "verify:staging-application",
+    "verify:visuals"
+  ],
+  "schemaVersion": 1,
+  "workerEntrypoints": {
+    "@motionprep/worker-character": {
+      "development": "node --env-file-if-exists=../../.env --watch --import tsx src/index.ts",
+      "production": "node --conditions=production dist/index.js",
+      "source": "apps/worker-character/src/index.ts"
+    },
+    "@motionprep/worker-document": {
+      "development": "node --env-file-if-exists=../../.env --watch --import tsx src/index.ts",
+      "production": "node --conditions=production dist/index.js",
+      "source": "apps/worker-document/src/index.ts"
+    },
+    "@motionprep/worker-export": {
+      "development": "node --env-file-if-exists=../../.env --watch --import tsx src/index.ts",
+      "production": "node --conditions=production dist/index.js",
+      "source": "apps/worker-export/src/index.ts"
+    },
+    "@motionprep/worker-media": {
+      "development": "node --env-file-if-exists=../../.env --watch --import tsx src/index.ts",
+      "production": "node --conditions=production dist/index.js",
+      "source": "apps/worker-media/src/index.ts"
+    }
+  },
+  "workspaceScripts": {
+    "@motionprep/api": [
+      "build", "coverage", "db:migrate", "db:migrate:prod", "dev",
+      "maintenance:retention", "maintenance:retention:prod",
+      "maintenance:retention:scheduler", "maintenance:retention:scheduler:prod",
+      "serve:e2e", "start", "test", "test:character-rig:race", "test:integration", "typecheck",
+      "verify:staging-dependencies", "verify:staging-dependencies:test"
+    ],
+    "@motionprep/contracts": ["build", "coverage", "test", "typecheck"],
+    "@motionprep/document-processing": ["build", "coverage", "test", "typecheck"],
+    "@motionprep/export-adapters": ["build", "coverage", "test", "typecheck"],
+    "@motionprep/guidance": ["build", "coverage", "test", "typecheck"],
+    "@motionprep/media-processing": ["build", "coverage", "test", "typecheck"],
+    "@motionprep/presets": ["build", "coverage", "test", "typecheck"],
+    "@motionprep/web": ["build", "coverage", "dev", "preview", "test", "typecheck"],
+    "@motionprep/worker-character": ["build", "coverage", "dev", "start", "test", "typecheck"],
+    "@motionprep/worker-document": ["build", "coverage", "dev", "start", "test", "typecheck"],
+    "@motionprep/worker-export": ["build", "coverage", "dev", "start", "test", "typecheck"],
+    "@motionprep/worker-media": ["build", "coverage", "dev", "start", "test", "typecheck"]
+  }
+}

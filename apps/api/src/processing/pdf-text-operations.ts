@@ -5,6 +5,7 @@ import type {
 import { createPdfTextLayerName } from "@motionprep/presets";
 import { ProcessingDomainError } from "./processing-errors.js";
 import { unionLayerBounds } from "./layer-operation-utils.js";
+import { applyReadingOrder } from "./reading-order.js";
 
 interface PreparedPdfTextOperation {
   changed: LayerDocument;
@@ -204,17 +205,10 @@ function normalizePageReadingOrder(
   layers: readonly LayerNode[],
   pageNumber: number,
 ): LayerNode[] {
-  const orderedIds = new Map(
-    layers
-      .filter(
-        (layer) =>
-          layer.kind === "text" && layer.pageNumber === pageNumber,
-      )
-      .sort(compareTextLayers)
-      .map((layer, index) => [layer.id, index + 1]),
-  );
-  return layers.map((layer) => {
-    const readingOrder = orderedIds.get(layer.id);
-    return readingOrder === undefined ? layer : { ...layer, readingOrder };
+  return applyReadingOrder(layers, {
+    appliesTo: (layer) =>
+      layer.kind === "text" && layer.pageNumber === pageNumber,
+    compare: compareTextLayers,
+    startAt: 1,
   });
 }

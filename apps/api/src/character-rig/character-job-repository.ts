@@ -6,7 +6,7 @@ export interface CharacterJobRepository {
     projectId: string,
     operationKey: string,
   ): Promise<CharacterJob | null>;
-  save(job: CharacterJob): Promise<void>;
+  save(job: CharacterJob): Promise<boolean>;
   claimNext(
     workerId: string,
     claimedAt: string,
@@ -52,15 +52,16 @@ export class InMemoryCharacterJobRepository implements CharacterJobRepository {
     return job ? structuredClone(job) : null;
   }
 
-  async save(job: CharacterJob): Promise<void> {
+  async save(job: CharacterJob): Promise<boolean> {
     const conflict = [...this.#jobs.values()].some(
       (candidate) =>
         candidate.id !== job.id &&
         candidate.projectId === job.projectId &&
         candidate.operationKey === job.operationKey,
     );
-    if (conflict) throw new Error("Character job operation key already exists.");
+    if (conflict) return false;
     this.#jobs.set(job.id, structuredClone(job));
+    return true;
   }
 
   async claimNext(

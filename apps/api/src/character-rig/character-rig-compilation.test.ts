@@ -15,6 +15,7 @@ import {
 } from "../storage/object-storage.js";
 import { FakeCharacterInferenceProvider } from "./fake-character-inference-provider.js";
 import { executeClaimedCharacterJob } from "./character-job-executor.js";
+import { InMemoryCharacterJobResultCommitter } from "./character-job-result-committer.js";
 import { InMemoryCharacterJobRepository } from "./character-job-repository.js";
 import { CharacterRigCompilerService } from "./character-rig-compiler-service.js";
 import { InMemoryCharacterRigRepository } from "./character-rig-repository.js";
@@ -63,6 +64,7 @@ describe("character rig compilation", () => {
       {
         jobs,
         characterRigs: rigs,
+        resultCommitter: new InMemoryCharacterJobResultCommitter(jobs, rigs),
         provider: new FakeCharacterInferenceProvider(),
         storage,
         workerId: "character-worker-test",
@@ -102,6 +104,7 @@ describe("character rig compilation", () => {
       {
         jobs,
         characterRigs: rigs,
+        resultCommitter: new InMemoryCharacterJobResultCommitter(jobs, rigs),
         provider: new FakeCharacterInferenceProvider(),
         storage,
         workerId: "character-worker-test",

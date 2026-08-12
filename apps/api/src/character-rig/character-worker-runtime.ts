@@ -4,6 +4,7 @@ import { S3ObjectStorage } from "../storage/s3-object-storage.js";
 import { createDatabase } from "../infrastructure/postgres/database.js";
 import { PostgresCharacterJobRepository } from "../infrastructure/postgres/postgres-character-job-repository.js";
 import { PostgresCharacterRigRepository } from "../infrastructure/postgres/postgres-character-rig-repository.js";
+import { PostgresCharacterJobResultCommitter } from "../infrastructure/postgres/postgres-character-job-result-committer.js";
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
 import { HttpCharacterInferenceProvider } from "./http-character-inference-provider.js";
@@ -54,6 +55,7 @@ export async function runCharacterWorker(
   const storage = new S3ObjectStorage(config.objectStorage);
   const jobs = new PostgresCharacterJobRepository(database.pool);
   const characterRigs = new PostgresCharacterRigRepository(database.pool);
+  const resultCommitter = new PostgresCharacterJobResultCommitter(database.pool);
   const provider = new HttpCharacterInferenceProvider({
     baseUrl: config.inferenceBaseUrl,
     apiKey: config.inferenceApiKey,
@@ -88,6 +90,7 @@ export async function runCharacterWorker(
         return runCharacterWorkerLoop({
           jobs,
           characterRigs,
+          resultCommitter,
           provider,
           storage,
           workerId,

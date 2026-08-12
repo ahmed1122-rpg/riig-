@@ -19,6 +19,7 @@ describe("runtime capabilities", () => {
           enabled: false,
           unavailableReason: expect.any(String),
           requiredCanonicalViews: 5,
+          supportedProjectKinds: ["image"],
         },
         pdfRegionOcr: {
           enabled: false,
@@ -40,6 +41,7 @@ describe("runtime capabilities", () => {
       enabled: true,
       unavailableReason: null,
       requiredCanonicalViews: 5,
+      supportedProjectKinds: ["image"],
     });
     await app.close();
   });

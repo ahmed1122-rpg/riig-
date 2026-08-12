@@ -49,7 +49,7 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
   readonly #fetch: typeof fetch;
 
   constructor(private readonly options: HttpCharacterInferenceProviderOptions) {
-    this.#baseUrl = new URL(options.baseUrl);
+    this.#baseUrl = normalizeBaseUrl(options.baseUrl);
     if (
       this.#baseUrl.protocol !== "https:" &&
       !(
@@ -151,6 +151,17 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
       throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
     }
   }
+}
+
+function normalizeBaseUrl(value: string): URL {
+  const url = new URL(value);
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error(
+      "Character inference base URL cannot contain credentials, a query, or a fragment.",
+    );
+  }
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
+  return url;
 }
 
 function inferenceBible(input: CharacterIdentityTrainingInput | CharacterGenerationInput) {

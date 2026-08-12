@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-12",
+  "gitCommit": "c168e5c",
+  "gitDescribe": "v0.1.7-4-gc168e5c",
+  "toolchain": {
+    "node": "24.18.1",
+    "npm": "11.16.0"
+  },
+  "inventory": {
+    "trackedFiles": 1118,
+    "productionSourceFiles": 384,
+    "workspaceManifests": 13,
+    "openApiOperations": 71,
+    "migrations": 39
+  },
+  "tests": {
+    "workspaceCoverageTestsPassed": 588,
+    "apiTestsPassed": 343,
+    "webTestsPassed": 131
+  },
+  "coverage": {
+    "api": {
+      "statements": 67.23,
+      "branches": 58.84,
+      "functions": 69.48,
+      "lines": 68.68
+    },
+    "web": {
+      "statements": 34.2,
+      "branches": 33.79,
+      "functions": 26.42,
+      "lines": 35.13
+    }
+  },
+  "webBundleGzipKiB": {
+    "javascript": 164.5,
+    "css": 43.2
+  },
+  "maintainability": {
+    "maxProductionSourceLines": 500,
+    "oversizedProductionFiles": 0,
+    "minimumExactCloneLines": 16,
+    "exactProductionCloneBlocks": 0
+  },
+  "externalGatesExcluded": [
+    "managed PostgreSQL, Redis, object storage, and SMTP",
+    "private Character inference provider",
+    "representative load and memory run",
+    "backup and restore drill",
+    "production legal and payment approvals"
+  ]
+}
+

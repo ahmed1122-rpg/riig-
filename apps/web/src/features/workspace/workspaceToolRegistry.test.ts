@@ -11,6 +11,7 @@ describe("workspace tool registry", () => {
       enabled: true,
       unavailableReason: null,
       requiredCanonicalViews: 5,
+      supportedProjectKinds: ["image"] as const,
     },
     pdfRegionOcr: { enabled: true, unavailableReason: null },
   };
@@ -30,6 +31,12 @@ describe("workspace tool registry", () => {
       "source.versions",
     ]);
     expect(tools.every((tool) => tool.available)).toBe(true);
+  });
+
+  it("never exposes Character Turntable for PDF projects", () => {
+    const bookTools = getReadyWorkspaceTools("book", true, enabledFeatures);
+    expect(bookTools.some((tool) => tool.id === "image.turntable")).toBe(false);
+    expect(enabledFeatures.characterRig.supportedProjectKinds).toEqual(["image"]);
   });
 
 

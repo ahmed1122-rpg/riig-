@@ -51,6 +51,13 @@ npm run dev:stack
 npm run dev
 ```
 
+يشغّل `npm run dev:stack` واجهة الويب وAPI وعمال الصور والوثائق والتصدير فقط.
+عامل Character اختياري ومغلق افتراضيًا؛ بعد إعداد المزود الخاص شغّله في طرفية
+منفصلة عبر `npm run dev:worker-character`. لا تعتبر ميزة Character جاهزة لمجرد
+تشغيل العامل: يجب أيضًا تفعيل `CHARACTER_RIG_ENABLED` واجتياز بواباتها الموثقة.
+`Character Turntable` مخصص لمشاريع الصور فقط ولا يظهر لمشاريع PDF؛ يفرض API
+القيد نفسه على جميع مسارات Character حتى عند استدعائها مباشرة.
+
 تقرأ أوامر API والترحيل والعمال ملف `.env` من جذر المستودع تلقائياً.
 ابدأ الاعتماديات أولاً عبر `docker compose up -d` وانتظر نجاح خدمة
 `minio-init` التي تنشئ الحاوية وتفعّل versioning. لا يلزم تصدير المتغيرات
@@ -198,3 +205,5 @@ npm run dev:stack
 `/internal/metrics`؛ لا يمر هذا المسار عبر Nginx العام.
 
 راجع [خريطة البناء الحالية](docs/BUILD_MAP.md) و[قرارات العمارة](docs/adr/0001-modular-monolith-with-workers.md).
+سياسة ربط إصدار التطبيق بوسم Git وSHA وصور OCI موثقة في
+[docs/VERSIONING.md](docs/VERSIONING.md).

@@ -5,6 +5,10 @@ import type {
 } from "fastify";
 import { documentedSuccessResponses } from "./openapi-success-responses.js";
 import {
+  characterDocumentedBodies,
+  characterRouteSummaries,
+} from "../character-rig/character-rig-openapi.js";
+import {
   boolean,
   integer,
   number,
@@ -105,12 +109,16 @@ export function transformOpenApiDocumentation({
   const routeKey = `${method} ${url}`;
   const body = documentedBodies.get(routeKey);
   const successResponses = documentedSuccessResponses.get(routeKey);
+  const characterSummary = characterRouteSummaries.get(routeKey);
   const params = pathParameters(url);
   return {
     url,
     schema: {
       ...schema,
       ...(body && !schema.body ? { body } : {}),
+      ...(characterSummary
+        ? { summary: characterSummary, tags: ["character-rig"] }
+        : {}),
       ...(params && !schema.params ? { params } : {}),
       ...(successResponses
         ? {
@@ -389,4 +397,5 @@ const documentedBodies = new Map<string, Record<string, unknown>>([
       reason: text(),
     }),
   ],
+  ...characterDocumentedBodies,
 ]);

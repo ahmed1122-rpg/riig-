@@ -17,6 +17,7 @@ export const unavailableApplicationCapabilities: ApplicationCapabilities = {
       unavailableReason:
         "تعذر التحقق من جاهزية Character Studio؛ أوقفت الميزة لحماية بيانات الشخصية.",
       requiredCanonicalViews: 5,
+      supportedProjectKinds: ["image"],
     },
     pdfRegionOcr: {
       enabled: false,

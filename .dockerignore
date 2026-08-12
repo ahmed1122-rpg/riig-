@@ -1,5 +1,10 @@
 .git
 .github
+!.github/
+!.github/workflows/
+!.github/workflows/**
+!.github/dependabot.yml
+!.github/CODEOWNERS
 .env
 .env.*
 !.env.example
@@ -9,6 +14,12 @@ node_modules
 **/dist
 coverage
 artifacts/*
+!artifacts/baselines/
+!artifacts/baselines/**
+!artifacts/benchmarks/
+!artifacts/benchmarks/**
+!artifacts/fixtures/
+!artifacts/fixtures/**
 !artifacts/adobe-golden
 artifacts/adobe-golden/*
 !artifacts/adobe-golden/generated
@@ -16,6 +27,8 @@ artifacts/adobe-golden/generated/*
 !artifacts/adobe-golden/generated/image-layers.psd
 !artifacts/adobe-golden/generated/book-pages.psd
 !artifacts/adobe-golden/generated/manifest.json
+!artifacts/adobe-golden/photoshop-result.txt
+!artifacts/adobe-golden/after-effects-result.txt
 *.log
 Thumbs.db
 .DS_Store

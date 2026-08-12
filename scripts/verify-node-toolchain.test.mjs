@@ -38,6 +38,25 @@ test("accepts one Node and npm toolchain across manifests and images", () => {
   );
 });
 
+test("accepts pinned slim dependency and full-bookworm QA stages", () => {
+  assert.deepEqual(
+    verifyNodeToolchain({
+      nodeVersion: "24.18.1",
+      packageManifest: validManifest,
+      npmConfig: validNpmConfig,
+      dockerfiles: [validDockerfile],
+      qaDockerfiles: [
+        [
+          `FROM node:24.18.1-bookworm-slim@sha256:${"a".repeat(64)} AS qa-dependencies`,
+          `FROM node:24.18.1-bookworm@sha256:${"b".repeat(64)} AS qa`,
+          "",
+        ].join("\n"),
+      ],
+    }),
+    [],
+  );
+});
+
 test("reports version drift and unpinned Docker bases", () => {
   const violations = verifyNodeToolchain({
     nodeVersion: "24.18.1",

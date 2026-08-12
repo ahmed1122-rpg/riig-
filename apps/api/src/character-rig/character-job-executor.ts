@@ -10,6 +10,10 @@ import type { CharacterInferenceProvider } from "./character-inference-provider.
 import { CharacterProviderError } from "./character-inference-provider.js";
 import type { CharacterJobRepository } from "./character-job-repository.js";
 import type { CharacterRigRepository } from "./character-rig-repository.js";
+import type {
+  CharacterJobResult,
+  CharacterJobResultCommitter,
+} from "./character-job-result-committer.js";
 import {
   evaluateCharacterQuality,
   type CharacterQualityThresholds,
@@ -18,6 +22,7 @@ import {
 export interface CharacterJobExecutionContext {
   jobs: CharacterJobRepository;
   characterRigs: CharacterRigRepository;
+  resultCommitter: CharacterJobResultCommitter;
   provider: CharacterInferenceProvider;
   storage: ObjectStorage;
   workerId: string;
@@ -44,25 +49,40 @@ export async function executeClaimedCharacterJob(
     },
     context.leaseMilliseconds,
   );
+  let pendingResult: CharacterJobResult | null = null;
   try {
     if (job.type === "train-identity") {
-      await executeIdentityTraining(context, job, now);
+      pendingResult = await executeIdentityTraining(context, job, now);
     } else if (
       ["generate-view", "generate-part", "repair-part"].includes(job.type)
     ) {
-      await executeGeneration(context, job, now);
+      pendingResult = await executeGeneration(context, job, now);
     } else if (job.type === "compile-rig") {
-      await executeRigCompilation(context, job, now);
+      pendingResult = await executeRigCompilation(context, job, now);
     } else {
       throw new CharacterProviderError("CHARACTER_JOB_TYPE_NOT_IMPLEMENTED");
     }
-    if (heartbeat.leaseLost()) return null;
-    return context.jobs.completeClaim(
+    if (heartbeat.leaseLost()) {
+      await cleanupResultArtifacts(context, pendingResult);
+      return null;
+    }
+    const completedAt = now().toISOString();
+    if (
+      !(await context.resultCommitter.commit(
+        job.id,
+        context.workerId,
+        completedAt,
+        pendingResult,
+      ))
+    ) {
+      await cleanupResultArtifacts(context, pendingResult);
+      return null;
+    }
+    return context.jobs.findById(
       job.id,
-      context.workerId,
-      now().toISOString(),
     );
   } catch (error) {
+    if (pendingResult) await cleanupResultArtifacts(context, pendingResult);
     const failedAt = now();
     const errorCode = characterJobErrorCode(error);
     const settled = await context.jobs.retryOrFailClaim(
@@ -131,7 +151,7 @@ async function executeRigCompilation(
   context: CharacterJobExecutionContext,
   job: CharacterJob,
   now: () => Date,
-): Promise<void> {
+): Promise<CharacterJobResult> {
   const rigVersionId = requiredPayloadId(job, "rigVersionId");
   const width = requiredPayloadNumber(job, "width");
   const height = requiredPayloadNumber(job, "height");
@@ -197,8 +217,9 @@ async function executeRigCompilation(
     await removeFailedArtifact(context, psdKey);
     throw error;
   }
-  try {
-    await context.characterRigs.saveRigVersion({
+  return {
+    kind: "rig",
+    rig: {
       ...rig,
       status: "needs-review",
       psdArtifact: {
@@ -218,21 +239,15 @@ async function executeRigCompilation(
         retentionExpiresAt: null,
       },
       updatedAt: compiledAt,
-    });
-  } catch (error) {
-    await Promise.all([
-      removeFailedArtifact(context, psdMetadata.key),
-      removeFailedArtifact(context, manifestMetadata.key),
-    ]);
-    throw error;
-  }
+    },
+  };
 }
 
 async function executeIdentityTraining(
   context: CharacterJobExecutionContext,
   job: CharacterJob,
   now: () => Date,
-): Promise<void> {
+): Promise<CharacterJobResult> {
   const modelVersionId = requiredPayloadId(job, "modelVersionId");
   const model = await context.characterRigs.findIdentityModelVersion(
     job.projectId,
@@ -254,31 +269,31 @@ async function executeIdentityTraining(
     failureCode: null,
     updatedAt: now().toISOString(),
   };
-  await context.characterRigs.saveIdentityModelVersion(training);
+  if (!(await context.characterRigs.saveIdentityModelVersion(training))) {
+    throw new CharacterProviderError("CHARACTER_MODEL_STATE_CONFLICT");
+  }
   const result = await context.provider.trainIdentity({
     bible,
     modelVersion: training,
     references,
   });
-  await context.characterRigs.saveIdentityModelVersion({
-    ...training,
-    status: "ready",
-    providerModelReference: result.providerModelReference,
-    trainingConfiguration: {
-      ...training.trainingConfiguration,
-      ...Object.fromEntries(
-        Object.entries(result.metrics).map(([key, value]) => [`metric.${key}`, value]),
-      ),
+  return {
+    kind: "identity-model",
+    model: {
+      ...training,
+      status: "ready",
+      providerModelReference: result.providerModelReference,
+      trainingMetrics: structuredClone(result.metrics),
+      updatedAt: now().toISOString(),
     },
-    updatedAt: now().toISOString(),
-  });
+  };
 }
 
 async function executeGeneration(
   context: CharacterJobExecutionContext,
   job: CharacterJob,
   now: () => Date,
-): Promise<void> {
+): Promise<CharacterJobResult> {
   const generationAttemptId = requiredPayloadId(job, "generationAttemptId");
   const attempt = await context.characterRigs.findGenerationAttempt(
     job.projectId,
@@ -303,7 +318,9 @@ async function executeGeneration(
     failureCode: null,
     updatedAt: now().toISOString(),
   };
-  await context.characterRigs.saveGenerationAttempt(processing);
+  if (!(await context.characterRigs.saveGenerationAttempt(processing))) {
+    throw new CharacterProviderError("CHARACTER_GENERATION_STATE_CONFLICT");
+  }
   const result = await context.provider.generate({
     bible,
     modelVersion: model,
@@ -322,8 +339,9 @@ async function executeGeneration(
     result.artifact,
   );
   const completedAt = now().toISOString();
-  try {
-    await context.characterRigs.saveGenerationAttempt({
+  return {
+    kind: "generation",
+    attempt: {
       ...processing,
       status: qualityReport.passedAutomatedGate
         ? "needs-review"
@@ -341,10 +359,23 @@ async function executeGeneration(
         ? null
         : "CHARACTER_QUALITY_GATE_FAILED",
       updatedAt: completedAt,
-    });
-  } catch (error) {
-    await removeFailedArtifact(context, metadata.key);
-    throw error;
+    },
+  };
+}
+
+async function cleanupResultArtifacts(
+  context: CharacterJobExecutionContext,
+  result: CharacterJobResult,
+): Promise<void> {
+  if (result.kind === "generation" && result.attempt.outputArtifact) {
+    await removeFailedArtifact(context, result.attempt.outputArtifact.objectKey);
+  }
+  if (result.kind === "rig") {
+    await Promise.all(
+      [result.rig.psdArtifact, result.rig.manifestArtifact]
+        .filter((artifact) => artifact !== null)
+        .map((artifact) => removeFailedArtifact(context, artifact.objectKey)),
+    );
   }
 }
 

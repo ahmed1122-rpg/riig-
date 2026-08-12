@@ -159,7 +159,7 @@ describe("InMemoryCharacterRigRepository", () => {
     expect(await repository.findGenerationAttempt(crypto.randomUUID(), attempt.id)).toBeNull();
     await expect(
       repository.saveGenerationAttempt({ ...attempt, id: crypto.randomUUID() }),
-    ).rejects.toThrow(/idempotency/u);
+    ).resolves.toBe(false);
 
     const review = {
       id: crypto.randomUUID(),

@@ -36,4 +36,10 @@ describe("request fingerprint", () => {
     circular.self = circular;
     expect(() => canonicalRequestJson(circular)).toThrow(/Circular/u);
   });
+
+  it("uses locale-independent Unicode code-unit key ordering", () => {
+    expect(
+      canonicalRequestJson({ "ä": 4, z: 3, "😀": 5, Z: 2, A: 1 }),
+    ).toBe('{"A":1,"Z":2,"z":3,"ä":4,"😀":5}');
+  });
 });

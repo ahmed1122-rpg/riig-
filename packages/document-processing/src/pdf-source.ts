@@ -21,6 +21,7 @@ import {
   segmentPositionedText,
   type PositionedText,
 } from "./pdf-layout.js";
+import { deterministicPdfJsOptions } from "./pdfjs-options.js";
 
 const MAX_PDF_PAGES = 250;
 const MAX_TEXT_ITEMS = 100_000;
@@ -39,10 +40,7 @@ export async function preparePdfSource(
 ): Promise<LayerDocument> {
   const loadingTask = getDocument({
     data: new Uint8Array(input.source),
-    disableFontFace: true,
-    useSystemFonts: false,
-    useWorkerFetch: false,
-    useWasm: false,
+    ...deterministicPdfJsOptions,
     stopAtErrors: true,
     maxImageSize: 100_000_000,
     verbosity: 0,

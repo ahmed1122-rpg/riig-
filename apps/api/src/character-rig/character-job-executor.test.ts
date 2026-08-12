@@ -11,6 +11,7 @@ import {
 } from "./character-job-repository.js";
 import { executeClaimedCharacterJob } from "./character-job-executor.js";
 import { CharacterJobService } from "./character-job-service.js";
+import { InMemoryCharacterJobResultCommitter } from "./character-job-result-committer.js";
 import { InMemoryCharacterRigRepository } from "./character-rig-repository.js";
 import { FakeCharacterInferenceProvider } from "./fake-character-inference-provider.js";
 
@@ -126,6 +127,29 @@ describe("character job runtime", () => {
       failureCode: "CHARACTER_QUALITY_GATE_FAILED",
     });
   });
+
+  it("removes a generated artifact when the fenced result commit is rejected", async () => {
+    const setup = await createReadyContext("ready");
+    const attempt = makeAttempt(setup.bible, setup.model);
+    await setup.rigs.saveGenerationAttempt(attempt);
+    const job = await enqueueAndClaimGeneration(setup.jobs, attempt);
+
+    const result = await executeClaimedCharacterJob(
+      {
+        ...setup.context,
+        resultCommitter: { async commit() { return false; } },
+        now: advancingClock(),
+      },
+      job,
+    );
+
+    expect(result).toBeNull();
+    expect(
+      await setup.storage.inspect(
+        `projects/${projectId}/character-rig/generations/${attempt.id}.png`,
+      ),
+    ).toBeNull();
+  });
 });
 
 async function createReadyContext(
@@ -150,6 +174,7 @@ async function createReadyContext(
     context: {
       jobs,
       characterRigs: rigs,
+      resultCommitter: new InMemoryCharacterJobResultCommitter(jobs, rigs),
       provider: new FakeCharacterInferenceProvider(automatedGatePasses),
       storage,
       workerId: "worker-a",

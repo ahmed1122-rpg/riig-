@@ -173,6 +173,7 @@ export interface CharacterIdentityModelVersion {
   baseModelReference: string;
   datasetFingerprint: string;
   trainingConfiguration: Record<string, string | number | boolean>;
+  trainingMetrics?: Record<string, number>;
   failureCode: string | null;
   createdAt: string;
   updatedAt: string;
@@ -280,6 +281,8 @@ export interface CharacterRigVersion {
   bibleId: string;
   version: number;
   status: CharacterRigStatus;
+  sourceFingerprint?: string;
+  canvas?: { width: number; height: number };
   nodes: CharacterRigNode[];
   psdArtifact: CharacterArtifactReference | null;
   manifestArtifact: CharacterArtifactReference | null;

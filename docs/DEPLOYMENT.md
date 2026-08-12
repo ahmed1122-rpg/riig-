@@ -3,7 +3,7 @@
 ## Assumptions
 
 This deployment profile is intentionally a modular monolith with image, PDF,
-and export workers. It assumes one small product team, a TLS-terminating load balancer, and
+export, and optional Character workers. It assumes one small product team, a TLS-terminating load balancer, and
 managed PostgreSQL, Redis, S3-compatible storage, and SMTP. Kubernetes is
 deliberately deferred until independent scaling or operational ownership makes
 it necessary.
@@ -103,6 +103,11 @@ use Stripe Customer Portal.
     endpoint and secret, pass the Character benchmark and Adobe Golden, then
     start `worker-character` with the `character-rig` Compose profile. Follow
      [`runbooks/character-rig-operations.md`](runbooks/character-rig-operations.md).
+    `CHARACTER_INFERENCE_URL` may include a provider path prefix; both
+    `https://provider.example/private-api` and the trailing-slash form resolve
+    requests below `/private-api/`. Credentials, query strings, and fragments
+    are rejected. Do not include `/v1` unless it is genuinely part of the
+    provider's prefix, because the adapter appends its own versioned routes.
 14. Set `TRUSTED_PROXY_CIDR` to the narrow source CIDR used by the immediate TLS
     load balancer when it connects to Nginx. The load balancer must overwrite
     `X-Forwarded-Proto` and append the socket client address to
@@ -143,9 +148,28 @@ runtime. Do not bypass either contract with `--force`.
 GitHub workflows use one reviewed `actions/setup-node` commit and one reviewed
 `actions/checkout` commit, both running on the Node 24 Actions runtime. The
 workflow security verifier rejects an older or divergent pin, and the toolchain
-verifier requires every Dockerfile to use the same immutable Node image digest.
+verifier requires every production Dockerfile to use the same immutable slim
+Node image digest. The non-production QA image uses a separately pinned full
+Bookworm image at the same exact Node version so Git/fontconfig are present
+without a mutable package-manager download during the build.
 Patch upgrades must update `.node-version`, the root manifest, Docker image
 references, tests, and evidence together in one pull request.
+
+Source QA runs in `Dockerfile.qa`, a non-production image that keeps the exact
+Node/npm contract, Git for `verify:clean`, standard font support, and all test
+dependencies. Build and run it with:
+
+```bash
+docker build --file Dockerfile.qa --tag motionprep-qa:local .
+docker run --rm \
+  --volume "$PWD/artifacts/qa:/workspace/artifacts/qa" \
+  motionprep-qa:local
+```
+
+Its single command runs `npm run quality` and writes
+`artifacts/qa/quality-summary.json`, including the application/toolchain
+identity, timestamps, duration, outcome, and CI SHA when supplied. The QA image
+must never be promoted as a runtime artifact.
 
 The repository also enables npm's strict install-script policy in `.npmrc`.
 Only the exact reviewed `esbuild` postinstall and macOS-only `fsevents` native
@@ -174,6 +198,11 @@ digest-qualified `RUNTIME_IMAGE_REF` and `WEB_IMAGE_REF` values and exact
 rejects missing references and does not contain build directives or tag
 fallbacks.
 
+The application/package version, immutable source SHA, tag, and image digest
+serve different purposes and must not be substituted for one another. Follow
+[`VERSIONING.md`](VERSIONING.md); staging verification requires an explicit
+`EXPECTED_APPLICATION_VERSION` and never falls back to an old release number.
+
 ```bash
 node scripts/verify-release-environment.mjs .env.production
 node scripts/run-production-compose.mjs .env.production pull
@@ -193,9 +222,10 @@ node scripts/run-production-compose.mjs .env.production \
   --profile character-rig up -d worker-character
 ```
 
-The `migrate` service applies additive SQL migrations before the API and workers
-start. Migration 027 adds the durable email outbox, and migration 028 retains
-the request correlation identifier on processing and export jobs. Upload publication is then
+The `migrate` service applies all additive SQL migrations through migration 039
+before the API and workers start. Migrations 038 and 039 add the Character Rig
+domain and worker observability; earlier migrations 027 and 028 add the durable
+email outbox and job correlation. Upload publication is then
 committed atomically across the upload session, source version, and project;
 the API startup reconciler re-inspects S3 metadata before repairing an
 interrupted legacy state. The web container exposes port 8080 and proxies `/v1` to the private API

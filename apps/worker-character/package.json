@@ -1,6 +1,6 @@
 {
   "name": "@motionprep/worker-character",
-  "version": "0.1.3",
+  "version": "0.1.7",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",

@@ -4,12 +4,18 @@ Character Studio is fail-closed. Keep `CHARACTER_RIG_ENABLED=false` unless the
 release has a passing private-provider benchmark, a signed Adobe Character
 Animator Golden, and a running `worker-character` heartbeat.
 
+The feature accepts image projects only. PDF/book projects are excluded by the
+public capability contract, the workspace tool registry, the dialog boundary,
+and the authorization guard shared by every Character Rig HTTP operation.
+
 ## Enablement
 
 1. Store `CHARACTER_INFERENCE_API_KEY` in the deployment secret store. Never
    place it in source control or logs.
 2. Configure an HTTPS `CHARACTER_INFERENCE_URL`. Plain HTTP is accepted only
-   for explicitly enabled localhost development.
+   for explicitly enabled localhost development. A private path prefix is
+   preserved with or without a trailing slash. Embedded credentials, query
+   strings, and fragments are invalid configuration.
 3. Start the optional Compose profile with
    `docker compose --profile character-rig up -d worker-character`.
 4. Confirm `motionprep_worker_up{worker_type="character"} == 1`, queue age is

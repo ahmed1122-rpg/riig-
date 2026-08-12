@@ -47,6 +47,18 @@ export class PostgresCharacterRigRepository implements CharacterRigRepository {
     ) {
       return false;
     }
+    if (expectedRevision === null) {
+      const inserted = await this.pool.query<{ id: string }>(
+        `INSERT INTO character_bibles (
+           id, project_id, version, revision, status, document,
+           created_by_user_id, approved_by_user_id, approved_at, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11)
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        bibleValues(bible),
+      );
+      return inserted.rowCount === 1;
+    }
     const result = await this.pool.query<{ id: string }>(
       `INSERT INTO character_bibles (
          id, project_id, version, revision, status, document,
@@ -64,20 +76,7 @@ export class PostgresCharacterRigRepository implements CharacterRigRepository {
          AND character_bibles.version = EXCLUDED.version
          AND character_bibles.revision = $12
        RETURNING id`,
-      [
-        bible.id,
-        bible.projectId,
-        bible.version,
-        bible.revision,
-        bible.status,
-        JSON.stringify(bible),
-        bible.createdByUserId,
-        bible.approvedByUserId,
-        bible.approvedAt,
-        bible.createdAt,
-        bible.updatedAt,
-        expectedRevision,
-      ],
+      [...bibleValues(bible), expectedRevision],
     );
     return result.rowCount === 1;
   }
@@ -144,32 +143,31 @@ export class PostgresCharacterRigRepository implements CharacterRigRepository {
 
   async saveIdentityModelVersion(
     model: CharacterIdentityModelVersion,
-  ): Promise<void> {
-    await this.pool.query(
+  ): Promise<boolean> {
+    const inserted = await this.pool.query<{ id: string }>(
       `INSERT INTO character_identity_model_versions (
          id, project_id, bible_id, version, status, provider_key, document,
          created_at, updated_at
        ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
-       ON CONFLICT (id) DO UPDATE SET
-         status = EXCLUDED.status,
-         provider_key = EXCLUDED.provider_key,
-         document = EXCLUDED.document,
-         updated_at = EXCLUDED.updated_at
-       WHERE character_identity_model_versions.project_id = EXCLUDED.project_id
-         AND character_identity_model_versions.bible_id = EXCLUDED.bible_id
-         AND character_identity_model_versions.version = EXCLUDED.version`,
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      modelValues(model),
+    );
+    if (inserted.rowCount === 1) return true;
+    const updated = await this.pool.query<{ id: string }>(
+      `UPDATE character_identity_model_versions SET
+         status = $5,
+         provider_key = $6,
+         document = $7::jsonb,
+         updated_at = $8
+       WHERE id = $1 AND project_id = $2 AND bible_id = $3 AND version = $4
+       RETURNING id`,
       [
-        model.id,
-        model.projectId,
-        model.bibleId,
-        model.version,
-        model.status,
-        model.providerKey,
-        JSON.stringify(model),
-        model.createdAt,
-        model.updatedAt,
+        model.id, model.projectId, model.bibleId, model.version, model.status,
+        model.providerKey, JSON.stringify(model), model.updatedAt,
       ],
     );
+    return updated.rowCount === 1;
   }
 
   async findGenerationAttempt(
@@ -211,34 +209,32 @@ export class PostgresCharacterRigRepository implements CharacterRigRepository {
 
   async saveGenerationAttempt(
     attempt: CharacterGenerationAttempt,
-  ): Promise<void> {
-    await this.pool.query(
+  ): Promise<boolean> {
+    const inserted = await this.pool.query<{ id: string }>(
       `INSERT INTO character_generation_attempts (
          id, project_id, bible_id, identity_model_version_id, status,
          request_hash, idempotency_key, document, created_by_user_id,
          created_at, updated_at
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
-       ON CONFLICT (id) DO UPDATE SET
-         status = EXCLUDED.status,
-         document = EXCLUDED.document,
-         updated_at = EXCLUDED.updated_at
-       WHERE character_generation_attempts.project_id = EXCLUDED.project_id
-         AND character_generation_attempts.request_hash = EXCLUDED.request_hash
-         AND character_generation_attempts.idempotency_key = EXCLUDED.idempotency_key`,
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      generationValues(attempt),
+    );
+    if (inserted.rowCount === 1) return true;
+    const updated = await this.pool.query<{ id: string }>(
+      `UPDATE character_generation_attempts SET
+         status = $3,
+         document = $6::jsonb,
+         updated_at = $7
+       WHERE id = $1 AND project_id = $2
+         AND request_hash = $4 AND idempotency_key = $5
+       RETURNING id`,
       [
-        attempt.id,
-        attempt.projectId,
-        attempt.bibleId,
-        attempt.identityModelVersionId,
-        attempt.status,
-        attempt.requestHash,
-        attempt.idempotencyKey,
-        JSON.stringify(attempt),
-        attempt.createdByUserId,
-        attempt.createdAt,
-        attempt.updatedAt,
+        attempt.id, attempt.projectId, attempt.status, attempt.requestHash,
+        attempt.idempotencyKey, JSON.stringify(attempt), attempt.updatedAt,
       ],
     );
+    return updated.rowCount === 1;
   }
 
   async commitGenerationReview(
@@ -345,34 +341,32 @@ export class PostgresCharacterRigRepository implements CharacterRigRepository {
     return result.rows[0]?.document ?? null;
   }
 
-  async saveRigVersion(rig: CharacterRigVersion): Promise<void> {
-    await this.pool.query(
+  async saveRigVersion(rig: CharacterRigVersion): Promise<boolean> {
+    const inserted = await this.pool.query<{ id: string }>(
       `INSERT INTO character_rig_versions (
          id, project_id, bible_id, version, status, document,
          approved_by_user_id, approved_at, created_at, updated_at
        ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
-       ON CONFLICT (id) DO UPDATE SET
-         status = EXCLUDED.status,
-         document = EXCLUDED.document,
-         approved_by_user_id = EXCLUDED.approved_by_user_id,
-         approved_at = EXCLUDED.approved_at,
-         updated_at = EXCLUDED.updated_at
-       WHERE character_rig_versions.project_id = EXCLUDED.project_id
-         AND character_rig_versions.bible_id = EXCLUDED.bible_id
-         AND character_rig_versions.version = EXCLUDED.version`,
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      rigValues(rig),
+    );
+    if (inserted.rowCount === 1) return true;
+    const updated = await this.pool.query<{ id: string }>(
+      `UPDATE character_rig_versions SET
+         status = $5,
+         document = $6::jsonb,
+         approved_by_user_id = $7,
+         approved_at = $8,
+         updated_at = $9
+       WHERE id = $1 AND project_id = $2 AND bible_id = $3 AND version = $4
+       RETURNING id`,
       [
-        rig.id,
-        rig.projectId,
-        rig.bibleId,
-        rig.version,
-        rig.status,
-        JSON.stringify(rig),
-        rig.approvedByUserId,
-        rig.approvedAt,
-        rig.createdAt,
-        rig.updatedAt,
+        rig.id, rig.projectId, rig.bibleId, rig.version, rig.status,
+        JSON.stringify(rig), rig.approvedByUserId, rig.approvedAt, rig.updatedAt,
       ],
     );
+    return updated.rowCount === 1;
   }
 
   private async findDocument<T>(
@@ -393,4 +387,36 @@ export class PostgresCharacterRigRepository implements CharacterRigRepository {
     );
     return result.rows[0]?.document ?? null;
   }
+}
+
+function bibleValues(bible: CharacterBible) {
+  return [
+    bible.id, bible.projectId, bible.version, bible.revision, bible.status,
+    JSON.stringify(bible), bible.createdByUserId, bible.approvedByUserId,
+    bible.approvedAt, bible.createdAt, bible.updatedAt,
+  ];
+}
+
+function modelValues(model: CharacterIdentityModelVersion) {
+  return [
+    model.id, model.projectId, model.bibleId, model.version, model.status,
+    model.providerKey, JSON.stringify(model), model.createdAt, model.updatedAt,
+  ];
+}
+
+function generationValues(attempt: CharacterGenerationAttempt) {
+  return [
+    attempt.id, attempt.projectId, attempt.bibleId,
+    attempt.identityModelVersionId, attempt.status, attempt.requestHash,
+    attempt.idempotencyKey, JSON.stringify(attempt), attempt.createdByUserId,
+    attempt.createdAt, attempt.updatedAt,
+  ];
+}
+
+function rigValues(rig: CharacterRigVersion) {
+  return [
+    rig.id, rig.projectId, rig.bibleId, rig.version, rig.status,
+    JSON.stringify(rig), rig.approvedByUserId, rig.approvedAt, rig.createdAt,
+    rig.updatedAt,
+  ];
 }

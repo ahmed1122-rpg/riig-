@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 import { createAppTestHarness } from "./app-test-helpers.js";
+import { APPLICATION_VERSION } from "./app.js";
 import type { RateLimitStoreConstructor } from "./infrastructure/redis/redis-rate-limit-store.js";
 
 const harness = createAppTestHarness();
@@ -18,7 +19,7 @@ describe("API — البنية التحتية", () => {
     expect(response.json().data).toMatchObject({
       status: "ok",
       service: "motionprep-api",
-      version: "0.1.3",
+      version: APPLICATION_VERSION,
       release,
     });
   });
@@ -224,7 +225,7 @@ describe("API — البنية التحتية", () => {
     expect(response.body).toContain("motionprep_process_resident_memory_bytes");
     expect(response.body).toContain("motionprep_process_cpu_seconds_total");
     expect(response.body).toContain(
-      'motionprep_build_info{version="0.1.3",release="development"} 1',
+      `motionprep_build_info{version="${APPLICATION_VERSION}",release="development"} 1`,
     );
   });
 

@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import swagger from "@fastify/swagger";
+import { createRequire } from "node:module";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
@@ -41,10 +41,7 @@ import { registerHttpMetrics } from "./observability/http-metrics.js";
 import { RepositoryUsageMeter } from "./billing/usage-meter.js";
 import { InMemorySourceVersionRestoreCommand } from "./sources/source-version-restore.js";
 import { registerCapabilityRoutes } from "./capabilities/capability-routes.js";
-import {
-  registerOpenApiDefaults,
-  transformOpenApiDocumentation,
-} from "./http/openapi-defaults.js";
+import { registerOpenApi } from "./http/register-openapi.js";
 import { UploadReconciliationMetrics } from "./uploads/upload-reconciliation-metrics.js";
 import { createUploadRuntime } from "./uploads/upload-runtime.js";
 import { registerHttpErrorHandler } from "./http/error-handler.js";
@@ -59,7 +56,12 @@ import {
 import { registerAccountPrivacyRoutes } from "./privacy/account-privacy-routes.js";
 import { registerCharacterRigFeature } from "./character-rig/character-rig-feature.js";
 
-const APPLICATION_VERSION = "0.1.3";
+const require = createRequire(import.meta.url);
+const rootManifest = require("../../../package.json") as { version?: unknown };
+export const APPLICATION_VERSION =
+  typeof rootManifest.version === "string" && rootManifest.version.length > 0
+    ? rootManifest.version
+    : (() => { throw new Error("The root package version is missing."); })();
 
 export async function buildApp(
   config: AppConfig,
@@ -147,89 +149,10 @@ export async function buildApp(
     }
     return payload;
   });
-  await app.register(swagger, {
-    transform: transformOpenApiDocumentation,
-    openapi: {
-      openapi: "3.1.0",
-      info: {
-        title: "MotionPrep Studio API",
-        description:
-          "HTTP API for authentication, source preparation, layered editing, exports, billing, and administration.",
-        version: APPLICATION_VERSION,
-      },
-      servers: [{ url: new URL(config.WEB_ORIGIN).origin }],
-      tags: [
-        { name: "health" },
-        { name: "auth" },
-        { name: "account" },
-        { name: "projects" },
-        { name: "uploads" },
-        { name: "processing" },
-        { name: "character-rig" },
-        { name: "exports" },
-        { name: "billing" },
-        { name: "admin" },
-        { name: "system" },
-      ],
-      components: {
-        securitySchemes: {
-          sessionCookie: {
-            type: "apiKey",
-            in: "cookie",
-            name: "motionprep_session",
-          },
-          providerSignature: {
-            type: "apiKey",
-            in: "header",
-            name: "stripe-signature",
-          },
-        },
-        schemas: {
-          ApiErrorEnvelope: {
-            type: "object",
-            required: ["data", "error"],
-            properties: {
-              data: { type: "null" },
-              error: {
-                type: "object",
-                required: ["code", "message", "requestId"],
-                properties: {
-                  code: { type: "string" },
-                  message: { type: "string" },
-                  requestId: { type: "string" },
-                  fields: {
-                    type: "object",
-                    additionalProperties: { type: "string" },
-                  },
-                },
-              },
-            },
-          },
-        },
-        responses: Object.fromEntries(
-          [
-            ["BadRequest", "The request is invalid."],
-            ["Unauthorized", "Authentication is required."],
-            ["Forbidden", "The authenticated user is not authorized."],
-            ["Conflict", "The request conflicts with current state."],
-            ["RateLimited", "The request rate limit was exceeded."],
-            ["InternalError", "An unexpected server error occurred."],
-          ].map(([name, description]) => [
-            name,
-            {
-              description,
-              content: {
-                "application/json": {
-                  schema: { $ref: "#/components/schemas/ApiErrorEnvelope" },
-                },
-              },
-            },
-          ]),
-        ),
-      },
-    },
+  await registerOpenApi(app, {
+    applicationVersion: APPLICATION_VERSION,
+    webOrigin: config.WEB_ORIGIN,
   });
-  registerOpenApiDefaults(app);
   const uploadReconciliationMetrics = new UploadReconciliationMetrics();
   await registerHttpMetrics(app, {
     ...(config.METRICS_BEARER_TOKEN

@@ -70,6 +70,7 @@ export interface ApplicationCapabilities {
       enabled: boolean;
       unavailableReason: string | null;
       requiredCanonicalViews: number;
+      supportedProjectKinds: readonly ["image"];
     };
     pdfRegionOcr: {
       enabled: boolean;

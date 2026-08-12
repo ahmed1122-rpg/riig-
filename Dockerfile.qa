@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1.7
+
+# QA intentionally retains Git and development dependencies. It is never used
+# as a production runtime image.
+FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS qa-dependencies
+WORKDIR /workspace
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+ENV NPM_CONFIG_FUND=false
+
+COPY package.json package-lock.json tsconfig.node.json .npmrc ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/worker-document/package.json ./apps/worker-document/package.json
+COPY apps/worker-export/package.json ./apps/worker-export/package.json
+COPY apps/worker-character/package.json ./apps/worker-character/package.json
+COPY apps/worker-media/package.json ./apps/worker-media/package.json
+COPY packages/contracts/package.json ./packages/contracts/package.json
+COPY packages/document-processing/package.json ./packages/document-processing/package.json
+COPY packages/export-adapters/package.json ./packages/export-adapters/package.json
+COPY packages/guidance/package.json ./packages/guidance/package.json
+COPY packages/media-processing/package.json ./packages/media-processing/package.json
+COPY packages/presets/package.json ./packages/presets/package.json
+RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
+
+FROM node:24.18.1-bookworm@sha256:19cd848a0e073d34bd8cd5545a1b6b4d28489b3e3b607366621ced442bd5f6b4 AS qa
+WORKDIR /workspace
+ENV CI=true
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+ENV NPM_CONFIG_FUND=false
+RUN git --version && fc-list --version
+
+COPY --from=qa-dependencies /workspace/node_modules ./node_modules
+COPY --from=qa-dependencies /workspace/apps ./apps
+COPY --from=qa-dependencies /workspace/packages ./packages
+COPY . .
+CMD ["node", "scripts/run-quality-qa.mjs"]

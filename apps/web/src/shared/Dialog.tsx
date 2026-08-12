@@ -1,5 +1,10 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Icon } from "./Icon";
+import {
+  activateModalEnvironment,
+  modalFocusableSelector,
+  trapModalFocus,
+} from "./modal-environment";
 
 interface DialogProps {
   title: string;
@@ -12,8 +17,6 @@ interface DialogProps {
   role?: "dialog" | "alertdialog";
 }
 
-const focusableSelector =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const openDialogStack: symbol[] = [];
 
 export function Dialog({
@@ -40,33 +43,13 @@ export function Dialog({
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const layer = layerRef.current;
     const dialog = dialogRef.current;
-    const previousOverflow = document.body.style.overflow;
-    const isolatedElements: Array<{
-      element: HTMLElement;
-      hadInert: boolean;
-      ariaHidden: string | null;
-    }> = [];
-
-    document.body.style.overflow = "hidden";
-    let modalBranch: HTMLElement | null = layer;
-    while (modalBranch?.parentElement) {
-      const parent = modalBranch.parentElement;
-      Array.from(parent.children).forEach((child) => {
-        if (child === modalBranch || !(child instanceof HTMLElement)) return;
-        isolatedElements.push({
-          element: child,
-          hadInert: child.hasAttribute("inert"),
-          ariaHidden: child.getAttribute("aria-hidden"),
-        });
-        child.setAttribute("inert", "");
-        child.setAttribute("aria-hidden", "true");
-      });
-      if (parent === document.body) break;
-      modalBranch = parent;
-    }
+    const restoreEnvironment = activateModalEnvironment({
+      modalBranch: layer,
+      lockBodyScroll: true,
+    });
 
     const frame = window.requestAnimationFrame(() => {
-      dialog?.querySelector<HTMLElement>(focusableSelector)?.focus();
+      dialog?.querySelector<HTMLElement>(modalFocusableSelector)?.focus();
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -76,18 +59,7 @@ export function Dialog({
         onCloseRef.current();
         return;
       }
-      if (event.key !== "Tab" || !dialog) return;
-      const items = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
-      if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      if (dialog) trapModalFocus(event, dialog);
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -96,12 +68,7 @@ export function Dialog({
       document.removeEventListener("keydown", handleKeyDown);
       const stackIndex = openDialogStack.lastIndexOf(stackId);
       if (stackIndex >= 0) openDialogStack.splice(stackIndex, 1);
-      document.body.style.overflow = previousOverflow;
-      isolatedElements.forEach(({ element, hadInert, ariaHidden }) => {
-        if (!hadInert) element.removeAttribute("inert");
-        if (ariaHidden === null) element.removeAttribute("aria-hidden");
-        else element.setAttribute("aria-hidden", ariaHidden);
-      });
+      restoreEnvironment();
       if (previouslyFocused?.isConnected) {
         window.requestAnimationFrame(() => previouslyFocused.focus());
       }

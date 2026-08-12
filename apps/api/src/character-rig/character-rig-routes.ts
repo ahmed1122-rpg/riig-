@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { createHash } from "node:crypto";
 import type { AuditService } from "../audit/audit-service.js";
 import { requireUser } from "../auth/authorize.js";
 import { trySendAuthDomainError } from "../auth/auth-route-error.js";
@@ -295,7 +296,9 @@ export async function registerCharacterRigRoutes(
       if (
         !artifact ||
         artifact.contentType !== attempt.outputArtifact.contentType ||
-        artifact.sizeBytes !== attempt.outputArtifact.sizeBytes
+        artifact.sizeBytes !== attempt.outputArtifact.sizeBytes ||
+        createHash("sha256").update(artifact.body).digest("hex") !==
+          attempt.outputArtifact.sha256
       ) {
         return sendApiError(
           reply,

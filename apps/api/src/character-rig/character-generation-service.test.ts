@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { CharacterGenerationService } from "./character-generation-service.js";
 import { InMemoryCharacterJobRepository } from "./character-job-repository.js";
 import { InMemoryCharacterRigRepository } from "./character-rig-repository.js";
+import type { CharacterRigRepository } from "./character-rig-repository.js";
 
 const now = "2026-08-11T00:00:00.000Z";
 const projectId = crypto.randomUUID();
@@ -96,7 +97,92 @@ describe("CharacterGenerationService", () => {
       reviewedAt: now,
     })).replayed).toBe(true);
   });
+
+  it("reloads the reviewed attempt when an idempotent review is observed", async () => {
+    const { rigs, bible, model } = await fixture();
+    const setupService = new CharacterGenerationService(
+      rigs,
+      new InMemoryCharacterJobRepository(),
+    );
+    const queued = await setupService.queue(generationInput(bible, model));
+    const reviewable = reviewableAttempt(queued.attempt);
+    await rigs.saveGenerationAttempt(reviewable);
+    const review = {
+      id: crypto.randomUUID(),
+      projectId,
+      generationAttemptId: queued.attempt.id,
+      decision: "approved" as const,
+      reason: "Identity and proportions match the approved reference pack.",
+      reviewerUserId: userId,
+      operationId: "review-reload-operation",
+      createdAt: now,
+    };
+    await rigs.commitGenerationReview(review, {
+      ...reviewable,
+      status: "approved",
+    });
+
+    let firstRead = true;
+    const repository = new Proxy(rigs, {
+      get(target, property, receiver) {
+        if (property === "findGenerationAttempt") {
+          return async () => {
+            if (firstRead) {
+              firstRead = false;
+              return structuredClone(reviewable);
+            }
+            return target.findGenerationAttempt(projectId, queued.attempt.id);
+          };
+        }
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as CharacterRigRepository;
+    const result = await new CharacterGenerationService(
+      repository,
+      new InMemoryCharacterJobRepository(),
+    ).review({
+      projectId,
+      generationAttemptId: queued.attempt.id,
+      decision: "approved",
+      reason: review.reason,
+      operationId: review.operationId,
+      actorUserId: userId,
+      reviewedAt: now,
+    });
+
+    expect(result.replayed).toBe(true);
+    expect(result.attempt.status).toBe("approved");
+  });
 });
+
+function reviewableAttempt(
+  attempt: Awaited<ReturnType<CharacterGenerationService["queue"]>>["attempt"],
+) {
+  return {
+    ...attempt,
+    status: "needs-review" as const,
+    outputArtifact: {
+      objectKey: `projects/${projectId}/character-rig/generations/result.png`,
+      contentType: "image/png" as const,
+      sizeBytes: 1,
+      sha256: "a".repeat(64),
+      createdAt: now,
+      retentionExpiresAt: null,
+    },
+    qualityReport: {
+      thresholdsSchemaVersion: 1 as const,
+      landmarkMeanHeadWidthRatio: 0.01,
+      landmarkCriticalPointHeadWidthRatio: 0.01,
+      proportionDeviationRatio: 0.01,
+      paletteMeanDeltaE00: 1,
+      heroMaterialDeltaE00: 1,
+      outsideMaskChangedPixelRatio: 0,
+      severeDefects: [],
+      passedAutomatedGate: true,
+    },
+  };
+}
 
 async function fixture() {
   const rigs = new InMemoryCharacterRigRepository();

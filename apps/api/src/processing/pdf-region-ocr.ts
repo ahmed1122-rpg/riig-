@@ -14,6 +14,7 @@ import {
   createPdfTextLayerName,
   validateProductionDocument,
 } from "@motionprep/presets";
+import { applyReadingOrder } from "./reading-order.js";
 
 export type PdfRegionOcrOperation = NonNullable<
   ProcessingJob["options"]["pdfRegionOcr"]
@@ -289,27 +290,23 @@ function normalizeRegionalReadingOrder(
   layers: readonly LayerNode[],
   pageNumber: number,
 ): LayerNode[] {
-  const orderedIds = new Map(
-    layers
-      .filter(
-        (layer) =>
-          layer.kind === "text" &&
-          layer.pageNumber === pageNumber &&
-          layer.bounds,
-      )
-      .sort((left, right) => {
-        const vertical = left.bounds!.y - right.bounds!.y;
-        if (Math.abs(vertical) > Math.max(2, Math.min(left.bounds!.height, right.bounds!.height) / 2)) {
-          return vertical;
-        }
-        return left.direction === "rtl"
-          ? right.bounds!.x - left.bounds!.x
-          : left.bounds!.x - right.bounds!.x;
-      })
-      .map((layer, index) => [layer.id, index]),
-  );
-  return layers.map((layer) => {
-    const readingOrder = orderedIds.get(layer.id);
-    return readingOrder === undefined ? layer : { ...layer, readingOrder };
+  return applyReadingOrder(layers, {
+    appliesTo: (layer) =>
+      layer.kind === "text" &&
+      layer.pageNumber === pageNumber &&
+      Boolean(layer.bounds),
+    compare: (left, right) => {
+      const vertical = left.bounds!.y - right.bounds!.y;
+      if (
+        Math.abs(vertical) >
+        Math.max(2, Math.min(left.bounds!.height, right.bounds!.height) / 2)
+      ) {
+        return vertical;
+      }
+      return left.direction === "rtl"
+        ? right.bounds!.x - left.bounds!.x
+        : left.bounds!.x - right.bounds!.x;
+    },
+    startAt: 0,
   });
 }

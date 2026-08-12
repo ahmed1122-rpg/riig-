@@ -9,7 +9,7 @@ import {
   characterRequiredFrontalBodyParts,
   characterRequiredHeadParts,
 } from "@motionprep/contracts";
-import { createHash } from "node:crypto";
+import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import type { CharacterJobRepository } from "./character-job-repository.js";
 import { CharacterJobService } from "./character-job-service.js";
 import type { CharacterRigRepository } from "./character-rig-repository.js";
@@ -50,35 +50,30 @@ export class CharacterRigCompilerService {
         missing,
       );
     }
-    const sourceFingerprint = createHash("sha256")
-      .update(
-        [...approvedParts.entries()]
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([key, attempt]) => `${key}:${attempt.outputArtifact!.sha256}`)
-          .join("|"),
-      )
-      .digest("hex");
-    const requestHash = createHash("sha256")
-      .update(bible.id)
-      .update(String(input.width))
-      .update(String(input.height))
-      .update(sourceFingerprint)
-      .digest("hex");
+    const sourceFingerprint = requestFingerprint(
+      "character-rig-sources",
+      [...approvedParts.entries()]
+        .sort(([left], [right]) => compareStrings(left, right))
+        .map(([key, attempt]) => ({
+          key,
+          artifactSha256: attempt.outputArtifact!.sha256,
+        })),
+    );
+    const requestHash = requestFingerprint("character-rig-compilation", {
+      bibleId: bible.id,
+      width: input.width,
+      height: input.height,
+      sourceFingerprint,
+    });
     const operationKey = `rig-compile:${input.idempotencyKey}`;
     const latest = await this.repository.findLatestRigVersion(
       input.projectId,
       bible.id,
     );
     const matching =
-      latest?.nodes
-        .filter((node) => node.artifact)
-        .map((node) => node.artifact!.sha256)
-        .sort()
-        .join(":") ===
-      [...approvedParts.values()]
-        .map((attempt) => attempt.outputArtifact!.sha256)
-        .sort()
-        .join(":");
+      latest?.sourceFingerprint === sourceFingerprint &&
+      latest.canvas?.width === input.width &&
+      latest.canvas.height === input.height;
     const rig = matching && latest
       ? latest
       : createRigVersion({
@@ -86,23 +81,42 @@ export class CharacterRigCompilerService {
           bibleId: bible.id,
           version: (latest?.version ?? 0) + 1,
           approvedParts,
+          sourceFingerprint,
+          width: input.width,
+          height: input.height,
           now: input.requestedAt,
         });
-    if (!matching) await this.repository.saveRigVersion(rig);
+    let persistedRig = rig;
+    let replayed = matching;
+    if (!matching && !(await this.repository.saveRigVersion(rig))) {
+      const raced = await this.repository.findLatestRigVersion(
+        input.projectId,
+        bible.id,
+      );
+      if (
+        raced?.sourceFingerprint !== sourceFingerprint ||
+        raced.canvas?.width !== input.width ||
+        raced.canvas.height !== input.height
+      ) {
+        throw new CharacterRigCompilerError("CHARACTER_RIG_VERSION_CONFLICT");
+      }
+      persistedRig = raced;
+      replayed = true;
+    }
     const job = await this.#jobs.enqueue({
       projectId: input.projectId,
       type: "compile-rig",
       operationKey,
       requestHash,
       payload: {
-        rigVersionId: rig.id,
+        rigVersionId: persistedRig.id,
         width: input.width,
         height: input.height,
       },
       now: input.requestedAt,
       maxAttempts: 2,
     });
-    return { rig, job, replayed: matching };
+    return { rig: persistedRig, job, replayed };
   }
 }
 
@@ -149,6 +163,9 @@ function createRigVersion(input: {
   bibleId: string;
   version: number;
   approvedParts: ReadonlyMap<string, CharacterGenerationAttempt>;
+  sourceFingerprint: string;
+  width: number;
+  height: number;
   now: string;
 }): CharacterRigVersion {
   const rootId = crypto.randomUUID();
@@ -202,6 +219,8 @@ function createRigVersion(input: {
     bibleId: input.bibleId,
     version: input.version,
     status: "draft",
+    sourceFingerprint: input.sourceFingerprint,
+    canvas: { width: input.width, height: input.height },
     nodes,
     psdArtifact: null,
     manifestArtifact: null,
@@ -242,4 +261,8 @@ function titleCase(value: string): string {
     .split("-")
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+function compareStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

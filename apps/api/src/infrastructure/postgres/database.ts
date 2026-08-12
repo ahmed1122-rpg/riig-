@@ -61,16 +61,10 @@ export function createDatabase(
     client.on("error", listener);
   });
   pool.on("release", (_error, client) => {
-    const listener = checkedOutErrorListeners.get(client);
-    if (!listener) return;
-    client.off("error", listener);
-    checkedOutErrorListeners.delete(client);
+    removeCheckedOutErrorListener(checkedOutErrorListeners, client);
   });
   pool.on("remove", (client) => {
-    const listener = checkedOutErrorListeners.get(client);
-    if (!listener) return;
-    client.off("error", listener);
-    checkedOutErrorListeners.delete(client);
+    removeCheckedOutErrorListener(checkedOutErrorListeners, client);
   });
 
   return {
@@ -82,6 +76,16 @@ export function createDatabase(
       await pool.end();
     },
   };
+}
+
+function removeCheckedOutErrorListener(
+  listeners: WeakMap<PoolClient, (error: Error) => void>,
+  client: PoolClient,
+): void {
+  const listener = listeners.get(client);
+  if (!listener) return;
+  client.off("error", listener);
+  listeners.delete(client);
 }
 
 export function toIso(value: Date | string): string {

@@ -57,6 +57,30 @@ describe("HttpCharacterInferenceProvider", () => {
     expect(String(init?.body)).not.toContain("body");
   });
 
+  it("preserves an inference path prefix with or without a trailing slash", async () => {
+    for (const baseUrl of [
+      "https://inference.internal/private-api",
+      "https://inference.internal/private-api/",
+    ]) {
+      const request = vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          providerModelReference: "private:model-1",
+          metrics: {},
+        }),
+      );
+      const provider = new HttpCharacterInferenceProvider({
+        baseUrl,
+        apiKey: "a-secure-test-key",
+        timeoutMilliseconds: 10_000,
+        fetch: request,
+      });
+      await provider.trainIdentity({ bible, modelVersion: model, references });
+      expect(String(request.mock.calls[0]?.[0])).toBe(
+        "https://inference.internal/private-api/v1/identity-models",
+      );
+    }
+  });
+
   it("returns a verified-storage descriptor for generated assets", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
