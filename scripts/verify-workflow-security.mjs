@@ -1,5 +1,10 @@
 import { parse } from "yaml";
 
+export const approvedGitHubActionPins = Object.freeze({
+  "actions/checkout": "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", // v7.0.0
+  "actions/setup-node": "249970729cb0ef3589644e2896645e5dc5ba9c38", // v6.5.0
+});
+
 const nodeCliCommands = new Set([
   "corepack",
   "node",
@@ -131,6 +136,13 @@ export function verifyWorkflowSecurity(workflows) {
       if (!/^[a-f0-9]{40}$/u.test(reference ?? "")) {
         violations.push(
           `GitHub Action ${action ?? "unknown"} is not pinned by commit SHA: ${reference ?? "missing"}`,
+        );
+      } else if (
+        Object.hasOwn(approvedGitHubActionPins, action) &&
+        approvedGitHubActionPins[action] !== reference
+      ) {
+        violations.push(
+          `GitHub Action ${action} must use the repository-approved pin ${approvedGitHubActionPins[action]}.`,
         );
       }
     }

@@ -18,8 +18,9 @@ const validManifest = JSON.stringify({
   },
 });
 const validNpmConfig = "engine-strict=true\nstrict-allow-scripts=true\n";
+const nodeImageDigest = "a".repeat(64);
 const validDockerfile = [
-  "FROM node:24.18.1-bookworm-slim@sha256:abc AS build",
+  `FROM node:24.18.1-bookworm-slim@sha256:${nodeImageDigest} AS build`,
   "FROM build AS runtime-base",
   "FROM runtime-base AS runtime",
   "",
@@ -71,5 +72,21 @@ test("rejects an undefined stage alias as an unpinned external image", () => {
 
   assert.deepEqual(violations, [
     "Dockerfile base image must be pinned by digest: FROM untrusted-runtime AS final",
+  ]);
+});
+
+test("rejects digest drift between Node.js Docker build stages", () => {
+  const violations = verifyNodeToolchain({
+    nodeVersion: "24.18.1",
+    packageManifest: validManifest,
+    npmConfig: validNpmConfig,
+    dockerfiles: [
+      validDockerfile,
+      validDockerfile.replace(nodeImageDigest, "b".repeat(64)),
+    ],
+  });
+
+  assert.deepEqual(violations, [
+    "Every Dockerfile must use one identical digest-pinned Node.js base image.",
   ]);
 });
