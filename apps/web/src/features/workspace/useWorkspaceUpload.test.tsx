@@ -72,6 +72,7 @@ describe("useWorkspaceUpload", () => {
       onNotify: vi.fn(),
       confirmSourceReplacement: vi.fn().mockResolvedValue(true),
       onLayerAssetUrls: vi.fn(),
+      onLifecycleUpdate: vi.fn(),
       onDocumentReady,
       setSourceName,
       setUploadState: vi.fn(),

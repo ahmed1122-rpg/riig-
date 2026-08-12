@@ -7,6 +7,7 @@ import {
 import {
   ApiError,
   createAndUploadSource,
+  type UploadLifecycleUpdate,
 } from "../../lib/api";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
 import type { UploadState } from "./SourceUploadStatus";
@@ -38,6 +39,7 @@ interface WorkspaceUploadOptions {
     confirmLabel: string;
   }) => Promise<boolean>;
   onLayerAssetUrls: (urls: string[]) => void;
+  onLifecycleUpdate: (update: UploadLifecycleUpdate) => void;
   onDocumentReady: (
     file: File,
     result: UploadResult,
@@ -172,6 +174,9 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
             options.setUploadProgress(
               65 + Math.round(progress * 0.33),
             );
+          },
+          onLifecycleUpdate: (update) => {
+            if (isCurrent()) options.onLifecycleUpdate(update);
           },
           ...(options.mode === "book"
             ? {

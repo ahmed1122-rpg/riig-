@@ -188,6 +188,55 @@ describe("API — المصادقة والصلاحيات", () => {
     expect(otherExports.json().data).toEqual([]);
     expect(hiddenExport.statusCode).toBe(404);
   });
+
+  it("reads an owned project and deletes only a truly empty draft", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const ownerCookie = await registerCreator(app, "draft-owner@example.com");
+    const otherCookie = await registerCreator(app, "draft-other@example.com");
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      headers: { cookie: ownerCookie },
+      payload: { name: "مسودة قابلة للحذف", kind: "image" },
+    });
+    const projectId = created.json().data.id as string;
+
+    const owned = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}`,
+      headers: { cookie: ownerCookie },
+    });
+    const hidden = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}`,
+      headers: { cookie: otherCookie },
+    });
+    const forbiddenDelete = await app.inject({
+      method: "DELETE",
+      url: `/v1/projects/${projectId}`,
+      headers: { cookie: otherCookie },
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/v1/projects/${projectId}`,
+      headers: { cookie: ownerCookie },
+    });
+
+    expect(owned.statusCode).toBe(200);
+    expect(owned.json().data).toMatchObject({ id: projectId, status: "draft" });
+    expect(hidden.statusCode).toBe(404);
+    expect(forbiddenDelete.statusCode).toBe(404);
+    expect(deleted.statusCode).toBe(204);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/projects/${projectId}`,
+          headers: { cookie: ownerCookie },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
   it("registers with a secure cookie, resolves the session, and logs out", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     const registered = await app.inject({

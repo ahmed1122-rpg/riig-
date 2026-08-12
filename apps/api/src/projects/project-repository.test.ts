@@ -2,6 +2,32 @@ import { describe, expect, it } from "vitest";
 import { InMemoryProjectRepository } from "./project-repository.js";
 
 describe("project job status fencing", () => {
+  it("deletes only an empty draft owned by the requesting user", async () => {
+    const projects = new InMemoryProjectRepository();
+    const ownerId = crypto.randomUUID();
+    const project = await projects.create(ownerId, {
+      name: "مسودة فارغة",
+      kind: "image",
+    });
+
+    await expect(
+      projects.deleteEmptyDraft(crypto.randomUUID(), project.id),
+    ).resolves.toBe(false);
+    await expect(
+      projects.deleteEmptyDraft(ownerId, project.id),
+    ).resolves.toBe(true);
+    await expect(projects.findById(project.id)).resolves.toBeNull();
+
+    const started = await projects.create(ownerId, {
+      name: "بدأ الرفع",
+      kind: "image",
+    });
+    await projects.updateStatus(started.id, "uploading");
+    await expect(
+      projects.deleteEmptyDraft(ownerId, started.id),
+    ).resolves.toBe(false);
+  });
+
   it("accepts only the active job for the current source", async () => {
     const projects = new InMemoryProjectRepository();
     const ownerId = crypto.randomUUID();

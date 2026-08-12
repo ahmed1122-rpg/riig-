@@ -20,6 +20,7 @@ describe("OpenAPI discovery", () => {
     expect(document.paths).toHaveProperty("/v1/account/export");
     expect(document.paths).toHaveProperty("/v1/account");
     expect(document.paths).toHaveProperty("/v1/projects");
+    expect(document.paths).toHaveProperty("/v1/projects/{projectId}");
     expect(document.paths).toHaveProperty("/v1/activity");
     expect(document.paths).not.toHaveProperty("/v1/openapi.json");
     expect(document.paths).not.toHaveProperty("/internal/metrics");
@@ -50,6 +51,9 @@ describe("OpenAPI discovery", () => {
     expect(document.paths["/v1/projects"].get.security).toEqual([
       { sessionCookie: [] },
     ]);
+    expect(
+      document.paths["/v1/projects/{projectId}"].delete.security,
+    ).toEqual([{ sessionCookie: [] }]);
     expect(document.paths["/v1/auth/login"].post.security).toEqual([]);
     expect(
       document.paths["/v1/auth/register"].post.requestBody.content[

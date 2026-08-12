@@ -94,6 +94,9 @@ export function useWorkspaceSourceState(mode: ProjectMode) {
   const [uploadDetailsOpen, setUploadDetailsOpen] = useState(false);
   const [projectId, setProjectId] = useState<string>();
   const [sourceVersionId, setSourceVersionId] = useState<string>();
+  const [pendingUploadId, setPendingUploadId] = useState<string>();
+  const [pendingSourceVersionId, setPendingSourceVersionId] = useState<string>();
+  const [processingJobId, setProcessingJobId] = useState<string>();
   const [sourceHash, setSourceHash] = useState<string>();
   const [sourcePreviewUrl, setSourcePreviewUrl] = useState<string>();
   const [imageCanvasSize, setImageCanvasSize] = useState<{
@@ -127,6 +130,9 @@ export function useWorkspaceSourceState(mode: ProjectMode) {
     setUploadDetailsOpen(false);
     setProjectId(undefined);
     setSourceVersionId(undefined);
+    setPendingUploadId(undefined);
+    setPendingSourceVersionId(undefined);
+    setProcessingJobId(undefined);
     setSourceHash(undefined);
     setSourcePreviewUrl(undefined);
     setImageCanvasSize(undefined);
@@ -158,6 +164,12 @@ export function useWorkspaceSourceState(mode: ProjectMode) {
     setProjectId,
     sourceVersionId,
     setSourceVersionId,
+    pendingUploadId,
+    setPendingUploadId,
+    pendingSourceVersionId,
+    setPendingSourceVersionId,
+    processingJobId,
+    setProcessingJobId,
     sourceHash,
     setSourceHash,
     sourcePreviewUrl,

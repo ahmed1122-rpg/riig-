@@ -20,6 +20,7 @@ export interface ProjectRepository {
     id: string,
   ): Promise<ProjectSummary | null>;
   listOwnedByUser(ownerUserId: string): Promise<ProjectSummary[]>;
+  deleteEmptyDraft(ownerUserId: string, id: string): Promise<boolean>;
   updateStatus(
     id: string,
     status: ProjectSummary["status"],
@@ -114,6 +115,20 @@ export class InMemoryProjectRepository implements ProjectRepository {
       .filter((project) => project.ownerUserId === ownerUserId)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       .map((project) => this.toSummary(project));
+  }
+
+  async deleteEmptyDraft(ownerUserId: string, id: string): Promise<boolean> {
+    const project = this.#projects.get(id);
+    if (
+      !project ||
+      project.ownerUserId !== ownerUserId ||
+      project.status !== "draft" ||
+      project.currentSourceVersionId !== null ||
+      project.activeJobId !== null
+    ) {
+      return false;
+    }
+    return this.#projects.delete(id);
   }
 
   async updateStatus(

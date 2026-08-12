@@ -98,6 +98,24 @@ export class PostgresProjectRepository implements ProjectRepository {
     return result.rows.map((row) => mapPostgresProject(row));
   }
 
+  async deleteEmptyDraft(ownerUserId: string, id: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM projects AS project
+       WHERE project.id = $1
+         AND project.owner_user_id = $2
+         AND project.status = 'draft'
+         AND project.current_source_version_id IS NULL
+         AND project.active_job_id IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM upload_sessions AS upload
+           WHERE upload.project_id = project.id
+         )
+       RETURNING project.id`,
+      [id, ownerUserId],
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
   async updateStatus(
     id: string,
     status: ProjectStatus,

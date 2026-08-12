@@ -24,6 +24,7 @@ const createProjectSchema = z.object({
   name: z.string().trim().min(1).max(120),
   kind: z.enum(["image", "book"]),
 });
+const projectParamsSchema = z.object({ projectId: z.string().uuid() });
 const restoreParamsSchema = z.object({
   projectId: z.string().uuid(),
   versionId: z.string().uuid(),
@@ -58,6 +59,48 @@ export async function registerProjectRoutes(
         data: await repository.listOwnedByUser(user.id),
         error: null,
       };
+    } catch (error) {
+      return authError(error, request, reply);
+    }
+  });
+
+  app.get("/v1/projects/:projectId", async (request, reply) => {
+    try {
+      const user = await requireUser(request, auth);
+      const params = projectParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.status(404).send();
+      const project = await repository.findOwnedById(
+        user.id,
+        params.data.projectId,
+      );
+      if (!project) return sendProjectNotFound(reply, request.id);
+      return { data: project, error: null };
+    } catch (error) {
+      return authError(error, request, reply);
+    }
+  });
+
+  app.delete("/v1/projects/:projectId", async (request, reply) => {
+    try {
+      const user = await requireUser(request, auth);
+      const params = projectParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.status(404).send();
+      const project = await repository.findOwnedById(
+        user.id,
+        params.data.projectId,
+      );
+      if (!project) return sendProjectNotFound(reply, request.id);
+      const deleted = await repository.deleteEmptyDraft(user.id, project.id);
+      if (!deleted) {
+        return sendApiError(
+          reply,
+          request.id,
+          409,
+          "PROJECT_DELETE_NOT_ALLOWED",
+          "لا يمكن حذف إلا مسودة فارغة لم تبدأ رفعًا أو معالجة. احتفظ بالمشروع لإعادة المحاولة أو انتظر اكتمال التنظيف الآمن.",
+        );
+      }
+      return reply.status(204).send();
     } catch (error) {
       return authError(error, request, reply);
     }
