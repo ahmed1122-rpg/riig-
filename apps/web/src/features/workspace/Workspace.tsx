@@ -19,6 +19,7 @@ import { useWorkspaceCommands } from "./useWorkspaceCommands";
 import { useWorkspaceNavigationGuard } from "./useWorkspaceNavigationGuard";
 import { useWorkspaceShortcutHelp } from "./useWorkspaceShortcutHelp";
 import type { WorkspaceProps } from "./Workspace.types";
+import { commitWorkspaceModeChange } from "./workspaceModeChange";
 import {
   useWorkspaceEditorState,
   useWorkspaceReviewState,
@@ -291,14 +292,20 @@ export function Workspace({
     onNotify,
   });
 
-  const switchMode = (nextMode: ProjectMode) => {
-    replaceLayerAssetUrls([]);
-    onModeChange(nextMode);
-    prepareMode(nextMode);
-    resetToolState(nextMode);
-    source.resetForMode(nextMode);
-    editor.resetForMode(nextMode);
-    resetSavedReview();
+  const switchMode = async (nextMode: ProjectMode): Promise<void> => {
+    await commitWorkspaceModeChange(
+      mode,
+      nextMode,
+      onModeChange,
+      (committedMode) => {
+        replaceLayerAssetUrls([]);
+        prepareMode(committedMode);
+        resetToolState(committedMode);
+        source.resetForMode(committedMode);
+        editor.resetForMode(committedMode);
+        resetSavedReview();
+      },
+    );
   };
 
   const openExportReview = (event: React.MouseEvent<HTMLButtonElement>) => {

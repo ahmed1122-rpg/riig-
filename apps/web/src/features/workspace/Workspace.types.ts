@@ -6,7 +6,7 @@ import type { ProjectMode } from "../../types";
 export interface WorkspaceProps {
   mode: ProjectMode;
   capabilities: ApplicationCapabilities;
-  onModeChange: (mode: ProjectMode) => void;
+  onModeChange: (mode: ProjectMode) => Promise<boolean>;
   onBack: () => void;
   onNavigationGuardChange: (
     guard: (() => Promise<boolean>) | null,

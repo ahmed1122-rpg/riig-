@@ -240,6 +240,7 @@ export function WorkspaceDialogs({
       )}
 
       {props.pdfTextOperation &&
+        props.mode === "book" &&
         props.projectId &&
         props.sourceVersionId && (
           <PdfTextOperationDialog
@@ -256,6 +257,7 @@ export function WorkspaceDialogs({
         )}
 
       {props.pdfRegionOcrLayer?.bounds &&
+        props.mode === "book" &&
         props.pdfRegionOcrPageSize &&
         props.projectId &&
         props.sourceVersionId && (
@@ -268,6 +270,7 @@ export function WorkspaceDialogs({
         )}
 
       {props.imageRasterOperation &&
+        props.mode === "image" &&
         props.projectId &&
         props.sourceVersionId && (
           <ImageRasterOperationDialog

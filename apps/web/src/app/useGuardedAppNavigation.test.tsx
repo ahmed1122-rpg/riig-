@@ -47,17 +47,42 @@ describe("guarded application navigation", () => {
         .mockReturnValueOnce(second.promise),
     );
 
+    let firstNavigation!: Promise<boolean>;
+    let secondNavigation!: Promise<boolean>;
     act(() => {
-      controls.current?.navigateView("projects");
-      controls.current?.navigateView("exports");
+      firstNavigation = controls.current!.navigateView("projects");
+      secondNavigation = controls.current!.navigateView("exports");
     });
     await act(async () => second.resolve(true));
+    await expect(secondNavigation).resolves.toBe(true);
     expect(view.getByTestId("view").textContent).toBe("exports");
     expect(window.location.search).toContain("view=exports");
 
     await act(async () => first.resolve(true));
+    await expect(firstNavigation).resolves.toBe(false);
     expect(view.getByTestId("view").textContent).toBe("exports");
     expect(window.location.search).toContain("view=exports");
+  });
+
+  it("reports a blocked guarded navigation without changing workspace state", async () => {
+    window.history.replaceState(null, "", "/?view=workspace&mode=image");
+    const controls = { current: null } as MutableRefObject<Navigation | null>;
+    const view = render(<Harness controls={controls} />);
+    controls.current?.registerWorkspaceNavigationGuard(async () => false);
+
+    let changed = true;
+    await act(async () => {
+      changed = await controls.current!.navigateView(
+        "workspace",
+        { mode: "book", project: null },
+        true,
+      );
+    });
+
+    expect(changed).toBe(false);
+    expect(controls.current?.projectMode).toBe("image");
+    expect(view.getByTestId("view").textContent).toBe("workspace");
+    expect(window.location.search).toContain("mode=image");
   });
 
   it("restores the committed URL when back navigation is blocked", async () => {

@@ -91,19 +91,28 @@ export async function loadRasterLayerPreviews(
   );
   const previews = new Map<string, string>();
   const urls: string[] = [];
-  await mapWithConcurrency(rasterLayers, 3, async (layer) => {
-    const blob = await getLayerRasterAsset(
-      projectId,
-      sourceVersionId,
-      layer.id,
-      layer.rasterAsset!.sha256,
-      signal,
-    );
-    if (signal?.aborted) return;
-    const url = URL.createObjectURL(blob);
-    previews.set(layer.id, url);
-    urls.push(url);
-  });
+  try {
+    await mapWithConcurrency(rasterLayers, 3, async (layer) => {
+      const blob = await getLayerRasterAsset(
+        projectId,
+        sourceVersionId,
+        layer.id,
+        layer.rasterAsset!.sha256,
+        signal,
+      );
+      if (signal?.aborted) return;
+      const url = URL.createObjectURL(blob);
+      previews.set(layer.id, url);
+      urls.push(url);
+    });
+  } catch (error) {
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    throw error;
+  }
+  if (signal?.aborted) {
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    return { previews: new Map<string, string>(), urls: [] };
+  }
   return { previews, urls };
 }
 

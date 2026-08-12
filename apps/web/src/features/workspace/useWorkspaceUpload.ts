@@ -92,9 +92,12 @@ function uploadSuccessMessage(
 
 export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
   const uploadAbortRef = useRef<AbortController | null>(null);
+  const uploadSequenceRef = useRef(0);
+  const previousSourceNameRef = useRef<string | undefined>(undefined);
 
   useEffect(
     () => () => {
+      uploadSequenceRef.current += 1;
       uploadAbortRef.current?.abort();
     },
     [],
@@ -132,7 +135,11 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
       return;
     }
 
-    const previousSourceName = options.sourceName;
+    const previousSourceName =
+      previousSourceNameRef.current ?? options.sourceName;
+    uploadSequenceRef.current += 1;
+    const operationId = uploadSequenceRef.current;
+    uploadAbortRef.current?.abort();
     options.setSourceName(file.name);
     options.setUploadError(undefined);
     options.setUploadProgress(0);
@@ -140,6 +147,10 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
     options.setUploadDetailsOpen(true);
     const controller = new AbortController();
     uploadAbortRef.current = controller;
+    previousSourceNameRef.current = previousSourceName;
+    const isCurrent = () =>
+      uploadSequenceRef.current === operationId &&
+      uploadAbortRef.current === controller;
     try {
       options.setUploadState("uploading");
       const result = await createAndUploadSource(
@@ -151,10 +162,12 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
             ? { projectId: options.projectId }
             : {}),
           onUploadProgress: (progress) => {
+            if (!isCurrent()) return;
             options.setUploadState("uploading");
             options.setUploadProgress(Math.round(progress * 0.65));
           },
           onProcessingProgress: (progress) => {
+            if (!isCurrent()) return;
             options.setUploadState("verifying");
             options.setUploadProgress(
               65 + Math.round(progress * 0.33),
@@ -168,6 +181,7 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
             : {}),
         },
       );
+      if (!isCurrent()) return;
       options.setUploadState("verifying");
       options.setUploadProgress(99);
       const previewResult =
@@ -179,6 +193,10 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
               controller.signal,
             )
           : { previews: new Map<string, string>(), urls: [] };
+      if (!isCurrent()) {
+        previewResult.urls.forEach((url) => URL.revokeObjectURL(url));
+        return;
+      }
       options.onLayerAssetUrls(previewResult.urls);
       options.onDocumentReady(
         file,
@@ -193,7 +211,9 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
       options.setUploadState("ready");
       options.setUploadDetailsOpen(false);
       options.onNotify(uploadSuccessMessage(options.mode, result));
+      previousSourceNameRef.current = undefined;
     } catch (error) {
+      if (!isCurrent()) return;
       if (controller.signal.aborted) {
         options.setSourceName(previousSourceName);
         return;
@@ -208,13 +228,19 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
     } finally {
       if (uploadAbortRef.current === controller) {
         uploadAbortRef.current = null;
+        previousSourceNameRef.current = undefined;
       }
     }
   };
 
   const cancelUpload = () => {
+    uploadSequenceRef.current += 1;
     uploadAbortRef.current?.abort();
     uploadAbortRef.current = null;
+    if (previousSourceNameRef.current !== undefined) {
+      options.setSourceName(previousSourceNameRef.current);
+    }
+    previousSourceNameRef.current = undefined;
     options.setUploadState(
       options.persistedSource ? "ready" : "empty",
     );

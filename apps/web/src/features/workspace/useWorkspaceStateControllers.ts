@@ -118,10 +118,13 @@ export function useWorkspaceSourceState(mode: ProjectMode) {
   const persistedSource = Boolean(projectId && sourceVersionId);
 
   const resetForMode = useCallback((nextMode: ProjectMode) => {
+    setProcessing(false);
     setSourceName(emptySourceName(nextMode));
     setSourceVersion(0);
     setUploadState("empty");
     setUploadProgress(0);
+    setUploadError(undefined);
+    setUploadDetailsOpen(false);
     setProjectId(undefined);
     setSourceVersionId(undefined);
     setSourceHash(undefined);
@@ -216,7 +219,11 @@ export function useWorkspaceEditorState(mode: ProjectMode) {
   }, [mode]);
 
   const resetForMode = useCallback((nextMode: ProjectMode) => {
+    setMobilePanel("none");
+    setExportOpen(false);
     setPreviewBackground(nextMode === "image" ? "dark" : "white");
+    setSolo(false);
+    setFocusMode(false);
   }, []);
 
   return {

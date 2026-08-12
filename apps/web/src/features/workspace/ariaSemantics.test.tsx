@@ -6,6 +6,7 @@ import { LayerDock } from "./LayerDock";
 import { WorkspaceHeader, WorkspaceStatusBar } from "./WorkspaceChrome";
 
 const noop = () => undefined;
+const allowModeChange = async () => undefined;
 
 describe("truthful selection semantics", () => {
   it("presents project filters as pressed buttons instead of incomplete tabs", () => {
@@ -36,7 +37,7 @@ describe("truthful selection semantics", () => {
         pdfMode="lines"
         exportTriggerRef={createRef<HTMLButtonElement>()}
         onBack={noop}
-        onModeChange={noop}
+        onModeChange={allowModeChange}
         onExport={noop}
       />,
     );
@@ -60,7 +61,7 @@ describe("truthful selection semantics", () => {
         pdfMode="lines"
         exportTriggerRef={createRef<HTMLButtonElement>()}
         onBack={noop}
-        onModeChange={noop}
+        onModeChange={allowModeChange}
         onExport={noop}
       />,
     );

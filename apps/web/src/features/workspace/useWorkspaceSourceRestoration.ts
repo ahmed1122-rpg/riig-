@@ -49,13 +49,9 @@ export function useWorkspaceSourceRestoration(
     ) => {
       const controller = new AbortController();
       options.setProcessing(true);
-      options.setSourceVersionId(version.id);
-      options.setSourceVersion(version.versionNumber);
-      options.setSourceName(version.filename);
-      options.setSourceHash(version.sha256 ?? undefined);
-      options.setSourcePreviewUrl(undefined);
       options.setUploadState("verifying");
       options.setUploadProgress(0);
+      options.setUploadError(undefined);
       try {
         let restored;
         try {
@@ -87,26 +83,30 @@ export function useWorkspaceSourceRestoration(
             },
           );
           await options.adoptDocument(document);
-          options.setUploadState("ready");
-          options.setUploadProgress(100);
           options.onNotify(
             "أُعيدت معالجة نسخة المصدر المستعادة لأنها لم تكن تملك وثيقة طبقات محفوظة.",
           );
-          return;
         }
-        options.replaceLayerAssetUrls(restored.previewUrls);
-        options.applyPreparedDocument(
-          restored.document,
-          restored.preparedLayers,
-        );
-        options.resetLayerSelection(restored.preparedLayers);
-        options.adoptSavedReview(
-          restored.preparedLayers,
-          restored.document.revision ?? 1,
-        );
-        options.setGuidanceRevision(
-          restored.document.guidance?.revision ?? 0,
-        );
+        if (restored) {
+          options.replaceLayerAssetUrls(restored.previewUrls);
+          options.applyPreparedDocument(
+            restored.document,
+            restored.preparedLayers,
+          );
+          options.resetLayerSelection(restored.preparedLayers);
+          options.adoptSavedReview(
+            restored.preparedLayers,
+            restored.document.revision ?? 1,
+          );
+          options.setGuidanceRevision(
+            restored.document.guidance?.revision ?? 0,
+          );
+        }
+        options.setSourceVersionId(version.id);
+        options.setSourceVersion(version.versionNumber);
+        options.setSourceName(version.filename);
+        options.setSourceHash(version.sha256 ?? undefined);
+        options.setSourcePreviewUrl(undefined);
         options.setUploadState("ready");
         options.setUploadProgress(100);
       } catch (error) {
@@ -114,12 +114,13 @@ export function useWorkspaceSourceRestoration(
         options.setUploadError(
           error instanceof Error
             ? error.message
-            : "تمت استعادة المصدر، لكن تعذر تحميل طبقاته أو إعادة معالجته.",
+            : "تغير مؤشر المصدر في الخادم، لكن تعذر تحميل طبقاته أو إعادة معالجته.",
         );
         options.setUploadDetailsOpen(true);
         options.onNotify(
-          "تم تغيير المصدر بنجاح، لكن تجهيز طبقاته يحتاج إلى إعادة المحاولة.",
+          "تغير مؤشر المصدر في الخادم، لكن الواجهة لم تعتمد هويته بعد. أعد مزامنة الطبقات قبل التحرير أو التصدير.",
         );
+        throw error;
       } finally {
         options.setProcessing(false);
       }

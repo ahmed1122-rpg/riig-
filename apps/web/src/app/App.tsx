@@ -258,7 +258,7 @@ export function App() {
           authenticated={authenticated}
           onRequireAuth={openAuth}
           onModeChange={(nextMode) => {
-            navigateView(
+            return navigateView(
               "workspace",
               { mode: nextMode, project: null },
               true,

@@ -51,7 +51,7 @@ export function WorkspaceHeader({
   pdfMode: PdfSegmentation;
   exportTriggerRef: RefObject<HTMLButtonElement | null>;
   onBack: () => void;
-  onModeChange: (mode: ProjectMode) => void;
+  onModeChange: (mode: ProjectMode) => Promise<void>;
   onExport: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const projectName = persistedSource
@@ -105,7 +105,7 @@ export function WorkspaceHeader({
           type="button"
           aria-pressed={mode === "image"}
           className={mode === "image" ? "is-active" : ""}
-          onClick={() => onModeChange("image")}
+          onClick={() => void onModeChange("image")}
         >
           <Icon name="image" size={16} /> صورة
         </button>
@@ -113,7 +113,7 @@ export function WorkspaceHeader({
           type="button"
           aria-pressed={mode === "book"}
           className={mode === "book" ? "is-active" : ""}
-          onClick={() => onModeChange("book")}
+          onClick={() => void onModeChange("book")}
         >
           <Icon name="scan" size={16} /> PDF
         </button>

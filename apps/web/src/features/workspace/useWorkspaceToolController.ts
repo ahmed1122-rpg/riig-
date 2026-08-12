@@ -235,12 +235,23 @@ export function useWorkspaceToolController(
   const resetToolState = useCallback((mode: ProjectMode) => {
     setActiveTool(initialTool(mode));
     setEditorCommand(undefined);
+    setSourceVersionsOpen(false);
+    setPdfTextOperation(undefined);
+    setPdfRegionOcrLayerId(undefined);
+    setImageRasterOperation(undefined);
     setCharacterStudioOpen(false);
   }, []);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if (event.repeat || isEditableShortcutTarget(event.target)) return;
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        isEditableShortcutTarget(event.target) ||
+        document.querySelector('[role="dialog"][aria-modal="true"]')
+      ) {
+        return;
+      }
       const tool = workspaceTools.find(
         (candidate) =>
           candidate.available && isWorkspaceShortcut(candidate, event),

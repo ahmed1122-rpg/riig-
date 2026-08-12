@@ -70,11 +70,11 @@ export function useGuardedAppNavigation(entryIntent: EntryIntent) {
   }, []);
 
   const navigateView = useCallback(
-    (
+    async (
       nextView: ViewId,
       requestedWorkspace?: WorkspaceEntry,
       replace = false,
-    ) => {
+    ): Promise<boolean> => {
       const currentWorkspace: WorkspaceEntry = {
         mode: projectMode,
         project: workspaceProject,
@@ -112,12 +112,13 @@ export function useGuardedAppNavigation(entryIntent: EntryIntent) {
       const guard = viewRef.current === "workspace" ? guardRef.current : null;
       if (!guard) {
         commitNavigation();
-        return;
+        return true;
       }
       const sequence = ++sequenceRef.current;
-      void guard().then((allowed) => {
-        if (allowed && sequence === sequenceRef.current) commitNavigation();
-      });
+      const allowed = await guard();
+      if (!allowed || sequence !== sequenceRef.current) return false;
+      commitNavigation();
+      return true;
     },
     [projectMode, workspaceProject],
   );
