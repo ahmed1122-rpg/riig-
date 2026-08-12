@@ -98,7 +98,7 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
         trainingConfiguration: input.modelVersion.trainingConfiguration,
       },
       references: inferenceReferences(input.references),
-    }, input.modelVersion.id);
+    }, input.modelVersion.id, input.signal);
     const parsed = trainingResponseSchema.safeParse(response);
     if (!parsed.success) {
       throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
@@ -125,7 +125,7 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
           canvas: input.attempt.controls.canvas,
         },
         references: inferenceReferences(input.references),
-      }, input.attempt.id),
+      }, input.attempt.id, input.signal),
     );
     if (!parsed.success || !validGeometry(parsed.data.geometry, input.attempt.controls.canvas)) {
       throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
@@ -138,7 +138,12 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
     };
   }
 
-  private async post(path: string, body: unknown, operationId: string): Promise<unknown> {
+  private async post(
+    path: string,
+    body: unknown,
+    operationId: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     let response: Response;
     try {
       response = await this.#fetch(new URL(path, this.#baseUrl), {
@@ -149,11 +154,18 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
           "x-idempotency-key": operationId,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.options.timeoutMilliseconds),
+        signal: signal
+          ? AbortSignal.any([
+              signal,
+              AbortSignal.timeout(this.options.timeoutMilliseconds),
+            ])
+          : AbortSignal.timeout(this.options.timeoutMilliseconds),
       });
     } catch (error) {
       throw new CharacterProviderError(
-        error instanceof DOMException && error.name === "TimeoutError"
+        signal?.aborted
+          ? "CHARACTER_JOB_ABORTED"
+          : error instanceof DOMException && error.name === "TimeoutError"
           ? "CHARACTER_PROVIDER_TIMEOUT"
           : "CHARACTER_PROVIDER_UNAVAILABLE",
       );

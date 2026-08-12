@@ -19,6 +19,7 @@
   "scripts": {
     "dev": "concurrently --kill-others --names api,web \"npm:dev:api\" \"npm:dev:web\"",
     "dev:stack": "concurrently --kill-others --names api,web,media,document,export \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\"",
+    "dev:stack:character": "concurrently --kill-others --names api,web,media,document,export,character \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\" \"npm:dev:worker-character\"",
     "dev:api": "npm run dev --workspace @motionprep/api",
     "dev:web": "npm run dev --workspace @motionprep/web",
     "dev:worker-media": "npm run dev --workspace @motionprep/worker-media",

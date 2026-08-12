@@ -169,7 +169,14 @@ export async function registerHttpMetrics(
             `motionprep_job_duration_seconds_count{queue="${escapeLabel(queue.queue)}"} ${queue.duration.count}`,
           );
         }
-        const missingWorkerTypes = new Set(["media", "document", "export"]);
+        const missingWorkerTypes = new Set([
+          "media",
+          "document",
+          "export",
+          ...(snapshot.queues.some((queue) => queue.queue === "character")
+            ? ["character"]
+            : []),
+        ]);
         for (const worker of snapshot.workers) {
           missingWorkerTypes.delete(worker.workerType);
           lines.push(

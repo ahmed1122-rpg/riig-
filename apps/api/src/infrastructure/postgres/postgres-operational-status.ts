@@ -63,7 +63,10 @@ interface EmailOutboxRow {
 export class PostgresOperationalStatusProvider
   implements OperationalStatusProvider
 {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly options: { characterWorkerExpected?: boolean } = {},
+  ) {}
 
   async snapshot(): Promise<OperationalStatusSnapshot> {
     const [
@@ -118,7 +121,8 @@ export class PostgresOperationalStatusProvider
              )),
              0
            ) AS oldest_queued_seconds
-         FROM export_jobs`,
+         FROM export_jobs
+         ${this.options.characterWorkerExpected ? characterQueueUnion : ""}`,
         ),
         this.pool.query<RecentWorkerEventRow>(
           `SELECT
@@ -194,7 +198,9 @@ export class PostgresOperationalStatusProvider
           ? "media"
           : row.queue === "processing-document"
             ? "document"
-            : "export";
+            : row.queue === "export"
+              ? "export"
+              : "character";
       const event = (type: RecentWorkerEventRow["event_type"]) =>
         recentWorkerEvents.rows.find(
           (candidate) =>
@@ -227,7 +233,13 @@ export class PostgresOperationalStatusProvider
         },
       };
     });
-    const expectedWorkerTypes = new Set(["media", "document", "export"]);
+    const requiredWorkerTypes = new Set<WorkerStatus["workerType"]>([
+      "media",
+      "document",
+      "export",
+      ...(this.options.characterWorkerExpected ? (["character"] as const) : []),
+    ]);
+    const expectedWorkerTypes = new Set(requiredWorkerTypes);
     for (const worker of mappedWorkers) {
       if (!worker.stale) expectedWorkerTypes.delete(worker.workerType);
     }
@@ -258,7 +270,10 @@ export class PostgresOperationalStatusProvider
       : null;
     return {
       status:
-        mappedWorkers.some((worker) => worker.stale) ||
+        mappedWorkers.some(
+          (worker) =>
+            worker.stale && requiredWorkerTypes.has(worker.workerType),
+        ) ||
         expectedWorkerTypes.size > 0 ||
         !mappedMaintenance ||
         mappedMaintenance.stale
@@ -272,6 +287,22 @@ export class PostgresOperationalStatusProvider
     };
   }
 }
+
+const characterQueueUnion = `
+  UNION ALL
+  SELECT
+    'character' AS queue,
+    count(*) FILTER (WHERE status = 'queued') AS queued,
+    count(*) FILTER (WHERE status IN ('processing', 'verifying')) AS active,
+    count(*) FILTER (WHERE status = 'failed') AS failed,
+    COALESCE(
+      extract(epoch FROM now() - min(created_at) FILTER (
+        WHERE status = 'queued'
+      )),
+      0
+    ) AS oldest_queued_seconds
+  FROM character_jobs
+`;
 
 function optionalIso(value: Date | string | null): string | null {
   return value === null ? null : toIso(value);

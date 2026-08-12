@@ -74,6 +74,34 @@ describe("character job runtime", () => {
     ).toBe("worker-b");
   });
 
+  it("releases a shutdown claim for immediate retry without consuming an attempt", async () => {
+    const jobs = new InMemoryCharacterJobRepository();
+    await new CharacterJobService(jobs).enqueue({
+      projectId,
+      type: "train-identity",
+      operationKey: "shutdown-release-operation",
+      requestHash: "9".repeat(64),
+      payload: { modelVersionId: crypto.randomUUID() },
+      now: initialTime.toISOString(),
+    });
+    const first = await claim(jobs);
+
+    expect(
+      await jobs.releaseClaim(
+        first.id,
+        "worker-a",
+        new Date(initialTime.getTime() + 1_000).toISOString(),
+      ),
+    ).toBe(true);
+    const recovered = await jobs.claimNext(
+      "worker-b",
+      new Date(initialTime.getTime() + 1_001).toISOString(),
+      new Date(initialTime.getTime() + 61_001).toISOString(),
+    );
+
+    expect(recovered).toMatchObject({ leaseOwner: "worker-b", attempt: 1 });
+  });
+
   it("trains an identity version before generation", async () => {
     const setup = await createReadyContext();
     const service = new CharacterJobService(setup.jobs);
@@ -185,6 +213,63 @@ describe("character job runtime", () => {
       );
       expect(settled).toMatchObject({ status: expectedStatus, errorCode: code });
     }
+  });
+
+  it("cancels an in-flight provider request and requeues it during shutdown", async () => {
+    const setup = await createReadyContext();
+    await new CharacterJobService(setup.jobs).enqueue({
+      projectId,
+      type: "train-identity",
+      operationKey: "abort-provider-operation",
+      requestHash: "8".repeat(64),
+      payload: { modelVersionId: setup.model.id },
+      now: initialTime.toISOString(),
+    });
+    const claimed = await claim(setup.jobs);
+    const controller = new AbortController();
+    let providerStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve;
+    });
+    const execution = executeClaimedCharacterJob(
+      {
+        ...setup.context,
+        signal: controller.signal,
+        provider: {
+          key: "abort-aware-provider",
+          async trainIdentity(input) {
+            providerStarted();
+            return new Promise((_resolve, reject) => {
+              input.signal?.addEventListener(
+                "abort",
+                () => reject(new CharacterProviderError("CHARACTER_JOB_ABORTED")),
+                { once: true },
+              );
+            });
+          },
+          async generate() {
+            throw new Error("Generation was not expected.");
+          },
+        },
+        now: advancingClock(),
+      },
+      claimed,
+    );
+    await started;
+    controller.abort();
+
+    await expect(execution).resolves.toMatchObject({
+      status: "queued",
+      attempt: 0,
+      leaseOwner: null,
+    });
+    await expect(
+      setup.jobs.claimNext(
+        "worker-b",
+        new Date(initialTime.getTime() + 1_000).toISOString(),
+        new Date(initialTime.getTime() + 61_000).toISOString(),
+      ),
+    ).resolves.toMatchObject({ leaseOwner: "worker-b", attempt: 1 });
   });
 });
 

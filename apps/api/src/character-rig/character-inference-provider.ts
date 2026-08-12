@@ -11,6 +11,7 @@ export interface CharacterIdentityTrainingInput {
   bible: CharacterBible;
   modelVersion: CharacterIdentityModelVersion;
   references: CharacterReferenceAsset[];
+  signal?: AbortSignal;
 }
 
 export interface CharacterIdentityTrainingResult {
@@ -23,6 +24,7 @@ export interface CharacterGenerationInput {
   modelVersion: CharacterIdentityModelVersion;
   attempt: CharacterGenerationAttempt;
   references: CharacterReferenceAsset[];
+  signal?: AbortSignal;
 }
 
 type CharacterGenerationArtifact =

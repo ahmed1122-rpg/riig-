@@ -7,6 +7,7 @@ import { PostgresCharacterRigRepository } from "../infrastructure/postgres/postg
 import { PostgresCharacterJobResultCommitter } from "../infrastructure/postgres/postgres-character-job-result-committer.js";
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
+import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
 import { HttpCharacterInferenceProvider } from "./http-character-inference-provider.js";
 import { runCharacterWorkerLoop } from "./character-worker-loop.js";
 
@@ -21,6 +22,7 @@ export interface CharacterWorkerConfig {
   pollMilliseconds: number;
   concurrency: number;
   leaseMilliseconds: number;
+  drainTimeoutMilliseconds: number;
   workerId?: string;
 }
 
@@ -65,6 +67,49 @@ export async function runCharacterWorker(
   const instanceId =
     config.workerId ??
     `${hostname()}:${process.pid}:${crypto.randomUUID().slice(0, 8)}`;
+  const drain = new WorkerDrainCoordinator<{
+    jobId: string;
+    workerId: string;
+  }>({
+    timeoutMilliseconds: config.drainTimeoutMilliseconds,
+    release: async ({ jobId, workerId }) => {
+      const released = await jobs.releaseClaim(
+        jobId,
+        workerId,
+        new Date().toISOString(),
+      );
+      if (!released) return;
+      await recordWorkerEvent(database.pool, {
+        workerType: "character",
+        eventType: "retry",
+        jobId,
+      }).catch((error: unknown) =>
+        log("error", "worker.event_record_failed", {
+          job_id: jobId,
+          error: error instanceof Error ? error.message : "unknown",
+        }),
+      );
+      log("info", "character.shutdown_requeued", {
+        job_id: jobId,
+        worker_id: workerId,
+      });
+    },
+    onReleaseError: (error, item) =>
+      log("error", "character.shutdown_requeue_failed", {
+        job_id: item.jobId,
+        worker_id: item.workerId,
+        error: error instanceof Error ? error.message : "unknown",
+      }),
+  });
+  const requestDrain = () => {
+    log("info", "worker.drain_started", {
+      active_jobs: drain.activeCount,
+      drain_timeout_ms: config.drainTimeoutMilliseconds,
+    });
+    drain.requestShutdown();
+  };
+  options.signal.addEventListener("abort", requestDrain, { once: true });
+  if (options.signal.aborted) requestDrain();
 
   await Promise.all([database.ready(), storage.ready(false)]);
   log("info", "worker.ready", {
@@ -84,55 +129,79 @@ export async function runCharacterWorker(
   });
 
   try {
-    await Promise.all(
-      Array.from({ length: config.concurrency }, (_, index) => {
-        const workerId = `${instanceId}:${index + 1}`;
-        return runCharacterWorkerLoop({
-          jobs,
-          characterRigs,
-          resultCommitter,
-          provider,
-          storage,
-          workerId,
-          leaseMilliseconds: config.leaseMilliseconds,
-          pollMilliseconds: config.pollMilliseconds,
-          signal: options.signal,
-          onArtifactCleanupError: (error, objectKey) =>
-            log("error", "character.artifact_cleanup_failed", {
-              object_key: objectKey,
+    const loops = Array.from({ length: config.concurrency }, (_, index) => {
+      const workerId = `${instanceId}:${index + 1}`;
+      return runCharacterWorkerLoop({
+        jobs,
+        characterRigs,
+        resultCommitter,
+        provider,
+        storage,
+        workerId,
+        leaseMilliseconds: config.leaseMilliseconds,
+        pollMilliseconds: config.pollMilliseconds,
+        signal: options.signal,
+        onClaimed: (job) =>
+          drain.register(workerId, { jobId: job.id, workerId }),
+        onFinished: () => drain.unregister(workerId),
+        onLoopError: (error) =>
+          log("error", "character.worker_loop_failed", {
+            worker_id: workerId,
+            error: error instanceof Error ? error.message : "unknown",
+          }),
+        onArtifactCleanupError: (error, objectKey) =>
+          log("error", "character.artifact_cleanup_failed", {
+            object_key: objectKey,
+            error: error instanceof Error ? error.message : "unknown",
+          }),
+        onSettled: async (job, durationMs) => {
+          const eventType =
+            job.status === "succeeded"
+              ? "completed"
+              : job.status === "failed"
+                ? "failed"
+                : "retry";
+          await recordWorkerEvent(database.pool, {
+            workerType: "character",
+            eventType,
+            jobId: job.id,
+            ...(eventType === "completed" ? { durationMs } : {}),
+          }).catch((error: unknown) =>
+            log("error", "worker.event_record_failed", {
+              job_id: job.id,
               error: error instanceof Error ? error.message : "unknown",
             }),
-          onSettled: async (job) => {
-            const eventType =
-              job.status === "succeeded"
-                ? "completed"
-                : job.status === "failed"
-                  ? "failed"
-                  : "retry";
-            await recordWorkerEvent(database.pool, {
-              workerType: "character",
-              eventType,
-              jobId: job.id,
-            }).catch((error: unknown) =>
-              log("error", "worker.event_record_failed", {
-                job_id: job.id,
-                error: error instanceof Error ? error.message : "unknown",
-              }),
-            );
-            log(job.status === "failed" ? "error" : "info", "character.job_settled", {
+          );
+          log(
+            job.status === "failed" ? "error" : "info",
+            "character.job_settled",
+            {
               job_id: job.id,
               project_id: job.projectId,
               status: job.status,
               attempt: job.attempt,
               error_code: job.errorCode,
-            });
-          },
-        });
-      }),
+            },
+          );
+        },
+      });
+    });
+    const loopsSettled = Promise.allSettled(loops);
+    const drainCompleted = waitForAbort(options.signal).then(() =>
+      drain.waitForRelease(),
     );
+    await Promise.race([loopsSettled, drainCompleted]);
   } finally {
+    options.signal.removeEventListener("abort", requestDrain);
     await heartbeat.stop();
     await database.close();
     storage.destroy();
   }
+}
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
 }

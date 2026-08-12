@@ -154,6 +154,33 @@ describe("HttpCharacterInferenceProvider", () => {
       provider.trainIdentity({ bible, modelVersion: model, references }),
     ).rejects.toMatchObject({ code: "CHARACTER_PROVIDER_UNAVAILABLE" });
   });
+
+  it("propagates shutdown cancellation into the provider request", async () => {
+    const request = vi.fn<typeof fetch>().mockImplementation(
+      async (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const controller = new AbortController();
+    const training = createProvider(request).trainIdentity({
+      bible,
+      modelVersion: model,
+      references,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(training).rejects.toMatchObject({
+      code: "CHARACTER_JOB_ABORTED",
+    });
+    expect(request.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
 });
 
 function createProvider(request: typeof fetch) {

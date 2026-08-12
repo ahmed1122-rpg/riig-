@@ -346,6 +346,9 @@ export async function buildApp(
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
     pdfRegionOcrEnabled: config.PDF_REGION_OCR_ENABLED,
     characterRigEnabled: config.CHARACTER_RIG_ENABLED,
+    ...(dependencies.operationalStatus
+      ? { operationalStatus: dependencies.operationalStatus }
+      : {}),
   });
 
   await registerAuthRoutes(app, authService, {

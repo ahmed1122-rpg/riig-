@@ -25,8 +25,11 @@ and the authorization guard shared by every Character Rig HTTP operation.
 ## Safe disablement
 
 Set `CHARACTER_RIG_ENABLED=false` and restart the API. Existing jobs remain in
-durable storage but no new user operations can be submitted. Allow claimed jobs
-to finish before stopping the worker; its lease is ten minutes by default.
+durable storage but no new user operations can be submitted. Stop the worker
+gracefully with `SIGTERM`: in-flight provider requests receive cancellation,
+the worker drains for `CHARACTER_DRAIN_TIMEOUT_MS` (30 seconds by default), and
+any claim still active is fenced and requeued without consuming a retry. Keep
+the platform stop grace period above this timeout.
 
 ## Incident response
 

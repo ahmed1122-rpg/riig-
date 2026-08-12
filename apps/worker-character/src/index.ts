@@ -30,6 +30,7 @@ export async function main(
         pollMilliseconds: config.CHARACTER_POLL_MS,
         concurrency: config.CHARACTER_CONCURRENCY,
         leaseMilliseconds: config.CHARACTER_LEASE_MS,
+        drainTimeoutMilliseconds: config.CHARACTER_DRAIN_TIMEOUT_MS,
         ...(config.CHARACTER_WORKER_ID
           ? { workerId: config.CHARACTER_WORKER_ID }
           : {}),

@@ -36,4 +36,5 @@ test("maps validated environment into the character runtime", async () => {
   assert.equal(received?.workerId, "character-test");
   assert.equal(received?.objectStorage.bucket, "motionprep-test");
   assert.equal(received?.inferenceTimeoutMilliseconds, 300_000);
+  assert.equal(received?.drainTimeoutMilliseconds, 30_000);
 });

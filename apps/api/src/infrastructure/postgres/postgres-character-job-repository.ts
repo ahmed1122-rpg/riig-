@@ -153,6 +153,37 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
     return result.rowCount === 1;
   }
 
+  async releaseClaim(
+    id: string,
+    workerId: string,
+    releasedAt: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE character_jobs AS job
+       SET status = 'queued',
+           attempt = GREATEST(0, job.attempt - 1),
+           next_attempt_at = $3::timestamptz,
+           lease_owner = NULL,
+           lease_expires_at = NULL,
+           error_code = NULL,
+           updated_at = $3::timestamptz,
+           document = job.document || jsonb_build_object(
+             'status', 'queued',
+             'attempt', GREATEST(0, job.attempt - 1),
+             'nextAttemptAt', $3::timestamptz::text,
+             'leaseOwner', NULL,
+             'leaseExpiresAt', NULL,
+             'errorCode', NULL,
+             'updatedAt', $3::timestamptz::text
+           )
+       WHERE job.id = $1
+         AND job.lease_owner = $2
+         AND job.status IN ('processing', 'verifying')`,
+      [id, workerId, releasedAt],
+    );
+    return result.rowCount === 1;
+  }
+
   async completeClaim(
     id: string,
     workerId: string,

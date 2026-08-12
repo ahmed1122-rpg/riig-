@@ -30,6 +30,7 @@ export interface CharacterJobExecutionContext {
   now?: () => Date;
   qualityThresholds?: CharacterQualityThresholds;
   onArtifactCleanupError?: (error: unknown, objectKey: string) => void;
+  signal?: AbortSignal;
 }
 
 export async function executeClaimedCharacterJob(
@@ -84,6 +85,14 @@ export async function executeClaimedCharacterJob(
   } catch (error) {
     if (pendingResult) await cleanupResultArtifacts(context, pendingResult);
     const failedAt = now();
+    if (context.signal?.aborted) {
+      const released = await context.jobs.releaseClaim(
+        job.id,
+        context.workerId,
+        failedAt.toISOString(),
+      );
+      return released ? context.jobs.findById(job.id) : null;
+    }
     const errorCode = characterJobErrorCode(error);
     const settled = await context.jobs.retryOrFailClaim(
       job.id,
@@ -166,6 +175,7 @@ async function executeRigCompilation(
   const assets: Array<{ nodeId: string; source: Buffer }> = [];
   let totalBytes = 0;
   for (const node of rig.nodes) {
+    throwIfCharacterJobAborted(context.signal);
     if (node.kind !== "raster" || !node.artifact) continue;
     const metadata = await context.storage.inspect(node.artifact.objectKey);
     if (
@@ -188,6 +198,7 @@ async function executeRigCompilation(
     }
     assets.push({ nodeId: node.id, source: object.body });
   }
+  throwIfCharacterJobAborted(context.signal);
   const compiledAt = now().toISOString();
   const compiled = await createCharacterRigPsd({
     rig,
@@ -277,6 +288,7 @@ async function executeIdentityTraining(
     bible,
     modelVersion: training,
     references,
+    ...(context.signal ? { signal: context.signal } : {}),
   });
   return {
     kind: "identity-model",
@@ -327,6 +339,7 @@ async function executeGeneration(
     modelVersion: model,
     attempt: processing,
     references,
+    ...(context.signal ? { signal: context.signal } : {}),
   });
   const qualityReport = evaluateCharacterQuality(
     result.qualityReport,
@@ -455,6 +468,12 @@ function characterJobErrorCode(error: unknown): string {
 
 function retryDelayMilliseconds(attempt: number): number {
   return Math.min(60_000, 1_000 * 2 ** Math.max(0, attempt - 1));
+}
+
+function throwIfCharacterJobAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new CharacterProviderError("CHARACTER_JOB_ABORTED");
+  }
 }
 
 function isRetryableCharacterJobError(errorCode: string): boolean {

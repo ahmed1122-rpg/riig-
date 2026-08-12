@@ -108,6 +108,12 @@ use Stripe Customer Portal.
     requests below `/private-api/`. Credentials, query strings, and fragments
     are rejected. Do not include `/v1` unless it is genuinely part of the
     provider's prefix, because the adapter appends its own versioned routes.
+    The API advertises Character Studio only after both the flag is enabled and
+    a fresh `worker-character` heartbeat is visible. Keep
+    `CHARACTER_DRAIN_TIMEOUT_MS=30000` below the Compose stop grace period so an
+    interrupted inference request is cancelled and its fenced job is requeued.
+    For local end-to-end development, use `npm run dev:stack:character` after a
+    compatible provider is listening at the configured URL.
 14. Set `TRUSTED_PROXY_CIDR` to the narrow source CIDR used by the immediate TLS
     load balancer when it connects to Nginx. The load balancer must overwrite
     `X-Forwarded-Proto` and append the socket client address to

@@ -19,6 +19,11 @@ export interface CharacterJobRepository {
     renewedAt: string,
     leaseExpiresAt: string,
   ): Promise<boolean>;
+  releaseClaim(
+    id: string,
+    workerId: string,
+    releasedAt: string,
+  ): Promise<boolean>;
   completeClaim(
     id: string,
     workerId: string,
@@ -120,6 +125,32 @@ export class InMemoryCharacterJobRepository implements CharacterJobRepository {
       return false;
     }
     this.#jobs.set(id, { ...job, leaseExpiresAt, updatedAt: renewedAt });
+    return true;
+  }
+
+  async releaseClaim(
+    id: string,
+    workerId: string,
+    releasedAt: string,
+  ): Promise<boolean> {
+    const job = this.#jobs.get(id);
+    if (
+      !job ||
+      job.leaseOwner !== workerId ||
+      !["processing", "verifying"].includes(job.status)
+    ) {
+      return false;
+    }
+    this.#jobs.set(id, {
+      ...job,
+      status: "queued",
+      attempt: Math.max(0, job.attempt - 1),
+      nextAttemptAt: releasedAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      errorCode: null,
+      updatedAt: releasedAt,
+    });
     return true;
   }
 

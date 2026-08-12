@@ -10,6 +10,7 @@ import { StripePaymentProvider } from "./billing/stripe-payment-provider.js";
 import { LocalArabicPdfOcrEngine } from "@motionprep/document-processing";
 import { EmailOutboxDispatcher } from "./infrastructure/email/email-outbox-dispatcher.js";
 import { initializeTracing } from "./observability/tracing.js";
+import { assertLiveWorker } from "./observability/worker-readiness.js";
 
 const config = loadConfig();
 const tracing = initializeTracing("motionprep-api", process.env);
@@ -120,6 +121,12 @@ const dependencyReadiness: Record<string, () => Promise<void>> = {
       }
     : {}),
   ...(emailSender ? { smtp: () => emailSender.ready() } : {}),
+  ...(config.CHARACTER_RIG_ENABLED && persistence
+    ? {
+        character_worker: () =>
+          assertLiveWorker(persistence.operationalStatus, "character"),
+      }
+    : {}),
 };
 const ready = () =>
   Promise.all(Object.values(dependencyReadiness).map((check) => check())).then(

@@ -64,7 +64,9 @@ export function createPostgresPersistence(config: AppConfig) {
       database.pool,
       config.USAGE_METERING_MODE,
     ),
-    operationalStatus: new PostgresOperationalStatusProvider(database.pool),
+    operationalStatus: new PostgresOperationalStatusProvider(database.pool, {
+      characterWorkerExpected: config.CHARACTER_RIG_ENABLED,
+    }),
     emailOutbox: new PostgresEmailOutboxRepository(database.pool),
     ready: () => database.ready(),
     close: () => database.close(),

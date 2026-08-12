@@ -151,6 +151,22 @@ describe("API — البنية التحتية", () => {
                   buckets: [1, 2, 4, 5, 5, 5, 5, 5],
                 },
               },
+              {
+                queue: "character" as const,
+                queued: 2,
+                active: 0,
+                failed: 0,
+                oldestQueuedSeconds: 45,
+                retriesLastHour: 1,
+                failuresLastHour: 0,
+                completionsLastHour: 3,
+                leaseLossesLastHour: 0,
+                duration: {
+                  count: 3,
+                  sumSeconds: 9,
+                  buckets: [1, 2, 3, 3, 3, 3, 3, 3],
+                },
+              },
             ],
             emailOutbox: {
               queued: 2,
@@ -211,6 +227,12 @@ describe("API — البنية التحتية", () => {
     );
     expect(response.body).toContain(
       'motionprep_worker_up{worker_type="export",instance="missing",release="unknown"} 0',
+    );
+    expect(response.body).toContain(
+      'motionprep_worker_up{worker_type="character",instance="missing",release="unknown"} 0',
+    );
+    expect(response.body).toContain(
+      'motionprep_queue_jobs{queue="character",state="queued"} 2',
     );
     expect(response.body).toContain("motionprep_dependencies_ready 1");
     expect(response.body).toContain(
