@@ -228,7 +228,7 @@ describe("ProcessingService document tools", () => {
 
     expect(refined.document.revision).toBe(2);
     expect(refinedLayer?.rasterAsset?.objectKey).toContain(
-      "/tools/revision-2/edge-refine-raster-a.png",
+      "/tools/revision-2/edge-refine-raster-a-edge-refine-operation-001.png",
     );
     expect(
       await storage.get(refinedLayer!.rasterAsset!.objectKey),

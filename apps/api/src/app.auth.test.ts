@@ -289,11 +289,20 @@ describe("API — المصادقة والصلاحيات", () => {
     });
     expect(exported.statusCode).toBe(200);
     expect(exported.json().data).toMatchObject({
-      schemaVersion: "1",
+      schemaVersion: "2",
       account: { email: "privacy@example.com" },
       legal: {
         termsVersion: legalAcceptance.termsVersion,
         privacyVersion: legalAcceptance.privacyVersion,
+      },
+      content: {
+        layerDocuments: [],
+        layerDocumentRevisions: [],
+      },
+      character: {
+        bibles: [],
+        generations: [],
+        rigs: [],
       },
     });
     expect(exported.json().data.account.passwordHash).toBeUndefined();

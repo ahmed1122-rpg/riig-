@@ -131,6 +131,29 @@ describe("writeRasterAssets", () => {
 
     expect(observationErrors).toHaveLength(1);
   });
+
+  it("registers every object before storage and aborts an unregistered write", async () => {
+    const storage = new MeasuredStorage();
+    const events = storage.events;
+
+    await writeRasterAssets(storage, assets("registered"), {
+      beforeStore: async (objectKey) => {
+        events.push(`register:${objectKey}`);
+      },
+    });
+    expect(events.indexOf("register:registered")).toBeLessThan(
+      events.indexOf("put:start:registered"),
+    );
+
+    await expect(
+      writeRasterAssets(storage, assets("unregistered"), {
+        beforeStore: async () => {
+          throw new Error("registry unavailable");
+        },
+      }),
+    ).rejects.toThrow("registry unavailable");
+    expect(events).not.toContain("put:start:unregistered");
+  });
 });
 
 function assets(...keys: string[]): PreparedRasterAsset[] {

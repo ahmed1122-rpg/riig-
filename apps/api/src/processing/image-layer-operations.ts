@@ -125,6 +125,7 @@ export class ImageLayerOperations {
       targetRevision,
       "edge-refine",
       layer.id,
+      input.operationId,
       refined,
     );
     try {
@@ -257,6 +258,7 @@ export class ImageLayerOperations {
       targetRevision,
       "merge",
       mergedId,
+      input.operationId,
       mergedBody,
     );
     try {
@@ -322,6 +324,7 @@ export class ImageLayerOperations {
     document: LayerDocument,
     strokes: readonly ImageGuidanceStroke[],
     targetRevision: number,
+    operationId: string,
   ): Promise<ApplyImageGuidanceResult> {
     const byLayer = new Map<string, ImageGuidanceStroke[]>();
     for (const stroke of strokes) {
@@ -391,6 +394,7 @@ export class ImageLayerOperations {
         targetRevision,
         layerId,
         "refined",
+        operationId,
         applied.refined,
       );
       storedKeys.push(refinedReference.objectKey);
@@ -406,6 +410,7 @@ export class ImageLayerOperations {
           targetRevision,
           separatedId,
           "separated",
+          operationId,
           applied.separated,
         );
         storedKeys.push(separatedReference.objectKey);

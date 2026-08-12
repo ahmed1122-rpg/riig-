@@ -7,6 +7,7 @@ import { createS3ObjectStorageOptions } from "../storage/object-storage-environm
 import { S3ObjectStorage } from "../storage/s3-object-storage.js";
 import { loadProcessingWorkerConfig } from "./processing-worker-config.js";
 import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
+import { PostgresDerivedAssetRegistry } from "../infrastructure/postgres/postgres-derived-asset-registry.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
 import { releaseProcessingJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
 import {
@@ -93,6 +94,7 @@ export async function runProcessingWorker(
     pool,
     config.USAGE_METERING_MODE,
   );
+  const derivedAssets = new PostgresDerivedAssetRegistry(pool);
   let running = true;
   const drain = new WorkerDrainCoordinator<{
     job: ProcessingJob;
@@ -178,6 +180,7 @@ export async function runProcessingWorker(
             pollMilliseconds: config.PROCESSING_POLL_MS,
             pdfOcrEngine,
             usageMeter,
+            derivedAssets,
             log: (level, message, context) =>
               log(options.serviceName, level, message, context),
             isRunning: () => running,

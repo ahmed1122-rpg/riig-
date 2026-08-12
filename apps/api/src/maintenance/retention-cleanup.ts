@@ -27,6 +27,11 @@ export interface ExpiredCharacterReference {
   objectKey: string;
 }
 
+export interface UnreferencedDerivedAsset {
+  objectKey: string;
+  observedUpdatedAt: string;
+}
+
 export interface RetentionStore {
   listExpiredUploads(
     now: string,
@@ -46,6 +51,15 @@ export interface RetentionStore {
     referenceId: string,
     now: string,
   ): Promise<boolean>;
+  listUnreferencedDerivedAssets(
+    now: string,
+    limit: number,
+  ): Promise<UnreferencedDerivedAsset[]>;
+  markDerivedAssetPurged(
+    objectKey: string,
+    observedUpdatedAt: string,
+    now: string,
+  ): Promise<boolean>;
   pruneDatabase(
     now: string,
     config: RetentionConfig,
@@ -57,6 +71,7 @@ export interface RetentionCleanupReport {
   uploadsPurged: number;
   artifactsPurged: number;
   characterReferencesPurged: number;
+  derivedAssetsPurged: number;
   database: RetentionDatabaseCounts;
   failures: Array<{ key: string; message: string }>;
 }
@@ -83,6 +98,10 @@ export class RetentionCleanup {
       checkedAt,
       failures,
     );
+    const derivedAssetsPurged = await this.purgeDerivedAssets(
+      checkedAt,
+      failures,
+    );
     const database = await this.store.pruneDatabase(
       checkedAt,
       this.config,
@@ -92,6 +111,7 @@ export class RetentionCleanup {
       uploadsPurged,
       artifactsPurged,
       characterReferencesPurged,
+      derivedAssetsPurged,
       database,
       failures,
     };
@@ -199,6 +219,37 @@ export class RetentionCleanup {
     }
     return purged;
   }
+
+  private async purgeDerivedAssets(
+    now: string,
+    failures: RetentionCleanupReport["failures"],
+  ): Promise<number> {
+    const assets = await this.store.listUnreferencedDerivedAssets(
+      now,
+      this.config.RETENTION_BATCH_SIZE,
+    );
+    let purged = 0;
+    for (const asset of assets) {
+      try {
+        await this.storage.delete(asset.objectKey);
+        if (
+          await this.store.markDerivedAssetPurged(
+            asset.objectKey,
+            asset.observedUpdatedAt,
+            now,
+          )
+        ) {
+          purged += 1;
+        }
+      } catch (error) {
+        failures.push({
+          key: asset.objectKey,
+          message: errorMessage(error),
+        });
+      }
+    }
+    return purged;
+  }
 }
 
 interface UploadCleanupRow {
@@ -216,6 +267,11 @@ interface ArtifactCleanupRow {
 interface CharacterReferenceCleanupRow {
   id: string;
   object_key: string;
+}
+
+interface DerivedAssetCleanupRow {
+  object_key: string;
+  updated_at: Date | string;
 }
 
 export class PostgresRetentionStore implements RetentionStore {
@@ -361,12 +417,70 @@ export class PostgresRetentionStore implements RetentionStore {
     return result.rowCount === 1;
   }
 
+  async listUnreferencedDerivedAssets(
+    now: string,
+    limit: number,
+  ): Promise<UnreferencedDerivedAsset[]> {
+    const result = await this.pool.query<DerivedAssetCleanupRow>(
+      `SELECT registry.object_key, registry.updated_at
+       FROM derived_asset_registry registry
+       WHERE registry.purged_at IS NULL
+         AND registry.updated_at <= $1::timestamptz - interval '1 hour'
+         AND ${derivedAssetIsUnreferenced("registry")}
+       ORDER BY registry.updated_at, registry.object_key
+       LIMIT $2`,
+      [now, limit],
+    );
+    return result.rows.map((row) => ({
+      objectKey: row.object_key,
+      observedUpdatedAt: new Date(row.updated_at).toISOString(),
+    }));
+  }
+
+  async markDerivedAssetPurged(
+    objectKey: string,
+    observedUpdatedAt: string,
+    now: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE derived_asset_registry registry
+       SET purged_at = $3, updated_at = $3
+       WHERE registry.object_key = $1
+         AND registry.updated_at = $2
+         AND registry.purged_at IS NULL
+         AND ${derivedAssetIsUnreferenced("registry")}`,
+      [objectKey, observedUpdatedAt, now],
+    );
+    return result.rowCount === 1;
+  }
+
   async pruneDatabase(
     now: string,
     config: RetentionConfig,
   ): Promise<RetentionDatabaseCounts> {
     return pruneRetentionDatabase(this.pool, now, config);
   }
+}
+
+function derivedAssetIsUnreferenced(alias: string): string {
+  return `NOT EXISTS (
+           SELECT 1
+           FROM layer_documents document,
+                LATERAL jsonb_path_query(
+                  document.document,
+                  '$.**.objectKey'
+                ) value
+           WHERE value #>> '{}' = ${alias}.object_key
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM layer_document_revisions revision,
+                LATERAL jsonb_path_query(
+                  revision.document,
+                  '$.**.objectKey'
+                ) value
+           WHERE value #>> '{}' = ${alias}.object_key
+         )`;
 }
 
 export function exportArtifactKey(

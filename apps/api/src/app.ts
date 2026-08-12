@@ -278,6 +278,9 @@ export async function buildApp(
           "processing.raster_asset_observer_failed",
         );
       },
+      ...(dependencies.derivedAssets
+        ? { derivedAssets: dependencies.derivedAssets }
+        : {}),
     },
   );
   const authRepository = dependencies.auth ?? new InMemoryAuthRepository();

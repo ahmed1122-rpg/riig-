@@ -84,9 +84,10 @@ export class ProcessingService {
       runtime.rasterAssetWriteConcurrency ?? 2,
       runtime.onAssetWriteObservation,
       runtime.onAssetWriteObservationError,
+      runtime.derivedAssets,
     );
     this.#edits = new DocumentEditCoordinator(documents, now);
-    this.#rasterAssets = new RasterAssetStore(storage);
+    this.#rasterAssets = new RasterAssetStore(storage, runtime.derivedAssets);
     this.#imageLayers = new ImageLayerOperations(
       this.#edits,
       this.#rasterAssets,
@@ -403,6 +404,7 @@ export class ProcessingService {
               document,
               imageStrokes,
               currentRevision + 1,
+              operationId,
             );
       if (applied.storedKeys) storedKeys.push(...applied.storedKeys);
       const {

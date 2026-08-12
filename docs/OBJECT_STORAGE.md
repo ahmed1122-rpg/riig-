@@ -30,7 +30,7 @@ bucket; it never creates one. Development may create a missing bucket.
 | Prefix | Contents | Required retention |
 |---|---|---|
 | `sources/` | Validated image or PDF bytes for a source version | Retain while the source-version record exists |
-| `derived/` | Immutable normalized raster layers and guided refinements | Retain while a referencing `LayerDocument` exists |
+| `derived/` | Immutable normalized raster layers and guided refinements | Register ownership before every write; retain while a current or revision `LayerDocument` references the key |
 | `artifacts/` | Generated PSD, TIFF, ZIP, or text exports | Application access expires after 24 hours |
 | `projects/<projectId>/character-rig/` | Private identity references, generated candidates, manifests, and rig PSDs | Retain only while referenced by the project; reference metadata carries a bounded expiry |
 
@@ -46,9 +46,15 @@ delayed lifecycle sweep cannot extend user access. If bucket versioning is
 enabled, also expire non-current artifact versions according to the approved
 recovery policy.
 
-Monitor total bytes and object count separately for every prefix. Review
-unreferenced `derived/` objects before removal; a prefix-wide expiry is unsafe
-because live layer documents reference those objects.
+Monitor total bytes and object count separately for every prefix. Every
+`derived/` write must first upsert `derived_asset_registry`; a registry failure
+fails the object write closed. Tool and guidance keys include the operation ID
+so a replay cannot overwrite an older referenced result. The retention sweep
+considers a registered key only after a one-hour grace period, and only when it
+is absent from both current `layer_documents` and retained
+`layer_document_revisions`. It rechecks those references and the observed
+registry timestamp before marking the cleanup complete. A prefix-wide expiry
+is unsafe because live and historical documents reference these objects.
 
 Character objects are never public URLs. API reads are ownership-checked and
 the worker exchanges only scoped object metadata with the private inference

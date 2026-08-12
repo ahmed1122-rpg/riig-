@@ -64,6 +64,12 @@ describe("retention cleanup", () => {
       sizeBytes: 1,
       body: Buffer.from([3]),
     });
+    await storage.put({
+      key: "derived/project/source/revision-1/orphan.png",
+      contentType: "image/png",
+      sizeBytes: 1,
+      body: Buffer.from([4]),
+    });
     const marked: string[] = [];
     const store: RetentionStore = {
       async listExpiredUploads() {
@@ -100,6 +106,18 @@ describe("retention cleanup", () => {
         marked.push(id);
         return true;
       },
+      async listUnreferencedDerivedAssets() {
+        return [
+          {
+            objectKey: "derived/project/source/revision-1/orphan.png",
+            observedUpdatedAt: "2026-07-28T10:00:00.000Z",
+          },
+        ];
+      },
+      async markDerivedAssetPurged(objectKey) {
+        marked.push(objectKey);
+        return true;
+      },
       async pruneDatabase() {
         return emptyCounts;
       },
@@ -117,15 +135,24 @@ describe("retention cleanup", () => {
       uploadsPurged: 1,
       artifactsPurged: 1,
       characterReferencesPurged: 1,
+      derivedAssetsPurged: 1,
       failures: [],
     });
-    expect(marked).toEqual(["upload", "export", "reference"]);
+    expect(marked).toEqual([
+      "upload",
+      "export",
+      "reference",
+      "derived/project/source/revision-1/orphan.png",
+    ]);
     await expect(storage.get("sources/project/upload.png")).resolves.toBeNull();
     await expect(
       storage.get("artifacts/project/export/result.psd"),
     ).resolves.toBeNull();
     await expect(
       storage.get("projects/project/character-rig/references/reference.png"),
+    ).resolves.toBeNull();
+    await expect(
+      storage.get("derived/project/source/revision-1/orphan.png"),
     ).resolves.toBeNull();
   });
 
@@ -149,6 +176,12 @@ describe("retention cleanup", () => {
         return [];
       },
       async markCharacterReferencePurged() {
+        return false;
+      },
+      async listUnreferencedDerivedAssets() {
+        return [];
+      },
+      async markDerivedAssetPurged() {
         return false;
       },
       async pruneDatabase() {
@@ -220,6 +253,8 @@ describe("retention cleanup", () => {
       async markArtifactPurged() { return false; },
       async listExpiredCharacterReferences() { return []; },
       async markCharacterReferencePurged() { return false; },
+      async listUnreferencedDerivedAssets() { return []; },
+      async markDerivedAssetPurged() { return false; },
       async pruneDatabase() { return emptyCounts; },
     };
 
@@ -280,6 +315,48 @@ describe("retention cleanup", () => {
         exportId: "legacy-export",
         objectKey: "artifacts/project/legacy-export/legacy.psd",
       },
+    ]);
+  });
+
+  it("lists only aged unreferenced registry keys and fences their purge", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            object_key: "derived/project/source/orphan.png",
+            updated_at: "2026-07-28T10:00:00.000Z",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rowCount: 1 });
+    const store = new PostgresRetentionStore({ query } as never);
+
+    await expect(
+      store.listUnreferencedDerivedAssets(
+        "2026-07-28T12:00:00.000Z",
+        100,
+      ),
+    ).resolves.toEqual([
+      {
+        objectKey: "derived/project/source/orphan.png",
+        observedUpdatedAt: "2026-07-28T10:00:00.000Z",
+      },
+    ]);
+    expect(query.mock.calls[0]?.[0]).toContain("layer_document_revisions");
+    expect(query.mock.calls[0]?.[0]).toContain("interval '1 hour'");
+
+    await expect(
+      store.markDerivedAssetPurged(
+        "derived/project/source/orphan.png",
+        "2026-07-28T10:00:00.000Z",
+        "2026-07-28T12:00:00.000Z",
+      ),
+    ).resolves.toBe(true);
+    expect(query.mock.calls[1]?.[1]).toEqual([
+      "derived/project/source/orphan.png",
+      "2026-07-28T10:00:00.000Z",
+      "2026-07-28T12:00:00.000Z",
     ]);
   });
 });

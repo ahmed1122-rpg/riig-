@@ -1,7 +1,7 @@
 import { DocumentProcessingError } from "./document-processing-error.js";
 
-export const OCR_MAX_RENDER_PIXELS = 24_000_000;
-export const OCR_MIN_RENDER_SCALE = 0.25;
+const OCR_MAX_RENDER_PIXELS = 24_000_000;
+const OCR_MIN_RENDER_SCALE = 0.25;
 const MAX_PDF_PAGE_DIMENSION = 30_000;
 const MAX_PDF_PAGE_AREA = 100_000_000;
 

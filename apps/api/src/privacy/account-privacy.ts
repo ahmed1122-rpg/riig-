@@ -4,7 +4,7 @@ import type { AuthService } from "../auth/auth-service.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
 
 export interface AccountDataExport {
-  schemaVersion: "1";
+  schemaVersion: "2";
   generatedAt: string;
   account: UserSummary;
   legal: {
@@ -18,6 +18,23 @@ export interface AccountDataExport {
   subscriptions: unknown[];
   checkoutSessions: unknown[];
   auditEvents: unknown[];
+  content: {
+    layerDocuments: unknown[];
+    layerDocumentRevisions: unknown[];
+    sourceVersionRestores: unknown[];
+    processingJobs: unknown[];
+    projectReviewApprovals: unknown[];
+  };
+  character: {
+    bibles: unknown[];
+    references: unknown[];
+    identityModels: unknown[];
+    generations: unknown[];
+    generationReviews: unknown[];
+    rigs: unknown[];
+    rigReviews: unknown[];
+    jobs: unknown[];
+  };
 }
 
 export interface AccountDeletionRequest {
@@ -152,7 +169,7 @@ export class InMemoryAccountPrivacyRepository
       ...account
     } = user;
     return {
-      schemaVersion: "1",
+      schemaVersion: "2",
       generatedAt,
       account,
       legal: {
@@ -166,6 +183,23 @@ export class InMemoryAccountPrivacyRepository
       subscriptions: [],
       checkoutSessions: [],
       auditEvents: [],
+      content: {
+        layerDocuments: [],
+        layerDocumentRevisions: [],
+        sourceVersionRestores: [],
+        processingJobs: [],
+        projectReviewApprovals: [],
+      },
+      character: {
+        bibles: [],
+        references: [],
+        identityModels: [],
+        generations: [],
+        generationReviews: [],
+        rigs: [],
+        rigReviews: [],
+        jobs: [],
+      },
     };
   }
 

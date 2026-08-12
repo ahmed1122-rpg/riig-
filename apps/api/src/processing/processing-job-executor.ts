@@ -12,6 +12,7 @@ import type { Pool, PoolClient } from "pg";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { isObjectStorageIntegrityFailure } from "../storage/object-storage.js";
 import { S3ObjectStorage } from "../storage/s3-object-storage.js";
+import type { DerivedAssetRegistry } from "../storage/derived-asset-registry.js";
 import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
 import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
@@ -36,6 +37,7 @@ export interface ProcessingJobExecutionContext {
   workerId: string;
   leaseMilliseconds: number;
   rasterAssetWriteConcurrency: number;
+  derivedAssets?: DerivedAssetRegistry;
   pdfOcrEngine: LocalArabicPdfOcrEngine | null;
   usageMeter: PostgresUsageMeter;
   log: (
@@ -117,6 +119,7 @@ export async function processClaimedJob(
         ...(await writeProcessingRasterAssets(
           context,
           job.id,
+          job.projectId,
           prepared.rasterAssets,
           () => {
             if (heartbeat.leaseLost()) throw new ProcessingLeaseLostError();

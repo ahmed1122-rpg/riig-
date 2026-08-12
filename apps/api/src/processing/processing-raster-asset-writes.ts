@@ -1,10 +1,12 @@
 import type { PreparedRasterAsset } from "@motionprep/media-processing";
 import type { ObjectStorage } from "../storage/object-storage.js";
 import { writeRasterAssets } from "./raster-asset-writer.js";
+import type { DerivedAssetRegistry } from "../storage/derived-asset-registry.js";
 
 interface ProcessingRasterAssetWriteContext {
   storage: ObjectStorage;
   rasterAssetWriteConcurrency: number;
+  derivedAssets?: DerivedAssetRegistry;
   log: (
     level: "info" | "warning" | "error",
     message: string,
@@ -15,11 +17,23 @@ interface ProcessingRasterAssetWriteContext {
 export function writeProcessingRasterAssets(
   context: ProcessingRasterAssetWriteContext,
   jobId: string,
+  projectId: string,
   assets: readonly PreparedRasterAsset[],
   assertCanContinue: () => void,
 ): Promise<string[]> {
+  const derivedAssets = context.derivedAssets;
   return writeRasterAssets(context.storage, assets, {
     concurrency: context.rasterAssetWriteConcurrency,
+    ...(derivedAssets
+      ? {
+          beforeStore: (objectKey: string) =>
+            derivedAssets.register(
+              projectId,
+              objectKey,
+              "processing",
+            ),
+        }
+      : {}),
     assertCanContinue,
     onCleanupError: (error, objectKey) => {
       context.log("error", "processing.asset_cleanup_failed", {

@@ -1,6 +1,7 @@
 import type { PdfOcrEngine } from "@motionprep/document-processing";
 import type { UsageMeter } from "../billing/usage-meter.js";
 import type { RasterAssetWriteObservation } from "./raster-asset-writer.js";
+import type { DerivedAssetRegistry } from "../storage/derived-asset-registry.js";
 
 export interface ProcessingServiceRuntimeOptions {
   pdfOcrEngine?: PdfOcrEngine;
@@ -11,4 +12,5 @@ export interface ProcessingServiceRuntimeOptions {
     observation: RasterAssetWriteObservation,
   ) => void;
   onAssetWriteObservationError?: (error: unknown) => void;
+  derivedAssets?: DerivedAssetRegistry;
 }

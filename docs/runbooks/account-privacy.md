@@ -7,10 +7,13 @@ account deletion. It does not replace jurisdiction-specific legal review.
 
 ## Data export
 
-`GET /v1/account/export` requires an active session and returns JSON metadata
-for the account, legal acceptance, projects, source versions, exports, billing
-records, and audit events. It deliberately excludes password hashes, MFA
-secrets, provider customer identifiers, private object keys, and file bytes.
+`GET /v1/account/export` requires an active session. Schema version 2 returns
+JSON metadata for the account, legal acceptance, projects, source versions,
+exports, billing records, audit events, current and retained layer documents,
+restore history, processing/review records, and all owned Character bibles,
+references, generations, reviews, rigs, and jobs. It deliberately excludes
+password hashes, MFA secrets, provider customer identifiers, Character provider
+handles, worker leases, private object keys, and file bytes.
 
 ## Account deletion
 
@@ -21,7 +24,8 @@ blocks deletion until cancellation. Accepted requests:
 1. suspend the account and revoke sessions and recovery challenges;
 2. snapshot all owned source, derived-raster, revision, and export object keys;
 3. delete those objects with bounded concurrency;
-4. delete owned projects and their dependent workflow records;
+4. remove derived-asset ownership metadata, then delete owned projects and
+   their dependent workflow records in one transaction;
 5. clear provider identifiers and anonymize the retained user, billing, and
    audit identity;
 6. mark the durable request complete.
