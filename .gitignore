@@ -18,6 +18,7 @@ artifacts/playwright/
 artifacts/runtime-qa/
 artifacts/screenshots/
 artifacts/local-qa/
+artifacts/qa/
 artifacts/adobe-golden/generated/after-effects-*.png
 artifacts/adobe-golden/generated/photoshop-*.png
 dogfood-output/

@@ -1,5 +1,5 @@
 import { access } from "node:fs/promises";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { deterministicPdfJsOptions } from "./pdfjs-options.js";
 
@@ -11,11 +11,16 @@ describe("deterministicPdfJsOptions", () => {
       useWorkerFetch: false,
       useWasm: false,
     });
+    expect(deterministicPdfJsOptions.standardFontDataUrl).toMatch(
+      /^file:\/\/\/.+\/$/,
+    );
     await expect(
       access(
-        join(
-          deterministicPdfJsOptions.standardFontDataUrl,
-          "LiberationSans-Regular.ttf",
+        fileURLToPath(
+          new URL(
+            "LiberationSans-Regular.ttf",
+            deterministicPdfJsOptions.standardFontDataUrl,
+          ),
         ),
       ),
     ).resolves.toBeUndefined();
