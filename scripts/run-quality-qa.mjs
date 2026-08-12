@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const startedAt = new Date();
@@ -12,7 +12,9 @@ let exitCode = 1;
 let failure = null;
 
 try {
-  exitCode = await run("npm", ["run", "quality"]);
+  const npmCliPath = resolveNpmCliPath();
+  await access(npmCliPath);
+  exitCode = await run(process.execPath, [npmCliPath, "run", "quality"]);
 } catch (error) {
   failure = error instanceof Error ? error.message : String(error);
 }
@@ -56,4 +58,27 @@ function run(command, args) {
       resolve(code ?? 1);
     });
   });
+}
+
+function resolveNpmCliPath() {
+  if (process.env.npm_execpath) {
+    return process.env.npm_execpath;
+  }
+  if (process.platform === "win32") {
+    return path.join(
+      path.dirname(process.execPath),
+      "node_modules",
+      "npm",
+      "bin",
+      "npm-cli.js",
+    );
+  }
+  return path.join(
+    path.dirname(path.dirname(process.execPath)),
+    "lib",
+    "node_modules",
+    "npm",
+    "bin",
+    "npm-cli.js",
+  );
 }
