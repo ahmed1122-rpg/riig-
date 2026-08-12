@@ -13,6 +13,7 @@ import {
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  approveCharacterBible,
   compileCharacterRig,
   getCharacterRigStudio,
   queueCharacterGeneration,
@@ -125,6 +126,7 @@ function generation(
     status,
     controls: {
       seed: 1,
+      canvas: { width: 1_024, height: 1_024 },
       poseReferenceId: null,
       depthReferenceId: null,
       maskReferenceId: null,
@@ -133,6 +135,10 @@ function generation(
     requestHash: "d".repeat(64),
     idempotencyKey: `key-${id}`,
     outputArtifact: artifact,
+    outputGeometry: {
+      canvas: { width: 1_024, height: 1_024 },
+      bounds: { x: 0, y: 0, width: 1_024, height: 1_024 },
+    },
     qualityReport: null,
     failureCode: null,
     createdByUserId: "user-1",
@@ -163,6 +169,7 @@ beforeEach(() => {
     identityModel: null,
     generations: [],
     rig: null,
+    jobs: [],
   });
 });
 
@@ -228,6 +235,85 @@ describe("CharacterStudioDialog", () => {
     expect(onNotify).toHaveBeenCalledOnce();
   });
 
+  it("saves dirty Bible fields before approving the returned revision", async () => {
+    const draft = {
+      ...bible,
+      revision: 3,
+      status: "draft" as const,
+      approvedAt: null,
+      approvedByUserId: null,
+    };
+    vi.mocked(getCharacterRigStudio).mockResolvedValue({
+      bible: draft,
+      references: [],
+      identityModel: null,
+      generations: [],
+      rig: null,
+      jobs: [],
+    });
+    const saved = { ...draft, revision: 4, displayName: "Hero revised" };
+    vi.mocked(saveCharacterBibleDraft).mockResolvedValue(saved);
+    vi.mocked(approveCharacterBible).mockResolvedValue({
+      ...saved,
+      revision: 5,
+      status: "approved",
+      approvedAt: timestamp,
+      approvedByUserId: "user-1",
+    });
+    const view = renderStudio();
+
+    await view.findByDisplayValue("Hero");
+    fireEvent.change(view.getByDisplayValue("Hero"), {
+      target: { value: "Hero revised" },
+    });
+    fireEvent.click(view.getByRole("button", { name: /حفظ واعتماد الهوية/u }));
+
+    await waitFor(() => expect(approveCharacterBible).toHaveBeenCalledOnce());
+    expect(saveCharacterBibleDraft).toHaveBeenCalledWith(
+      "project-1",
+      expect.objectContaining({
+        bibleId: draft.id,
+        expectedRevision: 3,
+        displayName: "Hero revised",
+      }),
+    );
+    expect(approveCharacterBible).toHaveBeenCalledWith(
+      "project-1",
+      saved.id,
+      4,
+    );
+  });
+
+  it("polls active Character jobs until their completed state is visible", async () => {
+    vi.mocked(getCharacterRigStudio)
+      .mockResolvedValueOnce({
+        bible,
+        references: [],
+        identityModel: { ...model, status: "training" },
+        generations: [],
+        rig: null,
+        jobs: [{ ...job, type: "train-identity", status: "queued" }],
+      })
+      .mockResolvedValue({
+        bible,
+        references: [],
+        identityModel: model,
+        generations: [],
+        rig: null,
+        jobs: [{ ...job, type: "train-identity", status: "succeeded" }],
+      });
+    const view = renderStudio();
+
+    await view.findByText(/training/u);
+    await waitFor(
+      () => {
+        expect(getCharacterRigStudio).toHaveBeenCalledTimes(2);
+        expect(view.getByText(/ready/u)).toBeTruthy();
+      },
+      { timeout: 3_500 },
+    );
+  });
+
   it("maps a turntable angle to the canonical view submitted to the queue", async () => {
     vi.mocked(getCharacterRigStudio).mockResolvedValue({
       bible,
@@ -235,6 +321,7 @@ describe("CharacterStudioDialog", () => {
       identityModel: model,
       generations: [],
       rig: null,
+      jobs: [],
     });
     const queued = generation(
       "attempt-queued",
@@ -280,6 +367,7 @@ describe("CharacterStudioDialog", () => {
       identityModel: model,
       generations: [candidate],
       rig: null,
+      jobs: [],
     });
     vi.mocked(reviewCharacterGeneration).mockResolvedValue({
       attempt: { ...candidate, status: "approved" },
@@ -332,6 +420,7 @@ describe("CharacterStudioDialog", () => {
       identityModel: model,
       generations: approvedParts,
       rig: null,
+      jobs: [],
     });
     vi.mocked(compileCharacterRig).mockResolvedValue({
       rig: {

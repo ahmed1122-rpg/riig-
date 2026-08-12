@@ -40,17 +40,17 @@ describe("CharacterRigCompilerService", () => {
     expect(changed.rig.id).not.toBe(first.rig.id);
   });
 
-  it("does not reuse a rig for different canvas dimensions", async () => {
+  it("rejects compilation when approved parts target another canvas", async () => {
     const setup = await compilerFixture();
     const first = await setup.service.queue(compileInput(setup, "compile-size-a"));
-    const changed = await setup.service.queue({
-      ...compileInput(setup, "compile-size-b"),
-      width: 2048,
-      height: 2048,
-    });
-
-    expect(changed.replayed).toBe(false);
-    expect(changed.rig.id).not.toBe(first.rig.id);
+    await expect(
+      setup.service.queue({
+        ...compileInput(setup, "compile-size-b"),
+        width: 2048,
+        height: 2048,
+      }),
+    ).rejects.toMatchObject({ code: "CHARACTER_RIG_PART_GEOMETRY_INVALID" });
+    expect(first.replayed).toBe(false);
   });
 });
 
@@ -117,6 +117,7 @@ async function compilerFixture() {
         target: { kind: "part", view, partName },
         status: "approved",
         controls: {
+          canvas: { width: 1024, height: 1024 },
           seed: index,
           poseReferenceId: null,
           depthReferenceId: null,
@@ -132,6 +133,10 @@ async function compilerFixture() {
           sha256: index.toString(16).padStart(64, "0"),
           createdAt: now,
           retentionExpiresAt: null,
+        },
+        outputGeometry: {
+          canvas: { width: 1024, height: 1024 },
+          bounds: { x: 0, y: 0, width: 1024, height: 1024 },
         },
         qualityReport: null,
         failureCode: null,
@@ -168,4 +173,3 @@ function compileInput(
     requestedAt: now,
   };
 }
-

@@ -222,9 +222,10 @@ node scripts/run-production-compose.mjs .env.production \
   --profile character-rig up -d worker-character
 ```
 
-The `migrate` service applies all additive SQL migrations through migration 039
+The `migrate` service applies all additive SQL migrations through migration 040
 before the API and workers start. Migrations 038 and 039 add the Character Rig
-domain and worker observability; earlier migrations 027 and 028 add the durable
+domain, worker observability, and auditable Character Rig review decisions;
+earlier migrations 027 and 028 add the durable
 email outbox and job correlation. Upload publication is then
 committed atomically across the upload session, source version, and project;
 the API startup reconciler re-inspects S3 metadata before repairing an

@@ -50,6 +50,17 @@ export class CharacterRigCompilerService {
         missing,
       );
     }
+    const invalidGeometry = [...approvedParts.entries()]
+      .filter(([, attempt]) =>
+        !isValidPartGeometry(attempt, input.width, input.height),
+      )
+      .map(([key]) => key);
+    if (invalidGeometry.length > 0) {
+      throw new CharacterRigCompilerError(
+        "CHARACTER_RIG_PART_GEOMETRY_INVALID",
+        invalidGeometry,
+      );
+    }
     const sourceFingerprint = requestFingerprint(
       "character-rig-sources",
       [...approvedParts.entries()]
@@ -204,7 +215,7 @@ function createRigVersion(input: {
         semanticPart: part,
         sourceGenerationAttemptId: attempt.id,
         artifact: attempt.outputArtifact,
-        bounds: null,
+        bounds: structuredClone(attempt.outputGeometry!.bounds),
         visible: view === "frontal",
         locked: false,
         opacity: 1,
@@ -229,6 +240,34 @@ function createRigVersion(input: {
     createdAt: input.now,
     updatedAt: input.now,
   };
+}
+
+function isValidPartGeometry(
+  attempt: CharacterGenerationAttempt,
+  width: number,
+  height: number,
+): boolean {
+  const geometry = attempt.outputGeometry;
+  if (
+    !geometry ||
+    geometry.canvas.width !== width ||
+    geometry.canvas.height !== height
+  ) {
+    return false;
+  }
+  const bounds = geometry.bounds;
+  return (
+    Number.isSafeInteger(bounds.x) &&
+    Number.isSafeInteger(bounds.y) &&
+    Number.isSafeInteger(bounds.width) &&
+    Number.isSafeInteger(bounds.height) &&
+    bounds.x >= 0 &&
+    bounds.y >= 0 &&
+    bounds.width > 0 &&
+    bounds.height > 0 &&
+    bounds.x + bounds.width <= width &&
+    bounds.y + bounds.height <= height
+  );
 }
 
 function groupNode(

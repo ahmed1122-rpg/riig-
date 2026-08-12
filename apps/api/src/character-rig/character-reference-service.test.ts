@@ -74,6 +74,54 @@ describe("CharacterReferenceService", () => {
       }),
     ).rejects.toMatchObject({ code: "CHARACTER_REFERENCE_TYPE_UNSUPPORTED" });
   });
+
+  it("rejects a ready upload key whose bytes no longer match the finalized hash", async () => {
+    const storage = new InMemoryObjectStorage();
+    const uploads = new InMemoryUploadRepository();
+    const rigs = new InMemoryCharacterRigRepository();
+    const bible = makeBible();
+    await rigs.saveBibleIfRevision(bible, null);
+    const body = await sharp({
+      create: {
+        width: 2,
+        height: 2,
+        channels: 4,
+        background: { r: 1, g: 2, b: 3, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+    const finalized = await storage.put({
+      key: "uploads/source.png",
+      contentType: "image/png",
+      sizeBytes: body.byteLength,
+      body,
+    });
+    await uploads.save(makeUpload(finalized.sha256, body.byteLength));
+    const replaced = Buffer.from(body);
+    replaced[replaced.length - 1] = replaced[replaced.length - 1]! ^ 1;
+    await storage.put({
+      key: finalized.key,
+      contentType: finalized.contentType,
+      sizeBytes: replaced.byteLength,
+      body: replaced,
+    });
+
+    await expect(
+      new CharacterReferenceService(rigs, uploads, storage).addCurrentSource({
+        projectId,
+        sourceVersionId,
+        bibleId: bible.id,
+        role: "identity-primary",
+        canonicalView: "frontal",
+        rightsClassification: "owned-by-user",
+        actorUserId: userId,
+      }),
+    ).rejects.toMatchObject({
+      code: "CHARACTER_REFERENCE_SOURCE_INTEGRITY_FAILED",
+    });
+    expect(await rigs.listReferences(projectId, bible.id)).toEqual([]);
+  });
 });
 
 function makeBible(): CharacterBible {

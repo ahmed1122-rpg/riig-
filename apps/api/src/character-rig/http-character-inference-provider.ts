@@ -32,6 +32,18 @@ const generationResponseSchema = z.object({
     sizeBytes: z.number().int().positive().max(128 * 1024 * 1024),
     sha256: z.string().regex(/^[a-f0-9]{64}$/u),
   }),
+  geometry: z.object({
+    canvas: z.object({
+      width: z.number().int().positive().max(10_000),
+      height: z.number().int().positive().max(10_000),
+    }),
+    bounds: z.object({
+      x: z.number().int().nonnegative(),
+      y: z.number().int().nonnegative(),
+      width: z.number().int().positive().max(10_000),
+      height: z.number().int().positive().max(10_000),
+    }),
+  }),
   qualityReport: qualityReportSchema,
 });
 
@@ -87,13 +99,17 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
       },
       references: inferenceReferences(input.references),
     }, input.modelVersion.id);
-    return trainingResponseSchema.parse(response);
+    const parsed = trainingResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
+    }
+    return parsed.data;
   }
 
   async generate(
     input: CharacterGenerationInput,
   ): Promise<CharacterGenerationResult> {
-    const response = generationResponseSchema.parse(
+    const parsed = generationResponseSchema.safeParse(
       await this.post("v1/generations", {
         projectId: input.bible.projectId,
         bible: inferenceBible(input),
@@ -106,12 +122,18 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
           id: input.attempt.id,
           target: input.attempt.target,
           controls: input.attempt.controls,
+          canvas: input.attempt.controls.canvas,
         },
         references: inferenceReferences(input.references),
       }, input.attempt.id),
     );
+    if (!parsed.success || !validGeometry(parsed.data.geometry, input.attempt.controls.canvas)) {
+      throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
+    }
+    const response = parsed.data;
     return {
       artifact: { kind: "stored-object", ...response.artifact },
+      geometry: response.geometry,
       qualityReport: response.qualityReport,
     };
   }
@@ -151,6 +173,18 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
       throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
     }
   }
+}
+
+function validGeometry(
+  geometry: z.infer<typeof generationResponseSchema>["geometry"],
+  requestedCanvas: { width: number; height: number },
+): boolean {
+  return (
+    geometry.canvas.width === requestedCanvas.width &&
+    geometry.canvas.height === requestedCanvas.height &&
+    geometry.bounds.x + geometry.bounds.width <= geometry.canvas.width &&
+    geometry.bounds.y + geometry.bounds.height <= geometry.canvas.height
+  );
 }
 
 function normalizeBaseUrl(value: string): URL {

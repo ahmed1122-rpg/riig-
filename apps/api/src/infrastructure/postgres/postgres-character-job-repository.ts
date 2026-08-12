@@ -43,6 +43,15 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
     return result.rows[0] ? mapCharacterJobRow(result.rows[0]) : null;
   }
 
+  async listByProject(projectId: string): Promise<CharacterJob[]> {
+    const result = await this.pool.query<CharacterJobRow>(
+      `${characterJobSelect}
+       WHERE project_id = $1 ORDER BY created_at DESC LIMIT 100`,
+      [projectId],
+    );
+    return result.rows.map(mapCharacterJobRow);
+  }
+
   async save(job: CharacterJob): Promise<boolean> {
     const inserted = await this.pool.query<{ id: string }>(
       `INSERT INTO character_jobs (
@@ -179,17 +188,18 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
     errorCode: string,
     nextAttemptAt: string,
     updatedAt: string,
+    retryable = true,
   ): Promise<CharacterJob | null> {
     const result = await this.pool.query<CharacterJobRow>(
       `UPDATE character_jobs AS job
-       SET status = CASE WHEN job.attempt >= job.max_attempts THEN 'failed' ELSE 'queued' END,
+       SET status = CASE WHEN NOT $6::boolean OR job.attempt >= job.max_attempts THEN 'failed' ELSE 'queued' END,
            next_attempt_at = $4::timestamptz,
            lease_owner = NULL,
            lease_expires_at = NULL,
            error_code = $3,
            updated_at = $5::timestamptz,
            document = job.document || jsonb_build_object(
-             'status', CASE WHEN job.attempt >= job.max_attempts THEN 'failed' ELSE 'queued' END,
+             'status', CASE WHEN NOT $6::boolean OR job.attempt >= job.max_attempts THEN 'failed' ELSE 'queued' END,
              'nextAttemptAt', $4::timestamptz::text,
              'leaseOwner', NULL,
              'leaseExpiresAt', NULL,
@@ -198,7 +208,7 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
            )
        WHERE job.id = $1 AND job.lease_owner = $2
        RETURNING ${characterJobReturning}`,
-      [id, workerId, errorCode, nextAttemptAt, updatedAt],
+      [id, workerId, errorCode, nextAttemptAt, updatedAt, retryable],
     );
     return result.rows[0] ? mapCharacterJobRow(result.rows[0]) : null;
   }

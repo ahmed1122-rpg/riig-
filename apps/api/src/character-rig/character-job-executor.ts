@@ -91,6 +91,7 @@ export async function executeClaimedCharacterJob(
       errorCode,
       new Date(failedAt.getTime() + retryDelayMilliseconds(job.attempt)).toISOString(),
       failedAt.toISOString(),
+      isRetryableCharacterJobError(errorCode),
     );
     if (settled) {
       await reflectJobFailure(
@@ -354,6 +355,7 @@ async function executeGeneration(
         createdAt: completedAt,
         retentionExpiresAt: null,
       },
+      outputGeometry: result.geometry,
       qualityReport,
       failureCode: qualityReport.passedAutomatedGate
         ? null
@@ -453,4 +455,13 @@ function characterJobErrorCode(error: unknown): string {
 
 function retryDelayMilliseconds(attempt: number): number {
   return Math.min(60_000, 1_000 * 2 ** Math.max(0, attempt - 1));
+}
+
+function isRetryableCharacterJobError(errorCode: string): boolean {
+  return new Set([
+    "CHARACTER_PROVIDER_TIMEOUT",
+    "CHARACTER_PROVIDER_UNAVAILABLE",
+    "CHARACTER_PROVIDER_RATE_LIMITED",
+    "CHARACTER_WORKER_FAILED",
+  ]).has(errorCode);
 }

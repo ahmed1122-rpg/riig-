@@ -272,6 +272,7 @@ function generationInput(
     identityModelVersionId: model.id,
     target: { kind: "canonical-view" as const, view: "left-profile" as const },
     controls: {
+      canvas: { width: 1024, height: 1024 },
       seed: 42,
       poseReferenceId: null,
       depthReferenceId: null,

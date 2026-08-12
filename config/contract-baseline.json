@@ -124,7 +124,8 @@
     "036_upload_cancellation_convergence.sql": "9bb14138e925630e8417f827dc84c876d6cd9ee7632c5f28f0dd3ef20579c65d",
     "037_account_privacy.sql": "087cf7300e4a090cff1be10f31758c73be0fd4f7f370c14d137f91aa41c4d28b",
     "038_character_rig_context.sql": "de58d6136547b3a9279dd03bc49f650bc7011d6c85eab780aeec5357a2f7d9fc",
-    "039_character_worker_observability.sql": "dc338fb9a648fbc17e1d12a20ef383cc9c7fe969e9ecef9f9049c3cd5425e1fb"
+    "039_character_worker_observability.sql": "dc338fb9a648fbc17e1d12a20ef383cc9c7fe969e9ecef9f9049c3cd5425e1fb",
+    "040_character_rig_reviews.sql": "4860cf9b538abb30624258964900705e469ed13f69e16a7219aec8e8434354d1"
   },
   "openApiOperations": [
     "DELETE /v1/account",
@@ -154,6 +155,7 @@
     "GET /v1/projects/{projectId}",
     "GET /v1/projects/{projectId}/character-rig",
     "GET /v1/projects/{projectId}/character-rig/generations/{generationAttemptId}/artifact",
+    "GET /v1/projects/{projectId}/character-rig/rigs/{rigVersionId}/artifacts/{artifactType}",
     "GET /v1/projects/{projectId}/layer-document",
     "GET /v1/projects/{projectId}/layers/{layerId}/asset",
     "GET /v1/projects/{projectId}/source-version-restores",
@@ -187,6 +189,7 @@
     "POST /v1/projects/{projectId}/character-rig/generations/{generationAttemptId}/reviews",
     "POST /v1/projects/{projectId}/character-rig/identity-model",
     "POST /v1/projects/{projectId}/character-rig/references/current-source",
+    "POST /v1/projects/{projectId}/character-rig/rigs/{rigVersionId}/reviews",
     "POST /v1/projects/{projectId}/guided-refinements",
     "POST /v1/projects/{projectId}/layer-document/history",
     "POST /v1/projects/{projectId}/layer-document/image/merge",

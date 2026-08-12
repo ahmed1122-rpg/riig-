@@ -96,6 +96,7 @@ export class CharacterGenerationService {
         requestHash,
         idempotencyKey: input.idempotencyKey,
         outputArtifact: null,
+        outputGeometry: null,
         qualityReport: null,
         failureCode: null,
         createdByUserId: input.actorUserId,

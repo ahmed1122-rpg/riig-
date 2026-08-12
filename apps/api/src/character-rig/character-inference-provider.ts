@@ -1,6 +1,7 @@
 import type {
   CharacterBible,
   CharacterGenerationAttempt,
+  CharacterGenerationGeometry,
   CharacterIdentityModelVersion,
   CharacterQualityReport,
   CharacterReferenceAsset,
@@ -40,6 +41,7 @@ type CharacterGenerationArtifact =
 
 export interface CharacterGenerationResult {
   artifact: CharacterGenerationArtifact;
+  geometry: CharacterGenerationGeometry;
   qualityReport: CharacterQualityReport;
 }
 

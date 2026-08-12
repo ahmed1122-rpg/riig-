@@ -9,9 +9,11 @@ vi.mock("./transport", () => ({
 import {
   bootstrapCharacterIdentity,
   characterGenerationArtifactUrl,
+  characterRigArtifactUrl,
   compileCharacterRig,
   queueCharacterGeneration,
   reviewCharacterGeneration,
+  reviewCharacterRig,
 } from "./character-rig-client";
 
 describe("character rig client", () => {
@@ -24,6 +26,7 @@ describe("character rig client", () => {
       target: { kind: "canonical-view", view: "left-profile" },
       angleDegrees: -90,
       seed: 42,
+      canvas: { width: 1_024, height: 1_024 },
     });
 
     expect(request).toHaveBeenCalledWith(
@@ -37,6 +40,7 @@ describe("character rig client", () => {
           target: { kind: "canonical-view", view: "left-profile" },
           controls: {
             seed: 42,
+            canvas: { width: 1_024, height: 1_024 },
             poseReferenceId: null,
             depthReferenceId: null,
             maskReferenceId: null,
@@ -58,14 +62,38 @@ describe("character rig client", () => {
       width: 1500,
       height: 1500,
     });
+    await reviewCharacterRig("project 1", "rig/1", {
+      decision: "approved",
+      reason: "Rig hierarchy matches.",
+    });
 
     expect(request.mock.calls.map(([url]) => url)).toEqual([
       "/v1/projects/project%201/character-rig/identity-model",
       "/v1/projects/project%201/character-rig/generations/attempt%2F1/reviews",
       "/v1/projects/project%201/character-rig/compile",
+      "/v1/projects/project%201/character-rig/rigs/rig%2F1/reviews",
     ]);
     expect(characterGenerationArtifactUrl("project 1", "attempt/1")).toBe(
       "http://127.0.0.1:4000/v1/projects/project%201/character-rig/generations/attempt%2F1/artifact",
     );
+    expect(characterRigArtifactUrl("project 1", "rig/1", "manifest")).toBe(
+      "http://127.0.0.1:4000/v1/projects/project%201/character-rig/rigs/rig%2F1/artifacts/manifest",
+    );
+  });
+
+  it("passes an isolated mask reference for masked repair", async () => {
+    await queueCharacterGeneration("project-1", {
+      bibleId: "bible-1",
+      identityModelVersionId: "model-1",
+      target: { kind: "masked-repair", view: "frontal", partName: "left-eye" },
+      angleDegrees: 0,
+      seed: 7,
+      canvas: { width: 512, height: 512 },
+      maskReferenceId: "mask-reference-1",
+    });
+
+    expect(JSON.parse(request.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      controls: { maskReferenceId: "mask-reference-1" },
+    });
   });
 });

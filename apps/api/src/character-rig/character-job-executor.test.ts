@@ -14,6 +14,7 @@ import { CharacterJobService } from "./character-job-service.js";
 import { InMemoryCharacterJobResultCommitter } from "./character-job-result-committer.js";
 import { InMemoryCharacterRigRepository } from "./character-rig-repository.js";
 import { FakeCharacterInferenceProvider } from "./fake-character-inference-provider.js";
+import { CharacterProviderError } from "./character-inference-provider.js";
 
 const projectId = crypto.randomUUID();
 const userId = crypto.randomUUID();
@@ -150,6 +151,41 @@ describe("character job runtime", () => {
       ),
     ).toBeNull();
   });
+
+  it("fails permanent provider responses once but retries transient outages", async () => {
+    for (const [code, expectedStatus] of [
+      ["CHARACTER_PROVIDER_RESPONSE_INVALID", "failed"],
+      ["CHARACTER_PROVIDER_UNAVAILABLE", "queued"],
+    ] as const) {
+      const setup = await createReadyContext();
+      await new CharacterJobService(setup.jobs).enqueue({
+        projectId,
+        type: "train-identity",
+        operationKey: `provider-taxonomy-${code}`,
+        requestHash: code === "CHARACTER_PROVIDER_UNAVAILABLE" ? "e".repeat(64) : "f".repeat(64),
+        payload: { modelVersionId: setup.model.id },
+        now: initialTime.toISOString(),
+      });
+      const claimed = await claim(setup.jobs);
+      const settled = await executeClaimedCharacterJob(
+        {
+          ...setup.context,
+          provider: {
+            key: "failing-provider",
+            async trainIdentity() {
+              throw new CharacterProviderError(code);
+            },
+            async generate() {
+              throw new CharacterProviderError(code);
+            },
+          },
+          now: advancingClock(),
+        },
+        claimed,
+      );
+      expect(settled).toMatchObject({ status: expectedStatus, errorCode: code });
+    }
+  });
 });
 
 async function createReadyContext(
@@ -268,6 +304,7 @@ function makeAttempt(
     target: { kind: "canonical-view", view: "left-quarter" },
     status: "queued",
     controls: {
+      canvas: { width: 1024, height: 1024 },
       seed: 9,
       poseReferenceId: null,
       depthReferenceId: null,
@@ -277,6 +314,7 @@ function makeAttempt(
     requestHash: "1".repeat(64),
     idempotencyKey: `generation-${crypto.randomUUID()}`,
     outputArtifact: null,
+    outputGeometry: null,
     qualityReport: null,
     failureCode: null,
     createdByUserId: userId,

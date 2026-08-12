@@ -7,6 +7,10 @@ import { executeClaimedCharacterJob } from "./character-rig/character-job-execut
 import { InMemoryCharacterJobResultCommitter } from "./character-rig/character-job-result-committer.js";
 import { FakeCharacterInferenceProvider } from "./character-rig/fake-character-inference-provider.js";
 import { InMemoryObjectStorage } from "./storage/object-storage.js";
+import type {
+  CharacterArtifactReference,
+  CharacterRigVersion,
+} from "@motionprep/contracts";
 
 const harness = createAppTestHarness();
 
@@ -32,6 +36,7 @@ describe("character-rig HTTP foundation", () => {
     const cookie = await registerCreator(app);
     const projectId = await createProject(app, cookie, "book");
     const attemptId = crypto.randomUUID();
+    const rigVersionId = crypto.randomUUID();
     const operations = [
       ["GET", `/v1/projects/${projectId}/character-rig`],
       ["PUT", `/v1/projects/${projectId}/character-rig/bible`],
@@ -41,6 +46,8 @@ describe("character-rig HTTP foundation", () => {
       ["POST", `/v1/projects/${projectId}/character-rig/generations`],
       ["POST", `/v1/projects/${projectId}/character-rig/generations/${attemptId}/reviews`],
       ["GET", `/v1/projects/${projectId}/character-rig/generations/${attemptId}/artifact`],
+      ["GET", `/v1/projects/${projectId}/character-rig/rigs/${rigVersionId}/artifacts/psd`],
+      ["POST", `/v1/projects/${projectId}/character-rig/rigs/${rigVersionId}/reviews`],
       ["POST", `/v1/projects/${projectId}/character-rig/compile`],
     ] as const;
 
@@ -173,6 +180,7 @@ describe("character-rig HTTP foundation", () => {
         identityModelVersionId: modelId,
         target: { kind: "canonical-view", view: "left-profile" },
         controls: {
+          canvas: { width: 1024, height: 1024 },
           seed: 42,
           poseReferenceId: null,
           depthReferenceId: null,
@@ -249,6 +257,109 @@ describe("character-rig HTTP foundation", () => {
     });
     expect(review.statusCode).toBe(201);
     expect(review.json().data.attempt.status).toBe("approved");
+  });
+
+  it("downloads and idempotently approves verified compiled rig artifacts", async () => {
+    const characterRigs = new InMemoryCharacterRigRepository();
+    const objectStorage = new InMemoryObjectStorage();
+    const app = await harness.build(
+      loadConfig({ NODE_ENV: "test", CHARACTER_RIG_ENABLED: "true" }),
+      { characterRigs, objectStorage },
+    );
+    const cookie = await registerCreator(app);
+    const projectId = await createImageProject(app, cookie);
+    const saved = await app.inject({
+      method: "PUT",
+      url: `/v1/projects/${projectId}/character-rig/bible`,
+      headers: { cookie },
+      payload: completeBibleDraft(),
+    });
+    const bibleId = saved.json().data.id as string;
+    await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/character-rig/bible/approve`,
+      headers: { cookie },
+      payload: { bibleId, expectedRevision: 1 },
+    });
+    const psdBody = Buffer.from("verified-psd");
+    const manifestBody = Buffer.from('{"schemaVersion":"1.0"}');
+    const psdMetadata = await objectStorage.put({
+      key: `projects/${projectId}/character-rig/rig.psd`,
+      contentType: "image/vnd.adobe.photoshop",
+      sizeBytes: psdBody.byteLength,
+      body: psdBody,
+    });
+    const manifestMetadata = await objectStorage.put({
+      key: `projects/${projectId}/character-rig/manifest.json`,
+      contentType: "application/json",
+      sizeBytes: manifestBody.byteLength,
+      body: manifestBody,
+    });
+    const artifact = (
+      metadata: typeof psdMetadata,
+    ): CharacterArtifactReference => ({
+      objectKey: metadata.key,
+      contentType: metadata.contentType as CharacterArtifactReference["contentType"],
+      sizeBytes: metadata.sizeBytes,
+      sha256: metadata.sha256,
+      createdAt: "2026-08-12T12:00:00.000Z",
+      retentionExpiresAt: null,
+    });
+    const rig: CharacterRigVersion = {
+      schemaVersion: "1.0",
+      id: crypto.randomUUID(),
+      projectId,
+      bibleId,
+      version: 1,
+      status: "needs-review",
+      sourceFingerprint: "c".repeat(64),
+      canvas: { width: 1024, height: 1024 },
+      nodes: [],
+      psdArtifact: artifact(psdMetadata),
+      manifestArtifact: artifact(manifestMetadata),
+      approvedByUserId: null,
+      approvedAt: null,
+      createdAt: "2026-08-12T12:00:00.000Z",
+      updatedAt: "2026-08-12T12:00:00.000Z",
+    };
+    expect(await characterRigs.saveRigVersion(rig)).toBe(true);
+
+    for (const type of ["psd", "manifest"] as const) {
+      const downloaded = await app.inject({
+        method: "GET",
+        url: `/v1/projects/${projectId}/character-rig/rigs/${rig.id}/artifacts/${type}`,
+        headers: { cookie },
+      });
+      expect(downloaded.statusCode).toBe(200);
+      expect(downloaded.headers["content-disposition"]).toContain(
+        type === "psd" ? ".psd" : ".json",
+      );
+    }
+
+    const reviewRequest = {
+      method: "POST" as const,
+      url: `/v1/projects/${projectId}/character-rig/rigs/${rig.id}/reviews`,
+      headers: { cookie, "x-idempotency-key": "rig-review-http-001" },
+      payload: {
+        decision: "approved",
+        reason: "The hierarchy and manifest match the approved Character parts.",
+      },
+    };
+    const reviewed = await app.inject(reviewRequest);
+    expect(reviewed.statusCode).toBe(201);
+    expect(reviewed.json().data.rig).toMatchObject({ status: "approved" });
+    const replayed = await app.inject(reviewRequest);
+    expect(replayed.statusCode).toBe(200);
+    expect(replayed.json().data.replayed).toBe(true);
+
+    const otherCookie = await registerCreator(app, "other-character-owner@example.com");
+    const hidden = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}/character-rig/rigs/${rig.id}/artifacts/psd`,
+      headers: { cookie: otherCookie },
+    });
+    expect(hidden.statusCode).toBe(404);
+    expect(hidden.json().error.code).toBe("PROJECT_NOT_FOUND");
   });
 });
 

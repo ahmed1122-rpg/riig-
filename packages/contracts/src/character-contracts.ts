@@ -186,10 +186,16 @@ export type CharacterGenerationTarget =
 
 export interface CharacterGenerationControls {
   seed: number;
+  canvas: { width: number; height: number };
   poseReferenceId: string | null;
   depthReferenceId: string | null;
   maskReferenceId: string | null;
   parameters: Record<string, string | number | boolean>;
+}
+
+export interface CharacterGenerationGeometry {
+  canvas: { width: number; height: number };
+  bounds: { x: number; y: number; width: number; height: number };
 }
 
 export interface CharacterQualityReport {
@@ -215,6 +221,7 @@ export interface CharacterGenerationAttempt {
   requestHash: string;
   idempotencyKey: string;
   outputArtifact: CharacterArtifactReference | null;
+  outputGeometry: CharacterGenerationGeometry | null;
   qualityReport: CharacterQualityReport | null;
   failureCode: string | null;
   createdByUserId: string;
@@ -227,6 +234,17 @@ export interface CharacterGenerationReview {
   projectId: string;
   generationAttemptId: string;
   decision: "approved" | "rejected" | "changes-requested";
+  reason: string;
+  reviewerUserId: string;
+  operationId: string;
+  createdAt: string;
+}
+
+export interface CharacterRigReview {
+  id: string;
+  projectId: string;
+  rigVersionId: string;
+  decision: "approved" | "rejected";
   reason: string;
   reviewerUserId: string;
   operationId: string;

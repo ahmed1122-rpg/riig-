@@ -1,10 +1,14 @@
 import {
   characterCanonicalViews,
   type CharacterCanonicalView,
+  type CharacterReferenceRole,
 } from "@motionprep/contracts";
 import { Dialog } from "../../shared/Dialog";
 import { Icon } from "../../shared/Icon";
-import { characterGenerationArtifactUrl } from "../../lib/api/character-rig-client";
+import {
+  characterGenerationArtifactUrl,
+  characterRigArtifactUrl,
+} from "../../lib/api/character-rig-client";
 import {
   characterViewLabels as viewLabels,
   RatioInput,
@@ -31,17 +35,21 @@ export function CharacterStudioDialog({
 }: CharacterStudioDialogProps) {
   const {
     stage, setStage, bible, references, identityModel, generations, rig,
+    latestCompileJob,
     loading, submitting, error, displayName, setDisplayName,
     identityDescription, setIdentityDescription, negativeConstraints,
     setNegativeConstraints, distinguishingFeatures, setDistinguishingFeatures,
     outlineColor, setOutlineColor, headRatio, setHeadRatio, shoulderRatio,
     setShoulderRatio, eyeRatio, setEyeRatio, rightsConfirmed,
-    setRightsConfirmed, referenceView, setReferenceView, angle, setAngle,
+    setRightsConfirmed, referenceView, setReferenceView, referenceRole,
+    setReferenceRole, angle, setAngle,
     generationKind, setGenerationKind, partName, setPartName, reviewReason,
-    setReviewReason, presentViews, distinctReferenceCount, activeView,
+    setReviewReason, selectedGenerationId, setSelectedGenerationId,
+    presentViews, distinctReferenceCount, activeView, reviewableGenerations,
     reviewCandidate, approvedViews, requiredParts, approvedPartKeys,
-    requiredPartCount, bibleComplete, saveBible, approveBible, addReference,
-    buildIdentityModel, generateView, compileRig, reviewGeneration,
+    requiredPartCount, bibleComplete, bibleDirty, repairMask, saveBible,
+    approveBible, addReference, buildIdentityModel, generateView,
+    repairSelectedPart, compileRig, reviewGeneration, reviewRig,
   } = useCharacterStudioController({
     projectId,
     sourceVersionId,
@@ -119,7 +127,7 @@ export function CharacterStudioDialog({
                 {bible?.status !== "approved" && (
                   <div className="character-stage-actions is-wide">
                     <button type="button" className="button button--ghost" disabled={submitting || !bibleComplete} onClick={() => void saveBible()}><Icon name="refresh" size={15} />حفظ Draft</button>
-                    <button type="button" className="button button--primary" disabled={submitting || !bible || !bibleComplete} onClick={() => void approveBible()}><Icon name="lock" size={15} />اعتماد وقفل الهوية</button>
+                    <button type="button" className="button button--primary" disabled={submitting || !bibleComplete} onClick={() => void approveBible()}><Icon name="lock" size={15} />{bibleDirty ? "حفظ واعتماد الهوية" : "اعتماد وقفل الهوية"}</button>
                   </div>
                 )}
               </div>
@@ -128,6 +136,7 @@ export function CharacterStudioDialog({
             {stage === "references" && (
               <div className="character-reference-stage">
                 <header><strong>Canonical Reference Pack</strong><small>كل أصل محفوظ مع بصمته وتصنيف حقوقه</small></header>
+                <label><span>نوع المرجع</span><select value={referenceRole} onChange={(event) => setReferenceRole(event.target.value as CharacterReferenceRole)}><option value="identity-primary">مرجع الهوية الرئيسي</option><option value="canonical-view">مرجع زاوية قياسية</option><option value="part-mask">قناع إصلاح جزء</option></select></label>
                 <label><span>زاوية المصدر الحالي</span><select value={referenceView} onChange={(event) => setReferenceView(event.target.value as CharacterCanonicalView)}>{characterCanonicalViews.map((view) => <option key={view} value={view}>{viewLabels[view]}</option>)}</select></label>
                 <label className="rights-attestation"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /><span>أؤكد أنني أملك هذا الأصل أو لدي حق استخدامه لتجهيز نموذج الشخصية.</span></label>
                 <button type="button" className="button button--primary" disabled={submitting || !bible || bible.status !== "approved" || !rightsConfirmed} onClick={() => void addReference()}><Icon name="plus" size={15} />إضافة المصدر الحالي كمرجع</button>
@@ -188,12 +197,13 @@ export function CharacterStudioDialog({
                 <div className="comparison-placeholder">
                   <div>{sourcePreviewUrl ? <img src={sourcePreviewUrl} alt="مرجع الهوية" /> : "المرجع"}</div>
                   <div>{reviewCandidate ? <img src={characterGenerationArtifactUrl(projectId, reviewCandidate.id)} alt="مرشح ينتظر المراجعة" /> : "لا يوجد مرشح جاهز للمراجعة"}</div>
-                  <div>خريطة الفروق الكمية</div>
+                  <div>{reviewCandidate?.qualityReport ? `Landmarks ${formatRatio(reviewCandidate.qualityReport.landmarkMeanHeadWidthRatio)} · ΔE ${formatMetric(reviewCandidate.qualityReport.paletteMeanDeltaE00)}` : "لا توجد قياسات جاهزة"}</div>
                 </div>
+                {reviewableGenerations.length > 1 && <label><span>المرشح قيد المراجعة</span><select value={selectedGenerationId ?? ""} onChange={(event) => setSelectedGenerationId(event.target.value)}>{reviewableGenerations.map((attempt) => <option key={attempt.id} value={attempt.id}>{attempt.target.kind === "canonical-view" ? viewLabels[attempt.target.view] : `${attempt.target.partName} · ${viewLabels[attempt.target.view]}`}</option>)}</select></label>}
                 <ul><li>متوسط انحراف المعالم ≤ 2% من عرض الرأس</li><li>انحراف النسب ≤ 3%</li><li>متوسط ΔE00 للألوان ≤ 3</li><li>الإصلاح المقنّع: صفر تغيّر خارج القناع</li></ul>
                 <label><span>سبب قرار المراجعة</span><textarea rows={3} value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} /></label>
                 <div className="character-stage-actions">
-                  <button type="button" className="button button--ghost" disabled>إصلاح الجزء المحدد فقط</button>
+                  <button type="button" className="button button--ghost" disabled={submitting || !repairMask || !reviewCandidate || reviewCandidate.target.kind === "canonical-view"} title={!repairMask ? "أضف مرجعًا من نوع قناع إصلاح جزء أولًا" : undefined} onClick={() => void repairSelectedPart()}>إصلاح الجزء المحدد فقط</button>
                   <button type="button" className="button button--ghost" disabled={submitting || !reviewCandidate} onClick={() => reviewCandidate && void reviewGeneration(reviewCandidate, "rejected")}>رفض</button>
                   <button type="button" className="button button--primary" disabled={submitting || !reviewCandidate || reviewReason.trim().length < 3} onClick={() => reviewCandidate && void reviewGeneration(reviewCandidate, "approved")}>اعتماد المرشح</button>
                 </div>
@@ -206,6 +216,9 @@ export function CharacterStudioDialog({
                 <pre>{`+Character\n  +Frontal\n    +Head · +Eyes · +Brows · +Nose · +Mouth\n    +Torso · +Arms · +Hands · +Legs\n  +Left Quarter · +Left Profile\n  +Right Quarter · +Right Profile`}</pre>
                 <p className="character-gate-note"><Icon name="packageCheck" size={16} />يصدر المترجم RGB/8-bit PSD وmanifest، ويرفض أي جزء مطلوب مفقود. الزوايا المعتمدة: {approvedViews.size}/5 · أجزاء الـRig: {approvedPartKeys.size}/{requiredPartCount}.</p>
                 {rig && <p>Rig v{rig.version} · {rig.status}</p>}
+                {latestCompileJob?.status === "failed" && <p className="form-error" role="alert">فشل بناء الـRig: {latestCompileJob.errorCode ?? "CHARACTER_RIG_COMPILATION_FAILED"}. يمكنك تصحيح الأجزاء ثم إعادة البناء.</p>}
+                {rig?.psdArtifact && rig.manifestArtifact && <div className="character-stage-actions"><a className="button button--ghost" href={characterRigArtifactUrl(projectId, rig.id, "psd")}>تنزيل PSD</a><a className="button button--ghost" href={characterRigArtifactUrl(projectId, rig.id, "manifest")}>تنزيل manifest</a></div>}
+                {rig?.status === "needs-review" && <><label><span>سبب قرار مراجعة الـRig</span><textarea rows={3} value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} /></label><div className="character-stage-actions"><button type="button" className="button button--ghost" disabled={submitting || reviewReason.trim().length < 3} onClick={() => void reviewRig("rejected")}>رفض الـRig</button><button type="button" className="button button--primary" disabled={submitting || reviewReason.trim().length < 3} onClick={() => void reviewRig("approved")}>اعتماد الـRig</button></div></>}
                 <button type="button" className="button button--primary" disabled={submitting || !canvasSize || approvedPartKeys.size < requiredPartCount} onClick={() => void compileRig()}>بناء PSD النهائي</button>
               </div>
             )}
@@ -215,4 +228,12 @@ export function CharacterStudioDialog({
       {error && <p className="form-error" role="alert">{error}</p>}
     </Dialog>
   );
+}
+
+function formatRatio(value: number | null): string {
+  return value === null ? "—" : `${(value * 100).toFixed(2)}%`;
+}
+
+function formatMetric(value: number | null): string {
+  return value === null ? "—" : value.toFixed(2);
 }

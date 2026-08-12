@@ -6,6 +6,7 @@ export interface CharacterJobRepository {
     projectId: string,
     operationKey: string,
   ): Promise<CharacterJob | null>;
+  listByProject(projectId: string): Promise<CharacterJob[]>;
   save(job: CharacterJob): Promise<boolean>;
   claimNext(
     workerId: string,
@@ -29,6 +30,7 @@ export interface CharacterJobRepository {
     errorCode: string,
     nextAttemptAt: string,
     updatedAt: string,
+    retryable?: boolean,
   ): Promise<CharacterJob | null>;
 }
 
@@ -50,6 +52,13 @@ export class InMemoryCharacterJobRepository implements CharacterJobRepository {
         candidate.operationKey === operationKey,
     );
     return job ? structuredClone(job) : null;
+  }
+
+  async listByProject(projectId: string): Promise<CharacterJob[]> {
+    return [...this.#jobs.values()]
+      .filter((job) => job.projectId === projectId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map((job) => structuredClone(job));
   }
 
   async save(job: CharacterJob): Promise<boolean> {
@@ -147,10 +156,11 @@ export class InMemoryCharacterJobRepository implements CharacterJobRepository {
     errorCode: string,
     nextAttemptAt: string,
     updatedAt: string,
+    retryable = true,
   ): Promise<CharacterJob | null> {
     const job = this.#jobs.get(id);
     if (!job || job.leaseOwner !== workerId) return null;
-    const terminal = job.attempt >= job.maxAttempts;
+    const terminal = !retryable || job.attempt >= job.maxAttempts;
     const updated: CharacterJob = {
       ...job,
       status: terminal ? "failed" : "queued",

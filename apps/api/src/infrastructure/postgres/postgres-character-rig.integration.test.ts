@@ -292,6 +292,7 @@ function makeAttempt(
     target: { kind: "canonical-view", view: "left-profile" },
     status: "queued",
     controls: {
+      canvas: { width: 1024, height: 1024 },
       seed: 42,
       poseReferenceId: null,
       depthReferenceId: null,
@@ -301,6 +302,7 @@ function makeAttempt(
     requestHash: "b".repeat(64),
     idempotencyKey,
     outputArtifact: null,
+    outputGeometry: null,
     qualityReport: null,
     failureCode: null,
     createdByUserId: fixture.userId,

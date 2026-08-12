@@ -44,12 +44,16 @@ describe("character rig compilation", () => {
   });
 
   it("builds and stores a verified hierarchical PSD and manifest", async () => {
-    const { service, rigs, jobs, storage, bible } = await fixture(true);
+    const { service, rigs, jobs, storage, bible } = await fixture(
+      true,
+      new InMemoryObjectStorage(),
+      1024,
+    );
     const queued = await service.queue({
       projectId,
       bibleId: bible.id,
-      width: 1,
-      height: 1,
+      width: 1024,
+      height: 1024,
       idempotencyKey: "compile-complete-001",
       requestedAt: now,
     });
@@ -80,16 +84,19 @@ describe("character rig compilation", () => {
     expect(compiled?.psdArtifact?.contentType).toBe("image/vnd.adobe.photoshop");
     expect(compiled?.manifestArtifact?.contentType).toBe("application/json");
     expect(await storage.inspect(compiled!.psdArtifact!.objectKey)).not.toBeNull();
+    expect(
+      compiled?.nodes.find((node) => node.kind === "raster")?.bounds,
+    ).toMatchObject({ width: 1, height: 1 });
   });
 
   it("reports cleanup failures instead of silently hiding orphaned artifacts", async () => {
     const storage = new FailingManifestCleanupStorage();
-    const { service, rigs, jobs, bible } = await fixture(true, storage);
+    const { service, rigs, jobs, bible } = await fixture(true, storage, 1024);
     await service.queue({
       projectId,
       bibleId: bible.id,
-      width: 1,
-      height: 1,
+      width: 1024,
+      height: 1024,
       idempotencyKey: "compile-cleanup-failure-001",
       requestedAt: now,
     });
@@ -129,6 +136,7 @@ describe("character rig compilation", () => {
 async function fixture(
   complete: boolean,
   storage = new InMemoryObjectStorage(),
+  canvasSize = 1,
 ) {
   const rigs = new InMemoryCharacterRigRepository();
   const jobs = new InMemoryCharacterJobRepository();
@@ -163,7 +171,7 @@ async function fixture(
             sha256: artifact.sha256,
             createdAt: now,
             retentionExpiresAt: null,
-          }),
+          }, canvasSize),
         );
         index += 1;
       }
@@ -246,6 +254,7 @@ function makeAttempt(
     : never,
   partName: string,
   artifact: NonNullable<CharacterGenerationAttempt["outputArtifact"]>,
+  canvasSize: number,
 ): CharacterGenerationAttempt {
   return {
     id: crypto.randomUUID(),
@@ -255,6 +264,7 @@ function makeAttempt(
     target: { kind: "part", view, partName },
     status: "approved",
     controls: {
+      canvas: { width: canvasSize, height: canvasSize },
       seed: index,
       poseReferenceId: null,
       depthReferenceId: null,
@@ -264,6 +274,15 @@ function makeAttempt(
     requestHash: index.toString(16).padStart(64, "0"),
     idempotencyKey: `part-generation-${String(index).padStart(3, "0")}`,
     outputArtifact: artifact,
+    outputGeometry: {
+      canvas: { width: canvasSize, height: canvasSize },
+      bounds: {
+        x: canvasSize > 1 ? index : 0,
+        y: canvasSize > 1 ? index : 0,
+        width: 1,
+        height: 1,
+      },
+    },
     qualityReport: null,
     failureCode: null,
     createdByUserId: userId,

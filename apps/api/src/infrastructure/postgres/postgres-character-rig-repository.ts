@@ -4,6 +4,7 @@ import type {
   CharacterGenerationReview,
   CharacterIdentityModelVersion,
   CharacterReferenceAsset,
+  CharacterRigReview,
   CharacterRigVersion,
 } from "@motionprep/contracts";
 import type { Pool } from "pg";
@@ -339,6 +340,94 @@ export class PostgresCharacterRigRepository implements CharacterRigRepository {
       [projectId, bibleId],
     );
     return result.rows[0]?.document ?? null;
+  }
+
+  async findRigReviewByOperation(
+    reviewerUserId: string,
+    operationId: string,
+  ): Promise<CharacterRigReview | null> {
+    const result = await this.pool.query<DocumentRow<CharacterRigReview>>(
+      `SELECT document FROM character_rig_reviews
+       WHERE reviewer_user_id = $1 AND operation_id = $2`,
+      [reviewerUserId, operationId],
+    );
+    return result.rows[0]?.document ?? null;
+  }
+
+  async commitRigReview(
+    review: CharacterRigReview,
+    updatedRig: CharacterRigVersion,
+  ): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const rig = await client.query<{ id: string }>(
+        `SELECT id FROM character_rig_versions
+         WHERE id = $1 AND project_id = $2 AND status = 'needs-review'
+         FOR UPDATE`,
+        [review.rigVersionId, review.projectId],
+      );
+      if (
+        rig.rowCount !== 1 ||
+        updatedRig.id !== review.rigVersionId ||
+        updatedRig.projectId !== review.projectId ||
+        !["approved", "retired"].includes(updatedRig.status)
+      ) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO character_rig_reviews (
+           id, project_id, rig_version_id, decision, reason,
+           reviewer_user_id, operation_id, document, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+         ON CONFLICT (reviewer_user_id, operation_id) DO NOTHING RETURNING id`,
+        [
+          review.id,
+          review.projectId,
+          review.rigVersionId,
+          review.decision,
+          review.reason,
+          review.reviewerUserId,
+          review.operationId,
+          JSON.stringify(review),
+          review.createdAt,
+        ],
+      );
+      if (inserted.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      const updated = await client.query(
+        `UPDATE character_rig_versions SET
+           status = $3,
+           document = $4::jsonb,
+           approved_by_user_id = $5,
+           approved_at = $6,
+           updated_at = $7
+         WHERE id = $1 AND project_id = $2 AND status = 'needs-review'`,
+        [
+          updatedRig.id,
+          updatedRig.projectId,
+          updatedRig.status,
+          JSON.stringify(updatedRig),
+          updatedRig.approvedByUserId,
+          updatedRig.approvedAt,
+          updatedRig.updatedAt,
+        ],
+      );
+      if (updated.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      await client.query("COMMIT");
+      return true;
+    } catch (error) {
+      await rollbackTransaction(client, error);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async saveRigVersion(rig: CharacterRigVersion): Promise<boolean> {

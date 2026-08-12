@@ -1,30 +1,16 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { createHash } from "node:crypto";
+import type { FastifyInstance } from "fastify";
 import type { AuditService } from "../audit/audit-service.js";
-import { requireUser } from "../auth/authorize.js";
-import { trySendAuthDomainError } from "../auth/auth-route-error.js";
 import type { AuthService } from "../auth/auth-service.js";
-import { sendApiError, sendProjectNotFound } from "../http/api-response.js";
-import {
-  InvalidIdempotencyKeyError,
-  requestIdempotencyKey,
-} from "../http/request-metadata.js";
+import { sendApiError } from "../http/api-response.js";
+import { requestIdempotencyKey } from "../http/request-metadata.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
-import { CharacterBibleError, CharacterBibleService } from "./character-bible-service.js";
-import {
-  CharacterGenerationError,
-  CharacterGenerationService,
-} from "./character-generation-service.js";
-import {
-  CharacterIdentityBootstrapError,
-  CharacterIdentityBootstrapService,
-} from "./character-identity-bootstrap-service.js";
-import { CharacterJobIdempotencyConflictError } from "./character-job-service.js";
-import {
-  CharacterRigCompilerError,
-  CharacterRigCompilerService,
-} from "./character-rig-compiler-service.js";
+import { readVerifiedCharacterArtifact } from "./character-artifact-integrity.js";
+import { CharacterBibleService } from "./character-bible-service.js";
+import { CharacterGenerationService } from "./character-generation-service.js";
+import { CharacterIdentityBootstrapService } from "./character-identity-bootstrap-service.js";
+import type { CharacterJobRepository } from "./character-job-repository.js";
+import { CharacterRigCompilerService } from "./character-rig-compiler-service.js";
 import {
   characterBibleApprovalSchema,
   characterBibleDraftSchema,
@@ -32,12 +18,18 @@ import {
   characterGenerationReviewSchema,
   characterGenerationSchema,
   characterIdentityBootstrapSchema,
-  characterProjectParamsSchema,
   characterReferenceSchema,
   characterRigCompilationSchema,
 } from "./character-rig-route-schemas.js";
-import { CharacterReferenceError, CharacterReferenceService } from "./character-reference-service.js";
+import { CharacterReferenceService } from "./character-reference-service.js";
 import type { CharacterRigRepository } from "./character-rig-repository.js";
+import type { CharacterRigReviewService } from "./character-rig-review-service.js";
+import { registerCharacterRigArtifactRoutes } from "./character-rig-artifact-routes.js";
+import { authorizeCharacterProject } from "./character-rig-route-authorization.js";
+import {
+  sendCharacterDomainError,
+  sendCharacterValidationError,
+} from "./character-rig-route-errors.js";
 
 export async function registerCharacterRigRoutes(
   app: FastifyInstance,
@@ -45,11 +37,13 @@ export async function registerCharacterRigRoutes(
     projects: ProjectRepository;
     auth: AuthService;
     characterRigs: CharacterRigRepository;
+    characterJobs: CharacterJobRepository;
     bibleService: CharacterBibleService;
     referenceService: CharacterReferenceService;
     identityService: CharacterIdentityBootstrapService;
     generationService: CharacterGenerationService;
     compilerService: CharacterRigCompilerService;
+    rigReviewService: CharacterRigReviewService;
     objectStorage: ObjectStorage;
     audit: AuditService;
     enabled: boolean;
@@ -59,6 +53,7 @@ export async function registerCharacterRigRoutes(
   },
 ): Promise<void> {
   const now = dependencies.now ?? (() => new Date());
+  registerCharacterRigArtifactRoutes(app, { ...dependencies, now });
 
   app.get(
     "/v1/projects/:projectId/character-rig",
@@ -70,7 +65,7 @@ export async function registerCharacterRigRoutes(
     const references = bible
       ? await dependencies.characterRigs.listReferences(access.projectId, bible.id)
       : [];
-    const [identityModel, generations, rig] = bible
+    const [identityModel, generations, rig, jobs] = bible
       ? await Promise.all([
           dependencies.characterRigs.findLatestIdentityModelVersion(
             access.projectId,
@@ -84,10 +79,11 @@ export async function registerCharacterRigRoutes(
             access.projectId,
             bible.id,
           ),
+          dependencies.characterJobs.listByProject(access.projectId),
         ])
-      : [null, [], null];
+      : [null, [], null, []];
     return {
-      data: { bible, references, identityModel, generations, rig },
+      data: { bible, references, identityModel, generations, rig, jobs },
       error: null,
     };
     },
@@ -100,7 +96,7 @@ export async function registerCharacterRigRoutes(
     const access = await authorizeCharacterProject(request, reply, dependencies);
     if (!access) return;
     const body = characterBibleDraftSchema.safeParse(request.body);
-    if (!body.success) return validationError(request, reply);
+    if (!body.success) return sendCharacterValidationError(request, reply);
     try {
       const bible = await dependencies.bibleService.saveDraft({
         projectId: access.projectId,
@@ -114,7 +110,7 @@ export async function registerCharacterRigRoutes(
       });
       return { data: bible, error: null };
     } catch (error) {
-      return characterError(error, request, reply);
+      return sendCharacterDomainError(error, request, reply);
     }
     },
   );
@@ -126,7 +122,7 @@ export async function registerCharacterRigRoutes(
       const access = await authorizeCharacterProject(request, reply, dependencies);
       if (!access) return;
       const body = characterBibleApprovalSchema.safeParse(request.body);
-      if (!body.success) return validationError(request, reply);
+      if (!body.success) return sendCharacterValidationError(request, reply);
       try {
         const bible = await dependencies.bibleService.approve({
           projectId: access.projectId,
@@ -145,7 +141,7 @@ export async function registerCharacterRigRoutes(
         });
         return { data: bible, error: null };
       } catch (error) {
-        return characterError(error, request, reply);
+        return sendCharacterDomainError(error, request, reply);
       }
     },
   );
@@ -157,7 +153,7 @@ export async function registerCharacterRigRoutes(
       const access = await authorizeCharacterProject(request, reply, dependencies);
       if (!access) return;
       const body = characterReferenceSchema.safeParse(request.body);
-      if (!body.success) return validationError(request, reply);
+      if (!body.success) return sendCharacterValidationError(request, reply);
       try {
         const reference = await dependencies.referenceService.addCurrentSource({
           projectId: access.projectId,
@@ -166,7 +162,7 @@ export async function registerCharacterRigRoutes(
         });
         return reply.status(201).send({ data: reference, error: null });
       } catch (error) {
-        return characterError(error, request, reply);
+        return sendCharacterDomainError(error, request, reply);
       }
     },
   );
@@ -178,7 +174,7 @@ export async function registerCharacterRigRoutes(
       const access = await authorizeCharacterProject(request, reply, dependencies);
       if (!access) return;
       const body = characterIdentityBootstrapSchema.safeParse(request.body);
-      if (!body.success) return validationError(request, reply);
+      if (!body.success) return sendCharacterValidationError(request, reply);
       try {
         const result = await dependencies.identityService.bootstrap({
           projectId: access.projectId,
@@ -196,7 +192,7 @@ export async function registerCharacterRigRoutes(
           error: null,
         });
       } catch (error) {
-        return characterError(error, request, reply);
+        return sendCharacterDomainError(error, request, reply);
       }
     },
   );
@@ -208,7 +204,7 @@ export async function registerCharacterRigRoutes(
       const access = await authorizeCharacterProject(request, reply, dependencies);
       if (!access) return;
       const body = characterGenerationSchema.safeParse(request.body);
-      if (!body.success) return validationError(request, reply);
+      if (!body.success) return sendCharacterValidationError(request, reply);
       try {
         const result = await dependencies.generationService.queue({
           projectId: access.projectId,
@@ -222,7 +218,7 @@ export async function registerCharacterRigRoutes(
           error: null,
         });
       } catch (error) {
-        return characterError(error, request, reply);
+        return sendCharacterDomainError(error, request, reply);
       }
     },
   );
@@ -236,7 +232,7 @@ export async function registerCharacterRigRoutes(
       const params = characterGenerationParamsSchema.safeParse(request.params);
       const body = characterGenerationReviewSchema.safeParse(request.body);
       if (!params.success || !body.success || params.data.projectId !== access.projectId) {
-        return validationError(request, reply);
+        return sendCharacterValidationError(request, reply);
       }
       try {
         const result = await dependencies.generationService.review({
@@ -261,7 +257,7 @@ export async function registerCharacterRigRoutes(
           error: null,
         });
       } catch (error) {
-        return characterError(error, request, reply);
+        return sendCharacterDomainError(error, request, reply);
       }
     },
   );
@@ -274,7 +270,7 @@ export async function registerCharacterRigRoutes(
       if (!access) return;
       const params = characterGenerationParamsSchema.safeParse(request.params);
       if (!params.success || params.data.projectId !== access.projectId) {
-        return validationError(request, reply);
+        return sendCharacterValidationError(request, reply);
       }
       const attempt = await dependencies.characterRigs.findGenerationAttempt(
         access.projectId,
@@ -289,17 +285,12 @@ export async function registerCharacterRigRoutes(
           "The generated character artifact is not available.",
         );
       }
-      const artifact = await dependencies.objectStorage.get(
-        attempt.outputArtifact.objectKey,
-        { maxBytes: 64 * 1024 * 1024 },
+      const artifact = await readVerifiedCharacterArtifact(
+        dependencies.objectStorage,
+        attempt.outputArtifact,
+        64 * 1024 * 1024,
       );
-      if (
-        !artifact ||
-        artifact.contentType !== attempt.outputArtifact.contentType ||
-        artifact.sizeBytes !== attempt.outputArtifact.sizeBytes ||
-        createHash("sha256").update(artifact.body).digest("hex") !==
-          attempt.outputArtifact.sha256
-      ) {
+      if (!artifact) {
         return sendApiError(
           reply,
           request.id,
@@ -322,7 +313,7 @@ export async function registerCharacterRigRoutes(
       const access = await authorizeCharacterProject(request, reply, dependencies);
       if (!access) return;
       const body = characterRigCompilationSchema.safeParse(request.body);
-      if (!body.success) return validationError(request, reply);
+      if (!body.success) return sendCharacterValidationError(request, reply);
       try {
         const result = await dependencies.compilerService.queue({
           projectId: access.projectId,
@@ -335,87 +326,8 @@ export async function registerCharacterRigRoutes(
           error: null,
         });
       } catch (error) {
-        return characterError(error, request, reply);
+        return sendCharacterDomainError(error, request, reply);
       }
     },
   );
-}
-
-async function authorizeCharacterProject(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  dependencies: {
-    projects: ProjectRepository;
-    auth: AuthService;
-    enabled: boolean;
-  },
-): Promise<{ projectId: string; userId: string } | null> {
-  try {
-    const user = await requireUser(request, dependencies.auth);
-    if (!dependencies.enabled) {
-      sendApiError(
-        reply,
-        request.id,
-        503,
-        "CHARACTER_RIG_DISABLED",
-        "Character Studio is disabled until its private worker and release gates are configured.",
-      );
-      return null;
-    }
-    const params = characterProjectParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      sendProjectNotFound(reply, request.id);
-      return null;
-    }
-    const project = await dependencies.projects.findOwnedById(user.id, params.data.projectId);
-    if (!project || project.kind !== "image") {
-      sendProjectNotFound(reply, request.id);
-      return null;
-    }
-    return { projectId: project.id, userId: user.id };
-  } catch (error) {
-    const response = trySendAuthDomainError(error, request, reply);
-    if (response !== undefined) return null;
-    throw error;
-  }
-}
-
-function validationError(request: FastifyRequest, reply: FastifyReply) {
-  return sendApiError(
-    reply,
-    request.id,
-    400,
-    "VALIDATION_FAILED",
-    "Character Studio request data is invalid.",
-  );
-}
-
-function characterError(
-  error: unknown,
-  request: FastifyRequest,
-  reply: FastifyReply,
-) {
-  if (
-    error instanceof CharacterBibleError ||
-    error instanceof CharacterReferenceError ||
-    error instanceof CharacterIdentityBootstrapError ||
-    error instanceof CharacterGenerationError ||
-    error instanceof CharacterRigCompilerError ||
-    error instanceof CharacterJobIdempotencyConflictError ||
-    error instanceof InvalidIdempotencyKeyError
-  ) {
-    const code = "code" in error && typeof error.code === "string"
-      ? error.code
-      : "CHARACTER_REQUEST_INVALID";
-    const conflict = code.includes("CONFLICT") || code.includes("REVISION");
-    const notFound = code.endsWith("NOT_FOUND");
-    return sendApiError(
-      reply,
-      request.id,
-      notFound ? 404 : conflict ? 409 : 422,
-      code,
-      "Character Studio could not complete the requested operation.",
-    );
-  }
-  throw error;
 }

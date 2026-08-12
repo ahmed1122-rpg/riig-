@@ -90,6 +90,10 @@ describe("HttpCharacterInferenceProvider", () => {
           sizeBytes: 123,
           sha256: "a".repeat(64),
         },
+        geometry: {
+          canvas: { width: 1024, height: 1024 },
+          bounds: { x: 0, y: 0, width: 1024, height: 1024 },
+        },
         qualityReport: {
           thresholdsSchemaVersion: 1,
           landmarkMeanHeadWidthRatio: 0.01,
@@ -111,6 +115,7 @@ describe("HttpCharacterInferenceProvider", () => {
       target: { kind: "canonical-view", view: "left-profile" },
       status: "processing",
       controls: {
+        canvas: { width: 1024, height: 1024 },
         seed: 1,
         poseReferenceId: null,
         depthReferenceId: null,
@@ -120,6 +125,7 @@ describe("HttpCharacterInferenceProvider", () => {
       requestHash: "b".repeat(64),
       idempotencyKey: "generation-operation",
       outputArtifact: null,
+      outputGeometry: null,
       qualityReport: null,
       failureCode: null,
       createdByUserId: crypto.randomUUID(),

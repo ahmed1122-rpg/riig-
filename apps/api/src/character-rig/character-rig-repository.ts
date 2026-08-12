@@ -4,6 +4,7 @@ import type {
   CharacterGenerationReview,
   CharacterIdentityModelVersion,
   CharacterReferenceAsset,
+  CharacterRigReview,
   CharacterRigVersion,
 } from "@motionprep/contracts";
 
@@ -57,6 +58,14 @@ export interface CharacterRigRepository {
     projectId: string,
     bibleId: string,
   ): Promise<CharacterRigVersion | null>;
+  findRigReviewByOperation(
+    reviewerUserId: string,
+    operationId: string,
+  ): Promise<CharacterRigReview | null>;
+  commitRigReview(
+    review: CharacterRigReview,
+    updatedRig: CharacterRigVersion,
+  ): Promise<boolean>;
   saveRigVersion(rig: CharacterRigVersion): Promise<boolean>;
 }
 
@@ -67,6 +76,7 @@ export class InMemoryCharacterRigRepository implements CharacterRigRepository {
   readonly #generations = new Map<string, CharacterGenerationAttempt>();
   readonly #reviews = new Map<string, CharacterGenerationReview>();
   readonly #rigs = new Map<string, CharacterRigVersion>();
+  readonly #rigReviews = new Map<string, CharacterRigReview>();
 
   async findBible(
     projectId: string,
@@ -283,6 +293,44 @@ export class InMemoryCharacterRigRepository implements CharacterRigRepository {
       )
       .sort((left, right) => right.version - left.version)[0];
     return rig ? structuredClone(rig) : null;
+  }
+
+  async findRigReviewByOperation(
+    reviewerUserId: string,
+    operationId: string,
+  ): Promise<CharacterRigReview | null> {
+    const review = [...this.#rigReviews.values()].find(
+      (candidate) =>
+        candidate.reviewerUserId === reviewerUserId &&
+        candidate.operationId === operationId,
+    );
+    return review ? structuredClone(review) : null;
+  }
+
+  async commitRigReview(
+    review: CharacterRigReview,
+    updatedRig: CharacterRigVersion,
+  ): Promise<boolean> {
+    const current = this.#rigs.get(review.rigVersionId);
+    const operationConflict = [...this.#rigReviews.values()].some(
+      (candidate) =>
+        candidate.reviewerUserId === review.reviewerUserId &&
+        candidate.operationId === review.operationId,
+    );
+    if (
+      !current ||
+      current.projectId !== review.projectId ||
+      current.status !== "needs-review" ||
+      updatedRig.id !== current.id ||
+      updatedRig.projectId !== current.projectId ||
+      !["approved", "retired"].includes(updatedRig.status) ||
+      operationConflict
+    ) {
+      return false;
+    }
+    this.#rigReviews.set(review.id, structuredClone(review));
+    this.#rigs.set(updatedRig.id, structuredClone(updatedRig));
+    return true;
   }
 
   async saveRigVersion(rig: CharacterRigVersion): Promise<boolean> {

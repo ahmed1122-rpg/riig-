@@ -134,6 +134,7 @@ export const characterDocumentedBodies = new Map<
         controls: objectBody(
           [
             "seed",
+            "canvas",
             "poseReferenceId",
             "depthReferenceId",
             "maskReferenceId",
@@ -141,6 +142,10 @@ export const characterDocumentedBodies = new Map<
           ],
           {
             seed: integer,
+            canvas: objectBody(["width", "height"], {
+              width: integer,
+              height: integer,
+            }),
             poseReferenceId: nullableUuid,
             depthReferenceId: nullableUuid,
             maskReferenceId: nullableUuid,
@@ -175,6 +180,13 @@ export const characterDocumentedBodies = new Map<
       bibleId: text("uuid"),
       width: integer,
       height: integer,
+    }),
+  ],
+  [
+    "POST /v1/projects/:projectId/character-rig/rigs/:rigVersionId/reviews",
+    objectBody(["decision", "reason"], {
+      decision: { type: "string", enum: ["approved", "rejected"] },
+      reason: text(),
     }),
   ],
 ]);
@@ -215,5 +227,13 @@ export const characterRouteSummaries = new Map([
   [
     "POST /v1/projects/:projectId/character-rig/compile",
     "Queue Character Rig PSD compilation",
+  ],
+  [
+    "GET /v1/projects/:projectId/character-rig/rigs/:rigVersionId/artifacts/:artifactType",
+    "Download a verified Character Rig artifact",
+  ],
+  [
+    "POST /v1/projects/:projectId/character-rig/rigs/:rigVersionId/reviews",
+    "Approve or reject a compiled Character Rig",
   ],
 ]);

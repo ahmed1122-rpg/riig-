@@ -6,21 +6,29 @@ import {
   type CharacterCanonicalView,
   type CharacterGenerationAttempt,
   type CharacterIdentityModelVersion,
+  type CharacterJob,
   type CharacterReferenceAsset,
+  type CharacterReferenceRole,
   type CharacterRigVersion,
 } from "@motionprep/contracts";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addCurrentSourceCharacterReference,
   approveCharacterBible,
   bootstrapCharacterIdentity,
   compileCharacterRig,
-  getCharacterRigStudio,
   queueCharacterGeneration,
   reviewCharacterGeneration,
+  reviewCharacterRig,
   saveCharacterBibleDraft,
+  type CharacterRigStudioState,
 } from "../../lib/api/character-rig-client";
 import { angleToView, splitLines, type StudioStage } from "./CharacterStudioShared";
+import {
+  characterBibleDraftInput,
+  draftMatchesBible,
+} from "./CharacterStudioBible";
+import { useCharacterStudioPolling } from "./useCharacterStudioPolling";
 
 interface CharacterStudioControllerOptions {
   projectId: string;
@@ -46,6 +54,7 @@ export function useCharacterStudioController({
   const [generations, setGenerations] =
     useState<CharacterGenerationAttempt[]>([]);
   const [rig, setRig] = useState<CharacterRigVersion | null>(null);
+  const [jobs, setJobs] = useState<CharacterJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
@@ -60,42 +69,103 @@ export function useCharacterStudioController({
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [referenceView, setReferenceView] =
     useState<CharacterCanonicalView>("frontal");
+  const [referenceRole, setReferenceRole] =
+    useState<CharacterReferenceRole>("identity-primary");
   const [angle, setAngle] = useState(0);
   const [generationKind, setGenerationKind] = useState<"view" | "part">("view");
   const [partName, setPartName] = useState<string>(characterRequiredHeadParts[0]);
   const [reviewReason, setReviewReason] = useState(defaultReviewReason);
+  const [selectedGenerationId, setSelectedGenerationId] = useState<string>();
+  const bibleDirtyRef = useRef(false);
+  const hydratedBibleIdRef = useRef<string | undefined>(undefined);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void getCharacterRigStudio(projectId, controller.signal)
-      .then((state) => {
-        setBible(state.bible);
-        setReferences(state.references);
-        setIdentityModel(state.identityModel);
-        setGenerations(state.generations);
-        setRig(state.rig);
-        if (!state.bible) return;
-        setDisplayName(state.bible.displayName);
-        setIdentityDescription(state.bible.identityDescription);
-        setNegativeConstraints(state.bible.negativeConstraints.join("\n"));
-        setDistinguishingFeatures(state.bible.distinguishingFeatures.join("\n"));
-        setHeadRatio(state.bible.proportions.headToBodyHeightRatio);
-        setShoulderRatio(state.bible.proportions.shoulderToBodyHeightRatio);
-        setEyeRatio(state.bible.proportions.eyeSpacingToFaceWidthRatio);
-        setOutlineColor(
-          state.bible.palette.find((entry) => entry.role === "outline")?.color ??
-            "#111827",
-        );
-      })
-      .catch((caught: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(errorMessage(caught, "تعذر فتح Character Studio."));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [projectId]);
+  const bibleDirty = useMemo(
+    () =>
+      Boolean(
+        bible &&
+          bible.status !== "approved" &&
+          !draftMatchesBible(bible, {
+            displayName,
+            identityDescription,
+            negativeConstraints,
+            distinguishingFeatures,
+            outlineColor,
+            headRatio,
+            shoulderRatio,
+            eyeRatio,
+          }),
+      ),
+    [
+      bible,
+      displayName,
+      identityDescription,
+      negativeConstraints,
+      distinguishingFeatures,
+      outlineColor,
+      headRatio,
+      shoulderRatio,
+      eyeRatio,
+    ],
+  );
+  bibleDirtyRef.current = bibleDirty;
+
+  const hydrateBibleFields = useCallback((remote: CharacterBible) => {
+    setDisplayName(remote.displayName);
+    setIdentityDescription(remote.identityDescription);
+    setNegativeConstraints(remote.negativeConstraints.join("\n"));
+    setDistinguishingFeatures(remote.distinguishingFeatures.join("\n"));
+    setHeadRatio(remote.proportions.headToBodyHeightRatio);
+    setShoulderRatio(remote.proportions.shoulderToBodyHeightRatio);
+    setEyeRatio(remote.proportions.eyeSpacingToFaceWidthRatio);
+    setOutlineColor(
+      remote.palette.find((entry) => entry.role === "outline")?.color ??
+        "#111827",
+    );
+    hydratedBibleIdRef.current = remote.id;
+  }, []);
+
+  const applyRemoteState = useCallback(
+    (state: CharacterRigStudioState) => {
+      setBible(state.bible);
+      setReferences(state.references);
+      setReferenceRole((current) =>
+        current === "identity-primary" &&
+        state.references.some((reference) => reference.role === "identity-primary")
+          ? "canonical-view"
+          : current,
+      );
+      setIdentityModel(state.identityModel);
+      setGenerations(state.generations);
+      setRig(state.rig);
+      setJobs(state.jobs);
+      if (
+        state.bible &&
+        (!bibleDirtyRef.current || hydratedBibleIdRef.current !== state.bible.id)
+      ) {
+        hydrateBibleFields(state.bible);
+      }
+    },
+    [hydrateBibleFields],
+  );
+
+  const hasPendingWork = Boolean(
+    jobs.some((job) =>
+      ["queued", "processing", "verifying"].includes(job.status),
+    ),
+  );
+  const handleInitialError = useCallback((caught: unknown) => {
+    setError(errorMessage(caught, "تعذر فتح Character Studio."));
+  }, []);
+  const handleLoadingChange = useCallback((nextLoading: boolean) => {
+    setLoading(nextLoading);
+  }, []);
+  useCharacterStudioPolling({
+    projectId,
+    active: hasPendingWork,
+    onState: applyRemoteState,
+    onInitialError: handleInitialError,
+    onLoadingChange: handleLoadingChange,
+  });
 
   const presentViews = useMemo(
     () =>
@@ -111,9 +181,18 @@ export function useCharacterStudioController({
     [references],
   );
   const activeView = angleToView(angle);
-  const reviewCandidate = generations.find(
+  const reviewableGenerations = generations.filter(
     (attempt) => attempt.status === "needs-review" && attempt.outputArtifact,
   );
+  const reviewCandidate =
+    reviewableGenerations.find(
+      (attempt) => attempt.id === selectedGenerationId,
+    ) ?? reviewableGenerations[0];
+  useEffect(() => {
+    if (reviewCandidate && reviewCandidate.id !== selectedGenerationId) {
+      setSelectedGenerationId(reviewCandidate.id);
+    }
+  }, [reviewCandidate, selectedGenerationId]);
   const approvedViews = new Set(
     generations.flatMap((attempt) =>
       attempt.status === "approved" && attempt.target.kind === "canonical-view"
@@ -146,44 +225,47 @@ export function useCharacterStudioController({
       splitLines(negativeConstraints).length > 0 &&
       splitLines(distinguishingFeatures).length > 0,
   );
+  const repairMask = references.find((reference) => reference.role === "part-mask");
+  const latestCompileJob = jobs.find((job) => job.type === "compile-rig");
+
+  async function persistBibleDraft(): Promise<CharacterBible> {
+    const saved = await saveCharacterBibleDraft(
+      projectId,
+      characterBibleDraftInput(bible, {
+        displayName,
+        identityDescription,
+        negativeConstraints,
+        distinguishingFeatures,
+        outlineColor,
+        headRatio,
+        shoulderRatio,
+        eyeRatio,
+      }),
+    );
+    setBible(saved);
+    hydratedBibleIdRef.current = saved.id;
+    return saved;
+  }
 
   async function saveBible() {
     await submit(async () => {
-      const saved = await saveCharacterBibleDraft(projectId, {
-        bibleId: bible?.id ?? null,
-        expectedRevision: bible?.revision ?? null,
-        displayName,
-        identityDescription,
-        negativeConstraints: splitLines(negativeConstraints),
-        distinguishingFeatures: splitLines(distinguishingFeatures),
-        proportions: {
-          headToBodyHeightRatio: headRatio,
-          shoulderToBodyHeightRatio: shoulderRatio,
-          eyeSpacingToFaceWidthRatio: eyeRatio,
-          notes: [],
-        },
-        palette: [
-          {
-            id:
-              bible?.palette.find((entry) => entry.role === "outline")?.id ??
-              crypto.randomUUID(),
-            label: "Outline",
-            role: "outline",
-            color: outlineColor as `#${string}`,
-          },
-        ],
-        materials: bible?.materials ?? [],
-      });
-      setBible(saved);
+      await persistBibleDraft();
       onNotify("تم حفظ Character Bible بإصدار قابل للتدقيق.");
     }, "تعذر حفظ Character Bible.");
   }
 
   async function approveBible() {
-    if (!bible) return;
     await submit(async () => {
-      const approved = await approveCharacterBible(projectId, bible.id, bible.revision);
+      const reviewableBible =
+        !bible || bibleDirty ? await persistBibleDraft() : bible;
+      if (reviewableBible.status === "approved") return;
+      const approved = await approveCharacterBible(
+        projectId,
+        reviewableBible.id,
+        reviewableBible.revision,
+      );
       setBible(approved);
+      hydratedBibleIdRef.current = approved.id;
       onNotify("تم قفل Character Bible واعتماد الهوية.");
       setStage("references");
     }, "تعذر اعتماد Character Bible.");
@@ -195,12 +277,15 @@ export function useCharacterStudioController({
       const reference = await addCurrentSourceCharacterReference(projectId, {
         bibleId: bible.id,
         sourceVersionId,
-        role: references.length === 0 ? "identity-primary" : "canonical-view",
+        role: referenceRole,
         canonicalView: referenceView,
         rightsClassification: "owned-by-user",
       });
       setReferences((current) => [...current, reference]);
       setRightsConfirmed(false);
+      if (referenceRole === "identity-primary") {
+        setReferenceRole("canonical-view");
+      }
       onNotify("تم نسخ المصدر إلى حزمة المراجع المعزولة.");
     }, "تعذر إضافة المرجع.");
   }
@@ -215,7 +300,7 @@ export function useCharacterStudioController({
   }
 
   async function generateView() {
-    if (!bible || !identityModel || identityModel.status !== "ready") return;
+    if (!bible || !identityModel || identityModel.status !== "ready" || !canvasSize) return;
     await submit(async () => {
       const result = await queueCharacterGeneration(projectId, {
         bibleId: bible.id,
@@ -226,6 +311,7 @@ export function useCharacterStudioController({
             : { kind: "part", view: activeView, partName: effectivePartName },
         angleDegrees: angle,
         seed: crypto.getRandomValues(new Uint32Array(1))[0]! & 0x7fffffff,
+        canvas: canvasSize,
       });
       setGenerations((current) => [
         result.attempt,
@@ -234,6 +320,42 @@ export function useCharacterStudioController({
       onNotify("تمت إضافة الزاوية إلى طابور التوليد المقيد بالهوية.");
       setStage("compare");
     }, "تعذر بدء توليد الزاوية.");
+  }
+
+  async function repairSelectedPart() {
+    if (
+      !bible ||
+      !identityModel ||
+      identityModel.status !== "ready" ||
+      !canvasSize ||
+      !repairMask ||
+      !reviewCandidate ||
+      reviewCandidate.target.kind === "canonical-view"
+    ) {
+      return;
+    }
+    const repairTarget = reviewCandidate.target;
+    await submit(async () => {
+      const result = await queueCharacterGeneration(projectId, {
+        bibleId: bible.id,
+        identityModelVersionId: identityModel.id,
+        target: {
+          kind: "masked-repair",
+          view: repairTarget.view,
+          partName: repairTarget.partName,
+        },
+        angleDegrees: angle,
+        seed: crypto.getRandomValues(new Uint32Array(1))[0]! & 0x7fffffff,
+        canvas: canvasSize,
+        maskReferenceId: repairMask.id,
+      });
+      setGenerations((current) => [
+        result.attempt,
+        ...current.filter((attempt) => attempt.id !== result.attempt.id),
+      ]);
+      setSelectedGenerationId(result.attempt.id);
+      onNotify("تم إرسال إصلاح الجزء المقنّع مع حماية البكسلات خارج القناع.");
+    }, "تعذر بدء إصلاح الجزء المقنّع.");
   }
 
   async function compileRig() {
@@ -271,6 +393,22 @@ export function useCharacterStudioController({
     }, "تعذر تسجيل قرار المراجعة.");
   }
 
+  async function reviewRig(decision: "approved" | "rejected") {
+    if (!rig || reviewReason.trim().length < 3) return;
+    await submit(async () => {
+      const result = await reviewCharacterRig(projectId, rig.id, {
+        decision,
+        reason: reviewReason.trim(),
+      });
+      setRig(result.rig);
+      onNotify(
+        decision === "approved"
+          ? "تم اعتماد الـRig وملفاته المتحققة نهائيًا."
+          : "تم رفض الـRig وإحالته لإعادة البناء.",
+      );
+    }, "تعذر تسجيل قرار مراجعة الـRig.");
+  }
+
   async function submit(action: () => Promise<void>, fallback: string) {
     setSubmitting(true);
     setError(undefined);
@@ -291,6 +429,8 @@ export function useCharacterStudioController({
     identityModel,
     generations,
     rig,
+    jobs,
+    latestCompileJob,
     loading,
     submitting,
     error,
@@ -314,6 +454,8 @@ export function useCharacterStudioController({
     setRightsConfirmed,
     referenceView,
     setReferenceView,
+    referenceRole,
+    setReferenceRole,
     angle,
     setAngle,
     generationKind,
@@ -322,22 +464,29 @@ export function useCharacterStudioController({
     setPartName,
     reviewReason,
     setReviewReason,
+    selectedGenerationId,
+    setSelectedGenerationId,
     presentViews,
     distinctReferenceCount,
     activeView,
+    reviewableGenerations,
     reviewCandidate,
     approvedViews,
     requiredParts,
     approvedPartKeys,
     requiredPartCount,
     bibleComplete,
+    bibleDirty,
+    repairMask,
     saveBible,
     approveBible,
     addReference,
     buildIdentityModel,
     generateView,
+    repairSelectedPart,
     compileRig,
     reviewGeneration,
+    reviewRig,
   };
 }
 

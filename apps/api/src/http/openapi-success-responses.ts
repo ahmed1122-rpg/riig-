@@ -268,7 +268,7 @@ const characterGenerationSchema = objectSchema(
   [
     "id", "projectId", "bibleId", "identityModelVersionId", "target",
     "status", "controls", "requestHash", "idempotencyKey", "outputArtifact",
-    "qualityReport", "failureCode", "createdByUserId", "createdAt", "updatedAt",
+    "outputGeometry", "qualityReport", "failureCode", "createdByUserId", "createdAt", "updatedAt",
   ],
   {
     id: text("uuid"), projectId: text("uuid"), bibleId: text("uuid"),
@@ -276,6 +276,9 @@ const characterGenerationSchema = objectSchema(
     status: text(), controls: { type: "object", additionalProperties: true },
     requestHash: text(), idempotencyKey: text(),
     outputArtifact: { anyOf: [characterArtifactSchema, { type: "null" }] },
+    outputGeometry: {
+      anyOf: [{ type: "object", additionalProperties: true }, { type: "null" }],
+    },
     qualityReport: { anyOf: [{ type: "object", additionalProperties: true }, { type: "null" }] },
     failureCode: nullableText, createdByUserId: text("uuid"),
     createdAt: text("date-time"), updatedAt: text("date-time"),
@@ -315,13 +318,14 @@ const characterRigSchema = objectSchema(
   },
 );
 const characterStateSchema = objectSchema(
-  ["bible", "references", "identityModel", "generations", "rig"],
+  ["bible", "references", "identityModel", "generations", "rig", "jobs"],
   {
     bible: { anyOf: [characterBibleSchema, { type: "null" }] },
     references: arrayOf(characterReferenceSchema),
     identityModel: { anyOf: [characterIdentityModelSchema, { type: "null" }] },
     generations: arrayOf(characterGenerationSchema),
     rig: { anyOf: [characterRigSchema, { type: "null" }] },
+    jobs: arrayOf(characterJobSchema),
   },
 );
 const identityQueueSchema = objectSchema(["modelVersion", "job"], {
@@ -344,6 +348,11 @@ const characterReviewSchema = objectSchema(
 const rigQueueSchema = objectSchema(["rig", "job", "replayed"], {
   rig: characterRigSchema,
   job: characterJobSchema,
+  replayed: { type: "boolean" },
+});
+const rigReviewSchema = objectSchema(["rig", "review", "replayed"], {
+  rig: characterRigSchema,
+  review: { type: "object", additionalProperties: true },
   replayed: { type: "boolean" },
 });
 
@@ -489,6 +498,17 @@ export const documentedSuccessResponses = new Map<
     {
       200: successEnvelope(rigQueueSchema, "Replayed rig compilation"),
       202: successEnvelope(rigQueueSchema, "Accepted rig compilation"),
+    },
+  ],
+  [
+    "GET /v1/projects/:projectId/character-rig/rigs/:rigVersionId/artifacts/:artifactType",
+    { 200: { type: "string", format: "binary", description: "Verified PSD or manifest" } },
+  ],
+  [
+    "POST /v1/projects/:projectId/character-rig/rigs/:rigVersionId/reviews",
+    {
+      200: successEnvelope(rigReviewSchema, "Replayed Character Rig review"),
+      201: successEnvelope(rigReviewSchema, "Created Character Rig review"),
     },
   ],
 ]);
