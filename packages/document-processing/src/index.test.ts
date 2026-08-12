@@ -630,6 +630,35 @@ describe("preparePdfSource", () => {
     } satisfies Partial<DocumentProcessingError>);
   });
 
+  it("rejects an extreme MediaBox before allocating page or OCR canvases", async () => {
+    const pdf = await PDFDocument.create();
+    pdf.addPage([30_001, 10]);
+    const source = Buffer.from(await pdf.save());
+
+    await expect(
+      preparePdfSource({
+        projectId: "project-1",
+        sourceVersionId: "source-extreme-media-box",
+        source,
+        separationMode: "line",
+      }),
+    ).rejects.toMatchObject({
+      code: "PDF_DECODE_FAILED",
+      pageNumbers: [1],
+    } satisfies Partial<DocumentProcessingError>);
+    await expect(
+      renderPdfRegion({
+        source,
+        pageNumber: 1,
+        start: { x: 0.1, y: 0.1 },
+        end: { x: 0.9, y: 0.9 },
+      }),
+    ).rejects.toMatchObject({
+      code: "PDF_DECODE_FAILED",
+      pageNumbers: [1],
+    } satisfies Partial<DocumentProcessingError>);
+  });
+
   it("rejects PDFs above the bounded page count before processing pages", async () => {
     const pdf = await PDFDocument.create();
     for (let pageNumber = 0; pageNumber < 251; pageNumber += 1) {

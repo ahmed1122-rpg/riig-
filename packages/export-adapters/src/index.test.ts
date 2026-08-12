@@ -200,6 +200,26 @@ describe("createRasterPsd", () => {
       code: "INVALID_DOCUMENT_DIMENSIONS",
     } satisfies Partial<ExportAdapterError>);
   });
+
+  it("rejects excessive aggregate raster memory before decoding assets", async () => {
+    const largeDocument: LayerDocument = {
+      ...document,
+      width: 1_000,
+      height: 1_000,
+    };
+    const assets = Array.from({ length: 65 }, (_, index) => ({
+      layer: {
+        ...layer,
+        id: `large-layer-${index}`,
+        bounds: { x: 0, y: 0, width: 1_000, height: 1_000 },
+      },
+      source: Buffer.from("not-decoded"),
+    }));
+
+    await expect(createRasterPsd(largeDocument, assets)).rejects.toMatchObject({
+      code: "RASTER_MEMORY_BUDGET_EXCEEDED",
+    } satisfies Partial<ExportAdapterError>);
+  });
 });
 
 describe("createTransparentPngs", () => {
@@ -232,6 +252,28 @@ describe("createTransparentPngs", () => {
 
     expect(result?.filename).toBe("01_+layer.png");
   });
+
+  it("rejects an excessive full-canvas PNG set before decoding", async () => {
+    const largeDocument: LayerDocument = {
+      ...document,
+      width: 2_800,
+      height: 2_800,
+    };
+    const assets = Array.from({ length: 9 }, (_, index) => ({
+      layer: {
+        ...layer,
+        id: `png-layer-${index}`,
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+      },
+      source: Buffer.from("not-decoded"),
+    }));
+
+    await expect(
+      createTransparentPngs(largeDocument, assets),
+    ).rejects.toMatchObject({
+      code: "RASTER_MEMORY_BUDGET_EXCEEDED",
+    } satisfies Partial<ExportAdapterError>);
+  });
 });
 
 describe("createLayeredTiff", () => {
@@ -259,6 +301,22 @@ describe("createLayeredTiff", () => {
       pages: 2,
       channels: 4,
     });
+  });
+
+  it("rejects an excessive TIFF before decoding any layer", async () => {
+    const largeDocument: LayerDocument = {
+      ...document,
+      width: 1_000,
+      height: 1_000,
+    };
+    const assets = Array.from({ length: 33 }, (_, index) => ({
+      layer: { ...layer, id: `tiff-layer-${index}` },
+      source: Buffer.from("not-decoded"),
+    }));
+
+    await expect(createLayeredTiff(largeDocument, assets)).rejects.toMatchObject({
+      code: "TIFF_PIXEL_BUDGET_EXCEEDED",
+    } satisfies Partial<ExportAdapterError>);
   });
 });
 

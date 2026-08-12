@@ -22,6 +22,7 @@ import {
   type PositionedText,
 } from "./pdf-layout.js";
 import { deterministicPdfJsOptions } from "./pdfjs-options.js";
+import { assertPdfPageGeometry } from "./pdf-geometry.js";
 
 const MAX_PDF_PAGES = 250;
 const MAX_TEXT_ITEMS = 100_000;
@@ -80,6 +81,7 @@ export async function preparePdfSource(
         const viewport = page.getViewport({ scale: 1 });
         const width = round(viewport.width);
         const height = round(viewport.height);
+        assertPdfPageGeometry(width, height, pageNumber);
         maxWidth = Math.max(maxWidth, width);
         maxHeight = Math.max(maxHeight, height);
         pages.push({ pageNumber, width, height });
@@ -188,7 +190,7 @@ async function extractPageText(
   if (!ocrEngine) return { status: "ocr-required" };
 
   try {
-    const rendered = await renderPageForOcr(page, width, height);
+    const rendered = await renderPageForOcr(page, pageNumber, width, height);
     const recognized = await ocrEngine.recognizePage({
       pageNumber,
       image: rendered.image,
