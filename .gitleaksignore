@@ -1,6 +1,7 @@
 # Reviewed false positives from the imported baseline commit.
 # These fingerprints cover deterministic test/example values only; new findings
 # in the same files remain blocking.
+b781abd2ba779cea0d101a1cee6f446860c22db2:config/contract-baseline.json:generic-api-key:92
 a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:.env.example:generic-api-key:14
 a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app-test-helpers.ts:generic-api-key:46
 a2d696e3c1337a1ce6ea06ecbea52f9726a023c8:apps/api/src/app.processing-tools.test.ts:generic-api-key:33
