@@ -128,7 +128,7 @@
     "040_character_rig_reviews.sql": "4860cf9b538abb30624258964900705e469ed13f69e16a7219aec8e8434354d1",
     "041_derived_asset_registry.sql": "7fd69b491a1f54b188f72a08765f17473d457d63fb4a2cc5cc85e69ff44d0e38",
     "042_privacy_retention_state_machines.sql": "86f207a49b163b9c1d83d7bc17e9d4519fb0f798ed9ef0522325a0f253cd357d",
-    "043_email_verification.sql": "23b81b94925dcd06219fb9cb50d1aad2f587312dc8353854cdea06a73eafb236"
+    "043_email_verification.sql": "d19cea9b810f21d81db6327cea13c6eba6567c03d52c5f4c83ad17acda3a4702"
   },
   "openApiOperations": [
     "DELETE /v1/account",
