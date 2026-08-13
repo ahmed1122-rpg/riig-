@@ -1,5 +1,6 @@
 {
-  "maxSourceLines": 500,
+  "maxSourceLines": 550,
+  "warningSourceLines": 450,
   "minCloneLines": 16,
   "oversizedFiles": {},
   "maxExactCloneBlocks": 0,

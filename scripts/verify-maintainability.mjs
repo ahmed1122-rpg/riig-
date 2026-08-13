@@ -32,10 +32,23 @@ export async function collectProductionSources(workspace) {
 
 export function analyzeMaintainability(
   sources,
-  { maxSourceLines = 500, minCloneLines = 16 } = {},
+  {
+    maxSourceLines = 550,
+    warningSourceLines = 450,
+    minCloneLines = 16,
+  } = {},
 ) {
   if (!Number.isInteger(maxSourceLines) || maxSourceLines < 1) {
     throw new Error("maxSourceLines must be a positive integer.");
+  }
+  if (
+    !Number.isInteger(warningSourceLines) ||
+    warningSourceLines < 1 ||
+    warningSourceLines > maxSourceLines
+  ) {
+    throw new Error(
+      "warningSourceLines must be a positive integer no greater than maxSourceLines.",
+    );
   }
   if (!Number.isInteger(minCloneLines) || minCloneLines < 4) {
     throw new Error("minCloneLines must be an integer of at least 4.");
@@ -55,13 +68,23 @@ export function analyzeMaintainability(
       .filter(({ sourceLines }) => sourceLines > maxSourceLines)
       .map(({ file, sourceLines }) => [file, sourceLines]),
   );
+  const warningFiles = Object.fromEntries(
+    sourceMetrics
+      .filter(
+        ({ sourceLines }) =>
+          sourceLines >= warningSourceLines && sourceLines <= maxSourceLines,
+      )
+      .map(({ file, sourceLines }) => [file, sourceLines]),
+  );
   const exactCloneBlocks = findExactCloneBlocks(sourceMetrics, minCloneLines);
 
   return {
     sourceFileCount: sourceMetrics.length,
     maxSourceLines,
+    warningSourceLines,
     minCloneLines,
     oversizedFiles,
+    warningFiles,
     exactCloneBlocks,
     exactCloneBlockCount: exactCloneBlocks.length,
     exactClonedLines: exactCloneBlocks.reduce(
@@ -75,6 +98,9 @@ export function verifyMaintainability(report, baseline) {
   const errors = [];
   if (report.maxSourceLines !== baseline.maxSourceLines) {
     errors.push("The configured maxSourceLines differs from the baseline.");
+  }
+  if (report.warningSourceLines !== baseline.warningSourceLines) {
+    errors.push("The configured warningSourceLines differs from the baseline.");
   }
   if (report.minCloneLines !== baseline.minCloneLines) {
     errors.push("The configured minCloneLines differs from the baseline.");
@@ -113,7 +139,8 @@ async function main() {
     ? null
     : JSON.parse(await readFile(baselinePath, "utf8"));
   const report = analyzeMaintainability(sources, {
-    maxSourceLines: baseline?.maxSourceLines ?? 500,
+    maxSourceLines: baseline?.maxSourceLines ?? 550,
+    warningSourceLines: baseline?.warningSourceLines ?? 450,
     minCloneLines: baseline?.minCloneLines ?? 16,
   });
 
@@ -122,6 +149,12 @@ async function main() {
     return;
   }
   const errors = verifyMaintainability(report, baseline);
+  for (const [file, lines] of Object.entries(report.warningFiles)) {
+    process.stdout.write(
+      `Maintainability warning: ${file} has ${lines} non-empty lines ` +
+        `(early warning ${report.warningSourceLines}; strict cap ${report.maxSourceLines}).\n`,
+    );
+  }
   if (errors.length > 0) {
     for (const error of errors) process.stderr.write(`- ${error}\n`);
     process.exitCode = 1;

@@ -23,6 +23,12 @@ const configSchema = createWorkerEnvironmentSchema({
     .min(1_000)
     .max(2 * 60_000)
     .default(30_000),
+  EXPORT_JOB_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .max(30 * 60_000)
+    .default(10 * 60_000),
   EXPORT_WORKER_ID: z.string().trim().min(3).optional(),
 });
 

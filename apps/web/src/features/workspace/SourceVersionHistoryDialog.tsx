@@ -17,6 +17,7 @@ interface SourceVersionHistoryDialogProps {
     result: SourceVersionRestoreResult,
     version: SourceVersionSummary,
   ) => Promise<void>;
+  onExecuteRestore: (restore: () => Promise<void>) => Promise<void>;
   onNotify: (message: string) => void;
 }
 
@@ -25,6 +26,7 @@ export function SourceVersionHistoryDialog({
   currentSourceVersionId,
   onClose,
   onRestored,
+  onExecuteRestore,
   onNotify,
 }: SourceVersionHistoryDialogProps) {
   const [versions, setVersions] = useState<SourceVersionSummary[]>([]);
@@ -85,20 +87,22 @@ export function SourceVersionHistoryDialog({
     setSubmitting(true);
     setError(undefined);
     try {
-      const attempt = pendingHydration ?? {
-        result: await restoreSourceVersion(projectId, selected!.id, {
-          expectedCurrentSourceVersionId: currentSourceVersionId,
-          reason: reason.trim(),
-        }),
-        version: selected!,
-      };
-      setPendingHydration(attempt);
-      await onRestored(attempt.result, attempt.version);
-      setPendingHydration(undefined);
-      onNotify(
-        `تمت استعادة المصدر v${attempt.version.versionNumber} وحفظ قرار الاستعادة في السجل.`,
-      );
-      onClose();
+      await onExecuteRestore(async () => {
+        const attempt = pendingHydration ?? {
+          result: await restoreSourceVersion(projectId, selected!.id, {
+            expectedCurrentSourceVersionId: currentSourceVersionId,
+            reason: reason.trim(),
+          }),
+          version: selected!,
+        };
+        setPendingHydration(attempt);
+        await onRestored(attempt.result, attempt.version);
+        setPendingHydration(undefined);
+        onNotify(
+          `تمت استعادة المصدر v${attempt.version.versionNumber} وحفظ قرار الاستعادة في السجل.`,
+        );
+        onClose();
+      });
     } catch (caught) {
       setError(
         caught instanceof Error

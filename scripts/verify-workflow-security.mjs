@@ -122,6 +122,7 @@ function invokesNodeCli(command) {
 
 export function verifyWorkflowSecurity(workflows) {
   const violations = [];
+  const documents = [];
   for (const [index, workflow] of workflows.entries()) {
     let document;
     try {
@@ -130,9 +131,20 @@ export function verifyWorkflowSecurity(workflows) {
       violations.push(
         `Workflow ${index + 1} is invalid YAML: ${error instanceof Error ? error.message : "unknown error"}`,
       );
+      continue;
     }
-    for (const match of workflow.matchAll(/uses:\s+([^@\s]+)@([^\s#]+)/gu)) {
-      const [, action, reference] = match;
+    documents.push(document);
+    for (const usage of workflowUses(document)) {
+      if (usage.startsWith("./")) continue;
+      const separator = usage.lastIndexOf("@");
+      const action = separator < 0 ? usage : usage.slice(0, separator);
+      const reference = separator < 0 ? "" : usage.slice(separator + 1);
+      if (action.startsWith("docker://")) {
+        if (!/@sha256:[a-f0-9]{64}$/u.test(usage)) {
+          violations.push(`Container Action ${action} is not pinned by digest.`);
+        }
+        continue;
+      }
       if (!/^[a-f0-9]{40}$/u.test(reference ?? "")) {
         violations.push(
           `GitHub Action ${action ?? "unknown"} is not pinned by commit SHA: ${reference ?? "missing"}`,
@@ -146,11 +158,17 @@ export function verifyWorkflowSecurity(workflows) {
         );
       }
     }
-    if (workflow.includes("actions/setup-node@")) {
-      if (!workflow.includes("node-version-file: .node-version")) {
+    const setupNodeSteps = workflowSteps(document).filter(
+      (step) => typeof step?.uses === "string" &&
+        step.uses.startsWith("actions/setup-node@"),
+    );
+    if (setupNodeSteps.length > 0) {
+      if (setupNodeSteps.some(
+        (step) => step.with?.["node-version-file"] !== ".node-version",
+      )) {
         violations.push(`Workflow ${index + 1} must read Node.js from .node-version.`);
       }
-      if (/^\s+node-version:/mu.test(workflow)) {
+      if (setupNodeSteps.some((step) => step.with?.["node-version"] !== undefined)) {
         violations.push(`Workflow ${index + 1} must not hard-code a Node.js version.`);
       }
     }
@@ -174,15 +192,37 @@ export function verifyWorkflowSecurity(workflows) {
     }
   }
 
-  for (const token of [
-    "schedule:",
-    'cron: "17 4 * * *"',
-    "node-version-file: .node-version",
-    "npm audit --audit-level=high",
-  ]) {
-    if (!workflows[8]?.includes(token)) {
-      violations.push(`Scheduled dependency audit workflow is missing token: ${token}`);
-    }
+  const scheduledAudit = documents.find((document) => {
+    const schedule = document?.on?.schedule;
+    const schedules = Array.isArray(schedule) ? schedule : [];
+    return schedules.some((item) => item?.cron === "17 4 * * *") &&
+      workflowSteps(document).some(
+        (step) => typeof step?.run === "string" &&
+          tokenizeShell(step.run).includes("npm") &&
+          step.run.includes("audit --audit-level=high"),
+      );
+  });
+  if (!scheduledAudit) {
+    violations.push(
+      "Scheduled dependency audit workflow is missing the 17 4 * * * cron and npm high-severity audit step.",
+    );
   }
   return violations;
+}
+
+function workflowSteps(document) {
+  return Object.values(document?.jobs ?? {}).flatMap((job) =>
+    Array.isArray(job?.steps) ? job.steps : [],
+  );
+}
+
+function workflowUses(document) {
+  const usages = [];
+  for (const job of Object.values(document?.jobs ?? {})) {
+    if (typeof job?.uses === "string") usages.push(job.uses);
+    for (const step of Array.isArray(job?.steps) ? job.steps : []) {
+      if (typeof step?.uses === "string") usages.push(step.uses);
+    }
+  }
+  return usages;
 }

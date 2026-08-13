@@ -24,6 +24,7 @@ export interface CharacterGenerationInput {
   modelVersion: CharacterIdentityModelVersion;
   attempt: CharacterGenerationAttempt;
   references: CharacterReferenceAsset[];
+  outputObjectKey: string;
   signal?: AbortSignal;
 }
 

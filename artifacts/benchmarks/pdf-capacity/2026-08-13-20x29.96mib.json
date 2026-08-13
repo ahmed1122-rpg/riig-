@@ -1,0 +1,461 @@
+{
+  "schemaVersion": 3,
+  "runId": "9ab893e6-88d1-42c9-9316-e0ee57181e34",
+  "startedAt": "2026-08-13T20:08:24.617Z",
+  "completedAt": "2026-08-13T20:08:53.717Z",
+  "targetOrigin": "http://127.0.0.1:56663",
+  "requestOrigin": "http://127.0.0.1:5173",
+  "source": {
+    "path": "C:\\Users\\M\\Desktop\\rigooo$\\.tmp\\representative-30mib.pdf",
+    "bytes": 31416448,
+    "sha256": "001c519e80e5132a6eda8048fab0fafd1a5c6744d90eae8bade6639ed501321a"
+  },
+  "release": null,
+  "load": {
+    "concurrency": 20,
+    "accountPoolSize": 8,
+    "iterationsPerUser": 1,
+    "totalJourneys": 20,
+    "reviewFlow": "approval-required"
+  },
+  "acceptance": {
+    "maxErrorRate": 0,
+    "maxWorkflowP95Ms": 300000,
+    "minConcurrency": 20,
+    "minTotalJourneys": 20,
+    "maxApiRssGrowthBytes": 536870912,
+    "maxWorkerRssGrowthBytes": 268435456,
+    "maxQueueAgeSeconds": 120,
+    "maxFinalQueueDepth": 0
+  },
+  "outcome": {
+    "passed": true,
+    "successes": 20,
+    "failures": 0,
+    "errorRate": 0,
+    "checks": {
+      "errorRate": true,
+      "workflowP95": true,
+      "metrics": true,
+      "apiMemory": true,
+      "workerMemory": true,
+      "queueAge": true,
+      "queueDrained": true,
+      "releaseIdentity": true
+    }
+  },
+  "durations": {
+    "download": {
+      "count": 20,
+      "minMs": 19,
+      "p50Ms": 23,
+      "p95Ms": 29,
+      "p99Ms": 29,
+      "maxMs": 29
+    },
+    "export-ready": {
+      "count": 20,
+      "minMs": 5027,
+      "p50Ms": 5038,
+      "p95Ms": 5062,
+      "p99Ms": 5069,
+      "maxMs": 5069
+    },
+    "export-submit": {
+      "count": 20,
+      "minMs": 18,
+      "p50Ms": 27,
+      "p95Ms": 43,
+      "p99Ms": 92,
+      "maxMs": 92
+    },
+    "processing-ready": {
+      "count": 20,
+      "minMs": 5041,
+      "p50Ms": 5164,
+      "p95Ms": 10079,
+      "p99Ms": 10091,
+      "maxMs": 10091
+    },
+    "processing-submit": {
+      "count": 20,
+      "minMs": 52,
+      "p50Ms": 1119,
+      "p95Ms": 2441,
+      "p99Ms": 2589,
+      "maxMs": 2589
+    },
+    "project": {
+      "count": 20,
+      "minMs": 36,
+      "p50Ms": 61,
+      "p95Ms": 76,
+      "p99Ms": 79,
+      "maxMs": 79
+    },
+    "register": {
+      "count": 8,
+      "minMs": 103,
+      "p50Ms": 138,
+      "p95Ms": 155,
+      "p99Ms": 155,
+      "maxMs": 155
+    },
+    "review-approve": {
+      "count": 20,
+      "minMs": 14,
+      "p50Ms": 21,
+      "p95Ms": 70,
+      "p99Ms": 74,
+      "maxMs": 74
+    },
+    "review-document": {
+      "count": 20,
+      "minMs": 7,
+      "p50Ms": 13,
+      "p95Ms": 28,
+      "p99Ms": 64,
+      "maxMs": 64
+    },
+    "upload-content": {
+      "count": 20,
+      "minMs": 5813,
+      "p50Ms": 9724,
+      "p95Ms": 12257,
+      "p99Ms": 12281,
+      "maxMs": 12281
+    },
+    "upload-intent": {
+      "count": 20,
+      "minMs": 140,
+      "p50Ms": 307,
+      "p95Ms": 507,
+      "p99Ms": 535,
+      "maxMs": 535
+    },
+    "workflow": {
+      "count": 20,
+      "minMs": 19013,
+      "p50Ms": 21495,
+      "p95Ms": 28124,
+      "p99Ms": 28127,
+      "maxMs": 28127
+    }
+  },
+  "metrics": {
+    "before": {
+      "apiResidentMemoryBytes": 284798976,
+      "apiHeapUsedBytes": 52696256,
+      "apiCpuSeconds": 4.137942,
+      "workerResidentMemoryBytes": 666214400,
+      "workerHeapUsedBytes": 140822784,
+      "workerCpuSeconds": 9.334998999999998,
+      "queueDepth": 0,
+      "oldestQueuedSeconds": 0
+    },
+    "after": {
+      "apiResidentMemoryBytes": 383905792,
+      "apiHeapUsedBytes": 50538392,
+      "apiCpuSeconds": 20.710200999999998,
+      "workerResidentMemoryBytes": 890679296,
+      "workerHeapUsedBytes": 137605144,
+      "workerCpuSeconds": 24.958422000000002,
+      "queueDepth": 0,
+      "oldestQueuedSeconds": 0
+    },
+    "samples": [
+      {
+        "capturedAt": "2026-08-13T20:08:24.617Z",
+        "apiResidentMemoryBytes": 284798976,
+        "apiHeapUsedBytes": 52696256,
+        "apiCpuSeconds": 4.137942,
+        "workerResidentMemoryBytes": 666214400,
+        "workerHeapUsedBytes": 140822784,
+        "workerCpuSeconds": 9.334998999999998,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:26.114Z",
+        "apiResidentMemoryBytes": 315994112,
+        "apiHeapUsedBytes": 51203880,
+        "apiCpuSeconds": 5.2369650000000005,
+        "workerResidentMemoryBytes": 666214400,
+        "workerHeapUsedBytes": 140822784,
+        "workerCpuSeconds": 9.334998999999998,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:27.656Z",
+        "apiResidentMemoryBytes": 476876800,
+        "apiHeapUsedBytes": 48226536,
+        "apiCpuSeconds": 7.395749,
+        "workerResidentMemoryBytes": 666476544,
+        "workerHeapUsedBytes": 141642936,
+        "workerCpuSeconds": 9.586063999999999,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:29.250Z",
+        "apiResidentMemoryBytes": 575311872,
+        "apiHeapUsedBytes": 48716792,
+        "apiCpuSeconds": 9.465763,
+        "workerResidentMemoryBytes": 666476544,
+        "workerHeapUsedBytes": 142981080,
+        "workerCpuSeconds": 9.813053,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:30.853Z",
+        "apiResidentMemoryBytes": 669552640,
+        "apiHeapUsedBytes": 47746320,
+        "apiCpuSeconds": 11.823723,
+        "workerResidentMemoryBytes": 666476544,
+        "workerHeapUsedBytes": 142981080,
+        "workerCpuSeconds": 9.813053,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:32.683Z",
+        "apiResidentMemoryBytes": 666189824,
+        "apiHeapUsedBytes": 47517864,
+        "apiCpuSeconds": 14.201222999999999,
+        "workerResidentMemoryBytes": 666476544,
+        "workerHeapUsedBytes": 142981080,
+        "workerCpuSeconds": 9.813053,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:34.431Z",
+        "apiResidentMemoryBytes": 634884096,
+        "apiHeapUsedBytes": 49927592,
+        "apiCpuSeconds": 16.417626000000002,
+        "workerResidentMemoryBytes": 666607616,
+        "workerHeapUsedBytes": 143787240,
+        "workerCpuSeconds": 10.022069,
+        "queueDepth": 2,
+        "oldestQueuedSeconds": 1.336
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:35.915Z",
+        "apiResidentMemoryBytes": 635015168,
+        "apiHeapUsedBytes": 48481136,
+        "apiCpuSeconds": 18.231867,
+        "workerResidentMemoryBytes": 666607616,
+        "workerHeapUsedBytes": 143787240,
+        "workerCpuSeconds": 10.022069,
+        "queueDepth": 2,
+        "oldestQueuedSeconds": 1.429
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:37.076Z",
+        "apiResidentMemoryBytes": 634228736,
+        "apiHeapUsedBytes": 50195592,
+        "apiCpuSeconds": 19.213175,
+        "workerResidentMemoryBytes": 813903872,
+        "workerHeapUsedBytes": 142420016,
+        "workerCpuSeconds": 14.239612,
+        "queueDepth": 6,
+        "oldestQueuedSeconds": 2.272
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:38.116Z",
+        "apiResidentMemoryBytes": 634228736,
+        "apiHeapUsedBytes": 49647952,
+        "apiCpuSeconds": 19.423911999999998,
+        "workerResidentMemoryBytes": 813903872,
+        "workerHeapUsedBytes": 142916744,
+        "workerCpuSeconds": 14.447178,
+        "queueDepth": 13,
+        "oldestQueuedSeconds": 2.847
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:39.158Z",
+        "apiResidentMemoryBytes": 634228736,
+        "apiHeapUsedBytes": 52444968,
+        "apiCpuSeconds": 19.494303000000002,
+        "workerResidentMemoryBytes": 813903872,
+        "workerHeapUsedBytes": 142916744,
+        "workerCpuSeconds": 14.447178,
+        "queueDepth": 10,
+        "oldestQueuedSeconds": 3.167
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:40.203Z",
+        "apiResidentMemoryBytes": 634228736,
+        "apiHeapUsedBytes": 49625376,
+        "apiCpuSeconds": 19.568942,
+        "workerResidentMemoryBytes": 813903872,
+        "workerHeapUsedBytes": 142916744,
+        "workerCpuSeconds": 14.447178,
+        "queueDepth": 8,
+        "oldestQueuedSeconds": 3.079
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:41.237Z",
+        "apiResidentMemoryBytes": 383119360,
+        "apiHeapUsedBytes": 48188816,
+        "apiCpuSeconds": 19.930327000000002,
+        "workerResidentMemoryBytes": 813903872,
+        "workerHeapUsedBytes": 142916744,
+        "workerCpuSeconds": 14.447178,
+        "queueDepth": 7,
+        "oldestQueuedSeconds": 4.096
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:42.261Z",
+        "apiResidentMemoryBytes": 383250432,
+        "apiHeapUsedBytes": 54548056,
+        "apiCpuSeconds": 20.053272,
+        "workerResidentMemoryBytes": 813903872,
+        "workerHeapUsedBytes": 142916744,
+        "workerCpuSeconds": 14.447178,
+        "queueDepth": 7,
+        "oldestQueuedSeconds": 5.11
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:43.303Z",
+        "apiResidentMemoryBytes": 383250432,
+        "apiHeapUsedBytes": 56343832,
+        "apiCpuSeconds": 20.081246,
+        "workerResidentMemoryBytes": 813903872,
+        "workerHeapUsedBytes": 142916744,
+        "workerCpuSeconds": 14.447178,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:44.342Z",
+        "apiResidentMemoryBytes": 383381504,
+        "apiHeapUsedBytes": 58473816,
+        "apiCpuSeconds": 20.12194,
+        "workerResidentMemoryBytes": 813379584,
+        "workerHeapUsedBytes": 143228128,
+        "workerCpuSeconds": 14.626868,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:45.378Z",
+        "apiResidentMemoryBytes": 383381504,
+        "apiHeapUsedBytes": 48774936,
+        "apiCpuSeconds": 20.185342,
+        "workerResidentMemoryBytes": 813379584,
+        "workerHeapUsedBytes": 143228128,
+        "workerCpuSeconds": 14.626868,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:46.416Z",
+        "apiResidentMemoryBytes": 383905792,
+        "apiHeapUsedBytes": 55770320,
+        "apiCpuSeconds": 20.340818,
+        "workerResidentMemoryBytes": 813379584,
+        "workerHeapUsedBytes": 143228128,
+        "workerCpuSeconds": 14.626868,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:47.447Z",
+        "apiResidentMemoryBytes": 383905792,
+        "apiHeapUsedBytes": 49215840,
+        "apiCpuSeconds": 20.442138,
+        "workerResidentMemoryBytes": 860311552,
+        "workerHeapUsedBytes": 145176600,
+        "workerCpuSeconds": 22.439239000000004,
+        "queueDepth": 1,
+        "oldestQueuedSeconds": 0.141
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:48.472Z",
+        "apiResidentMemoryBytes": 383905792,
+        "apiHeapUsedBytes": 52602256,
+        "apiCpuSeconds": 20.523474,
+        "workerResidentMemoryBytes": 890679296,
+        "workerHeapUsedBytes": 137605144,
+        "workerCpuSeconds": 24.958422000000002,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:49.532Z",
+        "apiResidentMemoryBytes": 383905792,
+        "apiHeapUsedBytes": 53986208,
+        "apiCpuSeconds": 20.554617,
+        "workerResidentMemoryBytes": 890679296,
+        "workerHeapUsedBytes": 137605144,
+        "workerCpuSeconds": 24.958422000000002,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:50.572Z",
+        "apiResidentMemoryBytes": 383905792,
+        "apiHeapUsedBytes": 55383704,
+        "apiCpuSeconds": 20.573240000000002,
+        "workerResidentMemoryBytes": 890679296,
+        "workerHeapUsedBytes": 137605144,
+        "workerCpuSeconds": 24.958422000000002,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:51.622Z",
+        "apiResidentMemoryBytes": 383905792,
+        "apiHeapUsedBytes": 57352976,
+        "apiCpuSeconds": 20.601156,
+        "workerResidentMemoryBytes": 890679296,
+        "workerHeapUsedBytes": 137605144,
+        "workerCpuSeconds": 24.958422000000002,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:52.656Z",
+        "apiResidentMemoryBytes": 383905792,
+        "apiHeapUsedBytes": 59964368,
+        "apiCpuSeconds": 20.652921,
+        "workerResidentMemoryBytes": 890679296,
+        "workerHeapUsedBytes": 137605144,
+        "workerCpuSeconds": 24.958422000000002,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      },
+      {
+        "capturedAt": "2026-08-13T20:08:53.703Z",
+        "apiResidentMemoryBytes": 383905792,
+        "apiHeapUsedBytes": 50538392,
+        "apiCpuSeconds": 20.710200999999998,
+        "workerResidentMemoryBytes": 890679296,
+        "workerHeapUsedBytes": 137605144,
+        "workerCpuSeconds": 24.958422000000002,
+        "queueDepth": 0,
+        "oldestQueuedSeconds": 0
+      }
+    ],
+    "samplingError": null,
+    "peak": {
+      "apiResidentMemoryBytes": 669552640,
+      "apiHeapUsedBytes": 59964368,
+      "apiCpuSeconds": 20.710200999999998,
+      "workerResidentMemoryBytes": 890679296,
+      "workerHeapUsedBytes": 145176600,
+      "workerCpuSeconds": 24.958422000000002,
+      "queueDepth": 13,
+      "oldestQueuedSeconds": 5.11
+    },
+    "apiResidentMemoryDeltaBytes": 99106816,
+    "apiResidentMemoryPeakDeltaBytes": 384753664,
+    "workerResidentMemoryPeakDeltaBytes": 224464896,
+    "apiHeapUsedDeltaBytes": -2157864,
+    "apiCpuDeltaSeconds": 16.572259
+  },
+  "failureDetails": []
+}

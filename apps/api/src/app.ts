@@ -55,6 +55,9 @@ import {
 } from "./privacy/account-privacy.js";
 import { registerAccountPrivacyRoutes } from "./privacy/account-privacy-routes.js";
 import { registerCharacterRigFeature } from "./character-rig/character-rig-feature.js";
+import { createHttpLoggerOptions } from "./http/logger-options.js";
+import { registerCspReportRoutes } from "./security/csp-report-routes.js";
+import { ClientTelemetryMetrics } from "./observability/client-telemetry-metrics.js";
 
 const require = createRequire(import.meta.url);
 const rootManifest = require("../../../package.json") as { version?: unknown };
@@ -68,13 +71,14 @@ export async function buildApp(
   dependencies: AppDependencies = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: config.NODE_ENV !== "test",
+    logger: createHttpLoggerOptions(config.NODE_ENV),
     bodyLimit: config.MAX_UPLOAD_BYTES,
     requestIdHeader: false,
     genReqId: () => randomUUID(),
     trustProxy: config.TRUST_PROXY_HOPS || false,
   });
   registerHttpTracing(app);
+  registerHttpErrorHandler(app);
 
   await app.register(helmet, {
     hsts:
@@ -130,15 +134,9 @@ export async function buildApp(
       ? { store: dependencies.rateLimitStore }
       : {}),
     nameSpace: "motionprep:rate-limit:",
-    errorResponseBuilder: (request, context) => ({
-      data: null,
-      error: {
-        code: "RATE_LIMITED",
-        message: `تجاوزت حد الطلبات. أعد المحاولة بعد ${context.after}.`,
-        requestId: request.id,
-      },
-    }),
   });
+  const clientTelemetryMetrics = new ClientTelemetryMetrics();
+  await registerCspReportRoutes(app, { clientTelemetry: clientTelemetryMetrics });
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("x-request-id", request.id);
     if (
@@ -169,6 +167,7 @@ export async function buildApp(
       ? { probeTimeoutMs: dependencies.metricsProbeTimeoutMs }
       : {}),
     uploadReconciliationMetrics,
+    clientTelemetryMetrics,
     buildInfo: {
       version: APPLICATION_VERSION,
       release: process.env.RELEASE_VERSION ?? "development",
@@ -197,6 +196,7 @@ export async function buildApp(
     idempotency,
     storage: objectStorage,
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    maxImageUploadBytes: config.MAX_IMAGE_UPLOAD_BYTES,
     metrics: uploadReconciliationMetrics,
     logger: app.log,
     ...(dependencies.uploadFinalization ? { finalization: dependencies.uploadFinalization } : {}),
@@ -283,6 +283,9 @@ export async function buildApp(
         : {}),
     },
   );
+  const auditRepository =
+    dependencies.audit ?? new InMemoryAuditRepository();
+  const auditService = new AuditService(auditRepository);
   const authRepository = dependencies.auth ?? new InMemoryAuthRepository();
   const authService = new AuthService(
     authRepository,
@@ -299,6 +302,16 @@ export async function buildApp(
       passwordResetUrl:
         config.PASSWORD_RESET_URL ??
         new URL("/auth/reset", config.WEB_ORIGIN).toString(),
+      emailVerificationRequired: config.EMAIL_VERIFICATION_REQUIRED,
+      emailVerificationUrl:
+        config.EMAIL_VERIFICATION_URL ??
+        new URL("/auth", config.WEB_ORIGIN).toString(),
+      ...(config.ADMIN_BOOTSTRAP_EMAIL
+        ? { adminBootstrapEmail: config.ADMIN_BOOTSTRAP_EMAIL }
+        : {}),
+      ...(config.ADMIN_BOOTSTRAP_TOKEN_HASH
+        ? { adminBootstrapTokenHash: config.ADMIN_BOOTSTRAP_TOKEN_HASH }
+        : {}),
       totpIssuer: config.TOTP_ISSUER,
       ...(config.E2E_ADMIN_EMAIL ? {
         registrationRoleForEmail: (email: string) =>
@@ -317,9 +330,6 @@ export async function buildApp(
       objectStorage,
     ),
   );
-  const auditRepository =
-    dependencies.audit ?? new InMemoryAuditRepository();
-  const auditService = new AuditService(auditRepository);
   const billingService = new BillingService(
     billingRepository,
     dependencies.paymentProviders ??
@@ -347,8 +357,24 @@ export async function buildApp(
 
   await registerCapabilityRoutes(app, {
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    maxImageUploadBytes: config.MAX_IMAGE_UPLOAD_BYTES,
+    storageProfile:
+      config.PERSISTENCE_MODE === "postgres" &&
+      config.OBJECT_STORAGE_MODE === "s3" &&
+      Boolean(config.REDIS_URL)
+        ? "durable"
+        : "ephemeral",
     pdfRegionOcrEnabled: config.PDF_REGION_OCR_ENABLED,
     characterRigEnabled: config.CHARACTER_RIG_ENABLED,
+    requiredWorkers: new Set([
+      ...(config.PROCESSING_EXECUTION_MODE === "worker"
+        ? (["media", "document"] as const)
+        : []),
+      ...(config.EXPORT_EXECUTION_MODE === "worker"
+        ? (["export"] as const)
+        : []),
+      ...(config.CHARACTER_RIG_ENABLED ? (["character"] as const) : []),
+    ]),
     ...(dependencies.operationalStatus
       ? { operationalStatus: dependencies.operationalStatus }
       : {}),
@@ -357,6 +383,7 @@ export async function buildApp(
   await registerAuthRoutes(app, authService, {
     secureCookies: config.COOKIE_SECURE,
     sessionTtlSeconds: config.SESSION_TTL_SECONDS,
+    audit: auditService,
   });
   await registerAccountPrivacyRoutes(app, authService, accountPrivacyService);
   await registerProjectRoutes(
@@ -391,6 +418,8 @@ export async function buildApp(
   );
   await registerUploadRoutes(app, projects, uploadRuntime.service, authService, {
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    maxImageUploadBytes: config.MAX_IMAGE_UPLOAD_BYTES,
+    bodyConcurrency: config.UPLOAD_BODY_CONCURRENCY,
   });
   await registerExportRoutes(app, projects, exportService, authService);
   await registerProcessingRoutes(
@@ -419,8 +448,6 @@ export async function buildApp(
       ? { operationalStatus: dependencies.operationalStatus }
       : {}),
   });
-
-  registerHttpErrorHandler(app);
 
   app.setNotFoundHandler((request, reply) =>
     reply.status(404).send({

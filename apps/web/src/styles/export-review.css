@@ -88,6 +88,14 @@
   font-size: 8px;
   font-weight: 800;
 }
+.ready-pill.is-warning {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.ready-pill.is-blocked {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
 
 .review-file-name {
   max-width: 190px;
@@ -162,8 +170,8 @@
 
 .preview-group button:hover,
 .safe-toggle:hover,
-.preview-group button.is-active,
-.safe-toggle.is-active {
+.preview-group button[aria-pressed="true"],
+.safe-toggle[aria-pressed="true"] {
   background: rgba(81, 201, 190, .13);
   color: #72d9d0;
 }
@@ -269,19 +277,6 @@
   pointer-events: none;
 }
 
-.safe-bound-label {
-  position: absolute;
-  z-index: 9;
-  inset-inline-start: 6%;
-  top: 6%;
-  padding: 3px 5px;
-  border-radius: 3px;
-  background: rgba(7, 140, 130, .92);
-  color: #fff;
-  font-size: 6px;
-  direction: ltr;
-}
-
 .export-pdf-page {
   position: relative;
   width: min(78%, 420px);
@@ -316,7 +311,7 @@
 .pdf-page-navigation {
   position: absolute;
   z-index: 4;
-  inset-inline: 50%;
+  inset-inline-start: 50%;
   bottom: 16px;
   display: flex;
   min-height: 32px;
@@ -542,6 +537,8 @@
   color: var(--text);
   font-size: 8px;
 }
+.rename-field input[aria-invalid="true"] { border-color: var(--danger); }
+.rename-field small[role="alert"] { color: var(--danger); font-size: 7px; }
 
 .fixed-layer-note {
   display: flex;
@@ -555,14 +552,12 @@
   line-height: 1.6;
 }
 
-.layer-quick-actions,
-.merge-split-actions {
+.layer-quick-actions {
   display: flex;
   gap: 4px;
 }
 
-.layer-quick-actions button,
-.merge-split-actions button {
+.layer-quick-actions button {
   display: flex;
   min-height: 29px;
   flex: 1;
@@ -577,8 +572,7 @@
   font-size: 7px;
 }
 
-.layer-quick-actions button:hover,
-.merge-split-actions button:hover { border-color: var(--primary); color: var(--primary-strong); }
+.layer-quick-actions button:hover { border-color: var(--primary); color: var(--primary-strong); }
 .layer-quick-actions button:nth-last-child(-n+2) { max-width: 31px; padding: 0; }
 .opacity-field input { width: 100%; accent-color: var(--primary); }
 

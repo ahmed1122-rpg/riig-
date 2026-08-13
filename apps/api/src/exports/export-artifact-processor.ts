@@ -119,7 +119,7 @@ export class ExportArtifactProcessor {
         await this.repository.save(ready);
         return ready;
       }
-      const persisted = await this.repository.updateClaim(
+      const persisted = await this.repository.settleClaim(
         ready.id,
         workerId,
         ready,
@@ -154,7 +154,7 @@ export class ExportArtifactProcessor {
 
   private async cleanupAttemptArtifact(objectKey: string): Promise<void> {
     try {
-      await this.storage?.delete(objectKey);
+      await this.storage?.purge([objectKey], []);
     } catch (error) {
       // Cleanup is best-effort because the lease/finalization failure remains
       // authoritative, but orphaned objects must stay observable to operators.

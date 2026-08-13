@@ -230,16 +230,6 @@ export function useWorkspaceReviewAutosave(
     [],
   );
 
-  useEffect(() => {
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!hasUnsavedReview()) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warnBeforeUnload);
-    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [hasUnsavedReview]);
-
   return {
     flushLayerReview,
     hasUnsavedReview,

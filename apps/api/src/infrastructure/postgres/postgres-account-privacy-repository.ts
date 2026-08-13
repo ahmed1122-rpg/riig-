@@ -4,24 +4,19 @@ import type {
   AccountDeletionRequest,
   AccountPrivacyRepository,
   PrepareAccountDeletionResult,
+  ReconcileAccountDeletionResult,
 } from "../../privacy/account-privacy.js";
 import { rollbackTransaction, toIso } from "./database.js";
-
-interface DeletionRow {
-  id: string;
-  user_id: string;
-  status: AccountDeletionRequest["status"];
-  object_keys: string[];
-  attempt: number;
-  requested_at: Date | string;
-  updated_at: Date | string;
-  completed_at: Date | string | null;
-}
+import { PostgresAccountDeletionState } from "./postgres-account-deletion-state.js";
 
 export class PostgresAccountPrivacyRepository
   implements AccountPrivacyRepository
 {
-  constructor(private readonly pool: Pool) {}
+  private readonly deletion: PostgresAccountDeletionState;
+
+  constructor(private readonly pool: Pool) {
+    this.deletion = new PostgresAccountDeletionState(pool);
+  }
 
   async exportAccount(userId: string, generatedAt: string): Promise<AccountDataExport> {
     const client = await this.pool.connect();
@@ -251,86 +246,66 @@ export class PostgresAccountPrivacyRepository
     userId: string,
     requestedAt: string,
   ): Promise<PrepareAccountDeletionResult> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const user = await client.query<{ deleted_at: Date | string | null }>(
-        "SELECT deleted_at FROM users WHERE id = $1 FOR UPDATE",
-        [userId],
-      );
-      if (!user.rows[0]) throw new Error("Account not found.");
-      const active = await client.query(
-        `SELECT 1 FROM subscriptions
-         WHERE user_id = $1 AND provider = 'stripe'
-           AND status IN ('trialing', 'active', 'past_due')
-         LIMIT 1`,
-        [userId],
-      );
-      if (active.rowCount) {
-        await client.query("ROLLBACK");
-        return { kind: "active_subscription" };
-      }
-      const existing = await client.query<DeletionRow>(
-        "SELECT * FROM account_deletion_requests WHERE user_id = $1 FOR UPDATE",
-        [userId],
-      );
-      if (existing.rows[0]?.status === "completed") {
-        await client.query("COMMIT");
-        return { kind: "ready", request: mapDeletion(existing.rows[0]) };
-      }
-      const objectKeys = existing.rows[0]?.object_keys.length
-        ? existing.rows[0].object_keys
-        : await this.collectObjectKeys(client, userId);
-      await client.query(
-        `UPDATE users SET status = 'suspended',
-             deletion_requested_at = COALESCE(deletion_requested_at, $2)
-         WHERE id = $1`,
-        [userId, requestedAt],
-      );
-      await client.query("DELETE FROM sessions WHERE user_id = $1", [userId]);
-      await client.query("DELETE FROM mfa_enrollments WHERE user_id = $1", [userId]);
-      await client.query("DELETE FROM mfa_challenges WHERE user_id = $1", [userId]);
-      await client.query("DELETE FROM password_reset_tokens WHERE user_id = $1", [userId]);
-      const saved = await client.query<DeletionRow>(
-        `INSERT INTO account_deletion_requests (
-           id, user_id, status, object_keys, attempt, requested_at, updated_at
-         ) VALUES ($1, $2, 'processing', $3, 1, $4, $4)
-         ON CONFLICT (user_id) DO UPDATE SET
-           status = 'processing', attempt = account_deletion_requests.attempt + 1,
-           last_error = NULL, updated_at = EXCLUDED.updated_at
-         RETURNING *`,
-        [crypto.randomUUID(), userId, objectKeys, requestedAt],
-      );
-      await client.query("COMMIT");
-      return { kind: "ready", request: mapDeletion(saved.rows[0]!) };
-    } catch (error) {
-      await rollbackTransaction(client, error);
-      throw error;
-    } finally {
-      client.release();
-    }
+    return this.deletion.prepare(userId, requestedAt);
   }
 
   async listPendingDeletions(limit: number): Promise<AccountDeletionRequest[]> {
-    const result = await this.pool.query<DeletionRow>(
-      `SELECT * FROM account_deletion_requests
-       WHERE status IN ('processing', 'failed')
-       ORDER BY updated_at, id LIMIT $1`,
-      [Math.max(1, Math.min(limit, 100))],
+    return this.deletion.listPending(limit);
+  }
+
+  async claimDeletion(
+    requestId: string,
+    processorLeaseId: string,
+    claimedAt: string,
+    expiresAt: string,
+  ): Promise<boolean> {
+    return this.deletion.claim(
+      requestId,
+      processorLeaseId,
+      claimedAt,
+      expiresAt,
     );
-    return result.rows.map(mapDeletion);
+  }
+
+  async reconcileDeletion(
+    requestId: string,
+    userId: string,
+    reconciledAt: string,
+    processorLeaseId: string,
+  ): Promise<ReconcileAccountDeletionResult> {
+    return this.deletion.reconcile(
+      requestId,
+      userId,
+      reconciledAt,
+      processorLeaseId,
+    );
+  }
+
+  async recordDeletionInventory(
+    requestId: string,
+    objectKeys: string[],
+    recordedAt: string,
+    processorLeaseId: string,
+  ): Promise<AccountDeletionRequest> {
+    return this.deletion.recordInventory(
+      requestId,
+      objectKeys,
+      recordedAt,
+      processorLeaseId,
+    );
   }
 
   async markDeletionFailed(
     requestId: string,
     attemptedAt: string,
     message: string,
+    processorLeaseId: string,
   ): Promise<void> {
-    await this.pool.query(
-      `UPDATE account_deletion_requests
-       SET status = 'failed', last_error = left($2, 1000), updated_at = $3
-       WHERE id = $1 AND status <> 'completed'`,
-      [requestId, message, attemptedAt],
+    return this.deletion.markFailed(
+      requestId,
+      attemptedAt,
+      message,
+      processorLeaseId,
     );
   }
 
@@ -338,109 +313,14 @@ export class PostgresAccountPrivacyRepository
     requestId: string,
     userId: string,
     completedAt: string,
+    processorLeaseId: string,
   ): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const user = await client.query<{ email: string }>(
-        "SELECT email FROM users WHERE id = $1 FOR UPDATE",
-        [userId],
-      );
-      if (!user.rows[0]) throw new Error("Account not found.");
-      await client.query(
-        "DELETE FROM derived_asset_registry WHERE owner_user_id = $1",
-        [userId],
-      );
-      await client.query("DELETE FROM projects WHERE owner_user_id = $1", [userId]);
-      await client.query("DELETE FROM email_outbox WHERE recipient = $1", [user.rows[0].email]);
-      await client.query(
-        `UPDATE subscriptions SET provider_customer_id = NULL,
-             provider_subscription_id = NULL
-         WHERE user_id = $1`,
-        [userId],
-      );
-      await client.query(
-        "UPDATE checkout_sessions SET provider_reference = NULL, checkout_url = NULL WHERE user_id = $1",
-        [userId],
-      );
-      await client.query(
-        `UPDATE users SET
-           name = 'Deleted account',
-           email = lower('deleted+' || id::text || '@deleted.invalid'),
-           status = 'suspended', password_hash = '!deleted!',
-           last_login_at = NULL, mfa_enabled = false,
-           mfa_secret_ciphertext = NULL, recovery_code_hashes = '{}',
-           deleted_at = $2
-         WHERE id = $1`,
-        [userId, completedAt],
-      );
-      await client.query(
-        `UPDATE account_deletion_requests SET status = 'completed',
-             object_keys = '{}', last_error = NULL, updated_at = $3,
-             completed_at = $3
-         WHERE id = $1 AND user_id = $2`,
-        [requestId, userId, completedAt],
-      );
-      await client.query("COMMIT");
-    } catch (error) {
-      await rollbackTransaction(client, error);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  private async collectObjectKeys(client: PoolClient, userId: string): Promise<string[]> {
-    const result = await client.query<{ object_key: string }>(
-      `SELECT DISTINCT object_key FROM (
-         SELECT upload.object_key
-         FROM upload_sessions upload
-         JOIN projects project ON project.id = upload.project_id
-         WHERE project.owner_user_id = $1
-         UNION ALL
-         SELECT job.artifact->>'objectKey'
-         FROM export_jobs job
-         JOIN projects project ON project.id = job.project_id
-         WHERE project.owner_user_id = $1 AND job.artifact ? 'objectKey'
-         UNION ALL
-         SELECT value #>> '{}'
-         FROM layer_documents document
-         JOIN projects project ON project.id = document.project_id,
-              LATERAL jsonb_path_query(document.document, '$.**.objectKey') value
-         WHERE project.owner_user_id = $1
-         UNION ALL
-         SELECT value #>> '{}'
-         FROM layer_document_revisions revision
-         JOIN projects project ON project.id = revision.project_id,
-              LATERAL jsonb_path_query(revision.document, '$.**.objectKey') value
-         WHERE project.owner_user_id = $1
-         UNION ALL
-         SELECT value #>> '{}'
-         FROM character_reference_assets reference
-         JOIN projects project ON project.id = reference.project_id,
-              LATERAL jsonb_path_query(reference.document, '$.**.objectKey') value
-         WHERE project.owner_user_id = $1
-         UNION ALL
-         SELECT value #>> '{}'
-         FROM character_generation_attempts generation
-         JOIN projects project ON project.id = generation.project_id,
-              LATERAL jsonb_path_query(generation.document, '$.**.objectKey') value
-         WHERE project.owner_user_id = $1
-         UNION ALL
-         SELECT value #>> '{}'
-         FROM character_rig_versions rig
-         JOIN projects project ON project.id = rig.project_id,
-              LATERAL jsonb_path_query(rig.document, '$.**.objectKey') value
-         WHERE project.owner_user_id = $1
-         UNION ALL
-         SELECT registry.object_key
-         FROM derived_asset_registry registry
-         WHERE registry.owner_user_id = $1
-           AND registry.purged_at IS NULL
-       ) owned WHERE object_key IS NOT NULL AND object_key <> ''`,
-      [userId],
+    return this.deletion.complete(
+      requestId,
+      userId,
+      completedAt,
+      processorLeaseId,
     );
-    return result.rows.map((row) => row.object_key);
   }
 }
 
@@ -496,17 +376,4 @@ function redactPrivateMetadata(value: unknown): unknown {
       .filter(([key]) => !PRIVATE_EXPORT_FIELDS.has(key))
       .map(([key, nested]) => [key, redactPrivateMetadata(nested)]),
   );
-}
-
-function mapDeletion(row: DeletionRow): AccountDeletionRequest {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    status: row.status,
-    objectKeys: row.object_keys,
-    attempt: row.attempt,
-    requestedAt: toIso(row.requested_at),
-    updatedAt: toIso(row.updated_at),
-    completedAt: row.completed_at ? toIso(row.completed_at) : null,
-  };
 }

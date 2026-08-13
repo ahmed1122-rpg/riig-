@@ -126,7 +126,9 @@
     "038_character_rig_context.sql": "de58d6136547b3a9279dd03bc49f650bc7011d6c85eab780aeec5357a2f7d9fc",
     "039_character_worker_observability.sql": "dc338fb9a648fbc17e1d12a20ef383cc9c7fe969e9ecef9f9049c3cd5425e1fb",
     "040_character_rig_reviews.sql": "4860cf9b538abb30624258964900705e469ed13f69e16a7219aec8e8434354d1",
-    "041_derived_asset_registry.sql": "7fd69b491a1f54b188f72a08765f17473d457d63fb4a2cc5cc85e69ff44d0e38"
+    "041_derived_asset_registry.sql": "7fd69b491a1f54b188f72a08765f17473d457d63fb4a2cc5cc85e69ff44d0e38",
+    "042_privacy_retention_state_machines.sql": "86f207a49b163b9c1d83d7bc17e9d4519fb0f798ed9ef0522325a0f253cd357d",
+    "043_email_verification.sql": "23b81b94925dcd06219fb9cb50d1aad2f587312dc8353854cdea06a73eafb236"
   },
   "openApiOperations": [
     "DELETE /v1/account",
@@ -166,6 +168,9 @@
     "PATCH /v1/projects/{projectId}/layer-document",
     "POST /v1/admin/exports/{jobId}/retry",
     "POST /v1/admin/processing/{jobId}/retry",
+    "POST /v1/auth/admin-bootstrap",
+    "POST /v1/auth/email/resend",
+    "POST /v1/auth/email/verify",
     "POST /v1/auth/login",
     "POST /v1/auth/logout",
     "POST /v1/auth/mfa/challenge",
@@ -192,6 +197,7 @@
     "POST /v1/projects/{projectId}/character-rig/references/current-source",
     "POST /v1/projects/{projectId}/character-rig/rigs/{rigVersionId}/reviews",
     "POST /v1/projects/{projectId}/guided-refinements",
+    "POST /v1/projects/{projectId}/layer-document/commands",
     "POST /v1/projects/{projectId}/layer-document/history",
     "POST /v1/projects/{projectId}/layer-document/image/merge",
     "POST /v1/projects/{projectId}/layer-document/image/refine-edges",
@@ -237,13 +243,14 @@
     "@motionprep/document-processing": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
     "@motionprep/export-adapters": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
     "@motionprep/guidance": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
+    "@motionprep/layer-domain": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
     "@motionprep/media-processing": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
     "@motionprep/presets": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } }
   },
   "rootScripts": [
     "benchmark:character-rig", "benchmark:ocr", "benchmark:ocr:corpus",
     "benchmark:ocr:development", "benchmark:ocr:holdout:open", "benchmark:ocr:selector",
-    "build", "clean", "coverage", "deadcode", "dev", "dev:api", "dev:stack", "dev:stack:character",
+    "build", "clean", "coverage", "deadcode", "dev", "dev:api", "dev:durable", "dev:stack", "dev:stack:character",
     "dev:web", "dev:worker-character", "dev:worker-document", "dev:worker-export",
     "dev:worker-media", "fetch:representative-pdf", "fixture:ocr:corpus:fetch",
     "fixture:ocr:generate", "fixtures:generate", "golden:adobe:generate", "lint",
@@ -254,8 +261,8 @@
     "verify:adobe-golden", "verify:alerts", "verify:architecture", "verify:bundle",
     "verify:character-rig:benchmark", "verify:clean", "verify:contracts", "verify:css",
     "verify:deployment", "verify:fixtures", "verify:incident", "verify:maintainability",
-    "verify:object-storage", "verify:ocr-corpus", "verify:recovery", "verify:release-env",
-    "verify:release-env:test", "verify:release-evidence:test", "verify:staging-application",
+    "verify:object-storage", "verify:ocr-corpus", "verify:recovery", "verify:release-checkout", "verify:release-env",
+    "verify:release-env:test", "verify:release-evidence:test", "verify:security-license", "verify:staging-application",
     "verify:visuals"
   ],
   "schemaVersion": 1,
@@ -293,6 +300,7 @@
     "@motionprep/document-processing": ["build", "coverage", "test", "typecheck"],
     "@motionprep/export-adapters": ["build", "coverage", "test", "typecheck"],
     "@motionprep/guidance": ["build", "coverage", "test", "typecheck"],
+    "@motionprep/layer-domain": ["build", "coverage", "test", "typecheck"],
     "@motionprep/media-processing": ["build", "coverage", "test", "typecheck"],
     "@motionprep/presets": ["build", "coverage", "test", "typecheck"],
     "@motionprep/web": ["build", "coverage", "dev", "preview", "test", "typecheck"],

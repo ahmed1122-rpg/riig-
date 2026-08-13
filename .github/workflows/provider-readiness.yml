@@ -32,17 +32,24 @@ jobs:
       RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
       WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
       RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
+      RELEASE_TAG: ${{ vars.RELEASE_TAG }}
       PDF_REGION_OCR_ENABLED: ${{ vars.PDF_REGION_OCR_ENABLED }}
       RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}
       RECOVERY_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.RECOVERY_SIGNING_PUBLIC_KEY_PEM }}
       OBJECT_STORAGE_EVIDENCE_PATH: .tmp/provider-object-storage-evidence.json
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ vars.RELEASE_GIT_SHA }}
+          fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Verify exact checkout, tag, and signed image digests
+        run: npm run verify:release-checkout -- --verify-images
       - name: Reject ambiguous or missing provider credentials
         shell: bash
         run: |
@@ -100,6 +107,7 @@ jobs:
             echo "## Provider readiness gate"
             echo
             echo "- Immutable image references: verified"
+            echo "- Exact release checkout, tag mapping, and Cosign identities: verified"
             echo "- Object storage write/read/integrity/delete probe: verified"
             echo "- Versioning requirement: verified by application readiness"
             echo "- Regional OCR evidence: $PDF_REGION_OCR_ENABLED"

@@ -11,11 +11,12 @@ import type {
 import { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { claimNextProcessingJob } from "../../processing/processing-worker-runtime.js";
+import { retryOrFailProcessingJob } from "../../processing/processing-job-settlement.js";
 import { S3ObjectStorage } from "../../storage/s3-object-storage.js";
 import {
-  PostgresRetentionStore,
   RetentionCleanup,
 } from "../../maintenance/retention-cleanup.js";
+import { PostgresRetentionStore } from "../../maintenance/postgres-retention-store.js";
 import { PostgresRetentionRunner } from "../../maintenance/retention-runtime.js";
 import { runExportWorker } from "../../exports/export-worker-runtime.js";
 import { PostgresExportRepository } from "./postgres-export-repository.js";
@@ -150,7 +151,10 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       "2026-08-04T12:01:00.000Z",
     );
     if (prepared.kind !== "ready") throw new Error("Deletion remained blocked.");
-    expect(prepared.request.objectKeys).toContain(key);
+    expect(prepared.request.objectKeys).toEqual([]);
+    expect(prepared.request.objectPrefixes).toContain(
+      `sources/${fixture.projectId}/`,
+    );
     await expect(
       new AccountDeletionProcessor(
         repository,
@@ -232,7 +236,10 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     );
     expect(claimed).toMatchObject({
       attempt: 1,
-      message: delivery,
+      delivery: {
+        kind: "password-reset",
+        message: delivery,
+      },
     });
     await expect(
       outbox.markSent(
@@ -246,13 +253,13 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       recipient: string;
       reset_url: string;
     }>(
-      "SELECT status, recipient, reset_url FROM email_outbox WHERE id = $1",
+      "SELECT status, recipient, action_url FROM email_outbox WHERE id = $1",
       [claimed!.id],
     );
     expect(scrubbed.rows[0]).toEqual({
       status: "sent",
       recipient: "",
-      reset_url: "",
+      action_url: "",
     });
   });
 
@@ -613,12 +620,16 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       failure_code: "UPLOAD_HASH_MISMATCH",
       event_count: "1",
     });
+    const retention = new PostgresRetentionStore(pool);
+    const purgedAt = "2026-08-03T12:15:00.000Z";
     await expect(
-      new PostgresRetentionStore(pool).markUploadPurged(
-        uploadId,
-        "2026-08-03T12:15:00.000Z",
+      retention.claimUploadPurge(
+        { uploadId, objectKey: session.objectKey },
+        purgedAt,
       ),
     ).resolves.toBe(true);
+    await expect(retention.markUploadPurged(uploadId, purgedAt))
+      .resolves.toBe(true);
     const retainedFailure = await pool.query<{
       status: string;
       object_purged_at: Date | null;
@@ -769,6 +780,141 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     });
   });
 
+  it("rejects restore races while a project job fence is active", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const targetSourceVersionId = crypto.randomUUID();
+    await ensureJobSource(pool, fixture);
+    await ensureJobSource(pool, {
+      ...fixture,
+      sourceVersionId: targetSourceVersionId,
+    });
+    const activeJobId = crypto.randomUUID();
+    await pool.query(
+      `UPDATE projects
+       SET current_source_version_id = $2,
+           status = 'processing',
+           active_job_type = 'processing',
+           active_job_id = $3
+       WHERE id = $1`,
+      [fixture.projectId, fixture.sourceVersionId, activeJobId],
+    );
+    const command = new PostgresSourceVersionRestoreCommand(pool);
+    const input = {
+      projectId: fixture.projectId,
+      actorUserId: fixture.ownerUserId,
+      targetSourceVersionId,
+      expectedCurrentSourceVersionId: fixture.sourceVersionId,
+      reason: "Restore must wait for the active job.",
+      idempotencyKey: "integration-busy-restore-001",
+      originatingRequestId: crypto.randomUUID(),
+    };
+
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 25 }, () => command.restore(input)),
+    );
+    expect(attempts).toHaveLength(25);
+    for (const attempt of attempts) {
+      expect(attempt.status).toBe("rejected");
+      if (attempt.status === "rejected") {
+        expect(attempt.reason).toMatchObject({ code: "SOURCE_VERSION_BUSY" });
+      }
+    }
+    const project = await pool.query<{
+      current_source_version_id: string;
+      active_job_id: string;
+    }>(
+      `SELECT current_source_version_id, active_job_id
+       FROM projects WHERE id = $1`,
+      [fixture.projectId],
+    );
+    const eventCount = await pool.query<{ count: string }>(
+      `SELECT count(*) FROM source_version_restore_events WHERE project_id = $1`,
+      [fixture.projectId],
+    );
+    expect(project.rows[0]).toEqual({
+      current_source_version_id: fixture.sourceVersionId,
+      active_job_id: activeJobId,
+    });
+    expect(Number(eventCount.rows[0]?.count)).toBe(0);
+  });
+
+  it("rejects restore races while a project upload is active", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const targetSourceVersionId = crypto.randomUUID();
+    await ensureJobSource(pool, fixture);
+    await ensureJobSource(pool, { ...fixture, sourceVersionId: targetSourceVersionId });
+    const uploadId = crypto.randomUUID();
+    const uploadingSourceVersionId = crypto.randomUUID();
+    const timestamp = "2026-07-28T09:00:00.000Z";
+    await pool.query(
+      `INSERT INTO source_versions (
+         id, project_id, upload_id, version_number, filename, content_type,
+         size_bytes, status, sha256, created_at, updated_at
+       ) SELECT $1, $2, $3, COALESCE(MAX(version_number), 0) + 1,
+         'uploading.png', 'image/png', 1, 'uploading', NULL, $4, $4
+       FROM source_versions WHERE project_id = $2`,
+      [uploadingSourceVersionId, fixture.projectId, uploadId, timestamp],
+    );
+    await pool.query(
+      `INSERT INTO upload_sessions (
+         upload_id, project_id, filename, content_type, expected_size_bytes,
+         status, source_version_id, sha256, object_key, expires_at, max_bytes,
+         upload_url, created_at, updated_at
+       ) VALUES ($1, $2, 'uploading.png', 'image/png', 1, 'uploading', $3,
+         NULL, $4, '2026-07-28T09:10:00.000Z', 31457280, $5, $6, $6)`,
+      [
+        uploadId,
+        fixture.projectId,
+        uploadingSourceVersionId,
+        `sources/${fixture.projectId}/${uploadId}.png`,
+        `/v1/uploads/${uploadId}/content`,
+        timestamp,
+      ],
+    );
+    await pool.query(
+      `UPDATE projects SET current_source_version_id = $2,
+         status = 'uploading' WHERE id = $1`,
+      [fixture.projectId, fixture.sourceVersionId],
+    );
+    const command = new PostgresSourceVersionRestoreCommand(pool);
+    const input = {
+      projectId: fixture.projectId,
+      actorUserId: fixture.ownerUserId,
+      targetSourceVersionId,
+      expectedCurrentSourceVersionId: fixture.sourceVersionId,
+      reason: "Restore must wait for the active upload.",
+      idempotencyKey: "integration-upload-busy-restore-001",
+      originatingRequestId: crypto.randomUUID(),
+    };
+
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 25 }, () => command.restore(input)),
+    );
+    expect(attempts).toHaveLength(25);
+    attempts.forEach((attempt) => {
+      expect(attempt.status).toBe("rejected");
+      if (attempt.status === "rejected") {
+        expect(attempt.reason).toMatchObject({ code: "SOURCE_VERSION_BUSY" });
+      }
+    });
+    const project = await pool.query<{
+      current_source_version_id: string;
+      status: string;
+    }>(
+      "SELECT current_source_version_id, status FROM projects WHERE id = $1",
+      [fixture.projectId],
+    );
+    const eventCount = await pool.query<{ count: string }>(
+      "SELECT count(*) FROM source_version_restore_events WHERE project_id = $1",
+      [fixture.projectId],
+    );
+    expect(project.rows[0]).toEqual({
+      current_source_version_id: fixture.sourceVersionId,
+      status: "uploading",
+    });
+    expect(Number(eventCount.rows[0]?.count)).toBe(0);
+  });
+
   it("atomically reclaims one expired export lease", async () => {
     const fixture = await insertProjectFixture(pool, "image");
     const repository = new PostgresExportRepository(pool);
@@ -785,6 +931,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       },
     });
     await repository.save(expiredJob);
+    await activateJobFence(pool, fixture, "export", expiredJob.id);
 
     const claims = await Promise.all([
       repository.claimNext(
@@ -832,6 +979,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       },
     });
     await repository.save(expiredJob);
+    await activateJobFence(pool, fixture, "processing", expiredJob.id);
 
     const claims = await Promise.all([
       claimNextProcessingJob(pool, "book", "document-b", 60_000),
@@ -863,6 +1011,12 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       },
     );
     await repository.save(exhaustedJob);
+    await activateJobFence(
+      pool,
+      { ...fixture, sourceVersionId: exhaustedJob.sourceVersionId },
+      "processing",
+      exhaustedJob.id,
+    );
     expect(
       await claimNextProcessingJob(pool, "book", "document-d", 60_000),
     ).toBeNull();
@@ -872,6 +1026,199 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       leaseOwner: null,
       leaseExpiresAt: null,
     });
+  });
+
+  it("atomically enqueues exactly one processing job and its project fence", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    await ensureJobSource(pool, fixture);
+    await ensureReadyUpload(pool, fixture);
+    await pool.query(
+      `UPDATE projects
+       SET current_source_version_id = $2,
+           active_job_type = NULL,
+           active_job_id = NULL
+       WHERE id = $1`,
+      [fixture.projectId, fixture.sourceVersionId],
+    );
+    const repository = new PostgresProcessingJobRepository(pool);
+    const candidates = Array.from({ length: 50 }, () =>
+      createProcessingJob(fixture),
+    );
+
+    const results = await Promise.all(
+      candidates.map((job) => repository.enqueue(job)),
+    );
+    const stored = await pool.query<{ id: string }>(
+      `SELECT id FROM processing_jobs WHERE project_id = $1`,
+      [fixture.projectId],
+    );
+    const project = await pool.query<{
+      active_job_type: string | null;
+      active_job_id: string | null;
+    }>(
+      `SELECT active_job_type, active_job_id FROM projects WHERE id = $1`,
+      [fixture.projectId],
+    );
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(stored.rows).toHaveLength(1);
+    expect(project.rows[0]).toEqual({
+      active_job_type: "processing",
+      active_job_id: stored.rows[0]?.id,
+    });
+  });
+
+  it("rolls back the processing fence on a duplicate job id collision", async () => {
+    const originalFixture = await insertProjectFixture(pool, "image");
+    const collisionFixture = await insertProjectFixture(pool, "image");
+    await Promise.all([
+      ensureJobSource(pool, originalFixture),
+      ensureJobSource(pool, collisionFixture),
+      ensureReadyUpload(pool, collisionFixture),
+    ]);
+    const repository = new PostgresProcessingJobRepository(pool);
+    const original = createProcessingJob(originalFixture);
+    await repository.save(original);
+    await pool.query(
+      "UPDATE projects SET current_source_version_id = $2 WHERE id = $1",
+      [collisionFixture.projectId, collisionFixture.sourceVersionId],
+    );
+
+    await expect(
+      repository.enqueue({
+        ...createProcessingJob(collisionFixture),
+        id: original.id,
+      }),
+    ).resolves.toBe(false);
+    await expect(repository.findById(original.id)).resolves.toMatchObject({
+      projectId: originalFixture.projectId,
+      sourceVersionId: originalFixture.sourceVersionId,
+    });
+    const collisionProject = await pool.query<{
+      active_job_id: string | null;
+    }>("SELECT active_job_id FROM projects WHERE id = $1", [
+      collisionFixture.projectId,
+    ]);
+    expect(collisionProject.rows[0]?.active_job_id).toBeNull();
+  });
+
+  it("rejects new claims but clears a terminal fence after deletion is requested", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    await ensureJobSource(pool, fixture);
+    const repository = new PostgresExportRepository(pool);
+    const terminalJob = createExportJob(fixture, {
+      status: "generating",
+      attempt: 3,
+      leaseOwner: "terminal-worker",
+      leaseExpiresAt: "2026-07-28T10:05:00.000Z",
+    });
+    await repository.save(terminalJob);
+    await activateJobFence(pool, fixture, "export", terminalJob.id);
+    const queuedJob = createExportJob(fixture);
+    await repository.save(queuedJob);
+    await pool.query(
+      "UPDATE users SET deletion_requested_at = $2 WHERE id = $1",
+      [fixture.ownerUserId, "2026-07-28T10:00:00.000Z"],
+    );
+
+    await expect(
+      repository.claimNext(
+        "new-worker",
+        "2026-07-28T10:00:00.000Z",
+        "2026-07-28T10:05:00.000Z",
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      repository.retryOrFailClaim(
+        terminalJob.id,
+        "terminal-worker",
+        "TERMINAL_TEST_FAILURE",
+        "2026-07-28T10:01:00.000Z",
+        "2026-07-28T10:00:01.000Z",
+      ),
+    ).resolves.toMatchObject({ status: "failed" });
+    const project = await pool.query<{
+      active_job_id: string | null;
+      status: string;
+    }>("SELECT active_job_id, status FROM projects WHERE id = $1", [
+      fixture.projectId,
+    ]);
+    expect(project.rows[0]).toMatchObject({
+      active_job_id: null,
+      status: "needs_review",
+    });
+  });
+
+  it("atomically fails processing and clears its fence after deletion is requested", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    await ensureJobSource(pool, fixture);
+    const repository = new PostgresProcessingJobRepository(pool);
+    const job = createProcessingJob(fixture, {
+      status: "processing",
+      attempt: 3,
+      maxAttempts: 3,
+      leaseOwner: "terminal-processing-worker",
+      leaseExpiresAt: "2026-07-28T10:05:00.000Z",
+    });
+    await repository.save(job);
+    await activateJobFence(pool, fixture, "processing", job.id);
+    await pool.query(
+      "UPDATE users SET deletion_requested_at = $2 WHERE id = $1",
+      [fixture.ownerUserId, "2026-07-28T10:00:00.000Z"],
+    );
+
+    await expect(
+      retryOrFailProcessingJob(
+        pool,
+        job,
+        "terminal-processing-worker",
+        "INVALID_PROCESSING_OPTIONS",
+      ),
+    ).resolves.toBe("failed");
+    await expect(repository.findById(job.id)).resolves.toMatchObject({
+      status: "failed",
+      leaseOwner: null,
+    });
+    const project = await pool.query<{
+      active_job_id: string | null;
+      status: string;
+    }>("SELECT active_job_id, status FROM projects WHERE id = $1", [
+      fixture.projectId,
+    ]);
+    expect(project.rows[0]).toEqual({
+      active_job_id: null,
+      status: "failed",
+    });
+  });
+
+  it("rolls back the project fence when processing job persistence faults", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    await ensureJobSource(pool, fixture);
+    await ensureReadyUpload(pool, fixture);
+    await pool.query(
+      "UPDATE projects SET current_source_version_id = $2 WHERE id = $1",
+      [fixture.projectId, fixture.sourceVersionId],
+    );
+    const repository = new PostgresProcessingJobRepository(pool);
+    const circularOptions: Record<string, unknown> = {};
+    circularOptions.self = circularOptions;
+    const job = createProcessingJob(fixture, {
+      options: circularOptions as ProcessingJob["options"],
+    });
+
+    await expect(repository.enqueue(job)).rejects.toThrow();
+    const project = await pool.query<{
+      active_job_id: string | null;
+      status: string;
+    }>(
+      "SELECT active_job_id, status FROM projects WHERE id = $1",
+      [fixture.projectId],
+    );
+    expect(project.rows[0]).toMatchObject({
+      active_job_id: null,
+      status: "queued",
+    });
+    await expect(repository.findById(job.id)).resolves.toBeNull();
   });
 
   it("round-trips and deletes bytes through real S3-compatible storage", async () => {
@@ -1186,6 +1533,13 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
 
   it("runs a queued text export through the real worker and object store", async () => {
     const fixture = await insertProjectFixture(pool, "book");
+    await ensureJobSource(pool, fixture);
+    await pool.query(
+      `UPDATE projects
+       SET current_source_version_id = $2, status = 'needs_review'
+       WHERE id = $1`,
+      [fixture.projectId, fixture.sourceVersionId],
+    );
     const document = createBookDocument(fixture);
     await new PostgresLayerDocumentRepository(pool).save(document);
     const repository = new PostgresExportRepository(pool);
@@ -1195,6 +1549,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       status: "queued",
     });
     await repository.save(job);
+    await activateJobFence(pool, fixture, "export", job.id);
     const controller = new AbortController();
     const worker = runExportWorker(
       {
@@ -1214,6 +1569,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
         concurrency: 1,
         leaseMilliseconds: 30_000,
         drainTimeoutMilliseconds: 5_000,
+        jobTimeoutMilliseconds: 60_000,
         sharpCacheMemoryMb: 16,
         sharpConcurrency: 1,
         workerId: `integration-export-${crypto.randomUUID()}`,
@@ -1254,6 +1610,7 @@ function requireEnvironment(name: string): string {
 }
 
 interface ProjectFixture {
+  ownerUserId: string;
   projectId: string;
   sourceVersionId: string;
   projectKind: "image" | "book";
@@ -1281,7 +1638,86 @@ async function insertProjectFixture(
      VALUES ($1, $2, 'Integration Project', $3, 'queued', $4, $4)`,
     [projectId, userId, projectKind, timestamp],
   );
-  return { projectId, sourceVersionId, projectKind };
+  return { ownerUserId: userId, projectId, sourceVersionId, projectKind };
+}
+
+async function activateJobFence(
+  pool: Pool,
+  fixture: ProjectFixture,
+  jobType: "processing" | "export",
+  jobId: string,
+): Promise<void> {
+  const timestamp = "2026-07-28T09:00:00.000Z";
+  await ensureJobSource(pool, fixture);
+  await pool.query(
+    `UPDATE projects
+     SET current_source_version_id = $2,
+         status = $3,
+         active_job_type = $4,
+         active_job_id = $5,
+         updated_at = $6
+     WHERE id = $1`,
+    [
+      fixture.projectId,
+      fixture.sourceVersionId,
+      jobType === "processing" ? "processing" : "exporting",
+      jobType,
+      jobId,
+      timestamp,
+    ],
+  );
+}
+
+async function ensureJobSource(
+  pool: Pool,
+  fixture: ProjectFixture,
+): Promise<void> {
+  const timestamp = "2026-07-28T09:00:00.000Z";
+  await pool.query(
+    `INSERT INTO source_versions (
+       id, project_id, upload_id, version_number, filename, content_type,
+       size_bytes, status, sha256, created_at, updated_at
+     )
+     SELECT $1, $2, $3, COALESCE(MAX(version_number), 0) + 1,
+       'job-source.png', 'image/png', 1, 'ready', $4, $5, $5
+     FROM source_versions
+     WHERE project_id = $2
+     ON CONFLICT (id) DO NOTHING`,
+    [
+      fixture.sourceVersionId,
+      fixture.projectId,
+      crypto.randomUUID(),
+      "f".repeat(64),
+      timestamp,
+    ],
+  );
+}
+
+async function ensureReadyUpload(
+  pool: Pool,
+  fixture: ProjectFixture,
+): Promise<void> {
+  const uploadId = crypto.randomUUID();
+  const timestamp = "2026-07-28T09:00:00.000Z";
+  await pool.query(
+    `INSERT INTO upload_sessions (
+       upload_id, project_id, filename, content_type, expected_size_bytes,
+       status, source_version_id, sha256, object_key, expires_at, max_bytes,
+       upload_url, created_at, updated_at
+     ) VALUES (
+       $1, $2, 'job-source.png', 'image/png', 1, 'ready', $3, $4, $5,
+       '2026-07-29T09:00:00.000Z', 31457280, $6, $7, $7
+     )`,
+    [
+      uploadId,
+      fixture.projectId,
+      fixture.sourceVersionId,
+      "f".repeat(64),
+      `sources/${fixture.projectId}/${uploadId}.png`,
+      `/v1/uploads/${uploadId}/content`,
+      timestamp,
+    ],
+  );
 }
 
 function createExportJob(
@@ -1337,6 +1773,7 @@ function createProcessingJob(
 }
 
 function createBookDocument(fixture: ProjectFixture): LayerDocument {
+  const pageGroupId = crypto.randomUUID();
   return {
     schemaVersion: "1.0",
     projectId: fixture.projectId,
@@ -1349,8 +1786,21 @@ function createBookDocument(fixture: ProjectFixture): LayerDocument {
     pages: [{ pageNumber: 1, width: 320, height: 180 }],
     layers: [
       {
-        id: crypto.randomUUID(),
+        id: pageGroupId,
         parentId: null,
+        kind: "group",
+        name: "+page_001",
+        visible: true,
+        locked: true,
+        opacity: 1,
+        fixed: true,
+        zIndex: 0,
+        pageNumber: 1,
+        bounds: { x: 0, y: 0, width: 320, height: 180 },
+      },
+      {
+        id: crypto.randomUUID(),
+        parentId: pageGroupId,
         kind: "raster",
         name: "+page_001_background",
         visible: true,
@@ -1364,7 +1814,7 @@ function createBookDocument(fixture: ProjectFixture): LayerDocument {
       },
       {
         id: crypto.randomUUID(),
-        parentId: null,
+        parentId: pageGroupId,
         kind: "text",
         name: "+integration_text",
         visible: true,

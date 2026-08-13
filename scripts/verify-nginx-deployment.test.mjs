@@ -11,6 +11,7 @@ set_real_ip_from \${TRUSTED_PROXY_CIDR};
 real_ip_header X-Forwarded-For;
 real_ip_recursive on;
 proxy_pass http://api:4000;
+location = /readyz { proxy_pass http://api:4000/v1/health/ready; }
 proxy_set_header X-Forwarded-For $remote_addr;
 proxy_set_header X-Forwarded-Proto $motionprep_forwarded_proto;
 include /etc/nginx/snippets/security-headers.conf;
@@ -19,8 +20,12 @@ include /etc/nginx/snippets/security-headers.conf;
 `;
 
 test("accepts the trusted proxy and all-path security header contract", () => {
+  const securityHeaders = `
+add_header Strict-Transport-Security;
+add_header Content-Security-Policy-Report-Only "style-src 'self'; report-uri /v1/security/csp-report";
+`;
   assert.deepEqual(
-    verifyNginxDeployment(validNginx, "add_header Strict-Transport-Security"),
+    verifyNginxDeployment(validNginx, securityHeaders),
     [],
   );
 });

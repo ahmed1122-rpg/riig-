@@ -29,6 +29,6 @@ MotionPrep uses four related but non-interchangeable identities:
 - Rollback by selecting previously signed image digests. Additive migrations
   are not reversed by an application rollback.
 
-The current package line is `0.1.7`. This does not make untagged working-tree
-changes equivalent to the hosted `v0.1.7` artifacts: the source SHA and image
+The current package line is `0.1.8`. This does not make untagged working-tree
+changes equivalent to future hosted `v0.1.8` artifacts: the source SHA and image
 digests remain different and must be reported separately.

@@ -41,9 +41,12 @@ class MeasuredStorage extends InMemoryObjectStorage {
     }
   }
 
-  override async delete(objectKey: string): Promise<void> {
-    this.events.push(`delete:${objectKey}`);
-    await super.delete(objectKey);
+  override async purge(
+    objectKeys: readonly string[],
+    prefixes: readonly string[],
+  ): Promise<void> {
+    objectKeys.forEach((objectKey) => this.events.push(`purge:${objectKey}`));
+    await super.purge(objectKeys, prefixes);
   }
 }
 
@@ -86,7 +89,7 @@ describe("writeRasterAssets", () => {
     ).rejects.toThrow("write failed: failure");
 
     expect(storage.events.indexOf("put:complete:successful")).toBeLessThan(
-      storage.events.indexOf("delete:successful"),
+      storage.events.indexOf("purge:successful"),
     );
     await expect(storage.inspect("successful")).resolves.toBeNull();
     expect(observations[0]).toMatchObject({

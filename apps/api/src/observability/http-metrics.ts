@@ -26,6 +26,7 @@ export async function registerHttpMetrics(
     buildInfo?: { version: string; release: string };
     probeTimeoutMs?: number;
     uploadReconciliationMetrics?: { render(): string[] };
+    clientTelemetryMetrics?: { render(): string[] };
   } = {},
 ): Promise<void> {
   const startedAt = new WeakMap<FastifyRequest, bigint>();
@@ -100,6 +101,9 @@ export async function registerHttpMetrics(
     const lines = renderHttpMetrics(metrics);
     if (options.uploadReconciliationMetrics) {
       lines.push(...options.uploadReconciliationMetrics.render());
+    }
+    if (options.clientTelemetryMetrics) {
+      lines.push(...options.clientTelemetryMetrics.render());
     }
     if (operationalSnapshotProbe) {
       try {

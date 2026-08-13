@@ -299,6 +299,7 @@ export interface CharacterRigVersion {
   bibleId: string;
   version: number;
   status: CharacterRigStatus;
+  failureCode?: string | null;
   sourceFingerprint?: string;
   canvas?: { width: number; height: number };
   nodes: CharacterRigNode[];

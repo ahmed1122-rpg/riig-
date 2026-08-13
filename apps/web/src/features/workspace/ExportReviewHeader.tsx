@@ -1,11 +1,13 @@
 import type { ExportFormat } from "@motionprep/contracts";
 import type { RefObject } from "react";
 import { Icon } from "../../shared/Icon";
+import type { ExportPreflightStatus } from "./exportPreflight";
 
 interface ExportReviewHeaderProps {
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   format: ExportFormat;
   isWorking: boolean;
+  preflightStatus: ExportPreflightStatus;
   onClose: () => void;
 }
 
@@ -13,6 +15,7 @@ export function ExportReviewHeader({
   closeButtonRef,
   format,
   isWorking,
+  preflightStatus,
   onClose,
 }: ExportReviewHeaderProps) {
   const filename =
@@ -34,7 +37,14 @@ export function ExportReviewHeader({
         </div>
       </div>
       <div className="export-review__status">
-        <span className="ready-pill"><Icon name="check" size={14} /> جاهز للتصدير</span>
+        <span className={`ready-pill is-${preflightStatus}`}>
+          <Icon name={preflightStatus === "ready" ? "check" : "warning"} size={14} />
+          {preflightStatus === "ready"
+            ? "جاهز للتصدير"
+            : preflightStatus === "warning"
+              ? "جاهز مع ملاحظات"
+              : "التصدير محجوب"}
+        </span>
         <span className="review-file-name" dir="ltr">{filename}</span>
       </div>
     </header>

@@ -99,6 +99,12 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
       `WITH candidate AS (
          SELECT id FROM character_jobs
          WHERE attempt < max_attempts
+           AND EXISTS (
+             SELECT 1 FROM projects project
+             JOIN users owner ON owner.id = project.owner_user_id
+             WHERE project.id = character_jobs.project_id
+               AND owner.deletion_requested_at IS NULL
+           )
            AND (
              (status = 'queued' AND next_attempt_at <= $2::timestamptz)
              OR (status IN ('processing', 'verifying') AND lease_expires_at <= $2::timestamptz)

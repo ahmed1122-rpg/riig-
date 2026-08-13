@@ -10,6 +10,8 @@ import { recordWorkerEvent } from "../observability/worker-events.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
 import { HttpCharacterInferenceProvider } from "./http-character-inference-provider.js";
 import { runCharacterWorkerLoop } from "./character-worker-loop.js";
+import { LeaseGuardedObjectStorage } from "../storage/leased-object-storage.js";
+import { PostgresObjectWriteLeaseCoordinator } from "../infrastructure/postgres/postgres-object-write-lease.js";
 
 export interface CharacterWorkerConfig {
   databaseUrl: string;
@@ -54,7 +56,11 @@ export async function runCharacterWorker(
             : "DATABASE_POOL_ERROR",
       }),
   });
-  const storage = new S3ObjectStorage(config.objectStorage);
+  const rawStorage = new S3ObjectStorage(config.objectStorage);
+  const storage = new LeaseGuardedObjectStorage(
+    rawStorage,
+    new PostgresObjectWriteLeaseCoordinator(database.pool),
+  );
   const jobs = new PostgresCharacterJobRepository(database.pool);
   const characterRigs = new PostgresCharacterRigRepository(database.pool);
   const resultCommitter = new PostgresCharacterJobResultCommitter(database.pool);
@@ -111,7 +117,7 @@ export async function runCharacterWorker(
   options.signal.addEventListener("abort", requestDrain, { once: true });
   if (options.signal.aborted) requestDrain();
 
-  await Promise.all([database.ready(), storage.ready(false)]);
+  await Promise.all([database.ready(), rawStorage.ready(false)]);
   log("info", "worker.ready", {
     worker_id: instanceId,
     concurrency: config.concurrency,
@@ -122,6 +128,9 @@ export async function runCharacterWorker(
     workerType: "character",
     releaseVersion: process.env.RELEASE_VERSION ?? "development",
     concurrency: config.concurrency,
+    ...(process.env.WORKER_HEALTH_INSTANCE_FILE
+      ? { healthInstanceFile: process.env.WORKER_HEALTH_INSTANCE_FILE }
+      : {}),
     onError: (error) =>
       log("error", "worker.heartbeat_failed", {
         error: error instanceof Error ? error.message : "unknown",
@@ -195,7 +204,7 @@ export async function runCharacterWorker(
     options.signal.removeEventListener("abort", requestDrain);
     await heartbeat.stop();
     await database.close();
-    storage.destroy();
+    rawStorage.destroy();
   }
 }
 

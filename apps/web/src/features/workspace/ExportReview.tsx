@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { exportFormatsByProjectKind, MAX_IMAGE_LAYERS, MAX_IMAGE_UPLOAD_BYTES, MAX_PDF_UPLOAD_BYTES, type ExportFormat, type ProductionIssue } from "@motionprep/contracts";
 import {
-  exportFormatsByProjectKind,
-  MAX_IMAGE_LAYERS,
-  MAX_UPLOAD_BYTES,
-  type ExportFormat,
-  type ProductionIssue,
-} from "@motionprep/contracts";
+  canonicalLayerName,
+  normalizeLayerName,
+} from "@motionprep/layer-domain";
 import { ApiError } from "../../lib/api/transport";
 import { Icon } from "../../shared/Icon";
 import type { Layer } from "../../types";
 import { getExportFormatPresentation } from "../exports/exportPresentation";
-import { moveEditableLayer } from "./layerReviewState";
+import {
+  moveExportLayer,
+  reviewableExportLayers,
+  selectedExportLayer,
+} from "./exportReviewLayers";
 import {
   selectExportFormat,
   selectExportScope,
@@ -23,6 +25,8 @@ import {
 } from "./ExportReviewPreviews";
 import { ExportReviewHeader } from "./ExportReviewHeader";
 import { ExportReviewFooter } from "./ExportReviewFooter";
+import { ExportReviewLayerList } from "./ExportReviewLayerList";
+import { evaluateExportPreflight } from "./exportPreflight";
 import type {
   ExportReviewProps,
   FormatOption,
@@ -30,12 +34,13 @@ import type {
   PreviewBackground,
 } from "./exportReviewTypes";
 import { useExportReviewDialog } from "./useExportReviewDialog";
+import { useExportPreviewZoom } from "./useExportPreviewZoom";
 
 export { ExportCharacterPreview, ExportPdfPreview } from "./ExportReviewPreviews";
 
 export function ExportReview({
   mode,
-  maxUploadBytes = MAX_UPLOAD_BYTES,
+  maxUploadBytes,
   layers,
   selectedLayerId,
   onSelectedLayerChange,
@@ -51,8 +56,18 @@ export function ExportReview({
   pdfPages,
   onCreateExport,
 }: ExportReviewProps) {
+  const effectiveMaxUploadBytes =
+    maxUploadBytes ??
+    (mode === "image" ? MAX_IMAGE_UPLOAD_BYTES : MAX_PDF_UPLOAD_BYTES);
   const [background, setBackground] = useState<PreviewBackground>(mode === "image" ? "checker" : "white");
-  const [zoom, setZoom] = useState(78);
+  const {
+    zoom,
+    fitActive,
+    stageRef,
+    scaleRef,
+    setZoom,
+    fitPreview,
+  } = useExportPreviewZoom();
   const [safeBounds, setSafeBounds] = useState(true);
   const [format, setFormat] = useState<ExportFormat>("psd");
   const [pdfScope, setPdfScope] = useState<PdfScope>("pages");
@@ -63,13 +78,20 @@ export function ExportReview({
   const [generationIssues, setGenerationIssues] = useState<
     readonly ProductionIssue[]
   >([]);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameError, setRenameError] = useState("");
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
-  const selected = useMemo(
-    () => layers.find((layer) => layer.id === selectedLayerId) ?? layers[0],
-    [layers, selectedLayerId],
+  const reviewableLayers = useMemo(
+    () => reviewableExportLayers(layers),
+    [layers],
   );
+  const selected = useMemo(
+    () => selectedExportLayer(reviewableLayers, selectedLayerId),
+    [reviewableLayers, selectedLayerId],
+  );
+  const effectiveSelectedLayerId = selected?.id ?? "";
   const formats = useMemo<FormatOption[]>(
     () =>
       exportFormatsByProjectKind[mode].map((id) => {
@@ -85,13 +107,42 @@ export function ExportReview({
     (generationState === "done"
       ? getExportFormatPresentation(format, mode).successMessage
       : undefined);
-  const fixedBackground = mode === "book" && selected?.kind === "page";
-  const structuralEditingUnavailable = canExport;
+  const fixedBackground = Boolean(
+    selected?.fixed || (mode === "book" && selected?.kind === "page"),
+  );
   const orderingUnavailable = false;
   const pageCount = Math.max(
     1,
     ...layers.map((layer) => layer.pageNumber ?? 1),
   );
+  const preflight = useMemo(
+    () => evaluateExportPreflight({
+      mode,
+      layers,
+      canExport,
+      saveState,
+      ...(canvasSize ? { canvasSize } : {}),
+      ...(pdfPages ? { pdfPages } : {}),
+    }),
+    [canExport, canvasSize, layers, mode, pdfPages, saveState],
+  );
+  const footerIssues = useMemo(() => {
+    const findings = [
+      ...preflight.findings
+        .filter(({ severity }) => severity === "blocked")
+        .map(({ key, message }) => ({ key, message })),
+      ...generationIssues.map((issue, index) => ({
+        key: `server:${issue.code}:${issue.layerId ?? issue.pageNumber ?? index}`,
+        message: issue.message,
+      })),
+    ];
+    return [...new Map(findings.map((finding) => [finding.message, finding])).values()];
+  }, [generationIssues, preflight.findings]);
+
+  useEffect(() => {
+    setRenameDraft(selected?.name ?? "");
+    setRenameError("");
+  }, [selected?.id, selected?.name]);
 
   const changeFormat = (nextFormat: ExportFormat) => {
     const next = selectExportFormat(
@@ -141,61 +192,42 @@ export function ExportReview({
   }, [mode]);
 
   const updateLayer = (id: string, changes: Partial<Layer>) => {
+    const target = layers.find((layer) => layer.id === id);
+    if (!target || target.kind === "group" || target.fixed) return;
     invalidateGeneratedExport();
     onLayersChange(layers.map((layer) => (layer.id === id ? { ...layer, ...changes } : layer)));
   };
 
-  const renameLayer = (value: string) => {
+  const commitLayerName = () => {
     if (!selected || fixedBackground) return;
-    const withoutPrefix = value.replace(/^\++/, "");
-    updateLayer(selected.id, { name: `+${withoutPrefix}` });
-  };
-
-  const settleLayerName = () => {
-    if (!selected || fixedBackground || selected.name !== "+") return;
-    updateLayer(selected.id, { name: `+طبقة_${layers.indexOf(selected) + 1}` });
+    const nextName = normalizeLayerName(renameDraft);
+    const duplicate = layers.some(
+      (layer) =>
+        layer.id !== selected.id &&
+        (layer.pageNumber ?? 1) === (selected.pageNumber ?? 1) &&
+        (layer.parentId ?? null) === (selected.parentId ?? null) &&
+        canonicalLayerName(layer.name) === canonicalLayerName(nextName),
+    );
+    if (duplicate) {
+      setRenameError("الاسم مستخدم داخل المجلد نفسه.");
+      return;
+    }
+    setRenameDraft(nextName);
+    setRenameError("");
+    if (nextName !== selected.name) updateLayer(selected.id, { name: nextName });
   };
 
   const moveLayer = (direction: -1 | 1) => {
     if (!selected || fixedBackground) return;
-    const from = layers.findIndex((layer) => layer.id === selected.id);
-    const result = moveEditableLayer(layers, selected.id, from + direction);
+    const result = moveExportLayer(
+      layers,
+      reviewableLayers,
+      selected.id,
+      direction,
+    );
     if (!result) return;
     invalidateGeneratedExport();
     onLayersChange(result.layers);
-  };
-
-  const mergeSelected = () => {
-    if (!selected || fixedBackground) return;
-    const target = layers.find((layer) => layer.id !== selected.id && layer.kind !== "page");
-    if (!target) return;
-    invalidateGeneratedExport();
-    onLayersChange(layers.filter((layer) => layer.id !== selected.id));
-    onSelectedLayerChange(target.id);
-    onNotify("تم دمج الطبقة داخل نسخة المراجعة.");
-  };
-
-  const splitSelected = () => {
-    if (!selected || fixedBackground) return;
-    if (mode === "image" && layers.length >= MAX_IMAGE_LAYERS) {
-      onNotify(
-        `لا يمكن إضافة طبقة: الحد الأقصى للصور ${MAX_IMAGE_LAYERS} طبقة.`,
-      );
-      return;
-    }
-    const newLayer: Layer = {
-      ...selected,
-      id: `${selected.id}-split-${Date.now()}`,
-      name: `${selected.name.replace(/^\++/, "+")}_جزء`,
-      locked: false,
-    };
-    const index = layers.findIndex((layer) => layer.id === selected.id);
-    const next = [...layers];
-    next.splice(index + 1, 0, newLayer);
-    invalidateGeneratedExport();
-    onLayersChange(next);
-    onSelectedLayerChange(newLayer.id);
-    onNotify("تم إنشاء جزء جديد للمراجعة قبل التصدير.");
   };
 
   const createExport = async () => {
@@ -282,6 +314,7 @@ export function ExportReview({
           closeButtonRef={closeButtonRef}
           format={format}
           isWorking={generationState === "working"}
+          preflightStatus={preflight.status}
           onClose={onClose}
         />
 
@@ -292,29 +325,33 @@ export function ExportReview({
                 <button type="button" onClick={() => setZoom((value) => Math.max(30, value - 10))} aria-label="تصغير"><Icon name="zoomOut" size={16} /></button>
                 <button type="button" className="zoom-value" onClick={() => setZoom(100)} aria-label="عرض مئة بالمئة">{zoom}%</button>
                 <button type="button" onClick={() => setZoom((value) => Math.min(160, value + 10))} aria-label="تكبير"><Icon name="zoomIn" size={16} /></button>
-                <button type="button" onClick={() => setZoom(78)}>ملاءمة</button>
+                <button
+                  type="button"
+                  aria-pressed={fitActive}
+                  onClick={fitPreview}
+                >ملاءمة</button>
                 <button type="button" onClick={() => setZoom(100)}>100%</button>
               </div>
               <div className="preview-group background-switch" role="radiogroup" aria-label="خلفية المعاينة">
-                <button type="button" className={background === "white" ? "is-active" : ""} onClick={() => setBackground("white")} aria-pressed={background === "white"}>بيضاء</button>
+                <button type="button" onClick={() => setBackground("white")} aria-pressed={background === "white"}>بيضاء</button>
                 {mode === "image" && (
                   <>
-                    <button type="button" className={background === "transparent" ? "is-active" : ""} onClick={() => setBackground("transparent")} aria-pressed={background === "transparent"}>شفافة</button>
-                    <button type="button" className={background === "checker" ? "is-active" : ""} onClick={() => setBackground("checker")} aria-pressed={background === "checker"}>شبكية</button>
+                    <button type="button" onClick={() => setBackground("transparent")} aria-pressed={background === "transparent"}>شفافة</button>
+                    <button type="button" onClick={() => setBackground("checker")} aria-pressed={background === "checker"}>شبكية</button>
                   </>
                 )}
               </div>
-              <button className={safeBounds ? "safe-toggle is-active" : "safe-toggle"} type="button" onClick={() => setSafeBounds((value) => !value)} aria-pressed={safeBounds}>
+              <button className="safe-toggle" type="button" onClick={() => setSafeBounds((value) => !value)} aria-pressed={safeBounds}>
                 <Icon name="scan" size={15} /> حدود الأمان
               </button>
             </div>
 
-            <div className={`export-preview-stage preview-bg--${background}`}>
-              <div className="export-preview-scale" style={{ "--review-zoom": zoom / 100 } as React.CSSProperties}>
+            <div ref={stageRef} className={`export-preview-stage preview-bg--${background}`}>
+              <div ref={scaleRef} className="export-preview-scale" style={{ "--review-zoom": zoom / 100 } as React.CSSProperties}>
                 {mode === "image" ? (
                   <ExportCharacterPreview
-                    layers={layers}
-                    selectedLayerId={selectedLayerId}
+                    layers={reviewableLayers}
+                    selectedLayerId={effectiveSelectedLayerId}
                     safeBounds={safeBounds}
                     canvasWidth={canvasSize?.width ?? 1}
                     canvasHeight={canvasSize?.height ?? 1}
@@ -322,8 +359,8 @@ export function ExportReview({
                   />
                 ) : (
                   <ExportPdfPreview
-                    layers={layers}
-                    selectedLayerId={selectedLayerId}
+                    layers={reviewableLayers}
+                    selectedLayerId={effectiveSelectedLayerId}
                     safeBounds={safeBounds}
                     page={page}
                     {...(pdfPages ? { pages: pdfPages } : {})}
@@ -343,43 +380,48 @@ export function ExportReview({
 
           <aside className="export-layer-review" aria-label="مراجعة الطبقات">
             <div className="review-section-heading">
-              <div><strong>الطبقات</strong><small>{mode === "image" ? `${layers.length} / ${MAX_IMAGE_LAYERS} طبقة` : `${layers.length} طبقات فعلية في ${pageCount} صفحة`}</small></div>
+              <div><strong>الطبقات</strong><small>{mode === "image" ? `${reviewableLayers.length} / ${MAX_IMAGE_LAYERS} طبقة` : `${reviewableLayers.length} طبقات فعلية في ${pageCount} صفحة`}</small></div>
               <span className={mode === "image" ? "review-count" : "review-count is-unlimited"}>
-                {mode === "image" ? `${layers.length}/15` : "بلا حد"}
+                {mode === "image" ? `${reviewableLayers.length}/15` : "بلا حد"}
               </span>
             </div>
 
-            <div className="export-layer-list">
-              {layers.map((layer) => (
-                <button
-                  key={layer.id}
-                  className={`export-layer-item ${layer.id === selectedLayerId ? "is-selected" : ""} ${layer.kind === "page" ? "is-fixed" : ""}`}
-                  type="button"
-                  onClick={() => onSelectedLayerChange(layer.id)}
-                >
-                  <Icon name="grip" size={15} />
-                  <span className="layer-swatch" style={{ "--layer-color": layer.color } as React.CSSProperties}>{layer.kind === "text" ? "ن" : ""}</span>
-                  <span><strong dir={/^[A-Za-z0-9]/.test(layer.name.slice(1)) ? "ltr" : "rtl"}>{layer.name}</strong><small>{layer.kind === "page" ? "خلفية بيضاء ثابتة" : `${layer.opacity}% · ${layer.visible ? "ظاهرة" : "مخفية"}`}</small></span>
-                  {layer.kind === "page" && <Icon name="lock" size={14} />}
-                </button>
-              ))}
-            </div>
+            <ExportReviewLayerList
+              layers={reviewableLayers}
+              selectedLayerId={effectiveSelectedLayerId}
+              onSelect={onSelectedLayerChange}
+            />
 
             {selected && (
               <div className="selected-layer-editor">
                 <label className="rename-field">
                   <span>اسم الطبقة</span>
                   <input
-                    value={selected.name}
-                    onChange={(event) => renameLayer(event.target.value)}
-                    onBlur={settleLayerName}
+                    value={renameDraft}
+                    onChange={(event) => {
+                      setRenameDraft(event.target.value);
+                      setRenameError("");
+                    }}
+                    onBlur={commitLayerName}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitLayerName();
+                      }
+                      if (event.key === "Escape") {
+                        setRenameDraft(selected.name);
+                        setRenameError("");
+                      }
+                    }}
                     disabled={fixedBackground || generationState === "working"}
-                    aria-describedby={fixedBackground ? "fixed-background-note" : undefined}
+                    aria-invalid={Boolean(renameError)}
+                    aria-describedby={fixedBackground ? "fixed-background-note" : renameError ? "export-rename-error" : undefined}
                   />
+                  {renameError && <small id="export-rename-error" role="alert">{renameError}</small>}
                 </label>
                 {fixedBackground && <p id="fixed-background-note" className="fixed-layer-note"><Icon name="lock" size={13} /> الخلفية البيضاء ثابتة؛ لا يمكن إعادة تسميتها أو فتحها أو حذفها.</p>}
                 <div className="layer-quick-actions">
-                  <button type="button" onClick={() => updateLayer(selected.id, { visible: !selected.visible })} disabled={generationState === "working"}>
+                  <button type="button" onClick={() => updateLayer(selected.id, { visible: !selected.visible })} disabled={fixedBackground || generationState === "working"}>
                     <Icon name={selected.visible ? "eye" : "eyeOff"} size={15} /> {selected.visible ? "ظاهرة" : "مخفية"}
                   </button>
                   <button type="button" onClick={() => !fixedBackground && updateLayer(selected.id, { locked: !selected.locked })} disabled={fixedBackground || generationState === "working"}>
@@ -408,19 +450,13 @@ export function ExportReview({
                   <span>الشفافية <b>{selected.opacity}%</b></span>
                   <input type="range" min="0" max="100" value={selected.opacity} disabled={fixedBackground || generationState === "working"} onChange={(event) => updateLayer(selected.id, { opacity: Number(event.target.value) })} />
                 </label>
-                {!structuralEditingUnavailable && (
-                  <div className="merge-split-actions">
-                    <button type="button" onClick={mergeSelected} disabled={fixedBackground}><Icon name="merge" size={15} /> دمج</button>
-                    <button type="button" onClick={splitSelected} disabled={fixedBackground}><Icon name="split" size={15} /> فصل</button>
-                  </div>
-                )}
               </div>
             )}
           </aside>
 
           <aside className="export-setup-panel" aria-label="إعداد التصدير">
             <div className="export-setup-scroll">
-              <ExportQualitySummary mode={mode} imageLayerCount={layers.length} maxUploadBytes={maxUploadBytes} />
+              <ExportQualitySummary mode={mode} maxUploadBytes={effectiveMaxUploadBytes} preflight={preflight} />
 
             <div className="export-setup">
               <div className="review-section-heading"><div><strong>إعداد التصدير</strong><small>الخيارات الأساسية فقط</small></div></div>
@@ -505,15 +541,11 @@ export function ExportReview({
           disabled={
             generationState === "working" ||
             !selectedFormat ||
-            !canExport ||
-            saveState === "saving" ||
-            saveState === "conflict" ||
-            saveState === "error" ||
-            saveState === "unavailable"
+            preflight.status === "blocked"
           }
           onCreate={() => void createExport()}
           message={displayedGenerationMessage}
-          issues={generationIssues}
+          issues={footerIssues}
         />
       </section>
     </div>

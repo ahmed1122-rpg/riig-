@@ -230,6 +230,7 @@ function createRigVersion(input: {
     bibleId: input.bibleId,
     version: input.version,
     status: "draft",
+    failureCode: null,
     sourceFingerprint: input.sourceFingerprint,
     canvas: { width: input.width, height: input.height },
     nodes,

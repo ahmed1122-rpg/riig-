@@ -72,10 +72,11 @@ afterEach(() => {
 });
 
 describe("CreatorActivityCenter", () => {
-  it("shows loading and does not request protected data for guests", () => {
+  it("shows loading and does not request protected data for guests", async () => {
     vi.mocked(listWorkflowActivity).mockReturnValue(new Promise(() => undefined));
     const authenticated = renderActivity();
     expect(authenticated.view.getByText("جارٍ تحميل نشاطك")).toBeTruthy();
+    await waitFor(() => expect(listWorkflowActivity).toHaveBeenCalledOnce());
     authenticated.view.unmount();
 
     const guest = renderActivity({ authenticated: false });
@@ -292,9 +293,13 @@ describe("CreatorActivityCenter", () => {
       visibility = "visible";
       document.dispatchEvent(new Event("visibilitychange"));
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(ACTIVITY_POLL_INTERVAL_MS);
+        await Promise.resolve();
       });
       expect(listWorkflowActivity).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ACTIVITY_POLL_INTERVAL_MS);
+      });
+      expect(listWorkflowActivity).toHaveBeenCalledTimes(3);
     } finally {
       if (ownVisibility) {
         Object.defineProperty(document, "visibilityState", ownVisibility);

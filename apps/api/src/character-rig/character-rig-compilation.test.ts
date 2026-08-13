@@ -194,7 +194,7 @@ class FailingManifestCleanupStorage extends InMemoryObjectStorage {
     return super.put(object);
   }
 
-  override async delete(_key: string): Promise<void> {
+  override async purge(): Promise<void> {
     throw new Error("cleanup failed");
   }
 }

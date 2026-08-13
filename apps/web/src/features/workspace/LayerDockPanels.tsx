@@ -66,7 +66,7 @@ export const LayerRow = memo(function LayerRow({
     <div
       className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${layer.kind === "page" ? "is-fixed" : ""} ${dragging ? "is-dragging" : ""} ${dragOver ? "is-drag-over" : ""}`}
       data-layer-id={layer.id}
-      role="listitem"
+      role="group"
       aria-label={`${layer.name}، ${selected ? "محددة" : "غير محددة"}`}
       aria-current={active ? "true" : undefined}
       tabIndex={active ? 0 : -1}
@@ -153,6 +153,18 @@ export const LayerRow = memo(function LayerRow({
                 onChange={(event) =>
                   onRenameDraftChange(event.target.value)
                 }
+                onBlur={(event) => {
+                  const editor = event.currentTarget.closest(
+                    ".pro-inline-rename",
+                  );
+                  if (
+                    event.relatedTarget instanceof Node &&
+                    editor?.contains(event.relatedTarget)
+                  ) {
+                    return;
+                  }
+                  onSaveRename();
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") onSaveRename();
                   if (event.key === "Escape") onCancelRename();
@@ -219,7 +231,7 @@ export const LayerRow = memo(function LayerRow({
             <Icon name="arrowDown" size={15} />
             نقل لأسفل
           </button>
-          <button type="button" onClick={() => runAction(onToggleVisible)}>
+          <button type="button" onClick={() => runAction(onToggleVisible)} disabled={layer.kind === "page"}>
             <Icon name={layer.visible ? "eyeOff" : "eye"} size={15} />
             {layer.visible ? "إخفاء الطبقة" : "إظهار الطبقة"}
           </button>
@@ -269,6 +281,12 @@ export function ChecksPanel({
           </li>
         ))}
       </ul>
+      {summary.diagnostics.length > 0 && (
+        <details className="pro-layer-diagnostics">
+          <summary>تفاصيل التشخيص <span>{summary.diagnostics.length}</span></summary>
+          <ol>{summary.diagnostics.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ol>
+        </details>
+      )}
     </div>
   );
 }

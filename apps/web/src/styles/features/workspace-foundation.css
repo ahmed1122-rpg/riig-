@@ -3,7 +3,7 @@
 .workspace-header { display: grid; grid-template-columns: minmax(190px, 1fr) auto minmax(270px, 1fr); align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .workspace-title { display: flex; align-items: center; min-width: 0; gap: 6px; }
 .workspace-title > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.workspace-title strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-title h1 { margin: 0; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-title span { display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 8px; }
 .workspace-title i { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
 .workspace-title .save-state.is-dirty i,
@@ -185,7 +185,7 @@
   .workspace { grid-template-rows: 54px 42px minmax(0,1fr) 58px; }
   .workspace-header { grid-template-columns: minmax(0,1fr) auto; padding: 0 8px; }
   .workspace-title .icon-button { width: 30px; }
-  .workspace-title strong { max-width: 120px; }
+  .workspace-title h1 { max-width: 120px; }
   .workspace-meta { gap: 5px; }
   .workspace-meta .layer-counter { min-height: 29px; padding: 0 7px; font-size: 8px; }
   .workspace-meta .layer-counter svg { display: none; }

@@ -1,7 +1,8 @@
-import type {
-  LayerDocument,
-  LayerStateUpdate,
-  ProjectKind,
+import {
+  MAX_LAYER_TEXT_CHARACTERS,
+  type LayerDocument,
+  type LayerStateUpdate,
+  type ProjectKind,
 } from "@motionprep/contracts";
 import { validateProductionDocument } from "@motionprep/presets";
 import {
@@ -59,6 +60,16 @@ export class LayerStateOperations {
     }
     for (const change of updatesById.values()) {
       const current = layersById.get(change.id);
+      const textChanged =
+        change.fullText !== undefined && change.fullText !== current?.fullText;
+      if (textChanged && current?.kind !== "text") {
+        throw invalidLayerUpdate("لا يمكن إضافة محتوى نصي إلى طبقة غير نصية.");
+      }
+      if (current?.locked && lockedLayerContentChanged(change, current)) {
+        throw invalidLayerUpdate(
+          "افتح قفل الطبقة قبل تعديل محتواها أو خصائصها أو ترتيبها.",
+        );
+      }
       if (
         current?.fixed &&
         (change.name !== current.name ||
@@ -66,7 +77,8 @@ export class LayerStateOperations {
           change.locked !== current.locked ||
           change.opacity !== current.opacity ||
           change.zIndex !== current.zIndex ||
-          change.readingOrder !== current.readingOrder)
+          change.readingOrder !== current.readingOrder ||
+          metadataChanged(change, current))
       ) {
         throw invalidLayerUpdate(
           "لا يمكن تعديل أو إعادة ترتيب طبقة خلفية PDF الثابتة.",
@@ -89,6 +101,22 @@ export class LayerStateOperations {
               ...(change.readingOrder === undefined
                 ? {}
                 : { readingOrder: change.readingOrder }),
+              ...(change.bounds === undefined ? {} : { bounds: change.bounds }),
+              ...(change.direction === undefined
+                ? {}
+                : { direction: change.direction }),
+              ...(change.textAlign === undefined
+                ? {}
+                : { textAlign: change.textAlign }),
+              ...(change.fontFamily === undefined
+                ? {}
+                : { fontFamily: change.fontFamily }),
+              ...(change.fontSize === undefined
+                ? {}
+                : { fontSize: change.fontSize }),
+              ...(change.fullText === undefined
+                ? {}
+                : { fullText: change.fullText }),
             }
           : layer;
       }),
@@ -133,13 +161,88 @@ function validateUpdates(
       (update.readingOrder !== undefined &&
         (!Number.isSafeInteger(update.readingOrder) ||
           update.readingOrder < 0 ||
-          update.readingOrder > 1_000_000))
+          update.readingOrder > 1_000_000)) ||
+      (update.bounds !== undefined && !validBounds(update.bounds)) ||
+      (update.direction !== undefined &&
+        update.direction !== "ltr" &&
+        update.direction !== "rtl") ||
+      (update.textAlign !== undefined &&
+        update.textAlign !== "start" &&
+        update.textAlign !== "center" &&
+        update.textAlign !== "end" &&
+        update.textAlign !== "justify") ||
+      (update.fontFamily !== undefined &&
+        (update.fontFamily.trim().length === 0 ||
+          update.fontFamily.length > 120 ||
+          /[\u0000-\u001F\u007F]/u.test(update.fontFamily))) ||
+      (update.fontSize !== undefined &&
+        (!Number.isFinite(update.fontSize) ||
+          update.fontSize < 1 ||
+          update.fontSize > 500)) ||
+      (update.fullText !== undefined && !validFullText(update.fullText))
     ) {
       throw invalidLayerUpdate("تحديثات الطبقات غير صالحة.");
     }
-    updatesById.set(update.id, update);
+    updatesById.set(
+      update.id,
+      update.fullText === undefined
+        ? update
+        : { ...update, fullText: update.fullText.trim() },
+    );
   }
   return updatesById;
+}
+
+function validBounds(bounds: NonNullable<LayerStateUpdate["bounds"]>): boolean {
+  return (
+    [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) &&
+    bounds.x >= 0 &&
+    bounds.y >= 0 &&
+    bounds.width > 0 &&
+    bounds.height > 0 &&
+    [bounds.x, bounds.y, bounds.width, bounds.height].every(
+      (value) => value <= 1_000_000,
+    )
+  );
+}
+
+function validFullText(value: string): boolean {
+  return (
+    value.trim().length > 0 &&
+    Array.from(value).length <= MAX_LAYER_TEXT_CHARACTERS &&
+    !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value)
+  );
+}
+
+function metadataChanged(
+  change: LayerStateUpdate,
+  current: LayerDocument["layers"][number],
+): boolean {
+  return (
+    (change.bounds !== undefined &&
+      JSON.stringify(change.bounds) !== JSON.stringify(current.bounds)) ||
+    (change.direction !== undefined && change.direction !== current.direction) ||
+    (change.textAlign !== undefined &&
+      change.textAlign !== current.textAlign) ||
+    (change.fontFamily !== undefined &&
+      change.fontFamily !== current.fontFamily) ||
+    (change.fontSize !== undefined && change.fontSize !== current.fontSize) ||
+    (change.fullText !== undefined && change.fullText !== current.fullText)
+  );
+}
+
+function lockedLayerContentChanged(
+  change: LayerStateUpdate,
+  current: LayerDocument["layers"][number],
+): boolean {
+  return (
+    change.name !== current.name ||
+    change.opacity !== current.opacity ||
+    change.zIndex !== current.zIndex ||
+    (change.readingOrder !== undefined &&
+      change.readingOrder !== current.readingOrder) ||
+    metadataChanged(change, current)
+  );
 }
 
 function isValidLayerName(name: string): name is `+${string}` {

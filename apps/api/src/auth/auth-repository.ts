@@ -1,5 +1,8 @@
 import type { UserRole, UserStatus, UserSummary } from "@motionprep/contracts";
-import type { PasswordResetMessage } from "./email-sender.js";
+import type {
+  EmailVerificationMessage,
+  PasswordResetMessage,
+} from "./email-sender.js";
 
 export interface UserRecord extends UserSummary {
   passwordHash: string;
@@ -32,7 +35,28 @@ export interface MfaChallengeRecord {
   expiresAt: string;
 }
 
+export interface MfaLoginCommit {
+  tokenHash: string;
+  userId: string;
+  now: string;
+  lastLoginAt: string;
+  session: SessionRecord;
+  recoveryCodeHash?: string;
+}
+
+export type MfaLoginCommitResult =
+  | "committed"
+  | "challenge_invalid"
+  | "user_invalid"
+  | "recovery_invalid";
+
 export interface PasswordResetRecord {
+  tokenHash: string;
+  userId: string;
+  expiresAt: string;
+}
+
+export interface EmailVerificationRecord {
   tokenHash: string;
   userId: string;
   expiresAt: string;
@@ -50,6 +74,22 @@ export interface AuthRepository {
   findUserByEmail(email: string): Promise<UserRecord | null>;
   listUsers(): Promise<UserRecord[]>;
   saveUser(user: UserRecord): Promise<void>;
+  savePendingRegistration(
+    user: UserRecord,
+    verification: EmailVerificationRecord,
+    delivery?: EmailVerificationMessage,
+  ): Promise<"queued" | "stored" | "email_exists">;
+  consumeEmailVerification(
+    tokenHash: string,
+    now: string,
+  ): Promise<UserRecord | null>;
+  replaceEmailVerification(
+    userId: string,
+    verification: EmailVerificationRecord,
+    delivery?: EmailVerificationMessage,
+  ): Promise<"queued" | "stored" | "not_pending">;
+  deleteEmailVerificationsByUser(userId: string): Promise<void>;
+  saveFirstAdmin(user: UserRecord): Promise<boolean>;
   updateUser(
     id: string,
     changes: Partial<Pick<UserRecord, "role" | "status" | "lastLoginAt">>,
@@ -73,6 +113,8 @@ export interface AuthRepository {
     tokenHash: string,
     now: string,
   ): Promise<MfaChallengeRecord | null>;
+  commitMfaLogin(input: MfaLoginCommit): Promise<MfaLoginCommitResult>;
+  consumeRecoveryCode(userId: string, codeHash: string): Promise<boolean>;
   deleteMfaChallenge(tokenHash: string): Promise<void>;
   deleteMfaChallengesByUser(userId: string): Promise<void>;
   savePasswordReset(
@@ -92,6 +134,8 @@ export class InMemoryAuthRepository implements AuthRepository {
   readonly #mfaEnrollments = new Map<string, MfaEnrollmentRecord>();
   readonly #mfaChallenges = new Map<string, MfaChallengeRecord>();
   readonly #passwordResets = new Map<string, PasswordResetRecord>();
+  readonly #emailVerifications = new Map<string, EmailVerificationRecord>();
+  #securityCommandTail: Promise<void> = Promise.resolve();
 
   async findUserById(id: string): Promise<UserRecord | null> {
     return this.#users.get(id) ?? null;
@@ -113,6 +157,82 @@ export class InMemoryAuthRepository implements AuthRepository {
 
   async saveUser(user: UserRecord): Promise<void> {
     this.#users.set(user.id, user);
+  }
+
+  async savePendingRegistration(
+    user: UserRecord,
+    verification: EmailVerificationRecord,
+    _delivery?: EmailVerificationMessage,
+  ): Promise<"stored" | "email_exists"> {
+    return this.#runSecurityCommand(() => {
+      if ([...this.#users.values()].some((stored) => stored.email === user.email)) {
+        return "email_exists";
+      }
+      this.#users.set(user.id, user);
+      this.#emailVerifications.set(verification.tokenHash, verification);
+      return "stored";
+    });
+  }
+
+  async consumeEmailVerification(
+    tokenHash: string,
+    now: string,
+  ): Promise<UserRecord | null> {
+    return this.#runSecurityCommand(() => {
+      const verification = this.#emailVerifications.get(tokenHash);
+      if (!verification || verification.expiresAt <= now) {
+        if (verification) this.#emailVerifications.delete(tokenHash);
+        return null;
+      }
+      const user = this.#users.get(verification.userId);
+      if (!user || user.status !== "pending_verification") return null;
+      const updated = { ...user, status: "active" as const, lastLoginAt: now };
+      this.#users.set(user.id, updated);
+      this.#emailVerifications.delete(tokenHash);
+      return updated;
+    });
+  }
+
+  async replaceEmailVerification(
+    userId: string,
+    verification: EmailVerificationRecord,
+    _delivery?: EmailVerificationMessage,
+  ): Promise<"stored" | "not_pending"> {
+    return this.#runSecurityCommand(() => {
+      const user = this.#users.get(userId);
+      if (
+        !user ||
+        user.status !== "pending_verification" ||
+        user.deletionRequestedAt ||
+        user.deletedAt
+      ) {
+        return "not_pending";
+      }
+      for (const [tokenHash, stored] of this.#emailVerifications) {
+        if (stored.userId === userId) this.#emailVerifications.delete(tokenHash);
+      }
+      this.#emailVerifications.set(verification.tokenHash, verification);
+      return "stored";
+    });
+  }
+
+  async deleteEmailVerificationsByUser(userId: string): Promise<void> {
+    for (const [tokenHash, verification] of this.#emailVerifications) {
+      if (verification.userId === userId) this.#emailVerifications.delete(tokenHash);
+    }
+  }
+
+  async saveFirstAdmin(user: UserRecord): Promise<boolean> {
+    return this.#runSecurityCommand(() => {
+      if (
+        [...this.#users.values()].some((stored) => stored.role === "admin") ||
+        [...this.#users.values()].some((stored) => stored.email === user.email)
+      ) {
+        return false;
+      }
+      this.#users.set(user.id, user);
+      return true;
+    });
   }
 
   async updateUser(
@@ -196,6 +316,100 @@ export class InMemoryAuthRepository implements AuthRepository {
       return null;
     }
     return record;
+  }
+
+  async commitMfaLogin(
+    input: MfaLoginCommit,
+  ): Promise<MfaLoginCommitResult> {
+    return this.#runSecurityCommand(() => {
+      const user = this.#users.get(input.userId);
+      if (
+        !user ||
+        !user.mfaEnabled ||
+        user.status !== "active" ||
+        user.deletionRequestedAt ||
+        user.deletedAt
+      ) {
+        return "user_invalid";
+      }
+      const challenge = this.#mfaChallenges.get(input.tokenHash);
+      if (
+        !challenge ||
+        challenge.userId !== input.userId ||
+        challenge.expiresAt <= input.now
+      ) {
+        if (challenge?.expiresAt && challenge.expiresAt <= input.now) {
+          this.#mfaChallenges.delete(input.tokenHash);
+        }
+        return "challenge_invalid";
+      }
+      if (
+        input.recoveryCodeHash &&
+        !user.recoveryCodeHashes.includes(input.recoveryCodeHash)
+      ) {
+        return "recovery_invalid";
+      }
+      if (input.session.userId !== input.userId) {
+        throw new Error("MFA session owner must match the challenge owner.");
+      }
+
+      this.#users.set(user.id, {
+        ...user,
+        lastLoginAt: input.lastLoginAt,
+        recoveryCodeHashes: input.recoveryCodeHash
+          ? user.recoveryCodeHashes.filter(
+              (hash) => hash !== input.recoveryCodeHash,
+            )
+          : user.recoveryCodeHashes,
+      });
+      this.#sessions.set(input.session.tokenHash, input.session);
+      for (const [tokenHash, stored] of this.#mfaChallenges) {
+        if (stored.userId === input.userId) {
+          this.#mfaChallenges.delete(tokenHash);
+        }
+      }
+      return "committed";
+    });
+  }
+
+  async consumeRecoveryCode(
+    userId: string,
+    codeHash: string,
+  ): Promise<boolean> {
+    return this.#runSecurityCommand(() => {
+      const user = this.#users.get(userId);
+      if (
+        !user ||
+        !user.mfaEnabled ||
+        user.status !== "active" ||
+        user.deletionRequestedAt ||
+        user.deletedAt ||
+        !user.recoveryCodeHashes.includes(codeHash)
+      ) {
+        return false;
+      }
+      this.#users.set(userId, {
+        ...user,
+        recoveryCodeHashes: user.recoveryCodeHashes.filter(
+          (storedHash) => storedHash !== codeHash,
+        ),
+      });
+      return true;
+    });
+  }
+
+  async #runSecurityCommand<Result>(command: () => Result): Promise<Result> {
+    const previous = this.#securityCommandTail;
+    let release!: () => void;
+    this.#securityCommandTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return command();
+    } finally {
+      release();
+    }
   }
 
   async deleteMfaChallenge(tokenHash: string): Promise<void> {

@@ -82,4 +82,20 @@ describe("ObjectStorage streaming contract", () => {
       }
     }).rejects.toBeInstanceOf(ObjectStorageIntegrityError);
   });
+
+  it("purges exact keys and owned prefixes without touching siblings", async () => {
+    const storage = new InMemoryObjectStorage();
+    for (const key of ["private/foo", "private/foobar", "owned/a", "other/a"]) {
+      await storage.put({
+        key,
+        contentType: "application/octet-stream",
+        sizeBytes: 1,
+        body: Buffer.from([1]),
+      });
+    }
+
+    await storage.purge(["private/foo"], ["owned/"]);
+
+    await expect(storage.list("")).resolves.toEqual(["other/a", "private/foobar"]);
+  });
 });

@@ -1,9 +1,9 @@
-import type { PasswordResetMessage } from "../../auth/email-sender.js";
+import type { EmailDeliveryMessage } from "../../auth/email-sender.js";
 import type { Pool } from "pg";
 
 export interface ClaimedEmailDelivery {
   id: string;
-  message: PasswordResetMessage;
+  delivery: EmailDeliveryMessage;
   attempt: number;
   maxAttempts: number;
 }
@@ -26,8 +26,9 @@ export interface EmailOutboxRepository {
 
 interface EmailOutboxRow {
   id: string;
+  kind: "password-reset" | "email-verification";
   recipient: string;
-  reset_url: string;
+  action_url: string;
   expires_at: Date | string;
   attempt: number;
   max_attempts: number;
@@ -45,7 +46,7 @@ export class PostgresEmailOutboxRepository implements EmailOutboxRepository {
       `
         UPDATE email_outbox
         SET status = 'failed', error_code = 'DELIVERY_EXPIRED',
-            recipient = '', reset_url = '', lease_owner = NULL,
+            recipient = '', action_url = '', lease_owner = NULL,
             lease_expires_at = NULL, updated_at = $1
         WHERE status IN ('queued', 'sending') AND expires_at <= $1
       `,
@@ -72,7 +73,7 @@ export class PostgresEmailOutboxRepository implements EmailOutboxRepository {
             error_code = NULL, updated_at = $2
         FROM candidate
         WHERE delivery.id = candidate.id
-        RETURNING delivery.id, delivery.recipient, delivery.reset_url,
+        RETURNING delivery.id, delivery.kind, delivery.recipient, delivery.action_url,
           delivery.expires_at, delivery.attempt, delivery.max_attempts
       `,
       [workerId, claimedAt, leaseExpiresAt],
@@ -83,14 +84,7 @@ export class PostgresEmailOutboxRepository implements EmailOutboxRepository {
           id: row.id,
           attempt: row.attempt,
           maxAttempts: row.max_attempts,
-          message: {
-            recipient: row.recipient,
-            resetUrl: row.reset_url,
-            expiresAt:
-              row.expires_at instanceof Date
-                ? row.expires_at.toISOString()
-                : row.expires_at,
-          },
+          delivery: mapDelivery(row),
         }
       : null;
   }
@@ -103,7 +97,7 @@ export class PostgresEmailOutboxRepository implements EmailOutboxRepository {
     const result = await this.pool.query(
       `
         UPDATE email_outbox
-        SET status = 'sent', recipient = '', reset_url = '',
+        SET status = 'sent', recipient = '', action_url = '',
             delivered_at = $3, lease_owner = NULL, lease_expires_at = NULL,
             error_code = NULL, updated_at = $3
         WHERE id = $1 AND lease_owner = $2 AND status = 'sending'
@@ -129,9 +123,9 @@ export class PostgresEmailOutboxRepository implements EmailOutboxRepository {
             recipient = CASE
               WHEN attempt >= max_attempts OR expires_at <= $5
                 THEN '' ELSE recipient END,
-            reset_url = CASE
+            action_url = CASE
               WHEN attempt >= max_attempts OR expires_at <= $5
-                THEN '' ELSE reset_url END,
+                THEN '' ELSE action_url END,
             next_attempt_at = $4, lease_owner = NULL,
             lease_expires_at = NULL, error_code = $3, updated_at = $5
         WHERE id = $1 AND lease_owner = $2 AND status = 'sending'
@@ -141,4 +135,27 @@ export class PostgresEmailOutboxRepository implements EmailOutboxRepository {
     );
     return result.rows[0]?.status ?? null;
   }
+}
+
+function mapDelivery(row: EmailOutboxRow): EmailDeliveryMessage {
+  const expiresAt = row.expires_at instanceof Date
+    ? row.expires_at.toISOString()
+    : row.expires_at;
+  return row.kind === "password-reset"
+    ? {
+        kind: "password-reset",
+        message: {
+          recipient: row.recipient,
+          resetUrl: row.action_url,
+          expiresAt,
+        },
+      }
+    : {
+        kind: "email-verification",
+        message: {
+          recipient: row.recipient,
+          verificationUrl: row.action_url,
+          expiresAt,
+        },
+      };
 }

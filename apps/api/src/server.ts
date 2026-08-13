@@ -4,13 +4,20 @@ import { createPostgresPersistence } from "./infrastructure/postgres/persistence
 import { createRedisSecurity } from "./infrastructure/redis/redis-login-attempt-store.js";
 import { S3ObjectStorage } from "./storage/s3-object-storage.js";
 import { createS3ObjectStorageOptions } from "./storage/object-storage-environment.js";
-import { AesGcmSecretProtector, decodeAuthEncryptionKey } from "./auth/secret-protector.js";
+import {
+  AesGcmSecretProtector,
+  KeyringSecretProtector,
+  decodeAuthEncryptionKey,
+  decodeAuthEncryptionKeyring,
+} from "./auth/secret-protector.js";
 import { SmtpEmailSender } from "./infrastructure/email/smtp-email-sender.js";
 import { StripePaymentProvider } from "./billing/stripe-payment-provider.js";
 import { LocalArabicPdfOcrEngine } from "@motionprep/document-processing";
 import { EmailOutboxDispatcher } from "./infrastructure/email/email-outbox-dispatcher.js";
 import { initializeTracing } from "./observability/tracing.js";
 import { assertLiveWorker } from "./observability/worker-readiness.js";
+import { OperationalReadiness } from "./observability/operational-readiness.js";
+import { LeaseGuardedObjectStorage } from "./storage/leased-object-storage.js";
 
 const config = loadConfig();
 const tracing = initializeTracing("motionprep-api", process.env);
@@ -40,15 +47,31 @@ const security = config.REDIS_URL
       },
     })
   : null;
-const objectStorage =
+const rawObjectStorage =
   config.OBJECT_STORAGE_MODE === "s3"
     ? new S3ObjectStorage(createS3ObjectStorageOptions(config))
     : null;
-const secretProtector = config.AUTH_ENCRYPTION_KEY
-  ? new AesGcmSecretProtector(
-      decodeAuthEncryptionKey(config.AUTH_ENCRYPTION_KEY),
+const objectStorage =
+  rawObjectStorage && persistence
+    ? new LeaseGuardedObjectStorage(
+        rawObjectStorage,
+        persistence.objectWriteLeases,
+      )
+    : rawObjectStorage;
+const secretProtector = config.AUTH_ENCRYPTION_KEYRING &&
+  config.AUTH_ENCRYPTION_ACTIVE_KEY_ID
+  ? new KeyringSecretProtector(
+      config.AUTH_ENCRYPTION_ACTIVE_KEY_ID,
+      decodeAuthEncryptionKeyring(config.AUTH_ENCRYPTION_KEYRING),
+      config.AUTH_ENCRYPTION_KEY
+        ? [decodeAuthEncryptionKey(config.AUTH_ENCRYPTION_KEY)]
+        : [],
     )
-  : null;
+  : config.AUTH_ENCRYPTION_KEY
+    ? new AesGcmSecretProtector(
+        decodeAuthEncryptionKey(config.AUTH_ENCRYPTION_KEY),
+      )
+    : null;
 const emailSender =
   config.EMAIL_DELIVERY_MODE === "smtp"
     ? new SmtpEmailSender({
@@ -114,10 +137,10 @@ const pdfOcrEngine =
 const dependencyReadiness: Record<string, () => Promise<void>> = {
   ...(persistence ? { database: () => persistence.ready() } : {}),
   ...(security ? { redis: () => security.ready() } : {}),
-  ...(objectStorage
+  ...(rawObjectStorage
     ? {
         object_storage: () =>
-          objectStorage.ready(config.NODE_ENV !== "production"),
+          rawObjectStorage.ready(config.NODE_ENV !== "production"),
       }
     : {}),
   ...(emailSender ? { smtp: () => emailSender.ready() } : {}),
@@ -128,10 +151,8 @@ const dependencyReadiness: Record<string, () => Promise<void>> = {
       }
     : {}),
 };
-const ready = () =>
-  Promise.all(Object.values(dependencyReadiness).map((check) => check())).then(
-    () => undefined,
-  );
+const operationalReadiness = new OperationalReadiness(dependencyReadiness);
+const ready = () => operationalReadiness.assertReady();
 await ready();
 const emailOutboxDispatcher =
   persistence && emailSender
@@ -198,7 +219,7 @@ if (persistence || security || objectStorage || emailSender || pdfOcrEngine) {
       pdfOcrEngine?.close(),
       emailOutboxDispatcher?.stop(),
     ]);
-    objectStorage?.destroy();
+    rawObjectStorage?.destroy();
     emailSender?.close();
   });
 }
@@ -207,13 +228,19 @@ let shutdownStarted = false;
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (shutdownStarted) return;
   shutdownStarted = true;
+  operationalReadiness.beginDrain();
   app.log.info({ signal }, "server.shutdown_started");
   const forcedExit = setTimeout(() => {
     app.log.error({ signal }, "server.shutdown_timeout");
     process.exit(1);
-  }, 15_000);
+  }, config.API_SHUTDOWN_TIMEOUT_MS);
   forcedExit.unref();
   try {
+    if (config.API_DEREGISTRATION_DELAY_MS > 0) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, config.API_DEREGISTRATION_DELAY_MS);
+      });
+    }
     await app.close();
     clearTimeout(forcedExit);
     app.log.info({ signal }, "server.shutdown_completed");

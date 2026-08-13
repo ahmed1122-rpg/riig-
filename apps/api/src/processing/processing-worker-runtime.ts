@@ -5,6 +5,8 @@ import sharp from "sharp";
 import { createDatabase } from "../infrastructure/postgres/database.js";
 import { createS3ObjectStorageOptions } from "../storage/object-storage-environment.js";
 import { S3ObjectStorage } from "../storage/s3-object-storage.js";
+import { LeaseGuardedObjectStorage } from "../storage/leased-object-storage.js";
+import { PostgresObjectWriteLeaseCoordinator } from "../infrastructure/postgres/postgres-object-write-lease.js";
 import { loadProcessingWorkerConfig } from "./processing-worker-config.js";
 import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
 import { PostgresDerivedAssetRegistry } from "../infrastructure/postgres/postgres-derived-asset-registry.js";
@@ -52,7 +54,11 @@ export async function runProcessingWorker(
     },
   );
   const pool = database.pool;
-  const storage = new S3ObjectStorage(createS3ObjectStorageOptions(config));
+  const rawStorage = new S3ObjectStorage(createS3ObjectStorageOptions(config));
+  const storage = new LeaseGuardedObjectStorage(
+    rawStorage,
+    new PostgresObjectWriteLeaseCoordinator(pool),
+  );
   const pdfOcrEngine =
     options.projectKind === "book" && config.PDF_OCR_MODE === "local"
       ? new LocalArabicPdfOcrEngine({
@@ -142,7 +148,7 @@ export async function runProcessingWorker(
   try {
     await Promise.all([
       pool.query("SELECT 1"),
-      storage.ready(false),
+      rawStorage.ready(false),
     ]);
     log(options.serviceName, "info", "worker.ready", {
       concurrency,
@@ -158,6 +164,9 @@ export async function runProcessingWorker(
       workerType: options.projectKind === "image" ? "media" : "document",
       releaseVersion: process.env.RELEASE_VERSION ?? "development",
       concurrency,
+      ...(process.env.WORKER_HEALTH_INSTANCE_FILE
+        ? { healthInstanceFile: process.env.WORKER_HEALTH_INSTANCE_FILE }
+        : {}),
       onError: (error) => {
         log(options.serviceName, "error", "worker.heartbeat_failed", {
           error: error instanceof Error ? error.message : "unknown",
@@ -202,7 +211,7 @@ export async function runProcessingWorker(
     if (!running) await drain.waitForRelease();
     await database.close();
     await pdfOcrEngine?.close();
-    storage.destroy();
+    rawStorage.destroy();
   }
 }
 

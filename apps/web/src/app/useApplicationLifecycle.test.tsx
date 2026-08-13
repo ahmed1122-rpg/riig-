@@ -33,7 +33,20 @@ function Harness({
   const lifecycle = useApplicationLifecycle(onNotify);
   const stableControls = useRef(controls);
   stableControls.current.current = lifecycle;
-  return <output data-testid="phase">{lifecycle.sessionPhase}</output>;
+  return (
+    <>
+      <output data-testid="phase">{lifecycle.sessionPhase}</output>
+      <output data-testid="capabilities-phase">
+        {lifecycle.capabilitiesPhase}
+      </output>
+      <button
+        type="button"
+        onClick={() => void lifecycle.refreshCapabilities()}
+      >
+        retry capabilities
+      </button>
+    </>
+  );
 }
 
 afterEach(() => {
@@ -72,5 +85,42 @@ describe("application lifecycle", () => {
     });
     expect(controls.current?.sessionUser).toEqual(user);
     expect(onNotify).toHaveBeenCalledWith("تم فتح جلسة آمنة بنجاح");
+  });
+
+  it("keeps capabilities failure explicit and recovers on retry", async () => {
+    vi.mocked(getSession).mockResolvedValue(null);
+    vi.mocked(getApplicationCapabilities)
+      .mockRejectedValueOnce(new Error("503"))
+      .mockResolvedValueOnce({
+        ...unavailableApplicationCapabilities,
+        limits: {
+          maxUploadBytes: 30 * 1024 * 1024,
+          maxImageUploadBytes: 30 * 1024 * 1024,
+          maxPdfUploadBytes: 30 * 1024 * 1024,
+          maxPdfPages: 250,
+          maxPdfTextItems: 100_000,
+          maxImageLayers: 15,
+        },
+      });
+    const controls = { current: null } as MutableRefObject<Lifecycle | null>;
+    const view = render(
+      <Harness onNotify={vi.fn()} controls={controls} />,
+    );
+
+    await waitFor(() =>
+      expect(view.getByTestId("capabilities-phase").textContent).toBe("error"),
+    );
+    expect(controls.current?.capabilities.limits.maxUploadBytes).toBe(0);
+
+    view.getByRole("button", { name: "retry capabilities" }).click();
+    await waitFor(() =>
+      expect(view.getByTestId("capabilities-phase").textContent).toBe("ready"),
+    );
+    expect(controls.current?.capabilities.limits.maxUploadBytes).toBe(
+      30 * 1024 * 1024,
+    );
+    expect(controls.current?.capabilities.limits.maxImageUploadBytes).toBe(
+      30 * 1024 * 1024,
+    );
   });
 });

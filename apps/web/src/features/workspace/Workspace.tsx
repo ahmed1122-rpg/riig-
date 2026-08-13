@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useConfirmation } from "../../shared/useConfirmation";
 import { ShortcutsModal } from "../../shared/ShortcutsModal";
 import type { Layer, ProjectMode } from "../../types";
+import type { LayerDocumentCommand } from "@motionprep/contracts";
 import {
   WorkspaceHeader,
   WorkspacePipeline,
@@ -25,6 +26,7 @@ import {
   useWorkspaceReviewState,
   useWorkspaceSourceState,
 } from "./useWorkspaceStateControllers";
+import { useDocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
 
 export function Workspace({
   mode,
@@ -37,6 +39,10 @@ export function Workspace({
   onNotify,
   initialProject,
 }: WorkspaceProps) {
+  const maxUploadBytes =
+    mode === "image"
+      ? capabilities.limits.maxImageUploadBytes
+      : capabilities.limits.maxPdfUploadBytes;
   const review = useWorkspaceReviewState(mode);
   const source = useWorkspaceSourceState(mode);
   const editor = useWorkspaceEditorState(mode);
@@ -108,8 +114,85 @@ export function Workspace({
   } = editor;
   const fileRef = useRef<HTMLInputElement>(null);
   const exportTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const layerCommandRef = useRef<
+    (command: LayerDocumentCommand) => Promise<void>
+  >(async () => undefined);
   const { requestConfirmation, confirmationDialog } = useConfirmation();
+  const [editorDraftDirty, setEditorDraftDirty] = useState(false);
   const { shortcutsOpen, closeShortcuts } = useWorkspaceShortcutHelp();
+
+  const navigateWorkspacePdfPage = useCallback(
+    async (pageNumber: number): Promise<boolean> => {
+      if (mode !== "book" || pageNumber === activePdfPage) return true;
+      if (
+        editorDraftDirty &&
+        !(await requestConfirmation({
+          title: "تجاهل المناطق غير المحفوظة؟",
+          description:
+            "الانتقال إلى صفحة أخرى سيتجاهل مناطق PDF الحالية غير المطبقة.",
+          confirmLabel: "تجاهل والانتقال",
+          tone: "danger",
+        }))
+      ) {
+        return false;
+      }
+      const page = pdfPages.find(
+        (candidate) => candidate.pageNumber === pageNumber,
+      );
+      setActivePdfPage(pageNumber);
+      setPdfPageSize(
+        page ? { width: page.width, height: page.height } : undefined,
+      );
+      setEditorDraftDirty(false);
+      const preferredLayer = layers.find(
+        (layer) =>
+          (layer.pageNumber ?? 1) === pageNumber &&
+          layer.kind !== "group" &&
+          layer.kind !== "page",
+      ) ?? layers.find(
+        (layer) =>
+          (layer.pageNumber ?? 1) === pageNumber && layer.kind !== "group",
+      );
+      if (preferredLayer) {
+        setSelectedIds([preferredLayer.id]);
+        setActiveLayerId(preferredLayer.id);
+      }
+      return true;
+    },
+    [
+      activePdfPage,
+      editorDraftDirty,
+      layers,
+      mode,
+      pdfPages,
+      requestConfirmation,
+      setActiveLayerId,
+      setActivePdfPage,
+      setPdfPageSize,
+      setSelectedIds,
+    ],
+  );
+  const selectWorkspaceLayer = useCallback(
+    async (id: string, nextSelectedIds: string[] = [id]) => {
+      const layer = layers.find((candidate) => candidate.id === id); if (layer?.kind === "group") return;
+      if (
+        mode === "book" &&
+        layer?.pageNumber &&
+        !(await navigateWorkspacePdfPage(layer.pageNumber))
+      ) {
+        return;
+      }
+      setSelectedIds(nextSelectedIds);
+      setActiveLayerId(id);
+    },
+    [
+      layers,
+      mode,
+      navigateWorkspacePdfPage,
+      setActiveLayerId,
+      setSelectedIds,
+    ],
+  );
 
   const toolController = useWorkspaceToolController({
     mode,
@@ -119,7 +202,15 @@ export function Workspace({
     selectedIds,
     imageLayers,
     bookLayers,
-    setBookLayers,
+    onArrangeReadingOrder: () => {
+      void layerCommandRef.current({
+        kind: "arrange-reading-order",
+        scope: { kind: "document" },
+        order: "reading",
+      }).catch((error: unknown) => {
+        onNotify(error instanceof Error ? error.message : "تعذر ترتيب القراءة.");
+      });
+    },
     onNotify,
   });
   const {
@@ -179,9 +270,26 @@ export function Workspace({
     onNotify,
     onRevisionConflict: handleRevisionConflict,
   });
+  const commandCoordinator = useDocumentCommandCoordinator({
+    ...(projectId ? { projectId } : {}),
+    ...(sourceVersionId ? { sourceVersionId } : {}),
+    flushLayerReview,
+    saveInFlightRef,
+  });
   useWorkspaceNavigationGuard({
     hasUnsavedReview,
     flushLayerReview,
+    hasUnsavedDraft: () => editorDraftDirty,
+    confirmDiscardDraft: () =>
+      requestConfirmation({
+        title: "تجاهل مسودة الإرشاد؟",
+        description:
+          mode === "book"
+            ? "توجد مناطق PDF لم تُطبّق. سيؤدي التنقل إلى فقدها."
+            : "توجد إشارات رسم لم تُطبّق. سيؤدي التنقل إلى فقدها.",
+        confirmLabel: "تجاهل المسودة والمتابعة",
+        tone: "danger",
+      }),
     onNavigationGuardChange,
     onNotify,
   });
@@ -210,7 +318,7 @@ export function Workspace({
   const { applyPreparedDocument, cancelUpload, chooseSource, replaceLayerAssetUrls } =
     useWorkspaceProjectLifecycle({
     mode,
-    maxUploadBytes: capabilities.limits.maxUploadBytes,
+    maxUploadBytes,
     authenticated,
     persistedSource,
     sourceName,
@@ -222,6 +330,8 @@ export function Workspace({
     onRequireAuth,
     onNotify,
     requestConfirmation,
+    commandCoordinator,
+    hasUnsavedEditorDraft: editorDraftDirty,
     adoptSavedReview,
     resetLayerSelection,
     setImageLayers,
@@ -251,11 +361,13 @@ export function Workspace({
   const {
     applyImageGuide,
     applyImageRasterOperation,
+    applyLayerCommand,
     applyPdfGuide,
     applyPdfRegionOcr,
     applyPdfTextOperation,
     changePdfSegmentation,
     createExport,
+    documentChangeLog,
     navigateDocumentHistory,
     restoreSourceVersion,
   } = useWorkspaceCommands({
@@ -266,6 +378,7 @@ export function Workspace({
     activeLayerId,
     activePdfPage,
     guidanceRevision,
+    layers,
     ...(layerDocumentRevision === undefined
       ? {}
       : { layerDocumentRevision }),
@@ -273,8 +386,7 @@ export function Workspace({
     imageRasterOperation,
     pdfRegionOcrLayer,
     pdfRegionOcrPageSize,
-    saveInFlightRef,
-    flushLayerReview,
+    commandCoordinator,
     replaceLayerAssetUrls,
     applyPreparedDocument,
     adoptSavedReview,
@@ -297,6 +409,7 @@ export function Workspace({
     setSourcePreviewUrl,
     onNotify,
   });
+  layerCommandRef.current = applyLayerCommand;
 
   const switchMode = async (nextMode: ProjectMode): Promise<void> => {
     await commitWorkspaceModeChange(
@@ -348,7 +461,7 @@ export function Workspace({
         context={{
           mode,
           authenticated,
-          maxUploadBytes: capabilities.limits.maxUploadBytes,
+          maxUploadBytes,
           onRequireAuth,
           onNotify,
         }}
@@ -366,6 +479,11 @@ export function Workspace({
           onHistoryNavigate: navigateDocumentHistory,
           onPdfSegmentationChange: changePdfSegmentation,
           onConfirm: requestConfirmation,
+          onSelectLayer: selectWorkspaceLayer,
+          onPdfPageChange: navigateWorkspacePdfPage,
+          onLayerCommand: applyLayerCommand,
+          documentChangeLog,
+          onDraftDirtyChange: setEditorDraftDirty,
         }}
       />
 
@@ -386,7 +504,7 @@ export function Workspace({
       <WorkspaceDialogs
         context={{
           mode,
-          maxUploadBytes: capabilities.limits.maxUploadBytes,
+          maxUploadBytes,
           onNotify,
         }}
         source={source}
@@ -395,6 +513,10 @@ export function Workspace({
         tools={toolController}
         actions={{
           onRestoreSourceVersion: restoreSourceVersion,
+          onExecuteRestore: (restore) =>
+            commandCoordinator.run(async () => restore(), {
+              allowIdentityChange: true,
+            }),
           onExport: openExportReview,
           layerCheckSummary,
           onApplyPdfTextOperation: applyPdfTextOperation,
@@ -407,6 +529,10 @@ export function Workspace({
             await flushLayerReview();
           },
           onCreateExport: createExport,
+          onSelectLayer: selectWorkspaceLayer,
+          onPdfPageChange: navigateWorkspacePdfPage,
+          onLayerCommand: applyLayerCommand,
+          documentChangeLog,
         }}
       />
       <ShortcutsModal open={shortcutsOpen} onClose={closeShortcuts} />

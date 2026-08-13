@@ -4,6 +4,30 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
+  - name: API down and absent application metrics page operators
+    interval: 1m
+    input_series:
+      - series: 'up{job="motionprep-api"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MotionPrepApiDown
+        exp_alerts:
+          - exp_labels:
+              job: motionprep-api
+              severity: critical
+            exp_annotations:
+              summary: MotionPrep API target is unavailable
+              runbook: docs/runbooks/production-dependency-recovery.md
+      - eval_time: 3m
+        alertname: MotionPrepApiMetricsAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: MotionPrep API metrics are absent
+              runbook: docs/runbooks/production-dependency-recovery.md
+
   - name: character worker absence and queue age retain feature identity
     interval: 1m
     input_series:

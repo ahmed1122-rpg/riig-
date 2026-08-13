@@ -41,16 +41,23 @@ export interface AccountDeletionRequest {
   id: string;
   userId: string;
   status: "processing" | "failed" | "completed";
+  phase: "draining" | "purging" | "completed";
   objectKeys: string[];
+  objectPrefixes: string[];
   attempt: number;
   requestedAt: string;
   updatedAt: string;
   completedAt: string | null;
+  drainedAt: string | null;
 }
 
 export type PrepareAccountDeletionResult =
   | { kind: "ready"; request: AccountDeletionRequest }
   | { kind: "active_subscription" };
+
+export type ReconcileAccountDeletionResult =
+  | { kind: "draining"; request: AccountDeletionRequest }
+  | { kind: "ready"; request: AccountDeletionRequest };
 
 export interface AccountPrivacyRepository {
   exportAccount(userId: string, generatedAt: string): Promise<AccountDataExport>;
@@ -59,15 +66,35 @@ export interface AccountPrivacyRepository {
     requestedAt: string,
   ): Promise<PrepareAccountDeletionResult>;
   listPendingDeletions(limit: number): Promise<AccountDeletionRequest[]>;
+  claimDeletion(
+    requestId: string,
+    processorLeaseId: string,
+    claimedAt: string,
+    expiresAt: string,
+  ): Promise<boolean>;
+  reconcileDeletion(
+    requestId: string,
+    userId: string,
+    reconciledAt: string,
+    processorLeaseId: string,
+  ): Promise<ReconcileAccountDeletionResult>;
+  recordDeletionInventory(
+    requestId: string,
+    objectKeys: string[],
+    recordedAt: string,
+    processorLeaseId: string,
+  ): Promise<AccountDeletionRequest>;
   markDeletionFailed(
     requestId: string,
     attemptedAt: string,
     message: string,
+    processorLeaseId: string,
   ): Promise<void>;
   completeDeletion(
     requestId: string,
     userId: string,
     completedAt: string,
+    processorLeaseId: string,
   ): Promise<void>;
 }
 
@@ -85,33 +112,63 @@ export class AccountDeletionProcessor {
     private readonly repository: AccountPrivacyRepository,
     private readonly storage: ObjectStorage,
     private readonly now: () => Date = () => new Date(),
-    private readonly concurrency = 4,
   ) {}
 
   async process(request: AccountDeletionRequest): Promise<AccountDeletionRequest["status"]> {
-    const failures: string[] = [];
-    for (let offset = 0; offset < request.objectKeys.length; offset += this.concurrency) {
-      const keys = request.objectKeys.slice(offset, offset + this.concurrency);
-      const results = await Promise.allSettled(
-        keys.map((key) => this.storage.delete(key)),
-      );
-      results.forEach((result, index) => {
-        if (result.status === "rejected") {
-          failures.push(`${keys[index]}: ${errorMessage(result.reason)}`);
-        }
-      });
-    }
     const attemptedAt = this.now().toISOString();
-    if (failures.length > 0) {
-      await this.repository.markDeletionFailed(
+    if (request.status === "completed") return "completed";
+    const processorLeaseId = crypto.randomUUID();
+    const claimed = await this.repository.claimDeletion(
+      request.id,
+      processorLeaseId,
+      attemptedAt,
+      new Date(new Date(attemptedAt).getTime() + 60 * 60_000).toISOString(),
+    );
+    if (!claimed) return "processing";
+    try {
+      const reconciled = await this.repository.reconcileDeletion(
         request.id,
+        request.userId,
         attemptedAt,
-        failures.join("; ").slice(0, 1_000),
+        processorLeaseId,
       );
+      if (reconciled.kind === "draining") return "processing";
+
+      const inventory = new Set(reconciled.request.objectKeys);
+      for (const prefix of reconciled.request.objectPrefixes) {
+        for (const key of await this.storage.list(prefix)) inventory.add(key);
+      }
+      const recorded = await this.repository.recordDeletionInventory(
+        request.id,
+        [...inventory].sort((left, right) => left.localeCompare(right)),
+        attemptedAt,
+        processorLeaseId,
+      );
+      await this.storage.purge(recorded.objectKeys, recorded.objectPrefixes);
+      await this.repository.completeDeletion(
+        request.id,
+        request.userId,
+        attemptedAt,
+        processorLeaseId,
+      );
+      return "completed";
+    } catch (error) {
+      try {
+        await this.repository.markDeletionFailed(
+          request.id,
+          attemptedAt,
+          errorMessage(error).slice(0, 1_000),
+          processorLeaseId,
+        );
+      } catch (markError) {
+        throw new AggregateError(
+          [error, markError],
+          "Account deletion failed and its processor lease could not be released.",
+          { cause: markError },
+        );
+      }
       return "failed";
     }
-    await this.repository.completeDeletion(request.id, request.userId, attemptedAt);
-    return "completed";
   }
 }
 
@@ -151,6 +208,7 @@ export class InMemoryAccountPrivacyRepository
   implements AccountPrivacyRepository
 {
   readonly #requests = new Map<string, AccountDeletionRequest>();
+  readonly #processorLeases = new Map<string, { id: string; expiresAt: string }>();
 
   constructor(private readonly auth: AuthRepository) {}
 
@@ -224,11 +282,14 @@ export class InMemoryAccountPrivacyRepository
           id: crypto.randomUUID(),
           userId,
           status: "processing",
+          phase: "draining",
           objectKeys: [],
+          objectPrefixes: [],
           attempt: 1,
           requestedAt,
           updatedAt: requestedAt,
           completedAt: null,
+          drainedAt: requestedAt,
         };
     this.#requests.set(request.id, request);
     return { kind: "ready", request };
@@ -240,29 +301,102 @@ export class InMemoryAccountPrivacyRepository
       .slice(0, limit);
   }
 
+  async claimDeletion(
+    requestId: string,
+    processorLeaseId: string,
+    claimedAt: string,
+    expiresAt: string,
+  ): Promise<boolean> {
+    const request = this.#requests.get(requestId);
+    if (!request || request.status === "completed") return false;
+    const current = this.#processorLeases.get(requestId);
+    if (current && current.expiresAt > claimedAt) return false;
+    this.#processorLeases.set(requestId, { id: processorLeaseId, expiresAt });
+    return true;
+  }
+
+  async reconcileDeletion(
+    requestId: string,
+    _userId: string,
+    reconciledAt: string,
+    processorLeaseId: string,
+  ): Promise<ReconcileAccountDeletionResult> {
+    const request = this.#requests.get(requestId);
+    if (!request) throw new Error("Account deletion request not found.");
+    this.requireProcessorLease(requestId, processorLeaseId, reconciledAt);
+    if (request.status === "completed") return { kind: "ready", request };
+    const reconciled: AccountDeletionRequest = {
+      ...request,
+      status: "processing",
+      phase: "purging",
+      drainedAt: request.drainedAt ?? reconciledAt,
+      updatedAt: reconciledAt,
+    };
+    this.#requests.set(requestId, reconciled);
+    return { kind: "ready", request: reconciled };
+  }
+
+  async recordDeletionInventory(
+    requestId: string,
+    objectKeys: string[],
+    recordedAt: string,
+    processorLeaseId: string,
+  ): Promise<AccountDeletionRequest> {
+    const request = this.#requests.get(requestId);
+    if (!request) throw new Error("Account deletion request not found.");
+    this.requireProcessorLease(requestId, processorLeaseId, recordedAt);
+    const recorded = {
+      ...request,
+      objectKeys: [...new Set(objectKeys)],
+      updatedAt: recordedAt,
+    };
+    this.#requests.set(requestId, recorded);
+    return recorded;
+  }
+
   async markDeletionFailed(
     requestId: string,
     attemptedAt: string,
     _message: string,
+    processorLeaseId: string,
   ): Promise<void> {
     const request = this.#requests.get(requestId);
-    if (request) this.#requests.set(requestId, { ...request, status: "failed", updatedAt: attemptedAt });
+    if (!request) return;
+    this.requireProcessorLease(requestId, processorLeaseId, attemptedAt);
+    this.#requests.set(requestId, { ...request, status: "failed", updatedAt: attemptedAt });
+    this.#processorLeases.delete(requestId);
   }
 
   async completeDeletion(
     requestId: string,
     _userId: string,
     completedAt: string,
+    processorLeaseId: string,
   ): Promise<void> {
     const request = this.#requests.get(requestId);
     if (request) {
+      this.requireProcessorLease(requestId, processorLeaseId, completedAt);
       this.#requests.set(requestId, {
         ...request,
         status: "completed",
+        phase: "completed",
         objectKeys: [],
+        objectPrefixes: [],
         updatedAt: completedAt,
         completedAt,
       });
+      this.#processorLeases.delete(requestId);
+    }
+  }
+
+  private requireProcessorLease(
+    requestId: string,
+    processorLeaseId: string,
+    now: string,
+  ): void {
+    const lease = this.#processorLeases.get(requestId);
+    if (!lease || lease.id !== processorLeaseId || lease.expiresAt <= now) {
+      throw new Error("Account deletion processor lease was lost.");
     }
   }
 }

@@ -2,17 +2,25 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type Dispatch,
   type SetStateAction,
 } from "react";
 import type { ApplicationCapabilities } from "@motionprep/contracts";
 import type { ConfirmationRequest } from "../../shared/useConfirmation";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
-import { ApiError, getProject, type LayerDocumentView } from "../../lib/api";
+import {
+  ApiError,
+  getProject,
+  type LayerDocumentView,
+  type ProjectSummary,
+} from "../../lib/api";
+import { useResourcePolling } from "../../shared/hooks/useResourcePolling";
 import type { WorkspaceProps } from "./Workspace.types";
 import type { UploadState } from "./SourceUploadStatus";
 import { useWorkspaceUpload } from "./useWorkspaceUpload";
 import { loadWorkspaceProjectDocument } from "./workspaceDocument";
+import type { DocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
 
 type SetState<Value> = Dispatch<SetStateAction<Value>>;
 const pendingProjectStatuses = new Set([
@@ -28,6 +36,7 @@ interface WorkspaceProjectLifecycleOptions {
   authenticated: boolean;
   persistedSource: boolean;
   sourceName: string;
+  hasUnsavedEditorDraft?: boolean;
   projectId?: string;
   sourceVersionId?: string;
   sourcePreviewUrl?: string;
@@ -38,6 +47,7 @@ interface WorkspaceProjectLifecycleOptions {
   requestConfirmation: (
     request: ConfirmationRequest,
   ) => Promise<boolean>;
+  commandCoordinator: DocumentCommandCoordinator;
   adoptSavedReview: (layers: Layer[], revision: number) => void;
   resetLayerSelection: (layers: readonly Layer[]) => void;
   setImageLayers: SetState<Layer[]>;
@@ -77,6 +87,8 @@ export function useWorkspaceProjectLifecycle(
   options: WorkspaceProjectLifecycleOptions,
 ) {
   const layerAssetUrlsRef = useRef<string[]>([]);
+  const [projectToHydrate, setProjectToHydrate] =
+    useState<ProjectSummary>();
 
   const replaceLayerAssetUrls = useCallback((urls: string[]) => {
     for (const url of layerAssetUrlsRef.current) {
@@ -138,8 +150,12 @@ export function useWorkspaceProjectLifecycle(
     authenticated: options.authenticated,
     persistedSource: options.persistedSource,
     sourceName: options.sourceName,
+    ...(options.hasUnsavedEditorDraft === undefined
+      ? {}
+      : { hasUnsavedEditorDraft: options.hasUnsavedEditorDraft }),
     ...(options.projectId ? { projectId: options.projectId } : {}),
     pdfMode: options.pdfMode,
+    commandCoordinator: options.commandCoordinator,
     onRequireAuth: options.onRequireAuth,
     onNotify: options.onNotify,
     confirmSourceReplacement: options.requestConfirmation,
@@ -160,7 +176,9 @@ export function useWorkspaceProjectLifecycle(
       options.setSourceHash(result.sha256);
       applyPreparedDocument(result.document, preparedLayers);
       options.resetLayerSelection(preparedLayers);
-      options.setSourcePreviewUrl(URL.createObjectURL(file));
+      options.setSourcePreviewUrl(
+        options.mode === "image" ? URL.createObjectURL(file) : undefined,
+      );
       options.adoptSavedReview(
         preparedLayers,
         result.document.revision ?? 1,
@@ -205,97 +223,118 @@ export function useWorkspaceProjectLifecycle(
   );
 
   useEffect(() => {
-    if (!options.initialProject || !options.authenticated) return;
-    const controller = new AbortController();
-    let pollTimer: number | undefined;
+    if (!options.initialProject || !options.authenticated) {
+      setProjectToHydrate(undefined);
+      return;
+    }
     options.setUploadState("verifying");
     options.setUploadProgress(0);
     options.setUploadError(undefined);
     options.setSourceName(options.initialProject.name);
     options.setProjectId(options.initialProject.id);
+    setProjectToHydrate(undefined);
+  }, [
+    options.authenticated,
+    options.initialProject,
+    options.setProjectId,
+    options.setSourceName,
+    options.setUploadError,
+    options.setUploadProgress,
+    options.setUploadState,
+  ]);
 
-    const loadProject = async () => {
-      try {
-        const project = await getProject(
-          options.initialProject!.id,
-          controller.signal,
+  useResourcePolling({
+    enabled: Boolean(options.initialProject && options.authenticated),
+    resourceKey: `workspace-project:${options.initialProject?.id ?? "none"}`,
+    revision: options.initialProject?.currentSourceVersionNumber ?? 0,
+    intervalMs: 1_500,
+    maximumRetryIntervalMs: 15_000,
+    load: async (signal) => {
+      const project = await getProject(options.initialProject!.id, signal);
+      if (project.kind !== options.mode) {
+        throw new ApiError(
+          "PROJECT_KIND_MISMATCH",
+          "نوع المشروع لا يطابق وضع مساحة العمل. افتح المشروع من قائمة المشاريع لتصحيح الرابط.",
+          409,
         );
-        if (controller.signal.aborted) return;
-        options.setProjectId(project.id);
-        options.setSourceName(project.name);
-        if (project.kind !== options.mode) {
-          throw new ApiError(
-            "PROJECT_KIND_MISMATCH",
-            "نوع المشروع لا يطابق وضع مساحة العمل. افتح المشروع من قائمة المشاريع لتصحيح الرابط.",
-            409,
-          );
-        }
-        if (pendingProjectStatuses.has(project.status)) {
-          options.setUploadState("verifying");
-          options.setUploadProgress(projectProgress(project.status));
-          pollTimer = window.setTimeout(() => void loadProject(), 1_500);
-          return;
-        }
-        if (!project.currentSourceVersionId) {
-          options.setUploadProgress(0);
-          if (project.status === "draft") {
-            options.setUploadState("empty");
-            options.setUploadDetailsOpen(false);
-            return;
-          }
-          options.setUploadState("error");
-          options.setUploadError(
-            "لم يكتمل تجهيز مصدر هذا المشروع. يمكنك اختيار الملف مجددًا لإعادة استخدام المشروع نفسه.",
-          );
-          options.setUploadDetailsOpen(true);
-          return;
-        }
-        const { document, preparedLayers, previewUrls } =
-          await loadWorkspaceProjectDocument(
-            project,
-            options.mode,
-            controller.signal,
-          );
-        if (controller.signal.aborted) return;
-        replaceLayerAssetUrls(previewUrls);
-        options.setSourceVersionId(document.sourceVersionId);
-        options.setPendingUploadId(undefined);
-        options.setPendingSourceVersionId(undefined);
-        options.setProcessingJobId(undefined);
-        options.adoptSavedReview(
-          preparedLayers,
-          document.revision ?? 1,
-        );
-        options.setGuidanceRevision(document.guidance?.revision ?? 0);
-        options.setSourceVersion(
-          project.currentSourceVersionNumber ?? 1,
-        );
-        options.setUploadState("ready");
-        options.setUploadProgress(100);
-        applyPreparedDocument(document, preparedLayers);
-        options.resetLayerSelection(preparedLayers);
-      } catch (caught) {
-        if (controller.signal.aborted) return;
-        options.setUploadState("error");
+      }
+      return project;
+    },
+    shouldPoll: (project) => pendingProjectStatuses.has(project.status),
+    onSuccess: (project) => {
+      options.setProjectId(project.id);
+      options.setSourceName(project.name);
+      if (pendingProjectStatuses.has(project.status)) {
+        options.setUploadState("verifying");
+        options.setUploadProgress(projectProgress(project.status));
+        return;
+      }
+      if (!project.currentSourceVersionId) {
         options.setUploadProgress(0);
+        if (project.status === "draft") {
+          options.setUploadState("empty");
+          options.setUploadDetailsOpen(false);
+          return;
+        }
+        options.setUploadState("error");
         options.setUploadError(
-          caught instanceof ApiError
-            ? caught.message
-            : "تعذر فتح وثيقة الطبقات لهذا المشروع.",
+          "لم يكتمل تجهيز مصدر هذا المشروع. يمكنك اختيار الملف مجددًا لإعادة استخدام المشروع نفسه.",
         );
         options.setUploadDetailsOpen(true);
+        return;
       }
-    };
-    void loadProject();
-    return () => {
-      controller.abort();
-      if (pollTimer !== undefined) window.clearTimeout(pollTimer);
-    };
+      setProjectToHydrate(project);
+    },
+    onError: (caught) => {
+      options.setUploadState("error");
+      options.setUploadProgress(0);
+      options.setUploadError(
+        caught instanceof ApiError
+          ? caught.message
+          : "تعذر فتح وثيقة الطبقات لهذا المشروع.",
+      );
+      options.setUploadDetailsOpen(true);
+    },
+  });
+
+  useEffect(() => {
+    if (!projectToHydrate) return;
+    const controller = new AbortController();
+    void loadWorkspaceProjectDocument(
+      projectToHydrate,
+      options.mode,
+      controller.signal,
+    ).then(({ document, preparedLayers, previewUrls }) => {
+      if (controller.signal.aborted) return;
+      replaceLayerAssetUrls(previewUrls);
+      options.setSourceVersionId(document.sourceVersionId);
+      options.setPendingUploadId(undefined);
+      options.setPendingSourceVersionId(undefined);
+      options.setProcessingJobId(undefined);
+      options.adoptSavedReview(preparedLayers, document.revision ?? 1);
+      options.setGuidanceRevision(document.guidance?.revision ?? 0);
+      options.setSourceVersion(
+        projectToHydrate.currentSourceVersionNumber ?? 1,
+      );
+      options.setUploadState("ready");
+      options.setUploadProgress(100);
+      applyPreparedDocument(document, preparedLayers);
+      options.resetLayerSelection(preparedLayers);
+    }).catch((caught: unknown) => {
+      if (controller.signal.aborted) return;
+      options.setUploadState("error");
+      options.setUploadProgress(0);
+      options.setUploadError(
+        caught instanceof ApiError
+          ? caught.message
+          : "تعذر فتح وثيقة الطبقات لهذا المشروع.",
+      );
+      options.setUploadDetailsOpen(true);
+    });
+    return () => controller.abort();
   }, [
     applyPreparedDocument,
     options.adoptSavedReview,
-    options.authenticated,
-    options.initialProject,
     options.mode,
     options.resetLayerSelection,
     options.setGuidanceRevision,
@@ -310,6 +349,7 @@ export function useWorkspaceProjectLifecycle(
     options.setUploadError,
     options.setUploadProgress,
     options.setUploadState,
+    projectToHydrate,
     replaceLayerAssetUrls,
   ]);
 

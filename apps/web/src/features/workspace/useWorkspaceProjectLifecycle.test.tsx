@@ -57,6 +57,10 @@ function makeOptions() {
     onRequireAuth: vi.fn(),
     onNotify: vi.fn(),
     requestConfirmation: vi.fn().mockResolvedValue(true),
+    commandCoordinator: {
+      run: async <T,>(command: (context: { baseRevision: number | undefined }) => Promise<T>) =>
+        command({ baseRevision: undefined }),
+    },
     adoptSavedReview: vi.fn(),
     resetLayerSelection: vi.fn(),
     setImageLayers: vi.fn(),

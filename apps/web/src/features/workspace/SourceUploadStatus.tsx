@@ -2,8 +2,9 @@ import { Icon } from "../../shared/Icon";
 import type { ProjectMode } from "../../types";
 import {
   MAX_IMAGE_LAYERS,
+  MAX_IMAGE_UPLOAD_BYTES,
+  MAX_PDF_UPLOAD_BYTES,
   MAX_PDF_PAGES,
-  MAX_UPLOAD_BYTES,
 } from "@motionprep/contracts";
 import { uploadLimitLabel } from "./uploadLimit";
 
@@ -36,7 +37,7 @@ const labels: Record<UploadState, string> = {
 
 export function SourceUploadStatus({
   mode,
-  maxUploadBytes = MAX_UPLOAD_BYTES,
+  maxUploadBytes,
   fileName,
   version,
   state,
@@ -50,7 +51,10 @@ export function SourceUploadStatus({
   onRetry,
 }: SourceUploadStatusProps) {
   const active = !["empty", "ready", "error"].includes(state);
-  const uploadLimit = uploadLimitLabel(maxUploadBytes);
+  const uploadLimit = uploadLimitLabel(
+    maxUploadBytes ??
+      (mode === "image" ? MAX_IMAGE_UPLOAD_BYTES : MAX_PDF_UPLOAD_BYTES),
+  );
 
   return (
     <div className="pro-source-status">
@@ -64,7 +68,13 @@ export function SourceUploadStatus({
         <span className="replace-source">{state === "empty" ? "اختيار" : "استبدال"}</span>
       </button>
 
-      <button className={`pro-upload-pill is-${state}`} type="button" onClick={onToggleDetails} aria-expanded={detailsOpen}>
+      <button
+        className={`pro-upload-pill is-${state}`}
+        type="button"
+        onClick={onToggleDetails}
+        aria-expanded={detailsOpen}
+        aria-label={`${labels[state]}، ${detailsOpen ? "إخفاء التفاصيل" : "عرض التفاصيل"}`}
+      >
         {active && <i className="pro-spinner" />}
         {state === "ready" && <Icon name="check" size={13} />}
         {state === "error" && <Icon name="warning" size={13} />}

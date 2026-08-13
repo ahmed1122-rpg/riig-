@@ -3,6 +3,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAndUploadSource } from "../../lib/api";
+import type { DocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
 import { useWorkspaceUpload } from "./useWorkspaceUpload";
 
 vi.mock("../../lib/api", () => ({
@@ -61,13 +62,20 @@ describe("useWorkspaceUpload", () => {
       .mockReturnValueOnce(second.promise as never);
     const onDocumentReady = vi.fn();
     const setSourceName = vi.fn();
+    const commandCoordinator = {
+      run: async <T,>(
+        command: (context: { baseRevision: number | undefined }) => Promise<T>,
+      ) => command({ baseRevision: 3 }),
+    } satisfies DocumentCommandCoordinator;
+    const coordinatorRun = vi.spyOn(commandCoordinator, "run");
     const options = {
       mode: "image" as const,
       maxUploadBytes: 1_000_000,
       authenticated: true,
-      persistedSource: false,
+      persistedSource: true,
       sourceName: "original.png",
       pdfMode: "lines" as const,
+      commandCoordinator,
       onRequireAuth: vi.fn(),
       onNotify: vi.fn(),
       confirmSourceReplacement: vi.fn().mockResolvedValue(true),
@@ -119,5 +127,9 @@ describe("useWorkspaceUpload", () => {
       [],
     );
     expect(setSourceName).not.toHaveBeenLastCalledWith("original.png");
+    expect(coordinatorRun).toHaveBeenCalledWith(
+      expect.any(Function),
+      { flush: true, allowIdentityChange: true },
+    );
   });
 });

@@ -1,4 +1,5 @@
 import {
+  MAX_IMAGE_UPLOAD_BYTES,
   MAX_UPLOAD_BYTES,
   type ProjectStatus,
   type SourceType,
@@ -26,8 +27,10 @@ import type {
 import { classifyUploadIntegrityFailure } from "./upload-integrity.js";
 import { resolveUploadFinalizationOutcome } from "./upload-finalization-recovery.js";
 import {
+  assertImageUploadLimit,
   assertUploadLimit,
   formatUploadMebibytes,
+  uploadLimitForSourceType,
 } from "./upload-limits.js";
 import type { UploadCancellationCommand } from "./upload-cancellation.js";
 
@@ -87,8 +90,18 @@ export class UploadService {
         objectKey: string;
       },
     ) => void,
+    private readonly maxImageUploadBytes = MAX_IMAGE_UPLOAD_BYTES,
   ) {
     assertUploadLimit(maxUploadBytes);
+    assertImageUploadLimit(maxImageUploadBytes);
+  }
+
+  private limitFor(contentType: SourceType): number {
+    return uploadLimitForSourceType(
+      contentType,
+      this.maxUploadBytes,
+      this.maxImageUploadBytes,
+    );
   }
 
   async receive(uploadId: string, bytes: Buffer): Promise<UploadSession> {
@@ -114,10 +127,11 @@ export class UploadService {
       throw new Error("Object storage is required for binary uploads.");
     }
 
+    const uploadLimit = this.limitFor(session.contentType);
     if (
       inspection.contentType !== session.contentType ||
       inspection.sizeBytes !== session.expectedSizeBytes ||
-      inspection.sizeBytes > this.maxUploadBytes
+      inspection.sizeBytes > uploadLimit
     ) {
       await this.fail(session);
       throw new UploadDomainError(
@@ -126,7 +140,7 @@ export class UploadService {
           : "UPLOAD_SIZE_MISMATCH",
         inspection.contentType !== session.contentType
           ? "نوع الملف الفعلي لا يطابق النوع المعلن."
-          : `حجم الملف المرفوع لا يطابق الحجم المتوقع أو يتجاوز ${formatUploadMebibytes(this.maxUploadBytes)} MiB.`,
+          : `حجم الملف المرفوع لا يطابق الحجم المتوقع أو يتجاوز ${formatUploadMebibytes(uploadLimit)} MiB.`,
       );
     }
 
@@ -169,7 +183,7 @@ export class UploadService {
         if (resolution.kind === "unknown") throw error;
       }
       try {
-        await this.storage.delete(session.objectKey);
+        await this.storage.purge([session.objectKey], []);
       } catch (cleanupError) {
         this.reportOperationalError(cleanupError, session, "object_cleanup");
       }
@@ -212,10 +226,11 @@ export class UploadService {
     idempotencyKey: string,
     projectStatusBeforeUpload?: ProjectStatus,
   ): Promise<UploadSession> {
-    if (input.sizeBytes > this.maxUploadBytes) {
+    const uploadLimit = this.limitFor(input.contentType);
+    if (input.sizeBytes > uploadLimit) {
       throw new UploadDomainError(
         "UPLOAD_SIZE_MISMATCH",
-        `يتجاوز الملف حد الرفع الحالي ${formatUploadMebibytes(this.maxUploadBytes)} MiB.`,
+        `يتجاوز الملف حد الرفع الحالي ${formatUploadMebibytes(uploadLimit)} MiB.`,
       );
     }
     if (!this.sourceVersions) {
@@ -298,7 +313,7 @@ export class UploadService {
       sha256: null,
       objectKey: `sources/${input.projectId}/${uploadId}.${safeExtension(input.contentType)}`,
       expiresAt,
-      maxBytes: this.maxUploadBytes,
+      maxBytes: uploadLimit,
       uploadUrl: `/v1/uploads/${uploadId}/content`,
       createdAt: timestamp.toISOString(),
       updatedAt: timestamp.toISOString(),
@@ -492,7 +507,7 @@ export class UploadService {
         });
       }
     }
-    await this.storage?.delete(cancelled.objectKey);
+    await this.storage?.purge([cancelled.objectKey], []);
     await this.repository.markObjectPurged(
       cancelled.uploadId,
       this.now().toISOString(),

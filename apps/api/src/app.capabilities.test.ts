@@ -22,8 +22,14 @@ describe("runtime capabilities", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({
-      schemaVersion: "1.0",
-      limits: { maxUploadBytes: 30 * 1024 * 1024, maxPdfPages: 250 },
+      schemaVersion: "1.1",
+      limits: {
+        maxUploadBytes: 30 * 1024 * 1024,
+        maxImageUploadBytes: 30 * 1024 * 1024,
+        maxPdfUploadBytes: 30 * 1024 * 1024,
+        maxPdfPages: 250,
+      },
+      runtime: { storageProfile: "ephemeral" },
       features: {
         characterRig: {
           enabled: false,
@@ -38,6 +44,33 @@ describe("runtime capabilities", () => {
       },
     });
 
+    await app.close();
+  });
+
+  it("reports required worker degradation without taking down the API", async () => {
+    const app = await buildApp(
+      loadConfig({
+        NODE_ENV: "test",
+        PROCESSING_EXECUTION_MODE: "worker",
+        EXPORT_EXECUTION_MODE: "worker",
+      }),
+      {
+        operationalStatus: {
+          async snapshot() {
+            return operationalSnapshot;
+          },
+        },
+      },
+    );
+    const response = await app.inject({ method: "GET", url: "/v1/capabilities" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.runtime.workers).toMatchObject({
+      media: { status: "degraded", reason: expect.stringContaining("heartbeat") },
+      document: { status: "degraded", reason: expect.stringContaining("heartbeat") },
+      export: { status: "degraded", reason: expect.stringContaining("heartbeat") },
+      character: { status: "not_required", reason: null },
+    });
     await app.close();
   });
 

@@ -41,6 +41,70 @@ export function integrationPort(environment, name, fallback) {
   return port;
 }
 
+export async function withAvailableIntegrationPorts(
+  environment,
+  allocate = allocateLoopbackPorts,
+) {
+  const missing = dynamicPortNames.filter((name) => !environment[name]?.trim());
+  const resolved = { ...environment };
+  if (missing.length > 0) {
+    const allocated = await allocate(missing.length);
+    if (
+      allocated.length !== missing.length ||
+      new Set(allocated).size !== allocated.length
+    ) {
+      throw new Error("Integration port allocator returned an invalid port set.");
+    }
+    missing.forEach((name, index) => {
+      resolved[name] = String(integrationPort(
+        { value: String(allocated[index]) },
+        "value",
+        1,
+      ));
+    });
+  }
+  const selected = dynamicPortNames.map((name) =>
+    integrationPort(resolved, name, 1),
+  );
+  if (new Set(selected).size !== selected.length) {
+    throw new Error("Integration service ports must be distinct.");
+  }
+  return resolved;
+}
+
+async function allocateLoopbackPorts(count) {
+  const servers = [];
+  try {
+    for (let index = 0; index < count; index += 1) {
+      const server = createServer();
+      servers.push(server);
+      await new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", resolve);
+      });
+    }
+    return servers.map((server) => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Could not allocate an integration loopback port.");
+      }
+      return address.port;
+    });
+  } finally {
+    await Promise.all(servers.map((server) => new Promise((resolve) => {
+      server.close(() => resolve());
+    })));
+  }
+}
+
 function loopbackOrigin(port) {
   return `http://127.0.0.1:${port}`;
 }
+import { createServer } from "node:net";
+
+const dynamicPortNames = [
+  "INTEGRATION_POSTGRES_PORT",
+  "INTEGRATION_MAILPIT_PORT",
+  "INTEGRATION_API_A_PORT",
+  "INTEGRATION_API_B_PORT",
+];

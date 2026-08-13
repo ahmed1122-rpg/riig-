@@ -3,6 +3,58 @@ import { describe, expect, it, vi } from "vitest";
 import { PostgresAccountPrivacyRepository } from "./postgres-account-privacy-repository.js";
 
 describe("PostgresAccountPrivacyRepository", () => {
+  it("defensively hydrates legacy pending rows and claims one processor", async () => {
+    const query = vi.fn(async (sqlValue: unknown) => {
+      const sql = String(sqlValue);
+      if (sql.startsWith("SELECT * FROM account_deletion_requests")) {
+        return {
+          rows: [{
+            id: "deletion-legacy",
+            user_id: "user-1",
+            status: "processing",
+            phase: null,
+            object_keys: null,
+            object_prefixes: null,
+            attempt: 1,
+            requested_at: "2026-08-12T00:00:00.000Z",
+            updated_at: "2026-08-12T00:00:00.000Z",
+            completed_at: null,
+            drained_at: null,
+          }],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 1 };
+    });
+    const repository = new PostgresAccountPrivacyRepository({ query } as unknown as Pool);
+
+    await expect(repository.listPendingDeletions(10)).resolves.toEqual([
+      expect.objectContaining({
+        id: "deletion-legacy",
+        phase: "draining",
+        objectKeys: [],
+        objectPrefixes: [],
+      }),
+    ]);
+    await expect(repository.claimDeletion(
+      "deletion-legacy",
+      "processor-1",
+      "2026-08-12T00:00:00.000Z",
+      "2026-08-12T01:00:00.000Z",
+    )).resolves.toBe(true);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "processor_lease_expires_at <= clock_timestamp()",
+      ),
+      [
+        "deletion-legacy",
+        "processor-1",
+        "2026-08-12T00:00:00.000Z",
+        "2026-08-12T01:00:00.000Z",
+      ],
+    );
+  });
+
   it("exports owned editor and Character records without provider handles", async () => {
     const query = vi.fn(async (sqlValue: unknown) => {
       const sql = String(sqlValue);
@@ -111,13 +163,34 @@ describe("PostgresAccountPrivacyRepository", () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
-  it("removes derived ownership metadata before deleting the project graph", async () => {
+  it("locks projects before the registry and then removes the graph", async () => {
     const statements: string[] = [];
     const query = vi.fn(async (sqlValue: unknown) => {
       const sql = String(sqlValue);
       statements.push(sql);
+      if (sql.includes("FROM account_deletion_requests")) {
+        return {
+          rows: [{
+            id: "deletion-1",
+            user_id: "user-1",
+            status: "processing",
+            phase: "purging",
+            object_keys: [],
+            object_prefixes: [],
+            attempt: 1,
+            requested_at: "2026-08-12T00:00:00.000Z",
+            updated_at: "2026-08-12T00:00:00.000Z",
+            completed_at: null,
+            drained_at: "2026-08-12T00:00:00.000Z",
+          }],
+          rowCount: 1,
+        };
+      }
       if (sql.includes("SELECT email FROM users")) {
         return { rows: [{ email: "owner@example.com" }], rowCount: 1 };
+      }
+      if (sql.includes("SELECT 1 FROM (")) {
+        return { rows: [], rowCount: 0 };
       }
       return { rows: [], rowCount: 1 };
     });
@@ -132,6 +205,7 @@ describe("PostgresAccountPrivacyRepository", () => {
       "deletion-1",
       "user-1",
       "2026-08-12T00:00:00.000Z",
+      "processor-lease-1",
     );
 
     const registryDelete = statements.findIndex((sql) =>
@@ -140,7 +214,20 @@ describe("PostgresAccountPrivacyRepository", () => {
     const projectDelete = statements.findIndex((sql) =>
       sql.includes("DELETE FROM projects"),
     );
+    const emailVerificationDelete = statements.findIndex((sql) =>
+      sql.includes("DELETE FROM email_verification_tokens"),
+    );
     expect(registryDelete).toBeGreaterThan(-1);
     expect(projectDelete).toBeGreaterThan(registryDelete);
+    expect(emailVerificationDelete).toBeGreaterThan(projectDelete);
+    const projectLock = statements.findIndex((sql) =>
+      sql.includes("SELECT id FROM projects") && sql.includes("FOR UPDATE"),
+    );
+    const registryLock = statements.findIndex((sql) =>
+      sql.includes("SELECT object_key FROM derived_asset_registry") &&
+      sql.includes("FOR UPDATE"),
+    );
+    expect(projectLock).toBeGreaterThan(-1);
+    expect(registryLock).toBeGreaterThan(projectLock);
   });
 });

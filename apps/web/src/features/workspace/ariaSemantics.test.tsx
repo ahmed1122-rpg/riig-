@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ProjectsView } from "../projects/ProjectsView";
 import { LayerDock } from "./LayerDock";
 import { WorkspaceHeader, WorkspaceStatusBar } from "./WorkspaceChrome";
+import { WorkspaceToolRail } from "./WorkspaceToolRail";
 
 const noop = () => undefined;
 const allowModeChange = async () => undefined;
@@ -45,6 +46,7 @@ describe("truthful selection semantics", () => {
     expect(markup).toContain('role="group"');
     expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('aria-pressed="false"');
+    expect(markup).toContain('<h1>');
     expect(markup).not.toContain('role="tablist"');
   });
 
@@ -80,9 +82,11 @@ describe("truthful selection semantics", () => {
     expect(dirtyHeader).not.toContain("كل التعديلات محفوظة");
     expect(conflictFooter).toContain("تعارض نسخة");
     expect(conflictFooter).not.toContain(">محفوظ<");
+    expect(conflictFooter).toContain('role="status"');
+    expect(conflictFooter).toContain('aria-live="polite"');
   });
 
-  it("links dock tabs to a panel and exposes layers as selected list items", () => {
+  it("links dock tabs to a panel and exposes interactive layers as named groups", () => {
     const markup = renderToStaticMarkup(
       <LayerDock
         mode="image"
@@ -106,7 +110,7 @@ describe("truthful selection semantics", () => {
         onWidthChange={noop}
         onSelectionChange={noop}
         onLayersChange={noop}
-        onArrangeReadingOrder={noop}
+        onLayerCommand={async () => undefined}
         onNotify={noop}
       />,
     );
@@ -114,10 +118,39 @@ describe("truthful selection semantics", () => {
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain('aria-controls=');
     expect(markup).toContain('role="tabpanel"');
-    expect(markup).toContain('role="list"');
-    expect(markup).toContain('role="listitem"');
+    expect(markup).toContain('role="group"');
+    expect(markup).not.toContain('role="listitem"');
     expect(markup).toContain('aria-label="+رأس، محددة"');
     expect(markup).not.toContain('role="listbox"');
     expect(markup).not.toContain('role="option"');
+  });
+
+  it("keeps unavailable desktop tools focusable and describes the reason", () => {
+    const markup = renderToStaticMarkup(
+      <WorkspaceToolRail
+        mode="book"
+        tools={[{
+          id: "pdf.region-ocr",
+          mode: "book",
+          label: "OCR",
+          icon: "scanText",
+          group: "document",
+          availability: "ready",
+          action: "pdf-region-ocr",
+          requiresSource: true,
+          available: false,
+          unavailableReason: "يلزم تفعيل OCR في بيئة التشغيل.",
+        }]}
+        activeTool="pdf.heading"
+        collapsed={false}
+        onCollapsedChange={noop}
+        onToolChange={noop}
+      />,
+    );
+
+    expect(markup).toContain('aria-disabled="true"');
+    expect(markup).toContain('aria-describedby="desktop-tool-reason-pdf.region-ocr"');
+    expect(markup).not.toContain(" disabled=");
+    expect(markup).toContain("يلزم تفعيل OCR في بيئة التشغيل.");
   });
 });

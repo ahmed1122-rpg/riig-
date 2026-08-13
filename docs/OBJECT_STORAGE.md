@@ -19,11 +19,21 @@ are never authorization credentials.
 - Use `OBJECT_STORAGE_FORCE_PATH_STYLE=false` for AWS S3 unless the deployment
   requires otherwise. Local MinIO uses `true`.
 
-Grant the API and every worker the minimum bucket-scoped permissions needed to
-check the bucket and to get, put, and delete objects under `sources/`,
-`derived/`, `artifacts/`, and the narrow `projects/*/character-rig/*` path.
-Do not grant a worker the broader `projects/*` prefix. Production startup only checks an existing
-bucket; it never creates one. Development may create a missing bucket.
+Give every runtime a distinct workload identity. The minimum production policy
+matrix is:
+
+| Runtime | Read | Write/delete | Prohibited |
+|---|---|---|---|
+| API | Exact authorized keys under `sources/`, `derived/`, `artifacts/`, and character paths | `sources/` uploads and exact cleanup/purge operations | Bucket creation, policy changes, unrestricted listing |
+| Media worker | Job-owned `sources/` | Job-owned `derived/` | `artifacts/`, character paths, bucket administration |
+| Document worker | Job-owned `sources/` and `derived/` | Job-owned `derived/` | `artifacts/`, character paths, bucket administration |
+| Export worker | Job-owned `sources/` and `derived/` | Job-owned `artifacts/` | Broad `projects/` access, bucket administration |
+| Character worker | Exact project character keys and required source/derived inputs | Narrow `projects/<projectId>/character-rig/` keys | Other projects, broad `projects/`, bucket administration |
+| Maintenance | Metadata/list access required for reconciliation | Exact version purge for expired or deleted-account keys | Object creation, bucket administration |
+
+Production startup only checks an existing bucket; it never creates one.
+Development may create a missing bucket. Provider IAM must enforce the matrix;
+the workload-specific env-file checks are a second guard, not a substitute.
 
 ## Object layout and retention
 
@@ -62,6 +72,16 @@ service. Account deletion collects object keys from Character references,
 generation attempts, and rig versions before deleting project rows. Do not
 enable Character Studio broadly until the scheduled reference-expiry sweep is
 deployed and exercised against the selected object provider.
+
+All production writes under `sources/`, `artifacts/`, `derived/`, and
+`projects/` are wrapped by a durable PostgreSQL `object_write_leases` fence.
+Acquisition serializes with the account tombstone, long writes renew the lease,
+and successful writes retain a 15-minute cooldown for database publication.
+The private Character provider receives one exact output key and its external
+write is covered by the same fence. Any failed, ambiguous, lease-lost, or
+otherwise unpublished write is removed with exact version purge. Normal
+time-based retention may continue to use `DeleteObject` according to the
+approved recovery policy.
 
 ## Encryption and integrity
 
@@ -110,7 +130,7 @@ the actual response body at end of stream.
 
 ## Transfer boundary
 
-The current product limit is one file up to 30 MiB. Browser upload and artifact
+The current product limit is one image or PDF up to 30 MiB. Browser upload and artifact
 download are authenticated API requests; v1 does not issue public or presigned
 object URLs. This keeps ownership checks at the application boundary. If direct
 multipart transfer is introduced later, it requires a separate ADR covering
@@ -180,3 +200,11 @@ repo:<OWNER>/<REPOSITORY>:environment:production-readiness
 
 Grant the assumed role only the bucket/prefix operations required by this
 document. Do not grant account-wide S3 administration.
+
+The runtime role needs object read/write/delete permissions and bucket listing
+for the four private project prefixes. Account erasure additionally requires
+`s3:ListBucketVersions` on the bucket plus `s3:DeleteObjectVersion` on those
+prefixes. A normal `s3:DeleteObject` only creates a delete marker in a versioned
+bucket and therefore does not satisfy permanent account deletion. Keep these
+permissions prefix-scoped and verify that both historical versions and delete
+markers are absent before marking an erasure completed.

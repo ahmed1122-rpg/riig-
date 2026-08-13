@@ -16,6 +16,10 @@ export const pdfSegmentationOptions = (
   Object.entries(pdfSegmentationLabels) as Array<[PdfSegmentation, string]>
 ).map(([value, label]) => ({ value, label }));
 
+export function isPdfSegmentation(value: unknown): value is PdfSegmentation {
+  return pdfSegmentationOptions.some((option) => option.value === value);
+}
+
 export const pdfApiModes: Record<
   PdfSegmentation,
   "heading" | "topic" | "sentence" | "line" | "word" | "character"
@@ -34,9 +38,7 @@ export function storedPdfSegmentation(): PdfSegmentation {
       PDF_SEGMENTATION_STORAGE_KEY,
     );
     const value = stored === null ? null : JSON.parse(stored) as unknown;
-    return pdfSegmentationOptions.some((option) => option.value === value)
-      ? (value as PdfSegmentation)
-      : "sentences";
+    return isPdfSegmentation(value) ? value : "sentences";
   } catch {
     return "sentences";
   }

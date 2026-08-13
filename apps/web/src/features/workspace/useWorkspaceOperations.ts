@@ -1,6 +1,6 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, type Dispatch, type SetStateAction } from "react";
 import type { ExportFormat } from "@motionprep/contracts";
-import type { PdfSegmentation } from "../../types";
+import type { Layer, PdfSegmentation } from "../../types";
 import type { ConfirmationRequest } from "../../shared/useConfirmation";
 import {
   approveProjectReview,
@@ -24,6 +24,8 @@ import {
   type ImageGuideInput,
   type PdfGuideInput,
 } from "./workspaceGuidance";
+import type { DocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
+import type { RecordDocumentChange } from "./documentChangeSummary";
 
 type SetState<Value> = Dispatch<SetStateAction<Value>>;
 
@@ -43,8 +45,9 @@ interface WorkspaceOperationsOptions {
   guidanceRevision: number;
   layerDocumentRevision?: number;
   pdfMode: PdfSegmentation;
-  saveInFlightRef: MutableRefObject<boolean>;
-  flushLayerReview: () => Promise<number>;
+  layers: readonly Layer[];
+  onDocumentChanged: RecordDocumentChange;
+  commandCoordinator: DocumentCommandCoordinator;
   adoptDocument: (
     document: LayerDocumentView,
     preferredLayerId?: string,
@@ -62,52 +65,53 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
   const executeGuidedRefinement = useCallback(
     async (
       missingSourceMessage: string,
+      changeLabel: string,
       buildInput: (context: GuidedRefinementContext) => GuidedRefinementInput,
       preferCreatedLayer = false,
     ): Promise<{ revision: number; warnings: string[] }> => {
       if (!options.projectId || !options.sourceVersionId) {
         throw new Error(missingSourceMessage);
       }
-      if (options.saveInFlightRef.current) {
-        throw new Error("انتظر اكتمال الحفظ الجاري ثم أعد تطبيق الإرشاد.");
-      }
-      options.saveInFlightRef.current = true;
       options.setProcessing(true);
       options.setSaveState("saving");
       try {
-        const baseRevision = await options.flushLayerReview();
-        const result = await applyGuidedRefinement(
-          options.projectId,
-          buildInput({
-            sourceVersionId: options.sourceVersionId,
-            baseRevision,
-            appliedAt: new Date().toISOString(),
-          }),
-        );
-        await options.adoptDocument(
-          result.document,
-          preferCreatedLayer
-            ? result.createdLayerIds[0] ?? options.activeLayerId
-            : undefined,
-        );
-        return {
-          revision:
-            result.document.guidance?.revision ??
-            options.guidanceRevision + 1,
-          warnings: result.warnings,
-        };
+        return await options.commandCoordinator.run(async ({ baseRevision }) => {
+          const before = options.layers;
+          if (baseRevision === undefined) throw new Error("وثيقة الطبقات غير جاهزة.");
+          const result = await applyGuidedRefinement(
+            options.projectId!,
+            buildInput({
+              sourceVersionId: options.sourceVersionId!,
+              baseRevision,
+              appliedAt: new Date().toISOString(),
+            }),
+          );
+          options.onDocumentChanged(changeLabel, before, result.document);
+          await options.adoptDocument(
+            result.document,
+            preferCreatedLayer
+              ? result.createdLayerIds[0] ?? options.activeLayerId
+              : undefined,
+          );
+          return {
+            revision:
+              result.document.guidance?.revision ??
+              options.guidanceRevision + 1,
+            warnings: result.warnings,
+          };
+        });
       } finally {
-        options.saveInFlightRef.current = false;
         options.setProcessing(false);
       }
     },
     [
       options.activeLayerId,
       options.adoptDocument,
-      options.flushLayerReview,
+      options.commandCoordinator,
       options.guidanceRevision,
+      options.layers,
+      options.onDocumentChanged,
       options.projectId,
-      options.saveInFlightRef,
       options.setProcessing,
       options.setSaveState,
       options.sourceVersionId,
@@ -118,6 +122,7 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
     (input: ImageGuideInput) =>
       executeGuidedRefinement(
         "ارفع صورة قبل استخدام قلم التحديد.",
+        "تحسين إرشادي للصورة",
         (context) =>
           createImageGuidedRefinementInput(
             input,
@@ -133,6 +138,7 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
     (input: PdfGuideInput) =>
       executeGuidedRefinement(
         "ارفع ملف PDF قبل استخدام قلم التحديد.",
+        "تحسين إرشادي لـPDF",
         (context) =>
           createPdfGuidedRefinementInput(
             input,
@@ -151,16 +157,24 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
       }
       options.setProcessing(true);
       try {
-        const baseRevision = await options.flushLayerReview();
-        const document = await navigateLayerDocumentHistory(
-          options.projectId,
-          {
-            sourceVersionId: options.sourceVersionId,
-            baseRevision,
-            direction,
-          },
-        );
-        await options.adoptDocument(document);
+        await options.commandCoordinator.run(async ({ baseRevision }) => {
+          const before = options.layers;
+          if (baseRevision === undefined) throw new Error("وثيقة الطبقات غير جاهزة.");
+          const document = await navigateLayerDocumentHistory(
+            options.projectId!,
+            {
+              sourceVersionId: options.sourceVersionId!,
+              baseRevision,
+              direction,
+            },
+          );
+          options.onDocumentChanged(
+            direction === "undo" ? "تراجع" : "إعادة",
+            before,
+            document,
+          );
+          await options.adoptDocument(document);
+        });
         options.onNotify(
           direction === "undo"
             ? "تم التراجع عن آخر تعديل محفوظ."
@@ -178,8 +192,10 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
     },
     [
       options.adoptDocument,
-      options.flushLayerReview,
+      options.commandCoordinator,
+      options.layers,
       options.onNotify,
+      options.onDocumentChanged,
       options.projectId,
       options.setProcessing,
       options.sourceVersionId,
@@ -202,21 +218,21 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
         tone: "danger",
       });
       if (!confirmed) return;
-      if (options.saveInFlightRef.current) {
-        options.onNotify("انتظر اكتمال الحفظ الجاري قبل تغيير نمط التقطيع.");
-        return;
-      }
       options.setProcessing(true);
       options.setUploadState("verifying");
       options.setUploadProgress(0);
       try {
-        const document = await reanalyzePdfSource(
-          options.projectId,
-          options.sourceVersionId,
-          pdfApiModes[nextMode],
-          { onProgress: options.setUploadProgress },
-        );
-        await options.adoptDocument(document);
+        await options.commandCoordinator.run(async () => {
+          const before = options.layers;
+          const document = await reanalyzePdfSource(
+            options.projectId!,
+            options.sourceVersionId!,
+            pdfApiModes[nextMode],
+            { onProgress: options.setUploadProgress },
+          );
+          options.onDocumentChanged("إعادة تحليل PDF", before, document);
+          await options.adoptDocument(document);
+        });
         options.setPdfMode(nextMode);
         options.setUploadState("ready");
         options.setUploadProgress(100);
@@ -237,11 +253,13 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
     },
     [
       options.adoptDocument,
+      options.commandCoordinator,
+      options.layers,
       options.onNotify,
+      options.onDocumentChanged,
       options.pdfMode,
       options.projectId,
       options.requestConfirmation,
-      options.saveInFlightRef,
       options.setPdfMode,
       options.setProcessing,
       options.setUploadProgress,
@@ -258,37 +276,26 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
       if (options.layerDocumentRevision === undefined) {
         throw new Error("تعذر تحديد إصدار وثيقة الطبقات. أعد تحميل المصدر.");
       }
-      const saveDeadline = Date.now() + 10_000;
-      while (
-        options.saveInFlightRef.current &&
-        Date.now() < saveDeadline
-      ) {
-        await new Promise((resolve) => window.setTimeout(resolve, 25));
-      }
-      if (options.saveInFlightRef.current) {
-        throw new Error(
-          "استمر الحفظ التلقائي أكثر من المتوقع. أعد المحاولة بعد التحقق من الاتصال.",
+      await options.commandCoordinator.run(async ({ baseRevision }) => {
+        if (baseRevision === undefined) throw new Error("وثيقة الطبقات غير جاهزة.");
+        await approveProjectReview(
+          options.projectId!,
+          options.sourceVersionId!,
+          baseRevision,
         );
-      }
-      const documentRevision = await options.flushLayerReview();
-      await approveProjectReview(
-        options.projectId,
-        options.sourceVersionId,
-        documentRevision,
-      );
-      await createExportArtifact(
-        options.projectId,
-        options.sourceVersionId,
-        documentRevision,
-        format,
-        exportOptions,
-      );
+        await createExportArtifact(
+          options.projectId!,
+          options.sourceVersionId!,
+          baseRevision,
+          format,
+          exportOptions,
+        );
+      });
     },
     [
-      options.flushLayerReview,
+      options.commandCoordinator,
       options.layerDocumentRevision,
       options.projectId,
-      options.saveInFlightRef,
       options.sourceVersionId,
     ],
   );

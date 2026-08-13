@@ -1,10 +1,14 @@
 export function verifyNginxDeployment(nginx, securityHeaders) {
   const violations = [];
   if (!nginx.includes("client_max_body_size 30m")) {
-    violations.push("Nginx upload limit must match the 30 MiB application limit.");
+    violations.push("Nginx request limit must match the 30 MiB application limit.");
   }
   if (!nginx.includes("proxy_pass http://api:4000")) {
     violations.push("Nginx must proxy the versioned API to the API service.");
+  }
+  if (!nginx.includes("location = /readyz") ||
+      !nginx.includes("proxy_pass http://api:4000/v1/health/ready")) {
+    violations.push("Nginx must expose /readyz through API readiness.");
   }
   for (const token of [
     "set_real_ip_from ${TRUSTED_PROXY_CIDR};",
@@ -19,6 +23,15 @@ export function verifyNginxDeployment(nginx, securityHeaders) {
   }
   if (!securityHeaders.includes("Strict-Transport-Security")) {
     violations.push("The public web proxy must emit HSTS on every response path.");
+  }
+  for (const token of [
+    "Content-Security-Policy-Report-Only",
+    "style-src 'self'",
+    "report-uri /v1/security/csp-report",
+  ]) {
+    if (!securityHeaders.includes(token)) {
+      violations.push(`The CSP migration contract is missing token: ${token}`);
+    }
   }
   const headerIncludes =
     nginx.match(/include \/etc\/nginx\/snippets\/security-headers\.conf;/gu) ?? [];

@@ -21,6 +21,10 @@ export interface ExportRepository {
     cursor?: JobListCursor,
   ): Promise<ExportJob[]>;
   summarizeStatuses(): Promise<ExportStatusSummary>;
+  enqueue(
+    job: ExportJob,
+    activateProject?: () => Promise<boolean>,
+  ): Promise<boolean>;
   save(job: ExportJob): Promise<void>;
   claimNext(
     workerId: string,
@@ -33,6 +37,12 @@ export interface ExportRepository {
     changes: Partial<ExportJob>,
     updatedAt: string,
   ): Promise<ExportJob | null>;
+  settleClaim(
+    id: string,
+    workerId: string,
+    changes: Partial<ExportJob>,
+    updatedAt: string,
+  ): Promise<ExportJob | null>;
   retryOrFailClaim(
     id: string,
     workerId: string,
@@ -40,7 +50,11 @@ export interface ExportRepository {
     nextAttemptAt: string,
     updatedAt: string,
   ): Promise<ExportJob | null>;
-  retryFailed(id: string, retriedAt: string): Promise<ExportJob | null>;
+  retryFailed(
+    id: string,
+    retriedAt: string,
+    activateProject?: (job: ExportJob) => Promise<boolean>,
+  ): Promise<ExportJob | null>;
   requestCancel(id: string, updatedAt: string): Promise<ExportJob | null>;
 }
 
@@ -84,6 +98,16 @@ export class InMemoryExportRepository implements ExportRepository {
 
   async save(job: ExportJob): Promise<void> {
     this.#jobs.set(job.id, job);
+  }
+
+  async enqueue(
+    job: ExportJob,
+    activateProject?: () => Promise<boolean>,
+  ): Promise<boolean> {
+    if (this.#jobs.has(job.id)) return false;
+    if (activateProject && !(await activateProject())) return false;
+    this.#jobs.set(job.id, job);
+    return true;
   }
 
   async claimNext(
@@ -141,6 +165,15 @@ export class InMemoryExportRepository implements ExportRepository {
     return updated;
   }
 
+  async settleClaim(
+    id: string,
+    workerId: string,
+    changes: Partial<ExportJob>,
+    updatedAt: string,
+  ): Promise<ExportJob | null> {
+    return this.updateClaim(id, workerId, changes, updatedAt);
+  }
+
   async retryOrFailClaim(
     id: string,
     workerId: string,
@@ -170,6 +203,7 @@ export class InMemoryExportRepository implements ExportRepository {
   async retryFailed(
     id: string,
     retriedAt: string,
+    activateProject?: (job: ExportJob) => Promise<boolean>,
   ): Promise<ExportJob | null> {
     const job = this.#jobs.get(id);
     if (!job || job.status !== "failed") return null;
@@ -185,6 +219,7 @@ export class InMemoryExportRepository implements ExportRepository {
       errorCode: null,
       updatedAt: retriedAt,
     };
+    if (activateProject && !(await activateProject(job))) return null;
     this.#jobs.set(id, retried);
     return retried;
   }

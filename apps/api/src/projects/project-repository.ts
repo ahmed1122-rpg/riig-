@@ -50,6 +50,7 @@ export interface ProjectRepository {
     id: string,
     sourceVersionId: string,
     versionNumber: number,
+    requireIdle?: boolean,
   ): Promise<ProjectSummary | null>;
   settleUploadCancellation(
     id: string,
@@ -136,7 +137,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
     status: ProjectSummary["status"],
   ): Promise<ProjectSummary | null> {
     const project = this.#projects.get(id);
-    if (!project) return null;
+    if (!project || project.activeJobId !== null) return null;
     const updated = {
       ...project,
       status,
@@ -159,6 +160,8 @@ export class InMemoryProjectRepository implements ProjectRepository {
     if (
       !project ||
       project.currentSourceVersionId !== sourceVersionId ||
+      (activeJob !== null &&
+        ["validating", "uploading"].includes(project.status)) ||
       (project.activeJobId !== null &&
         (project.activeJobType !== activeJob?.type ||
           project.activeJobId !== activeJob?.id))
@@ -272,9 +275,10 @@ export class InMemoryProjectRepository implements ProjectRepository {
     id: string,
     sourceVersionId: string,
     versionNumber: number,
+    requireIdle = false,
   ): Promise<ProjectSummary | null> {
     const project = this.#projects.get(id);
-    if (!project) return null;
+    if (!project || (requireIdle && project.activeJobId !== null)) return null;
     const updated: ProjectRecord = {
       ...project,
       currentSourceVersionId: sourceVersionId,

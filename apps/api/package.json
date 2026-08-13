@@ -1,6 +1,6 @@
 {
   "name": "@motionprep/api",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -33,7 +33,7 @@
   },
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch --import tsx src/server.ts",
-    "serve:e2e": "node --env-file-if-exists=../../.env --import tsx src/server.ts",
+    "serve:e2e": "node --import tsx src/server.ts",
     "db:migrate": "node --env-file-if-exists=../../.env --import tsx src/infrastructure/postgres/migrate.ts",
     "maintenance:retention": "node --env-file-if-exists=../../.env --import tsx src/maintenance/run-retention-cleanup.ts",
     "maintenance:retention:scheduler": "node --env-file-if-exists=../../.env --import tsx src/maintenance/run-retention-scheduler.ts",
@@ -61,6 +61,7 @@
     "@motionprep/document-processing": "*",
     "@motionprep/export-adapters": "*",
     "@motionprep/guidance": "*",
+    "@motionprep/layer-domain": "*",
     "@motionprep/media-processing": "*",
     "@motionprep/presets": "*",
     "@opentelemetry/api": "^1.9.0",

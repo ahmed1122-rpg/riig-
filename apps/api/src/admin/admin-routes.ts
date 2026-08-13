@@ -166,25 +166,18 @@ export async function registerAdminRoutes(
           },
         });
       }
-      const activated = await dependencies.projects.updateStatusForSource(
-        job.projectId,
-        job.sourceVersionId,
-        "queued",
-        { type: "processing", id: job.id },
-      );
-      if (!activated) {
-        return reply.status(409).send({
-          data: null,
-          error: {
-            code: "PROCESSING_SOURCE_NOT_CURRENT",
-            message: "لم يعد مصدر المهمة هو الإصدار الحالي للمشروع.",
-            requestId: request.id,
-          },
-        });
-      }
       const retried = await dependencies.processingJobs.retryFailed(
         job.id,
         new Date().toISOString(),
+        async () =>
+          Boolean(
+            await dependencies.projects.updateStatusForSource(
+              job.projectId,
+              job.sourceVersionId,
+              "queued",
+              { type: "processing", id: job.id },
+            ),
+          ),
       );
       if (!retried) {
         const concurrentlyRetried = await dependencies.processingJobs.findById(
@@ -257,7 +250,7 @@ export async function registerAdminRoutes(
           },
         });
       }
-      const [source, document] = await Promise.all([
+      const [source, document, approval] = await Promise.all([
         dependencies.uploads.findReadyBySourceVersion(
           job.projectId,
           job.sourceVersionId,
@@ -267,30 +260,23 @@ export async function registerAdminRoutes(
           job.sourceVersionId,
           job.documentRevision ?? 1,
         ),
+        dependencies.projects.findCurrentReviewApproval(job.projectId),
       ]);
-      if (job.status !== "failed" || !source || !document) {
+      const approvalMatches =
+        approval?.sourceVersionId === job.sourceVersionId &&
+        approval.documentRevision === (job.documentRevision ?? 1);
+      if (
+        job.status !== "failed" ||
+        !source ||
+        !document ||
+        !approvalMatches
+      ) {
         return reply.status(409).send({
           data: null,
           error: {
             code: "EXPORT_JOB_NOT_RETRYABLE",
             message:
-              "The export must be failed and retain its ready source and document revision.",
-            requestId: request.id,
-          },
-        });
-      }
-      const activated = await dependencies.projects.updateStatusForSource(
-        job.projectId,
-        job.sourceVersionId,
-        "exporting",
-        { type: "export", id: job.id },
-      );
-      if (!activated) {
-        return reply.status(409).send({
-          data: null,
-          error: {
-            code: "EXPORT_SOURCE_NOT_CURRENT",
-            message: "The export source is no longer the project's current source.",
+              "The export must be failed and retain its ready source, document revision, and review approval.",
             requestId: request.id,
           },
         });
@@ -298,6 +284,15 @@ export async function registerAdminRoutes(
       const retried = await dependencies.exports.retryFailed(
         job.id,
         new Date().toISOString(),
+        async () =>
+          Boolean(
+            await dependencies.projects.updateStatusForSource(
+              job.projectId,
+              job.sourceVersionId,
+              "exporting",
+              { type: "export", id: job.id },
+            ),
+          ),
       );
       if (!retried) {
         const concurrentlyRetried = await dependencies.exports.findById(job.id);

@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 
 export interface WorkerHeartbeat {
   stop(): Promise<void>;
@@ -11,6 +12,7 @@ export async function startWorkerHeartbeat(
     workerType: "media" | "document" | "export" | "character";
     releaseVersion: string;
     concurrency: number;
+    healthInstanceFile?: string;
     onError?: (error: unknown) => void;
   },
   intervalMs = 10_000,
@@ -55,6 +57,12 @@ export async function startWorkerHeartbeat(
     }
   };
   await write();
+  if (input.healthInstanceFile) {
+    await writeFile(input.healthInstanceFile, `${input.instanceId}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+  }
   const timer = setInterval(() => {
     void write().catch((error: unknown) => input.onError?.(error));
   }, intervalMs);
@@ -66,6 +74,25 @@ export async function startWorkerHeartbeat(
       while (writing) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
+      if (input.healthInstanceFile) {
+        await removeOwnedInstanceFile(
+          input.healthInstanceFile,
+          input.instanceId,
+        );
+      }
     },
   };
+}
+
+async function removeOwnedInstanceFile(
+  filePath: string,
+  instanceId: string,
+): Promise<void> {
+  try {
+    if ((await readFile(filePath, "utf8")).trim() === instanceId) {
+      await unlink(filePath);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
 }

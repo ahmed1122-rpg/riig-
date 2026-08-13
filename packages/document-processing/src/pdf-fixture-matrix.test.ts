@@ -29,7 +29,11 @@ describe("committed PDF compatibility matrix", () => {
       [650, 380],
       [240, 240],
     ]);
-    expect(document.layers.filter((layer) => layer.fixed)).toHaveLength(3);
+    expect(
+      document.layers.filter(
+        (layer) => layer.kind === "raster" && layer.fixed,
+      ),
+    ).toHaveLength(3);
     expect(document.layers.some((layer) =>
       layer.fullText?.includes("Landscape vector and transparency"),
     )).toBe(true);

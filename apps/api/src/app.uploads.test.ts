@@ -5,6 +5,7 @@ import {
   registerCreator,
 } from "./app-test-helpers.js";
 import { InMemoryProjectRepository } from "./projects/project-repository.js";
+import { InMemoryUploadRepository } from "./uploads/upload-repository.js";
 
 const harness = createAppTestHarness();
 
@@ -58,6 +59,77 @@ describe("API — الرفع وإصدارات المصدر", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("UPLOAD_REJECTED");
+  });
+  it("accepts images and PDFs up to 30 MiB", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const cookie = await registerCreator(app);
+    const createProject = async (kind: "image" | "book") => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/projects",
+        headers: { cookie },
+        payload: { name: `Limit ${kind}`, kind },
+      });
+      return response.json().data.id as string;
+    };
+    const imageProjectId = await createProject("image");
+    const bookProjectId = await createProject("book");
+
+    const imageResponse = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: { cookie },
+      payload: {
+        projectId: imageProjectId,
+        filename: "large.png",
+        contentType: "image/png",
+        sizeBytes: 30 * 1024 * 1024 + 1,
+      },
+    });
+    expect(imageResponse.statusCode).toBe(400);
+    expect(imageResponse.json().error.code).toBe("UPLOAD_REJECTED");
+
+    const pdfResponse = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: { cookie },
+      payload: {
+        projectId: bookProjectId,
+        filename: "large.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 30 * 1024 * 1024,
+      },
+    });
+    expect(pdfResponse.statusCode).toBe(201);
+    expect(pdfResponse.json().data.maxBytes).toBe(30 * 1024 * 1024);
+  });
+  it("returns HTTP 413 when the uploaded body is 31 MiB", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const cookie = await registerCreator(app);
+    const project = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      headers: { cookie },
+      payload: { name: "Body limit", kind: "book" },
+    });
+    const intent = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: { cookie },
+      payload: {
+        projectId: project.json().data.id,
+        filename: "limit.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 30 * 1024 * 1024,
+      },
+    });
+    const response = await app.inject({
+      method: "PUT",
+      url: `/v1/uploads/${intent.json().data.uploadId}/content`,
+      headers: { cookie, "content-type": "application/pdf" },
+      payload: Buffer.alloc(31 * 1024 * 1024),
+    });
+    expect(response.statusCode).toBe(413);
   });
   it("enforces and reports a lower runtime upload policy consistently", async () => {
     const app = await harness.build(
@@ -461,4 +533,51 @@ describe("API — الرفع وإصدارات المصدر", () => {
       status: "processing",
     });
   });
+
+  it("cancels an upload intent when a job wins the reservation race", async () => {
+    const projects = new LostUploadReservationProjectRepository();
+    const uploads = new InMemoryUploadRepository();
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      projects,
+      uploads,
+    });
+    const cookie = await registerCreator(app, "upload-race@example.test");
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      headers: { cookie },
+      payload: { name: "Upload race", kind: "image" },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/uploads/intents",
+      headers: {
+        cookie,
+        "x-idempotency-key": "upload-reservation-race-001",
+      },
+      payload: {
+        projectId: created.json().data.id,
+        filename: "racing.png",
+        contentType: "image/png",
+        sizeBytes: 68,
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("PROJECT_JOB_ACTIVE");
+    await expect(uploads.list()).resolves.toEqual([
+      expect.objectContaining({ status: "cancelled" }),
+    ]);
+  });
 });
+
+class LostUploadReservationProjectRepository extends InMemoryProjectRepository {
+  override async updateStatus(
+    id: string,
+    status: Parameters<InMemoryProjectRepository["updateStatus"]>[1],
+  ) {
+    if (status === "uploading") return null;
+    return super.updateStatus(id, status);
+  }
+}

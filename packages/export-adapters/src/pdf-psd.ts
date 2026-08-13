@@ -1,4 +1,8 @@
 import type { LayerDocument, LayerNode } from "@motionprep/contracts";
+import {
+  createPdfPageGroupName,
+  isPdfPageRootGroup,
+} from "@motionprep/presets";
 import { writePsdBuffer, type Layer as PsdLayer, type Psd } from "ag-psd";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
@@ -124,8 +128,13 @@ async function createPdfPsd(
     );
     const pageChildren = [backgroundLayer, ...textLayers];
     if (groupPages) {
+      const pageGroup = document.layers.find(
+        (layer) =>
+          layer.pageNumber === page.pageNumber &&
+          isPdfPageRootGroup(layer),
+      );
       rootChildren.push({
-        name: `+page_${String(page.pageNumber).padStart(3, "0")}`,
+        name: pageGroup?.name ?? createPdfPageGroupName(page.pageNumber),
         opened: false,
         children: pageChildren,
       });
@@ -188,53 +197,74 @@ function buildPdfTextLayerTree(
   page: PreparedPdfPage,
   pageOffset: number,
 ): PsdLayer[] {
+  const pageRoot = document.layers.find(
+    (layer) =>
+      layer.pageNumber === page.pageNumber && isPdfPageRootGroup(layer),
+  );
   const groups = document.layers.filter(
     (layer) =>
       layer.kind === "group" &&
-      layer.pageNumber === page.pageNumber,
+      layer.pageNumber === page.pageNumber &&
+      layer.id !== pageRoot?.id,
   );
-  const knownGroupIds = new Set(groups.map((group) => group.id));
-  const groupedTextIds = new Set<string>();
-  const entries: Array<{ zIndex: number; psdLayer: PsdLayer }> = [];
+  const groupsById = new Map(groups.map((group) => [group.id, group]));
 
-  for (const group of groups) {
-    const children = page.rendered
-      .filter((item) => item.layer.parentId === group.id)
-      .sort((left, right) => left.layer.zIndex - right.layer.zIndex);
-    if (children.length === 0) continue;
-    children.forEach((item) => groupedTextIds.add(item.layer.id));
-    entries.push({
-      zIndex: group.zIndex,
-      psdLayer: {
-        name: group.name,
-        opened: false,
-        hidden: !group.visible,
-        opacity: clampOpacity(group.opacity),
-        protected: {
-          position: group.locked,
-          composite: group.locked,
-          transparency: group.locked,
+  const buildChildren = (
+    parentId: string | null,
+    ancestry: ReadonlySet<string>,
+  ): Array<{ zIndex: number; psdLayer: PsdLayer }> => {
+    const entries: Array<{ zIndex: number; psdLayer: PsdLayer }> = [];
+    for (const group of groups) {
+      if (group.parentId !== parentId || ancestry.has(group.id)) continue;
+      const nextAncestry = new Set(ancestry).add(group.id);
+      const children = buildChildren(group.id, nextAncestry)
+        .sort((left, right) => left.zIndex - right.zIndex)
+        .map((entry) => entry.psdLayer);
+      entries.push({
+        zIndex: group.zIndex,
+        psdLayer: {
+          name: group.name,
+          opened: false,
+          hidden: !group.visible,
+          opacity: clampOpacity(group.opacity),
+          protected: {
+            position: group.locked,
+            composite: group.locked,
+            transparency: group.locked,
+          },
+          children,
         },
-        children: children.map((item) =>
-          toPdfPsdTextLayer(item, pageOffset),
-        ),
-      },
-    });
-  }
+      });
+    }
+    for (const item of page.rendered) {
+      if (item.layer.parentId !== parentId) continue;
+      entries.push({
+        zIndex: item.layer.zIndex,
+        psdLayer: toPdfPsdTextLayer(item, pageOffset),
+      });
+    }
+    return entries;
+  };
 
+  const rootParentIds = new Set<string | null>([null]);
+  if (pageRoot) rootParentIds.add(pageRoot.id);
+  for (const group of groups) {
+    if (group.parentId && !groupsById.has(group.parentId) && group.parentId !== pageRoot?.id) {
+      rootParentIds.add(group.parentId);
+    }
+  }
   for (const item of page.rendered) {
     if (
-      groupedTextIds.has(item.layer.id) ||
-      (item.layer.parentId && knownGroupIds.has(item.layer.parentId))
+      item.layer.parentId &&
+      !groupsById.has(item.layer.parentId) &&
+      item.layer.parentId !== pageRoot?.id
     ) {
-      continue;
+      rootParentIds.add(item.layer.parentId);
     }
-    entries.push({
-      zIndex: item.layer.zIndex,
-      psdLayer: toPdfPsdTextLayer(item, pageOffset),
-    });
   }
-  return entries
+
+  return [...rootParentIds]
+    .flatMap((parentId) => buildChildren(parentId, new Set()))
     .sort((left, right) => left.zIndex - right.zIndex)
     .map((entry) => entry.psdLayer);
 }
@@ -332,6 +362,7 @@ async function renderPdfTextLayer(
     1,
     Math.min(pageHeight - top, Math.ceil(layer.bounds.height)),
   );
+  const physicalAlignment = resolveTextAlignment(layer);
   let decoded: {
     data: Buffer;
     info: { width: number; height: number };
@@ -343,7 +374,8 @@ async function renderPdfTextLayer(
         ...PDF_TEXT_FONT,
         width: maxWidth,
         height: maxHeight,
-        align: layer.direction === "rtl" ? "right" : "left",
+        align: physicalAlignment,
+        justify: layer.textAlign === "justify",
         wrap: "none",
         rgba: true,
       },
@@ -358,10 +390,12 @@ async function renderPdfTextLayer(
     );
   }
 
-  const alignedLeft =
-    layer.direction === "rtl"
-      ? Math.max(left, left + maxWidth - decoded.info.width)
-      : left;
+  const alignedLeft = resolveAlignedLeft(
+    physicalAlignment,
+    left,
+    maxWidth,
+    decoded.info.width,
+  );
   return {
     layer,
     pixels: decoded.data,
@@ -370,6 +404,28 @@ async function renderPdfTextLayer(
     left: alignedLeft,
     top,
   };
+}
+
+type PhysicalTextAlignment = "left" | "center" | "right";
+
+function resolveTextAlignment(layer: LayerNode): PhysicalTextAlignment {
+  if (layer.textAlign === "center") return "center";
+  if (layer.textAlign === "end") {
+    return layer.direction === "rtl" ? "left" : "right";
+  }
+  return layer.direction === "rtl" ? "right" : "left";
+}
+
+function resolveAlignedLeft(
+  alignment: PhysicalTextAlignment,
+  left: number,
+  maxWidth: number,
+  renderedWidth: number,
+): number {
+  const remaining = Math.max(0, maxWidth - renderedWidth);
+  if (alignment === "right") return left + remaining;
+  if (alignment === "center") return left + Math.floor(remaining / 2);
+  return left;
 }
 
 function escapePango(value: string): string {

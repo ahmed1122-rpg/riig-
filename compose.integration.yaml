@@ -54,7 +54,8 @@ x-runtime: &runtime
     USAGE_METERING_MODE: shadow
     STRIPE_SECRET_KEY: test_stripe_key_motionprep_topology_only
     STRIPE_WEBHOOK_SECRET: whsec_motionprep_topology_only
-    RELEASE_VERSION: ${INTEGRATION_RELEASE_VERSION:-integration}
+    RELEASE_VERSION: ${INTEGRATION_RELEASE_VERSION:-0000000000000000000000000000000000000000}
+    WORKER_HEALTH_INSTANCE_FILE: /tmp/motionprep-worker-instance-id
   networks:
     - integration
   init: true

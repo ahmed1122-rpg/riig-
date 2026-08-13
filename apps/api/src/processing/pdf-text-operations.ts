@@ -3,6 +3,10 @@ import type {
   LayerNode,
 } from "@motionprep/contracts";
 import { createPdfTextLayerName } from "@motionprep/presets";
+import {
+  canonicalLayerName,
+  createUniqueLayerName,
+} from "@motionprep/layer-domain";
 import { ProcessingDomainError } from "./processing-errors.js";
 import { unionLayerBounds } from "./layer-operation-utils.js";
 import { applyReadingOrder } from "./reading-order.js";
@@ -59,9 +63,15 @@ export function preparePdfTextSplit(
   const secondWidth = layer.bounds.width - firstWidth;
   const rtl = layer.direction === "rtl";
   const createdLayerId = crypto.randomUUID();
+  const usedNames = siblingNames(document.layers, layer, new Set([layer.id]));
+  const firstName = createUniqueLayerName(
+    createPdfTextLayerName(firstText, "sentence"),
+    usedNames,
+  );
+  usedNames.add(canonicalLayerName(firstName));
   const first: LayerNode = {
     ...layer,
-    name: createPdfTextLayerName(firstText, "sentence"),
+    name: firstName,
     fullText: firstText,
     bounds: {
       ...layer.bounds,
@@ -72,7 +82,10 @@ export function preparePdfTextSplit(
   const second: LayerNode = {
     ...layer,
     id: createdLayerId,
-    name: createPdfTextLayerName(secondText, "sentence"),
+    name: createUniqueLayerName(
+      createPdfTextLayerName(secondText, "sentence"),
+      usedNames,
+    ),
     fullText: secondText,
     bounds: {
       ...layer.bounds,
@@ -136,16 +149,18 @@ export function preparePdfTextMerge(
   const pageNumber = textLayers[0]!.pageNumber!;
   const parentId = textLayers[0]!.parentId;
   const direction = textLayers[0]!.direction;
+  const textAlign = textLayers[0]!.textAlign ?? "start";
   if (
     textLayers.some(
       (layer) =>
         layer.pageNumber !== pageNumber ||
         layer.parentId !== parentId ||
-        layer.direction !== direction,
+        layer.direction !== direction ||
+        (layer.textAlign ?? "start") !== textAlign,
     )
   ) {
     throw invalid(
-      "لا يمكن دمج نصوص من صفحات أو مجموعات أو اتجاهات كتابة مختلفة.",
+      "لا يمكن دمج نصوص من صفحات أو مجموعات أو اتجاهات كتابة أو محاذاة مختلفة.",
     );
   }
   const ordered = [...textLayers].sort(compareTextLayers);
@@ -155,12 +170,16 @@ export function preparePdfTextMerge(
     .join(separator);
   const survivor = ordered[0]!;
   const removedIds = new Set(ordered.slice(1).map((layer) => layer.id));
+  const selectedIds = new Set(ordered.map((layer) => layer.id));
   const readingOrders = ordered.flatMap((layer) =>
     layer.readingOrder === undefined ? [] : [layer.readingOrder],
   );
   const merged: LayerNode = {
     ...survivor,
-    name: createPdfTextLayerName(fullText, "sentence"),
+    name: createUniqueLayerName(
+      createPdfTextLayerName(fullText, "sentence"),
+      siblingNames(document.layers, survivor, selectedIds),
+    ),
     fullText,
     bounds: unionLayerBounds(ordered.map((layer) => layer.bounds!)),
     visible: ordered.some((layer) => layer.visible),
@@ -185,6 +204,23 @@ export function preparePdfTextMerge(
     },
     details,
   };
+}
+
+function siblingNames(
+  layers: readonly LayerNode[],
+  target: LayerNode,
+  excludedIds: ReadonlySet<string>,
+): Set<string> {
+  return new Set(
+    layers
+      .filter(
+        (layer) =>
+          !excludedIds.has(layer.id) &&
+          layer.parentId === target.parentId &&
+          (layer.pageNumber ?? null) === (target.pageNumber ?? null),
+      )
+      .map((layer) => canonicalLayerName(layer.name)),
+  );
 }
 
 function invalid(message: string): ProcessingDomainError {

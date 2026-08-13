@@ -19,13 +19,16 @@ export class PostgresDerivedAssetRegistry implements DerivedAssetRegistry {
        )
        SELECT $2, project.id, project.owner_user_id, $3, now(), now(), NULL
        FROM projects project
-       WHERE project.id = $1
+       JOIN users owner ON owner.id = project.owner_user_id
+       WHERE project.id = $1 AND owner.deletion_requested_at IS NULL
        ON CONFLICT (object_key) DO UPDATE SET
          project_id = EXCLUDED.project_id,
          owner_user_id = EXCLUDED.owner_user_id,
          category = EXCLUDED.category,
          updated_at = now(),
-         purged_at = NULL`,
+         purged_at = NULL
+       WHERE derived_asset_registry.purge_claimed_at IS NULL
+         AND derived_asset_registry.purged_at IS NULL`,
       [projectId, objectKey, category],
     );
     if (result.rowCount !== 1) {

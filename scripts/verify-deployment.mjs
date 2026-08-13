@@ -14,6 +14,13 @@ import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const violations = [];
 const nodeVersion = (await readFile(join(root, ".node-version"), "utf8")).trim();
+const integrationCompose = await readFile(
+  join(root, "compose.integration.yaml"),
+  "utf8",
+);
+if (!integrationCompose.includes("WORKER_HEALTH_INSTANCE_FILE: /tmp/motionprep-worker-instance-id")) {
+  violations.push("Integration workers must publish the per-instance health identity file.");
+}
 
 for (const file of requiredDeploymentFiles) {
   try {
@@ -33,6 +40,11 @@ const [
   gitignore,
   dockerignore,
   exampleEnvironment,
+  apiExampleEnvironment,
+  migrationExampleEnvironment,
+  maintenanceExampleEnvironment,
+  workerExampleEnvironment,
+  characterWorkerExampleEnvironment,
   webApiClient,
   processingRuntime,
   processingJobExecutor,
@@ -68,6 +80,11 @@ const [
       ".gitignore",
       ".dockerignore",
       ".env.production.example",
+      ".env.production.api.example",
+      ".env.production.migrate.example",
+      ".env.production.maintenance.example",
+      ".env.production.worker.example",
+      ".env.production.worker-character.example",
       "apps/web/src/lib/api/transport.ts",
       "apps/api/src/processing/processing-worker-runtime.ts",
       "apps/api/src/processing/processing-job-executor.ts",
@@ -109,7 +126,16 @@ const workflowSources = await Promise.all(
 );
 violations.push(...(await verifyObservabilityArtifacts(root)));
 violations.push(...verifyWorkflowSecurity(workflowSources));
-violations.push(...verifyProductionEnvironmentTemplate(exampleEnvironment));
+violations.push(
+  ...verifyProductionEnvironmentTemplate([
+    exampleEnvironment,
+    apiExampleEnvironment,
+    migrationExampleEnvironment,
+    maintenanceExampleEnvironment,
+    workerExampleEnvironment,
+    characterWorkerExampleEnvironment,
+  ].join("\n")),
+);
 const ciWorkflow = workflowSources[0];
 violations.push(...verifyQaImageContract({ dockerfile: qaDockerfile, ciWorkflow, dockerignore }));
 try {

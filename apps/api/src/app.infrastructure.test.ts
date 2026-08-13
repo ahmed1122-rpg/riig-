@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { createAppTestHarness } from "./app-test-helpers.js";
 import { APPLICATION_VERSION } from "./app.js";
 import type { RateLimitStoreConstructor } from "./infrastructure/redis/redis-rate-limit-store.js";
+import { ApplicationDrainingError } from "./observability/operational-readiness.js";
 
 const harness = createAppTestHarness();
 
@@ -64,6 +65,51 @@ describe("API — البنية التحتية", () => {
     });
     expect(metrics.statusCode).toBe(200);
     expect(metrics.body).toContain("motionprep_dependencies_ready 0");
+  });
+
+  it("returns the public 429 contract when a route rate limit is exceeded", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+
+    for (let requestIndex = 0; requestIndex < 10; requestIndex += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/auth/register",
+        payload: {},
+      });
+      expect(response.statusCode).toBe(400);
+    }
+    const limited = await app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: {},
+    });
+
+    expect(limited.statusCode, limited.body).toBe(429);
+    expect(limited.headers["retry-after"]).toBeTruthy();
+    expect(limited.json()).toEqual({
+      data: null,
+      error: {
+        code: "RATE_LIMITED",
+        message: "تجاوزت حد الطلبات المسموح به.",
+        requestId: limited.headers["x-request-id"],
+      },
+    });
+  });
+
+  it("reports an intentional drain separately from a dependency outage", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      readiness: async () => {
+        throw new ApplicationDrainingError();
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/ready",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("APPLICATION_DRAINING");
   });
 
   it("exposes bounded internal HTTP metrics without raw request paths", async () => {

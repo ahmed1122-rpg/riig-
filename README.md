@@ -1,5 +1,13 @@
 # MotionPrep Studio
 
+## Durable local development
+
+Use `npm run dev:durable` for QA or work that must survive API restarts. It
+starts PostgreSQL, Redis, MinIO, and Mailpit through Docker Compose, applies
+database migrations, then starts the web app, API, and workers. The ordinary
+`npm run dev` remains the lightweight option and the UI identifies an
+ephemeral runtime explicitly.
+
 اسم المستودع على GitHub: `riig-`.
 
 Production-readiness gates and remaining external evidence are tracked in
@@ -20,7 +28,7 @@ Production-readiness gates and remaining external evidence are tracked in
 
 قواعد الإنتاج الحالية:
 
-- ملف واحد لكل عملية رفع، بحد أقصى 30MB للصور أو PDF.
+- ملف واحد لكل عملية رفع: سقف 30 MiB للصور وملفات PDF.
 - الصور والشخصيات والأشكال والحيوانات: 15 طبقة كحد أقصى.
 - PDF: لا يوجد حد ثابت لعدد الطبقات؛ حواجز الأمان هي 30 MiB للرفع، و250
   صفحة، و100,000 عنصر نصي مستخرج.

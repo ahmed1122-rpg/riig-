@@ -6,8 +6,10 @@ export interface RetentionDatabaseCounts {
   mfaEnrollments: number;
   mfaChallenges: number;
   passwordResetTokens: number;
+  emailVerificationTokens: number;
   emailOutbox: number;
   idempotencyKeys: number;
+  objectWriteLeases: number;
   checkoutSessionsCancelled: number;
   workerHeartbeats: number;
   workerEvents: number;
@@ -71,6 +73,13 @@ export async function pruneRetentionDatabase(
         )`,
         [now, config.RETENTION_BATCH_SIZE],
       ),
+      emailVerificationTokens: await count(
+        `DELETE FROM email_verification_tokens WHERE ctid IN (
+          SELECT ctid FROM email_verification_tokens
+          WHERE expires_at <= $1 LIMIT $2
+        )`,
+        [now, config.RETENTION_BATCH_SIZE],
+      ),
       emailOutbox: await count(
         `DELETE FROM email_outbox WHERE ctid IN (
           SELECT ctid FROM email_outbox
@@ -83,6 +92,13 @@ export async function pruneRetentionDatabase(
       idempotencyKeys: await count(
         `DELETE FROM idempotency_keys WHERE ctid IN (
           SELECT ctid FROM idempotency_keys WHERE expires_at <= $1 LIMIT $2
+        )`,
+        [now, config.RETENTION_BATCH_SIZE],
+      ),
+      objectWriteLeases: await count(
+        `DELETE FROM object_write_leases WHERE ctid IN (
+          SELECT ctid FROM object_write_leases
+          WHERE expires_at <= $1 LIMIT $2
         )`,
         [now, config.RETENTION_BATCH_SIZE],
       ),

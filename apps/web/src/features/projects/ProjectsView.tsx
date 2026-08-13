@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useDebounce } from "../../shared/hooks/useDebounce";
+import { useResourcePolling } from "../../shared/hooks/useResourcePolling";
 import { DataState } from "../../shared/DataState";
 import { formatBytes, formatDateTime } from "../../shared/formatters";
 import { Icon } from "../../shared/Icon";
@@ -76,35 +77,31 @@ export function ProjectsView({
   const { requestConfirmation, confirmationDialog } = useConfirmation();
 
   useEffect(() => {
-    if (!authenticated) {
+    if (authenticated) {
+      setState("loading");
+    } else {
       setItems([]);
       setState("empty");
-      return;
     }
-    let active = true;
-    let pollTimer: number | undefined;
-    setState("loading");
-    const load = async () => {
-      try {
-        const projects = await listProjects();
-        if (!active) return;
-        setItems(projects);
-        setState(projects.length ? "ready" : "empty");
-        if (projects.some((project) => liveProjectStatuses.has(project.status))) {
-          pollTimer = window.setTimeout(() => void load(), 3_000);
-        }
-      } catch (error) {
-        if (!active) return;
-        setState("error");
-        if (error instanceof ApiError && error.status === 401) onRequireAuth();
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-      if (pollTimer !== undefined) window.clearTimeout(pollTimer);
-    };
-  }, [authenticated, onRequireAuth, reloadVersion]);
+  }, [authenticated]);
+
+  useResourcePolling({
+    enabled: authenticated,
+    resourceKey: "projects:list",
+    revision: reloadVersion,
+    intervalMs: 3_000,
+    load: listProjects,
+    shouldPoll: (projects) =>
+      projects.some((project) => liveProjectStatuses.has(project.status)),
+    onSuccess: (projects) => {
+      setItems(projects);
+      setState(projects.length ? "ready" : "empty");
+    },
+    onError: (error) => {
+      setState("error");
+      if (error instanceof ApiError && error.status === 401) onRequireAuth();
+    },
+  });
 
   const debouncedQuery = useDebounce(query, 250);
   const filtered = useMemo(
@@ -204,7 +201,25 @@ export function ProjectsView({
 
       {demoState === "ready" && state === "ready" ? (
         <section className="project-list">
-          {filtered.map((project) => (
+          {filtered.length === 0 ? (
+            <div className="data-state project-filter-empty" role="status">
+              <span className="state-icon"><Icon name="fileSearch" size={23} /></span>
+              <div>
+                <strong>لا توجد مشروعات تطابق البحث</strong>
+                <p>جرّب عبارة أخرى أو امسح عوامل التصفية لعرض كل المشروعات.</p>
+              </div>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setFilter("all");
+                  setQuery("");
+                }}
+              >
+                مسح عوامل التصفية
+              </button>
+            </div>
+          ) : filtered.map((project) => (
             <Fragment key={project.id}>
               <article className="project-row">
                 <button className={`project-preview project-preview--${project.kind}`} type="button" onClick={() => onOpenWorkspace(project.kind, {

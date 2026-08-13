@@ -15,7 +15,8 @@ and exact clones to keep growing.
 
 - Production JavaScript and TypeScript under `apps`, `packages`, and `scripts`
   are measured by `scripts/verify-maintainability.mjs`.
-- A new production file may not exceed 500 non-empty lines.
+- A production file emits a non-blocking early warning at 450 non-empty lines
+  and may not exceed the strict cap of 550 non-empty lines.
 - Existing oversized files are recorded with per-file caps in
   `config/maintainability-baseline.json`; they may shrink but may not grow.
 - Exact duplicated blocks of at least 16 normalized source lines use global

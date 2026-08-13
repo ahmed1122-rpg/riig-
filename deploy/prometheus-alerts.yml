@@ -1,6 +1,24 @@
 groups:
   - name: motionprep-readiness
     rules:
+      - alert: MotionPrepApiDown
+        expr: up{job="motionprep-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: MotionPrep API target is unavailable
+          runbook: docs/runbooks/production-dependency-recovery.md
+
+      - alert: MotionPrepApiMetricsAbsent
+        expr: absent(motionprep_dependencies_ready)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: MotionPrep API metrics are absent
+          runbook: docs/runbooks/production-dependency-recovery.md
+
       - alert: MotionPrepDependencyUnavailable
         expr: motionprep_dependencies_ready == 0
         for: 2m
@@ -232,3 +250,28 @@ groups:
         annotations:
           summary: MotionPrep API p95 latency exceeds five seconds
           runbook: docs/runbooks/processing-job-recovery.md
+
+      - alert: MotionPrepClientLcpSlow
+        expr: |
+          histogram_quantile(
+            0.75,
+            sum by (le) (rate(motionprep_client_lcp_seconds_bucket[15m]))
+          ) > 2.5
+          and
+          sum(rate(motionprep_client_lcp_seconds_count[15m])) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Browser-reported p75 LCP exceeds 2.5 seconds
+          runbook: docs/runbooks/client-experience.md
+
+      - alert: MotionPrepClientErrorsHigh
+        expr: |
+          sum(rate(motionprep_client_errors_total[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Sanitized browser error reports are elevated
+          runbook: docs/runbooks/client-experience.md

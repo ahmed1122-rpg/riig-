@@ -44,7 +44,8 @@ export function validateProductionEnvironment(
     "PERSISTENCE_MODE",
     "DATABASE_URL",
     "REDIS_URL",
-    "AUTH_ENCRYPTION_KEY",
+    "AUTH_ENCRYPTION_KEYRING",
+    "AUTH_ENCRYPTION_ACTIVE_KEY_ID",
     "COOKIE_SECURE",
     "METRICS_BEARER_TOKEN",
     "WEB_ORIGIN",
@@ -52,6 +53,8 @@ export function validateProductionEnvironment(
     "TRUST_PROXY_HOPS",
     "PASSWORD_RESET_URL",
     "EMAIL_DELIVERY_MODE",
+    "EMAIL_VERIFICATION_REQUIRED",
+    "EMAIL_VERIFICATION_URL",
     "SMTP_HOST",
     "SMTP_USER",
     "SMTP_PASSWORD",
@@ -79,6 +82,7 @@ export function validateProductionEnvironment(
   requireExact(values, violations, "COOKIE_SECURE", "true");
   requireExact(values, violations, "TRUST_PROXY_HOPS", "1");
   requireExact(values, violations, "EMAIL_DELIVERY_MODE", "smtp");
+  requireExact(values, violations, "EMAIL_VERIFICATION_REQUIRED", "true");
   requireExact(values, violations, "OBJECT_STORAGE_MODE", "s3");
   requireExact(values, violations, "OBJECT_STORAGE_REQUIRE_VERSIONING", "true");
   requireExact(values, violations, "PROCESSING_EXECUTION_MODE", "worker");
@@ -86,6 +90,7 @@ export function validateProductionEnvironment(
 
   validateUrl(values, violations, "WEB_ORIGIN", ["https:"]);
   validateUrl(values, violations, "PASSWORD_RESET_URL", ["https:"]);
+  validateUrl(values, violations, "EMAIL_VERIFICATION_URL", ["https:"]);
   validateUrl(values, violations, "REDIS_URL", ["rediss:"]);
   validateDatabaseUrl(values, violations);
   validateTrustedProxyCidr(values, violations);
@@ -94,10 +99,11 @@ export function validateProductionEnvironment(
   if (metricsToken && metricsToken.length < 32) {
     violations.push("METRICS_BEARER_TOKEN must contain at least 32 characters.");
   }
-  const authKey = values.get("AUTH_ENCRYPTION_KEY") ?? "";
-  if (authKey && !isThirtyTwoByteBase64(authKey)) {
+  const legacyAuthKey = values.get("AUTH_ENCRYPTION_KEY") ?? "";
+  if (legacyAuthKey && !isThirtyTwoByteBase64(legacyAuthKey)) {
     violations.push("AUTH_ENCRYPTION_KEY must be Base64 for exactly 32 bytes.");
   }
+  validateAuthKeyring(values, violations);
   if (
     values.get("SMTP_SECURE") !== "true" &&
     values.get("SMTP_REQUIRE_TLS") !== "true"
@@ -131,6 +137,33 @@ export function validateProductionEnvironment(
     );
   }
   return [...new Set(violations)];
+}
+
+function validateAuthKeyring(values, violations) {
+  const source = values.get("AUTH_ENCRYPTION_KEYRING") ?? "";
+  const activeKeyId = values.get("AUTH_ENCRYPTION_ACTIVE_KEY_ID") ?? "";
+  const entries = new Map();
+  for (const rawEntry of source.split(",")) {
+    const separator = rawEntry.indexOf(":");
+    const keyId = rawEntry.slice(0, separator).trim();
+    const encoded = rawEntry.slice(separator + 1).trim();
+    if (
+      separator < 1 ||
+      !/^[A-Za-z0-9_-]{1,32}$/u.test(keyId) ||
+      entries.has(keyId) ||
+      !isThirtyTwoByteBase64(encoded)
+    ) {
+      violations.push("AUTH_ENCRYPTION_KEYRING must contain unique key-id:32-byte-base64 entries.");
+      return;
+    }
+    entries.set(keyId, encoded);
+  }
+  if (entries.size < 1 || entries.size > 5) {
+    violations.push("AUTH_ENCRYPTION_KEYRING must contain from one to five keys.");
+  }
+  if (!entries.has(activeKeyId)) {
+    violations.push("AUTH_ENCRYPTION_ACTIVE_KEY_ID must identify a keyring entry.");
+  }
 }
 
 export async function isOcrReleaseEvidenceCurrent(repositoryRoot) {

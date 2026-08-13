@@ -13,7 +13,6 @@ import {
 import { ExportService } from "./export-service.js";
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
-import { updateProjectStatusForJob } from "../projects/project-job-status.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
 import { releaseExportJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
 import {
@@ -22,6 +21,9 @@ import {
 } from "../jobs/polling-delay.js";
 import { abortableDelay } from "../jobs/abortable-delay.js";
 import { withJobTrace } from "../observability/tracing.js";
+import { LeaseGuardedObjectStorage } from "../storage/leased-object-storage.js";
+import { PostgresObjectWriteLeaseCoordinator } from "../infrastructure/postgres/postgres-object-write-lease.js";
+import { runExportWithDeadline } from "./export-job-deadline.js";
 
 export interface ExportWorkerConfig {
   databaseUrl: string;
@@ -31,6 +33,7 @@ export interface ExportWorkerConfig {
   concurrency: number;
   leaseMilliseconds: number;
   drainTimeoutMilliseconds: number;
+  jobTimeoutMilliseconds: number;
   sharpCacheMemoryMb: number;
   sharpConcurrency: number;
   workerId?: string;
@@ -47,6 +50,7 @@ export async function runExportWorker(
   options: {
     signal?: AbortSignal;
     onLog?: (entry: ExportWorkerLog) => void;
+    onJobTimeout?: (jobId: string) => void;
   } = {},
 ): Promise<void> {
   const log = (
@@ -71,7 +75,11 @@ export async function runExportWorker(
       },
     },
   );
-  const storage = new S3ObjectStorage(config.objectStorage);
+  const rawStorage = new S3ObjectStorage(config.objectStorage);
+  const storage = new LeaseGuardedObjectStorage(
+    rawStorage,
+    new PostgresObjectWriteLeaseCoordinator(database.pool),
+  );
   const repository = new PostgresExportRepository(database.pool);
   const service = new ExportService(
     repository,
@@ -127,7 +135,9 @@ export async function runExportWorker(
     items: Math.max(16, config.concurrency * 8),
   });
   sharp.concurrency(config.sharpConcurrency);
+  let stopRequested = false;
   const requestDrain = () => {
+    stopRequested = true;
     log("info", "worker.drain_started", {
       active_jobs: drain.activeCount,
       drain_timeout_ms: config.drainTimeoutMilliseconds,
@@ -137,7 +147,7 @@ export async function runExportWorker(
   options.signal?.addEventListener("abort", requestDrain, { once: true });
   if (options.signal?.aborted) requestDrain();
 
-  await Promise.all([database.ready(), storage.ready(false)]);
+  await Promise.all([database.ready(), rawStorage.ready(false)]);
   log("info", "worker.ready", {
     worker_id: workerId,
     concurrency: config.concurrency,
@@ -150,6 +160,9 @@ export async function runExportWorker(
     workerType: "export",
     releaseVersion: process.env.RELEASE_VERSION ?? "development",
     concurrency: config.concurrency,
+    ...(process.env.WORKER_HEALTH_INSTANCE_FILE
+      ? { healthInstanceFile: process.env.WORKER_HEALTH_INSTANCE_FILE }
+      : {}),
     onError: (error) => {
       log("error", "worker.heartbeat_failed", {
         error: error instanceof Error ? error.message : "unknown",
@@ -165,10 +178,10 @@ export async function runExportWorker(
     );
   } finally {
     options.signal?.removeEventListener("abort", requestDrain);
-    if (options.signal?.aborted) await drain.waitForRelease();
+    if (stopRequested) await drain.waitForRelease();
     await heartbeat.stop();
     await database.close();
-    storage.destroy();
+    rawStorage.destroy();
   }
 
   async function workerLoop(slot: number): Promise<void> {
@@ -177,7 +190,7 @@ export async function runExportWorker(
       initialPollingDelay(config.pollMilliseconds),
       options.signal,
     );
-    while (!options.signal?.aborted) {
+    while (!stopRequested && !options.signal?.aborted) {
       try {
         const startedAt = Date.now();
         const job = await service.claimAndProcess(
@@ -191,7 +204,20 @@ export async function runExportWorker(
               }),
             onSettled: () => drain.unregister(slotWorkerId),
             runClaimed: (claimed, run) =>
-              withJobTrace("motionprep.export.execute", claimed, run),
+              withJobTrace("motionprep.export.execute", claimed, () =>
+                runExportWithDeadline(
+                  run,
+                  config.jobTimeoutMilliseconds,
+                  () => {
+                    log("error", "export.job_deadline_exceeded", {
+                      job_id: claimed.id,
+                      timeout_ms: config.jobTimeoutMilliseconds,
+                    });
+                    options.onJobTimeout?.(claimed.id);
+                    requestDrain();
+                  },
+                ),
+              ),
           },
         );
         if (!job) {
@@ -223,31 +249,6 @@ export async function runExportWorker(
                 : "unknown",
           });
         });
-        if (job.status === "ready") {
-          await updateProjectStatusForJob(database.pool, {
-            projectId: job.projectId,
-            sourceVersionId: job.sourceVersionId,
-            jobType: "export",
-            jobId: job.id,
-            status: "completed",
-            finished: true,
-            ...(job.documentRevision === undefined
-              ? {}
-              : { documentRevision: job.documentRevision }),
-          });
-        } else if (job.status === "failed") {
-          await updateProjectStatusForJob(database.pool, {
-            projectId: job.projectId,
-            sourceVersionId: job.sourceVersionId,
-            jobType: "export",
-            jobId: job.id,
-            status: "failed",
-            finished: true,
-            ...(job.documentRevision === undefined
-              ? {}
-              : { documentRevision: job.documentRevision }),
-          });
-        }
         log("info", "export.cycle_completed", {
           slot,
           job_id: job.id,

@@ -9,6 +9,12 @@ import {
   type PdfMarkerKind,
   type PdfMarkerRegion,
 } from "@motionprep/contracts";
+import { isPdfPageRootGroup } from "@motionprep/presets";
+import {
+  canonicalLayerName,
+  createUniqueLayerName,
+  layerNameScopeKey,
+} from "@motionprep/layer-domain";
 
 function clamp(value: number): number {
   return Math.min(1, Math.max(0, value));
@@ -138,6 +144,8 @@ export function applyPdfMarkerRegions(
     const matching = layers.filter(
       (layer) =>
         layer.kind === "text" &&
+        !layer.fixed &&
+        !layer.locked &&
         layer.pageNumber === region.pageNumber &&
         layer.bounds &&
         overlapsMeaningfully(layer.bounds, bounds),
@@ -161,13 +169,29 @@ export function applyPdfMarkerRegions(
       warnings.push(`region:${region.id}:already_applied`);
       continue;
     }
+    const pageGroupId = layers.find(
+      (layer) =>
+        layer.pageNumber === region.pageNumber &&
+        isPdfPageRootGroup(layer),
+    )?.id ?? null;
+    const usedNames = new Set(
+      layers
+        .filter((layer) =>
+          layerNameScopeKey(layer) ===
+          `${region.pageNumber}:${pageGroupId ?? "root"}`,
+        )
+        .map((layer) => canonicalLayerName(layer.name)),
+    );
     const group: LayerNode = {
       id: groupId,
-      parentId: null,
+      parentId: pageGroupId,
       kind: "group",
-      name: `+${region.kind}_${String(
-        region.readingOrder ?? created.length + 1,
-      ).padStart(3, "0")}`,
+      name: createUniqueLayerName(
+        `+${region.kind}_${String(
+          region.readingOrder ?? created.length + 1,
+        ).padStart(3, "0")}`,
+        usedNames,
+      ),
       visible: true,
       locked: false,
       opacity: 1,
@@ -189,12 +213,29 @@ export function applyPdfMarkerRegions(
     created.push(groupId);
   }
 
+  layers = pruneEmptyGroups(layers);
+  const retainedIds = new Set(layers.map((layer) => layer.id));
+
   return {
     document: { ...document, layers },
     affectedLayerIds: [...affected],
-    createdLayerIds: created,
+    createdLayerIds: created.filter((id) => retainedIds.has(id)),
     warnings,
   };
+}
+
+function pruneEmptyGroups(layers: readonly LayerNode[]): LayerNode[] {
+  let current = [...layers];
+  while (true) {
+    const parentIds = new Set(
+      current.flatMap((layer) => (layer.parentId ? [layer.parentId] : [])),
+    );
+    const next = current.filter(
+      (layer) => layer.kind !== "group" || layer.fixed || parentIds.has(layer.id),
+    );
+    if (next.length === current.length) return next;
+    current = next;
+  }
 }
 
 function overlapsMeaningfully(

@@ -73,8 +73,21 @@ describe("PDF markers", () => {
         pages: [{ pageNumber: 1, width: 400, height: 300 }],
         layers: [
           {
-            id: "background",
+            id: "page-group",
             parentId: null,
+            kind: "group",
+            name: "+page_001",
+            visible: true,
+            locked: true,
+            opacity: 1,
+            fixed: true,
+            zIndex: 0,
+            pageNumber: 1,
+            bounds: { x: 0, y: 0, width: 400, height: 300 },
+          },
+          {
+            id: "background",
+            parentId: "page-group",
             kind: "raster",
             name: "+page_001_background",
             visible: true,
@@ -88,7 +101,7 @@ describe("PDF markers", () => {
           },
           {
             id: "heading",
-            parentId: null,
+            parentId: "page-group",
             kind: "text",
             name: "+عنوان",
             fullText: "عنوان",
@@ -118,6 +131,46 @@ describe("PDF markers", () => {
     expect(result.document.layers.find((layer) => layer.id === "heading"))
       .toMatchObject({ parentId: "guide-region-heading", visible: true });
     expect(result.document.layers.find((layer) => layer.id === "background"))
-      .toMatchObject({ locked: true, fixed: true, parentId: null });
+      .toMatchObject({ locked: true, fixed: true, parentId: "page-group" });
+    expect(
+      result.document.layers.find((layer) => layer.id === "guide-region-heading"),
+    ).toMatchObject({ parentId: "page-group", kind: "group" });
+
+    const regrouped = applyPdfMarkerRegions(result.document, [
+      createPdfMarkerRegion({
+        id: "region-topic",
+        pageNumber: 1,
+        kind: "topic",
+        start: { x: 0.05, y: 0.02 },
+        end: { x: 0.95, y: 0.3 },
+        readingOrder: 2,
+      }),
+    ]);
+    expect(regrouped.document.layers.some(
+      (layer) => layer.id === "guide-region-heading",
+    )).toBe(false);
+    expect(regrouped.createdLayerIds).toEqual(["guide-region-topic"]);
+
+    const locked = applyPdfMarkerRegions(
+      {
+        ...result.document,
+        layers: result.document.layers.map((layer) =>
+          layer.id === "heading" ? { ...layer, locked: true } : layer,
+        ),
+      },
+      [
+        createPdfMarkerRegion({
+          id: "region-ignore-locked",
+          pageNumber: 1,
+          kind: "ignore",
+          start: { x: 0.05, y: 0.02 },
+          end: { x: 0.95, y: 0.3 },
+          readingOrder: null,
+        }),
+      ],
+    );
+    expect(locked.document.layers.find((layer) => layer.id === "heading"))
+      .toMatchObject({ visible: true, locked: true });
+    expect(locked.warnings).toContain("region:region-ignore-locked:no_text_layers");
   });
 });

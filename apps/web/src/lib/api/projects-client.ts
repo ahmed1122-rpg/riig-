@@ -26,6 +26,7 @@ export {
   mergePdfTextLayers,
   navigateLayerDocumentHistory,
   refineImageLayerEdges,
+  runLayerDocumentCommand,
   splitPdfTextLayer,
   updateLayerDocument,
 } from "./layer-document-client";
@@ -35,8 +36,8 @@ export {
   restoreSourceVersion,
 } from "./source-versions-client";
 
-export function listProjects(): Promise<ProjectSummary[]> {
-  return request<ProjectSummary[]>("/v1/projects");
+export function listProjects(signal?: AbortSignal): Promise<ProjectSummary[]> {
+  return request<ProjectSummary[]>("/v1/projects", { signal });
 }
 
 export function getProject(

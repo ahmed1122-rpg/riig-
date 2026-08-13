@@ -1,5 +1,5 @@
 import { lazy, Suspense, type MouseEvent } from "react";
-import type { ExportFormat } from "@motionprep/contracts";
+import type { ExportFormat, LayerDocumentCommand } from "@motionprep/contracts";
 import type { Layer, ProjectMode } from "../../types";
 import { ExportReview } from "./ExportReview";
 import { ImageRasterOperationDialog } from "./ImageRasterOperationDialog";
@@ -8,10 +8,10 @@ import { PdfTextOperationDialog } from "./PdfTextOperationDialog";
 import { SourceVersionHistoryDialog } from "./SourceVersionHistoryDialog";
 import {
   WorkspaceMobileDock,
-  WorkspaceMobileSheet,
-  type WorkspaceMobilePanel,
   type WorkspaceSaveState,
 } from "./WorkspaceChrome";
+import { WorkspaceMobileSheet } from "./WorkspaceMobileSheet";
+import type { WorkspaceMobilePanel } from "./workspaceMobilePanel";
 import type { LayerCheckSummary } from "./layerChecks";
 import type {
   ReadyWorkspaceToolId,
@@ -32,6 +32,7 @@ import type {
   WorkspaceReviewState,
   WorkspaceSourceState,
 } from "./useWorkspaceStateControllers";
+import type { DocumentChangeSummary } from "./documentChangeSummary";
 
 const CharacterStudioDialog = lazy(async () => {
   const module = await import("./CharacterStudioDialog");
@@ -52,6 +53,7 @@ interface WorkspaceDialogsModel {
     result: SourceVersionRestoreResult,
     version: SourceVersionSummary,
   ) => Promise<void>;
+  onExecuteRestore: (restore: () => Promise<void>) => Promise<void>;
   mobilePanel: WorkspaceMobilePanel;
   onMobilePanelChange: (panel: WorkspaceMobilePanel) => void;
   onExport: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -60,9 +62,11 @@ interface WorkspaceDialogsModel {
   layers: Layer[];
   selectedIds: string[];
   activeLayerId: string;
+  activePdfPage: number;
   layerCheckSummary: LayerCheckSummary;
   onUseTool: (tool: ResolvedWorkspaceTool) => void;
   onSelectLayer: (id: string) => void;
+  onPdfPageChange: (pageNumber: number) => Promise<boolean>;
   pdfTextOperation: PdfTextOperation | undefined;
   onClosePdfTextOperation: () => void;
   onApplyPdfTextOperation: (
@@ -96,6 +100,8 @@ interface WorkspaceDialogsModel {
   pdfPages: Array<{ pageNumber: number; width: number; height: number }>;
   sourcePreviewUrl: string | undefined;
   onLayersChange: (layers: Layer[]) => void;
+  onLayerCommand: (command: LayerDocumentCommand) => Promise<void>;
+  documentChangeLog: readonly DocumentChangeSummary[];
   onCreateExport: (
     format: ExportFormat,
     options: WorkspaceExportOptions,
@@ -115,6 +121,7 @@ interface WorkspaceDialogsProps {
   tools: WorkspaceToolController;
   actions: {
     onRestoreSourceVersion: WorkspaceDialogsModel["onRestoreSourceVersion"];
+    onExecuteRestore: WorkspaceDialogsModel["onExecuteRestore"];
     onExport: WorkspaceDialogsModel["onExport"];
     layerCheckSummary: LayerCheckSummary;
     onApplyPdfTextOperation: WorkspaceDialogsModel["onApplyPdfTextOperation"];
@@ -125,6 +132,10 @@ interface WorkspaceDialogsProps {
     exportReturnFocusTo: HTMLElement | null;
     onRetrySave: WorkspaceDialogsModel["onRetrySave"];
     onCreateExport: WorkspaceDialogsModel["onCreateExport"];
+    onSelectLayer: (id: string) => Promise<void>;
+    onPdfPageChange: (pageNumber: number) => Promise<boolean>;
+    onLayerCommand: WorkspaceDialogsModel["onLayerCommand"];
+    documentChangeLog: readonly DocumentChangeSummary[];
   };
 }
 
@@ -147,6 +158,7 @@ export function WorkspaceDialogs({
     onCloseCharacterStudio: () => tools.setCharacterStudioOpen(false),
     onCloseSourceVersions: () => tools.setSourceVersionsOpen(false),
     onRestoreSourceVersion: actions.onRestoreSourceVersion,
+    onExecuteRestore: actions.onExecuteRestore,
     mobilePanel: editor.mobilePanel,
     onMobilePanelChange: editor.setMobilePanel,
     onExport: actions.onExport,
@@ -155,9 +167,11 @@ export function WorkspaceDialogs({
     layers: review.layers,
     selectedIds: review.selectedIds,
     activeLayerId: review.activeLayerId,
+    activePdfPage: source.activePdfPage,
     layerCheckSummary: actions.layerCheckSummary,
     onUseTool: tools.useTool,
-    onSelectLayer: review.selectLayer,
+    onSelectLayer: (id) => void actions.onSelectLayer(id),
+    onPdfPageChange: actions.onPdfPageChange,
     pdfTextOperation: tools.pdfTextOperation,
     onClosePdfTextOperation: () => tools.setPdfTextOperation(undefined),
     onApplyPdfTextOperation: actions.onApplyPdfTextOperation,
@@ -180,6 +194,8 @@ export function WorkspaceDialogs({
     pdfPages: source.pdfPages,
     sourcePreviewUrl: source.sourcePreviewUrl,
     onLayersChange: review.setLayers,
+    onLayerCommand: actions.onLayerCommand,
+    documentChangeLog: actions.documentChangeLog,
     onCreateExport: actions.onCreateExport,
     onNotify: context.onNotify,
   };
@@ -194,6 +210,7 @@ export function WorkspaceDialogs({
             onClose={props.onCloseSourceVersions}
             onNotify={props.onNotify}
             onRestored={props.onRestoreSourceVersion}
+            onExecuteRestore={props.onExecuteRestore}
           />
         )}
 
@@ -232,10 +249,17 @@ export function WorkspaceDialogs({
           layers={props.layers}
           selectedIds={props.selectedIds}
           activeLayerId={props.activeLayerId}
+          activePdfPage={props.activePdfPage}
           layerCheckSummary={props.layerCheckSummary}
           onClose={() => props.onMobilePanelChange("none")}
           onUseTool={props.onUseTool}
           onSelectLayer={props.onSelectLayer}
+          onPdfPageChange={props.onPdfPageChange}
+          onLayersChange={props.onLayersChange}
+          onLayerCommand={props.onLayerCommand}
+          documentChangeLog={props.documentChangeLog}
+          onNotify={props.onNotify}
+          pdfPages={props.pdfPages}
         />
       )}
 

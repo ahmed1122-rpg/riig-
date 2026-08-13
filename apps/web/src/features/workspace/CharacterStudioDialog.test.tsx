@@ -179,7 +179,7 @@ afterEach(() => {
 });
 
 describe("CharacterStudioDialog", () => {
-  it("aborts its state request when the dialog unmounts", () => {
+  it("aborts its state request when the dialog unmounts", async () => {
     let observedSignal: AbortSignal | undefined;
     vi.mocked(getCharacterRigStudio).mockImplementation((_projectId, signal) => {
       observedSignal = signal;
@@ -187,7 +187,7 @@ describe("CharacterStudioDialog", () => {
     });
 
     const view = renderStudio();
-    expect(observedSignal?.aborted).toBe(false);
+    await waitFor(() => expect(observedSignal?.aborted).toBe(false));
     view.unmount();
     expect(observedSignal?.aborted).toBe(true);
   });

@@ -3,6 +3,9 @@
 ## Authentication
 
 - `POST /v1/auth/register`
+- `POST /v1/auth/email/verify`
+- `POST /v1/auth/email/resend`
+- `POST /v1/auth/admin-bootstrap`
 - `POST /v1/auth/login`
 - `POST /v1/auth/mfa/challenge`
 - `POST /v1/auth/mfa/setup`
@@ -16,8 +19,17 @@
 
 Sessions use an opaque `motionprep_session` cookie with `HttpOnly`,
 `SameSite=Lax`, and `Secure` in production. Registration requires the exact
-current terms/privacy versions, and persistent deployments encrypt MFA secrets
-with the configured authentication key.
+current terms/privacy versions. Production registration remains pending until
+the one-use email token is consumed; resend is deliberately non-enumerating and
+invalidates every earlier token. The bootstrap route accepts only the configured
+email and token digest, is serialized in PostgreSQL, and becomes permanently
+unavailable after the first administrator exists. Remove its configuration
+immediately after enrollment and require MFA for the created account.
+
+Persistent deployments encrypt MFA secrets with the active key from the
+bounded authentication keyring. Previous keys are decrypt-only during a
+rotation window; new ciphertext and recovery-code hashes always use the active
+key ID.
 
 ## Account privacy
 

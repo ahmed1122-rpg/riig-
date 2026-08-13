@@ -98,4 +98,27 @@ describe("ProjectsView", () => {
     expect(deleteEmptyProject).toHaveBeenCalledWith("project-1");
     expect(screen.queryByText("مشروع تجريبي")).toBeNull();
   });
+
+  it("explains an empty filtered result and clears every filter", async () => {
+    vi.mocked(listProjects).mockResolvedValue([project("completed")] as never);
+    render(
+      <ProjectsView
+        demoState="ready"
+        authenticated
+        onRequireAuth={vi.fn()}
+        onOpenWorkspace={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(await screen.findByRole("searchbox"), {
+      target: { value: "لا-يطابق-أي-مشروع" },
+    });
+    const clear = await screen.findByRole("button", {
+      name: "مسح عوامل التصفية",
+    });
+    fireEvent.click(clear);
+
+    expect(await screen.findByText("مشروع تجريبي")).toBeTruthy();
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+  });
 });

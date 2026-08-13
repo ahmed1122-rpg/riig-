@@ -27,6 +27,15 @@ const startedAt = new Date();
 const releaseIdentityBefore = await inspectTargetRelease(config);
 assertTargetRelease(releaseIdentityBefore);
 const timings = [];
+const accountIndexes = Array.from(
+  { length: config.accountPoolSize },
+  (_, index) => index,
+);
+const accounts = await runWithConcurrency(
+  accountIndexes,
+  config.accountPoolSize,
+  async (_, index) => registerLoadAccount(index),
+);
 const attempts = Array.from(
   { length: config.concurrency * config.iterationsPerUser },
   (_, index) => index,
@@ -46,7 +55,8 @@ try {
   results = await runWithConcurrency(
     attempts,
     config.concurrency,
-    async (_, index) => executeJourney(index),
+    async (_, index) =>
+      executeJourney(index, accounts[index % accounts.length].cookie),
   );
 } finally {
   sampling = false;
@@ -127,6 +137,7 @@ const report = {
     : null,
   load: {
     concurrency: config.concurrency,
+    accountPoolSize: config.accountPoolSize,
     iterationsPerUser: config.iterationsPerUser,
     totalJourneys: results.length,
     reviewFlow: config.reviewFlow,
@@ -186,24 +197,28 @@ await writeFile(config.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 if (!report.outcome.passed) process.exitCode = 1;
 
-async function executeJourney(index) {
+async function registerLoadAccount(index) {
+  const suffix = `${runId.slice(0, 8)}-account-${index}`;
+  const registration = await measure("register", () =>
+    apiRequest("/v1/auth/register", {
+      method: "POST",
+      json: {
+        name: `Load User ${index}`,
+        email: `load-${suffix}@example.test`,
+        password: "Load-Test-2026!",
+        legal: currentLegalAcceptance,
+      },
+      expectedStatus: 201,
+    }),
+  );
+  return { cookie: registration.cookie };
+}
+
+async function executeJourney(index, cookie) {
   const journeyStartedAt = performance.now();
-  let cookie = "";
   const suffix = `${runId.slice(0, 8)}-${index}`;
+  const api = (path, options = {}) => apiRequest(path, options, cookie);
   try {
-    const registration = await measure("register", () =>
-      api("/v1/auth/register", {
-        method: "POST",
-        json: {
-          name: `Load User ${index}`,
-          email: `load-${suffix}@example.test`,
-          password: "Load-Test-2026!",
-          legal: currentLegalAcceptance,
-        },
-        expectedStatus: 201,
-      }),
-    );
-    cookie = registration.cookie;
     const project = await measure("project", () =>
       api("/v1/projects", {
         method: "POST",
@@ -311,37 +326,6 @@ async function executeJourney(index) {
     };
   }
 
-  async function api(path, options = {}) {
-    const headers = new Headers(options.headers);
-    headers.set("origin", config.requestOrigin);
-    if (cookie) headers.set("cookie", cookie);
-    let body = options.body;
-    if (options.json !== undefined) {
-      headers.set("content-type", "application/json");
-      body = JSON.stringify(options.json);
-    }
-    const response = await fetch(`${config.targetOrigin}${path}`, {
-      method: options.method ?? "GET",
-      headers,
-      body,
-      signal: AbortSignal.timeout(config.requestTimeoutMs),
-    });
-    const text = await response.text();
-    const parsed = text ? JSON.parse(text) : null;
-    if (response.status !== options.expectedStatus) {
-      throw new Error(
-        `${options.method ?? "GET"} ${path} returned ${response.status}, expected ${options.expectedStatus}: ${text.slice(0, 300)}`,
-      );
-    }
-    return {
-      body: parsed,
-      cookie:
-        response.headers.getSetCookie?.()[0]?.split(";")[0] ??
-        response.headers.get("set-cookie")?.split(";")[0] ??
-        "",
-    };
-  }
-
   async function waitForJob(path, label) {
     const deadline = Date.now() + config.jobTimeoutMs;
     while (Date.now() < deadline) {
@@ -354,6 +338,37 @@ async function executeJourney(index) {
     }
     throw new Error(`${label} did not become ready within ${config.jobTimeoutMs}ms.`);
   }
+}
+
+async function apiRequest(path, options = {}, cookie = "") {
+  const headers = new Headers(options.headers);
+  headers.set("origin", config.requestOrigin);
+  if (cookie) headers.set("cookie", cookie);
+  let body = options.body;
+  if (options.json !== undefined) {
+    headers.set("content-type", "application/json");
+    body = JSON.stringify(options.json);
+  }
+  const response = await fetch(`${config.targetOrigin}${path}`, {
+    method: options.method ?? "GET",
+    headers,
+    body,
+    signal: AbortSignal.timeout(config.requestTimeoutMs),
+  });
+  const text = await response.text();
+  const parsed = text ? JSON.parse(text) : null;
+  if (response.status !== options.expectedStatus) {
+    throw new Error(
+      `${options.method ?? "GET"} ${path} returned ${response.status}, expected ${options.expectedStatus}: ${text.slice(0, 300)}`,
+    );
+  }
+  return {
+    body: parsed,
+    cookie:
+      response.headers.getSetCookie?.()[0]?.split(";")[0] ??
+      response.headers.get("set-cookie")?.split(";")[0] ??
+      "",
+  };
 }
 
 async function measure(stage, operation) {

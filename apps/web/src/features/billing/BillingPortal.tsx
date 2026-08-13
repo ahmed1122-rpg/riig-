@@ -11,6 +11,7 @@ import {
   type SubscriptionSummary,
 } from "../../lib/api";
 import { Icon } from "../../shared/Icon";
+import { DataState } from "../../shared/DataState";
 import {
   configuredPaymentProviders,
   type PaymentProviderAdapter,
@@ -67,6 +68,10 @@ export default function BillingPortal({
   const [subscription, setSubscription] =
     useState<SubscriptionSummary | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const [reloadVersion, setReloadVersion] = useState(0);
   const [portalOpening, setPortalOpening] = useState(false);
   const [returnedCheckoutId, setReturnedCheckoutId] = useState<string>();
   const handledReturnRef = useRef<string | undefined>(undefined);
@@ -110,6 +115,7 @@ export default function BillingPortal({
     ]);
     setConfiguration(nextConfiguration);
     setSubscription(nextSubscription);
+    setLoadState("ready");
     const firstConfigured = configuredPaymentProviders(
       nextConfiguration.providers,
     ).find((provider) => provider.configured);
@@ -118,16 +124,19 @@ export default function BillingPortal({
 
   useEffect(() => {
     if (!authenticated) return;
+    setLoadState("loading");
+    setPageError(null);
     void refreshBilling().catch((error) => {
       if (error instanceof ApiError && error.status === 401) {
         onRequireAuth();
         return;
       }
+      setLoadState("error");
       setPageError(
         error instanceof Error ? error.message : "تعذر تحميل بيانات الفوترة.",
       );
     });
-  }, [authenticated]);
+  }, [authenticated, reloadVersion]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -285,6 +294,36 @@ export default function BillingPortal({
             تسجيل الدخول
           </button>
         </div>
+      </section>
+    );
+  }
+
+  if (loadState !== "ready") {
+    return (
+      <section className="billing-page page-enter">
+        <header className="feature-page-header billing-heading">
+          <div>
+            <span className="eyebrow">الفوترة والاستخدام</span>
+            <h1>بيانات اشتراكك من الخادم</h1>
+            <p>لا نعرض خطة أو استخدامًا افتراضيًا قبل اكتمال التحقق.</p>
+          </div>
+        </header>
+        <DataState
+          state={loadState}
+          title={
+            loadState === "loading"
+              ? "جارٍ تحميل بيانات الفوترة"
+              : "تعذّر تحميل بيانات الفوترة"
+          }
+          description={
+            loadState === "error"
+              ? pageError ?? "أعد المحاولة، ولم تتغير بيانات اشتراكك."
+              : "نتحقق من الخطة والاستخدام وحالة مزود الدفع."
+          }
+          {...(loadState === "error"
+            ? { onRetry: () => setReloadVersion((version) => version + 1) }
+            : {})}
+        />
       </section>
     );
   }

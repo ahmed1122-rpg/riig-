@@ -6,7 +6,7 @@ export async function cleanupRasterAssets(
   onError?: (error: unknown, objectKey: string) => void,
 ): Promise<void> {
   const results = await Promise.allSettled(
-    objectKeys.map((objectKey) => storage.delete(objectKey)),
+    objectKeys.map((objectKey) => storage.purge([objectKey], [])),
   );
   results.forEach((result, index) => {
     if (result.status !== "rejected") return;

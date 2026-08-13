@@ -5,6 +5,7 @@ import {
   loadRasterLayerPreviews,
   toWorkspaceLayers,
 } from "./workspaceDocument";
+import { firstEditableWorkspaceLayerId } from "./workspaceLayerSelection";
 
 interface WorkspaceDocumentAdoptionOptions {
   mode: ProjectMode;
@@ -56,13 +57,17 @@ export function useWorkspaceDocumentAdoption(
       options.setGuidanceRevision(document.guidance?.revision ?? 0);
       const nextActiveId =
         preferredLayerId &&
-        preparedLayers.some((layer) => layer.id === preferredLayerId)
+        preparedLayers.some(
+          (layer) => layer.id === preferredLayerId && layer.kind !== "group",
+        )
           ? preferredLayerId
           : preparedLayers.some(
-                (layer) => layer.id === options.activeLayerId,
+                (layer) =>
+                  layer.id === options.activeLayerId &&
+                  layer.kind !== "group",
               )
             ? options.activeLayerId
-            : preparedLayers[0]?.id ?? "";
+            : firstEditableWorkspaceLayerId(preparedLayers);
       options.setActiveLayerId(nextActiveId);
       options.setSelectedIds(nextActiveId ? [nextActiveId] : []);
     },

@@ -9,11 +9,15 @@ afterEach(cleanup);
 function Harness({
   hasUnsavedReview,
   flushLayerReview,
+  hasUnsavedDraft = () => false,
+  confirmDiscardDraft = async () => true,
   onNavigationGuardChange,
   onNotify,
 }: {
   hasUnsavedReview: () => boolean;
   flushLayerReview: () => Promise<number>;
+  hasUnsavedDraft?: () => boolean;
+  confirmDiscardDraft?: () => Promise<boolean>;
   onNavigationGuardChange: (
     guard: (() => Promise<boolean>) | null,
   ) => void;
@@ -22,6 +26,8 @@ function Harness({
   useWorkspaceNavigationGuard({
     hasUnsavedReview,
     flushLayerReview,
+    hasUnsavedDraft,
+    confirmDiscardDraft,
     onNavigationGuardChange,
     onNotify,
   });
@@ -71,5 +77,41 @@ describe("useWorkspaceNavigationGuard", () => {
     await expect(guard!()).resolves.toBe(false);
     expect(onNotify).toHaveBeenCalledOnce();
     expect(onNotify.mock.calls[0]?.[0]).toContain("لحماية عملك");
+  });
+
+  it("asks before discarding a local editor draft", async () => {
+    const confirmDiscardDraft = vi.fn(async () => false);
+    let guard: (() => Promise<boolean>) | null = null;
+    render(
+      <Harness
+        hasUnsavedReview={() => false}
+        hasUnsavedDraft={() => true}
+        confirmDiscardDraft={confirmDiscardDraft}
+        flushLayerReview={vi.fn(async () => 1)}
+        onNavigationGuardChange={(nextGuard) => {
+          guard = nextGuard;
+        }}
+        onNotify={vi.fn()}
+      />,
+    );
+
+    await expect(guard!()).resolves.toBe(false);
+    expect(confirmDiscardDraft).toHaveBeenCalledOnce();
+  });
+
+  it("protects local drafts from browser unload", () => {
+    render(
+      <Harness
+        hasUnsavedReview={() => false}
+        hasUnsavedDraft={() => true}
+        flushLayerReview={vi.fn(async () => 1)}
+        onNavigationGuardChange={vi.fn()}
+        onNotify={vi.fn()}
+      />,
+    );
+
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
   });
 });

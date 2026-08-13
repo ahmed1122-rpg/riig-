@@ -276,6 +276,14 @@ const documentedBodies = new Map<string, Record<string, unknown>>([
     }),
   ],
   [
+    "POST /v1/projects/:projectId/layer-document/commands",
+    objectBody(["sourceVersionId", "baseRevision", "command"], {
+      sourceVersionId: text("uuid"),
+      baseRevision: integer,
+      command: { type: "object", additionalProperties: true },
+    }),
+  ],
+  [
     "POST /v1/projects/:projectId/guided-refinements",
     objectBody(["sourceVersionId", "baseRevision", "mode"], {
       sourceVersionId: text("uuid"),

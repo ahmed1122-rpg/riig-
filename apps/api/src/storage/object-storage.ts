@@ -28,6 +28,8 @@ export interface ObjectReadOptions {
 
 export interface ObjectStorage {
   put(object: StoredObject): Promise<StoredObjectMetadata>;
+  list(prefix: string): Promise<string[]>;
+  purge(keys: readonly string[], prefixes: readonly string[]): Promise<void>;
   inspect(key: string): Promise<StoredObjectMetadata | null>;
   getStream(
     key: string,
@@ -47,6 +49,21 @@ export class InMemoryObjectStorage implements ObjectStorage {
       body: Buffer.from(object.body),
     });
     return metadataFor(object);
+  }
+
+  async list(prefix: string): Promise<string[]> {
+    return [...this.#objects.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .sort((left, right) => left.localeCompare(right));
+  }
+
+  async purge(keys: readonly string[], prefixes: readonly string[]): Promise<void> {
+    const exact = new Set(keys);
+    for (const key of this.#objects.keys()) {
+      if (exact.has(key) || prefixes.some((prefix) => key.startsWith(prefix))) {
+        this.#objects.delete(key);
+      }
+    }
   }
 
   async inspect(key: string): Promise<StoredObjectMetadata | null> {

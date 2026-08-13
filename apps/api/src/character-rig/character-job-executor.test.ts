@@ -3,6 +3,7 @@ import type {
   CharacterGenerationAttempt,
   CharacterIdentityModelVersion,
   CharacterReferenceAsset,
+  CharacterRigVersion,
 } from "@motionprep/contracts";
 import { InMemoryObjectStorage } from "../storage/object-storage.js";
 import { describe, expect, it } from "vitest";
@@ -213,6 +214,72 @@ describe("character job runtime", () => {
       );
       expect(settled).toMatchObject({ status: expectedStatus, errorCode: code });
     }
+  });
+
+  it("persists a terminal compile failure on the rig snapshot", async () => {
+    const setup = await createReadyContext();
+    const rig: CharacterRigVersion = {
+      schemaVersion: "1.0",
+      id: crypto.randomUUID(),
+      projectId,
+      bibleId: setup.bible.id,
+      version: 1,
+      status: "draft",
+      failureCode: null,
+      canvas: { width: 128, height: 128 },
+      nodes: [{
+        id: crypto.randomUUID(),
+        parentId: null,
+        kind: "raster",
+        name: "+Head",
+        canonicalView: "frontal",
+        semanticPart: "head",
+        sourceGenerationAttemptId: null,
+        artifact: {
+          objectKey: `projects/${projectId}/character-rig/missing.png`,
+          contentType: "image/png",
+          sizeBytes: 1,
+          sha256: "a".repeat(64),
+          createdAt: initialTime.toISOString(),
+          retentionExpiresAt: null,
+        },
+        bounds: { x: 0, y: 0, width: 128, height: 128 },
+        visible: true,
+        locked: false,
+        opacity: 1,
+        zIndex: 0,
+      }],
+      psdArtifact: null,
+      manifestArtifact: null,
+      approvedByUserId: null,
+      approvedAt: null,
+      createdAt: initialTime.toISOString(),
+      updatedAt: initialTime.toISOString(),
+    };
+    await setup.rigs.saveRigVersion(rig);
+    await new CharacterJobService(setup.jobs).enqueue({
+      projectId,
+      type: "compile-rig",
+      operationKey: "compile-terminal-failure",
+      requestHash: "c".repeat(64),
+      payload: { rigVersionId: rig.id, width: 128, height: 128 },
+      maxAttempts: 1,
+      now: initialTime.toISOString(),
+    });
+
+    const settled = await executeClaimedCharacterJob(
+      { ...setup.context, now: advancingClock() },
+      await claim(setup.jobs),
+    );
+
+    expect(settled).toMatchObject({
+      status: "failed",
+      errorCode: "CHARACTER_RIG_ASSET_INTEGRITY_FAILED",
+    });
+    await expect(setup.rigs.findRigVersion(projectId, rig.id)).resolves.toMatchObject({
+      status: "draft",
+      failureCode: "CHARACTER_RIG_ASSET_INTEGRITY_FAILED",
+    });
   });
 
   it("cancels an in-flight provider request and requeues it during shutdown", async () => {

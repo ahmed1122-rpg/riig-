@@ -53,6 +53,41 @@ describe("workspace state controllers", () => {
     expect(result.current.selectedIds).toEqual([]);
   });
 
+  it("never activates a structural PDF group as the selection fallback", () => {
+    const pageGroup: Layer = {
+      ...layer,
+      id: "page-root",
+      name: "+page_001",
+      kind: "group",
+      parentId: null,
+      pageNumber: 1,
+    };
+    const background: Layer = {
+      ...layer,
+      id: "background",
+      kind: "page",
+      parentId: pageGroup.id,
+      pageNumber: 1,
+    };
+    const text: Layer = {
+      ...layer,
+      id: "text",
+      kind: "text",
+      parentId: pageGroup.id,
+      pageNumber: 1,
+    };
+    const { result } = renderHook(() => useWorkspaceReviewState("book"));
+
+    act(() => {
+      result.current.setBookLayers([pageGroup, background, text]);
+      result.current.resetSelection([pageGroup, background, text]);
+    });
+
+    expect(result.current.activeLayerId).toBe("text");
+    expect(result.current.activeLayer?.id).toBe("text");
+    expect(result.current.selectedIds).toEqual(["text"]);
+  });
+
   it("resets one source lifecycle as an atomic mode transition", () => {
     const { result } = renderHook(() => useWorkspaceSourceState("image"));
 

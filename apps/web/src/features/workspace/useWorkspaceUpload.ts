@@ -18,6 +18,7 @@ import {
   toWorkspaceLayers,
 } from "./workspaceDocument";
 import { uploadLimitLabel } from "./uploadLimit";
+import type { DocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
 
 type UploadResult = Awaited<
   ReturnType<typeof createAndUploadSource>
@@ -29,8 +30,10 @@ interface WorkspaceUploadOptions {
   authenticated: boolean;
   persistedSource: boolean;
   sourceName: string;
+  hasUnsavedEditorDraft?: boolean;
   projectId?: string;
   pdfMode: PdfSegmentation;
+  commandCoordinator: DocumentCommandCoordinator;
   onRequireAuth: () => void;
   onNotify: (message: string) => void;
   confirmSourceReplacement: (input: {
@@ -130,7 +133,10 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
         title: "استبدال المصدر الحالي؟",
         description:
           `سيُحفظ ${options.sourceName} كنسخة سابقة، ` +
-          `ويصبح ${file.name} مصدرًا جديدًا.`,
+          `ويصبح ${file.name} مصدرًا جديدًا.` +
+          (options.hasUnsavedEditorDraft
+            ? " ستُفقد أيضًا مسودة الإرشاد المحلية غير المطبقة."
+            : ""),
         confirmLabel: "رفع المصدر الجديد",
       }))
     ) {
@@ -154,43 +160,43 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
       uploadSequenceRef.current === operationId &&
       uploadAbortRef.current === controller;
     try {
-      options.setUploadState("uploading");
-      const result = await createAndUploadSource(
-        file,
-        options.mode,
-        {
-          signal: controller.signal,
-          ...(options.projectId
-            ? { projectId: options.projectId }
-            : {}),
-          onUploadProgress: (progress) => {
-            if (!isCurrent()) return;
-            options.setUploadState("uploading");
-            options.setUploadProgress(Math.round(progress * 0.65));
+      await options.commandCoordinator.run(async () => {
+        options.setUploadState("uploading");
+        const result = await createAndUploadSource(
+          file,
+          options.mode,
+          {
+            signal: controller.signal,
+            ...(options.projectId
+              ? { projectId: options.projectId }
+              : {}),
+            onUploadProgress: (progress) => {
+              if (!isCurrent()) return;
+              options.setUploadState("uploading");
+              options.setUploadProgress(Math.round(progress * 0.65));
+            },
+            onProcessingProgress: (progress) => {
+              if (!isCurrent()) return;
+              options.setUploadState("verifying");
+              options.setUploadProgress(
+                65 + Math.round(progress * 0.33),
+              );
+            },
+            onLifecycleUpdate: (update) => {
+              if (isCurrent()) options.onLifecycleUpdate(update);
+            },
+            ...(options.mode === "book"
+              ? {
+                  pdfSeparationMode:
+                    pdfApiModes[options.pdfMode],
+                }
+              : {}),
           },
-          onProcessingProgress: (progress) => {
-            if (!isCurrent()) return;
-            options.setUploadState("verifying");
-            options.setUploadProgress(
-              65 + Math.round(progress * 0.33),
-            );
-          },
-          onLifecycleUpdate: (update) => {
-            if (isCurrent()) options.onLifecycleUpdate(update);
-          },
-          ...(options.mode === "book"
-            ? {
-                pdfSeparationMode:
-                  pdfApiModes[options.pdfMode],
-              }
-            : {}),
-        },
-      );
-      if (!isCurrent()) return;
-      options.setUploadState("verifying");
-      options.setUploadProgress(99);
-      const previewResult =
-        options.mode === "image"
+        );
+        if (!isCurrent()) return;
+        options.setUploadState("verifying");
+        options.setUploadProgress(99);
+        const previewResult = options.mode === "image"
           ? await loadRasterLayerPreviews(
               result.projectId,
               result.sourceVersionId,
@@ -198,25 +204,29 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
               controller.signal,
             )
           : { previews: new Map<string, string>(), urls: [] };
-      if (!isCurrent()) {
-        previewResult.urls.forEach((url) => URL.revokeObjectURL(url));
-        return;
-      }
-      options.onLayerAssetUrls(previewResult.urls);
-      options.onDocumentReady(
-        file,
-        result,
-        toWorkspaceLayers(
-          result.document,
-          options.mode,
-          previewResult.previews,
-        ),
-      );
-      options.setUploadProgress(100);
-      options.setUploadState("ready");
-      options.setUploadDetailsOpen(false);
-      options.onNotify(uploadSuccessMessage(options.mode, result));
-      previousSourceNameRef.current = undefined;
+        if (!isCurrent()) {
+          previewResult.urls.forEach((url) => URL.revokeObjectURL(url));
+          return;
+        }
+        options.onLayerAssetUrls(previewResult.urls);
+        options.onDocumentReady(
+          file,
+          result,
+          toWorkspaceLayers(
+            result.document,
+            options.mode,
+            previewResult.previews,
+          ),
+        );
+        options.setUploadProgress(100);
+        options.setUploadState("ready");
+        options.setUploadDetailsOpen(false);
+        options.onNotify(uploadSuccessMessage(options.mode, result));
+        previousSourceNameRef.current = undefined;
+      }, {
+        flush: options.persistedSource,
+        allowIdentityChange: true,
+      });
     } catch (error) {
       if (!isCurrent()) return;
       if (controller.signal.aborted) {

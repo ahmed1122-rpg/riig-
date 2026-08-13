@@ -20,7 +20,7 @@ class MismatchedObjectStorage extends InMemoryObjectStorage {
 }
 
 class MismatchedCleanupFailingObjectStorage extends MismatchedObjectStorage {
-  override async delete(): Promise<void> {
+  override async purge(): Promise<void> {
     throw new Error("object cleanup unavailable");
   }
 }

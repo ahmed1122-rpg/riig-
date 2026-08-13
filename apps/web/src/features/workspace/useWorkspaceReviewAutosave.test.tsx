@@ -133,9 +133,6 @@ describe("workspace review autosave", () => {
     });
     expect(view.getByTestId("save-state").textContent).toBe("error");
     expect(controls.current?.hasUnsavedReview()).toBe(true);
-    const failedUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(failedUnload);
-    expect(failedUnload.defaultPrevented).toBe(true);
 
     await act(async () => {
       await Promise.resolve();
@@ -225,7 +222,7 @@ describe("workspace review autosave", () => {
     expect(controls.current?.hasUnsavedReview()).toBe(true);
   });
 
-  it("warns before unload while dirty and clears the warning after flush", async () => {
+  it("exposes dirty state to the single navigation guard until flush", async () => {
     vi.mocked(updateLayerDocument).mockResolvedValue({
       revision: 2,
     } as LayerDocumentView);
@@ -238,9 +235,6 @@ describe("workspace review autosave", () => {
       />,
     );
 
-    const dirtyUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(dirtyUnload);
-    expect(dirtyUnload.defaultPrevented).toBe(true);
     expect(controls.current?.hasUnsavedReview()).toBe(true);
 
     await act(async () => {
@@ -249,8 +243,5 @@ describe("workspace review autosave", () => {
     expect(updateLayerDocument).toHaveBeenCalledOnce();
     expect(controls.current?.hasUnsavedReview()).toBe(false);
 
-    const savedUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(savedUnload);
-    expect(savedUnload.defaultPrevented).toBe(false);
   });
 });

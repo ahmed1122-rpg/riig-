@@ -5,6 +5,7 @@ import type {
   AccountDeletionRequest,
   AccountPrivacyRepository,
   PrepareAccountDeletionResult,
+  ReconcileAccountDeletionResult,
 } from "./privacy/account-privacy.js";
 import { InMemoryObjectStorage } from "./storage/object-storage.js";
 import {
@@ -31,6 +32,15 @@ class ActiveSubscriptionPrivacyRepository implements AccountPrivacyRepository {
   async listPendingDeletions(): Promise<AccountDeletionRequest[]> {
     return [];
   }
+  async claimDeletion(): Promise<boolean> {
+    return true;
+  }
+  async reconcileDeletion(): Promise<ReconcileAccountDeletionResult> {
+    throw new Error("not used");
+  }
+  async recordDeletionInventory(): Promise<AccountDeletionRequest> {
+    throw new Error("not used");
+  }
   async markDeletionFailed(): Promise<void> {}
   async completeDeletion(): Promise<void> {}
 }
@@ -38,21 +48,34 @@ class ActiveSubscriptionPrivacyRepository implements AccountPrivacyRepository {
 class FailingDeletionPrivacyRepository extends ActiveSubscriptionPrivacyRepository {
   failed = false;
   broken = false;
+  request: AccountDeletionRequest | null = null;
   override async prepareDeletion(userId: string): Promise<PrepareAccountDeletionResult> {
     if (this.broken) throw new Error("privacy repository unavailable");
+    this.request = {
+      id: crypto.randomUUID(),
+      userId,
+      status: "processing",
+      phase: "purging",
+      objectKeys: ["sources/private.png"],
+      objectPrefixes: [],
+      attempt: 1,
+      requestedAt: "2026-08-04T10:00:00.000Z",
+      updatedAt: "2026-08-04T10:00:00.000Z",
+      completedAt: null,
+      drainedAt: "2026-08-04T10:00:00.000Z",
+    };
     return {
       kind: "ready",
-      request: {
-        id: crypto.randomUUID(),
-        userId,
-        status: "processing",
-        objectKeys: ["sources/private.png"],
-        attempt: 1,
-        requestedAt: "2026-08-04T10:00:00.000Z",
-        updatedAt: "2026-08-04T10:00:00.000Z",
-        completedAt: null,
-      },
+      request: this.request,
     };
+  }
+  override async reconcileDeletion() {
+    if (!this.request) throw new Error("missing request");
+    return { kind: "ready" as const, request: this.request };
+  }
+  override async recordDeletionInventory() {
+    if (!this.request) throw new Error("missing request");
+    return this.request;
   }
   override async markDeletionFailed(): Promise<void> {
     this.failed = true;
@@ -60,7 +83,7 @@ class FailingDeletionPrivacyRepository extends ActiveSubscriptionPrivacyReposito
 }
 
 class AlwaysFailStorage extends InMemoryObjectStorage {
-  override async delete(): Promise<void> {
+  override async purge(): Promise<void> {
     throw new Error("storage unavailable");
   }
 }
@@ -387,6 +410,7 @@ describe("API — المصادقة والصلاحيات", () => {
     const unexpected = await app.inject({
       method: "DELETE",
       url: "/v1/account",
+      remoteAddress: "198.51.100.42",
       headers: { cookie },
       payload: { password: TEST_PASSWORD, confirmation: "DELETE" },
     });

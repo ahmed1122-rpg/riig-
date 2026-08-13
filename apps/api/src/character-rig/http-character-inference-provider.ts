@@ -124,6 +124,7 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
           controls: input.attempt.controls,
           canvas: input.attempt.controls.canvas,
         },
+        outputObjectKey: input.outputObjectKey,
         references: inferenceReferences(input.references),
       }, input.attempt.id, input.signal),
     );

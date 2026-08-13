@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   builtInPresets,
   createPdfBackgroundLayerName,
+  createPdfPageGroupName,
   createPdfTextLayerName,
   getRecommendedPreset,
+  isPdfPageRootGroup,
   normalizeLayerName,
   validateProductionDocument,
 } from "./index.js";
@@ -40,6 +42,27 @@ describe("production presets", () => {
   it("names the fixed white page background consistently", () => {
     expect(createPdfBackgroundLayerName(1)).toBe("+page_001_background");
     expect(createPdfBackgroundLayerName(12)).toBe("+page_012_background");
+  });
+
+  it("names and identifies canonical PDF page folders", () => {
+    expect(createPdfPageGroupName(1)).toBe("+page_001");
+    expect(createPdfPageGroupName(12)).toBe("+page_012");
+    expect(
+      isPdfPageRootGroup({
+        kind: "group",
+        name: "+page_012",
+        pageNumber: 12,
+        parentId: null,
+      }),
+    ).toBe(true);
+    expect(
+      isPdfPageRootGroup({
+        kind: "group",
+        name: "+topic_001",
+        pageNumber: 12,
+        parentId: null,
+      }),
+    ).toBe(false);
   });
 
   it("uses the separated PDF content as the readable layer name", () => {
@@ -161,8 +184,20 @@ describe("production presets", () => {
         colorSpace: "sRGB",
         layers: [
           {
-            id: "background",
+            id: "page-1",
             parentId: null,
+            kind: "group",
+            name: "+page_001",
+            visible: true,
+            locked: true,
+            opacity: 1,
+            fixed: true,
+            zIndex: 0,
+            pageNumber: 1,
+          },
+          {
+            id: "background",
+            parentId: "page-1",
             kind: "raster",
             name: "+page_001_background",
             visible: true,
@@ -174,7 +209,7 @@ describe("production presets", () => {
           },
           {
             id: "word",
-            parentId: null,
+            parentId: "page-1",
             kind: "text",
             name: "+مرحبا",
             visible: true,

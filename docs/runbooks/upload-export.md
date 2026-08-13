@@ -47,9 +47,9 @@
 
 ## Recovery
 
-- Upload: the current API accepts one request up to 30 MiB and does not use
-  multipart transfer. If the session is invalid, cancel it and create a new
-  source version.
+- Upload: the current API accepts one image or PDF request up to 30 MiB and
+  does not use multipart transfer. If the session is invalid, cancel it and
+  create a new source version.
 - Missing or corrupt upload: the reconciler atomically marks the upload and
   source failed and fails the project only when that source is still current.
   Do not manually restore `ready`; create a new source version. The immutable

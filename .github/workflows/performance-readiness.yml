@@ -28,6 +28,7 @@ jobs:
       STAGING_ORIGIN: ${{ vars.STAGING_ORIGIN }}
       EXPECTED_APPLICATION_VERSION: ${{ vars.EXPECTED_APPLICATION_VERSION }}
       RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
+      RELEASE_TAG: ${{ vars.RELEASE_TAG }}
       RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
       WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
       STAGING_EVIDENCE_PATH: .tmp/performance-release-evidence.json
@@ -59,11 +60,17 @@ jobs:
       LOAD_WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ vars.RELEASE_GIT_SHA }}
+          fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Verify exact checkout, tag, and signed image digests
+        run: npm run verify:release-checkout -- --verify-images
       - name: Verify deployed release identity before the load run
         run: npm run verify:staging-application
       - name: Fetch and verify the protected representative PDF

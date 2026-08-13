@@ -11,7 +11,10 @@ import {
   mergeRasterLayers,
   refineRasterEdges,
 } from "@motionprep/media-processing";
-import { normalizeLayerName } from "@motionprep/presets";
+import {
+  canonicalLayerName,
+  createUniqueLayerName,
+} from "@motionprep/layer-domain";
 import type { ObjectStorage } from "../storage/object-storage.js";
 import {
   DocumentEditCoordinator,
@@ -263,10 +266,19 @@ export class ImageLayerOperations {
     );
     try {
       const removed = new Set(uniqueIds);
+      const siblingNames = new Set(
+        document.layers
+          .filter(
+            (layer) =>
+              !removed.has(layer.id) &&
+              layer.parentId === rasterLayers[0]!.parentId,
+          )
+          .map((layer) => canonicalLayerName(layer.name)),
+      );
       const mergedLayer: LayerNode = {
         ...rasterLayers[0]!,
         id: mergedId,
-        name: normalizeLayerName(`merged_${targetRevision}`),
+        name: createUniqueLayerName(`merged_${targetRevision}`, siblingNames),
         visible: true,
         locked: false,
         fixed: false,
@@ -417,10 +429,18 @@ export class ImageLayerOperations {
         const currentLayer = layers.find(
           (candidate) => candidate.id === layerId,
         )!;
+        const usedNames = new Set(
+          layers
+            .filter((candidate) => candidate.parentId === currentLayer.parentId)
+            .map((candidate) => canonicalLayerName(candidate.name)),
+        );
         layers.push({
           ...currentLayer,
           id: separatedId,
-          name: `+separated_${String(createdLayerIds.length + 1).padStart(2, "0")}`,
+          name: createUniqueLayerName(
+            `+separated_${String(createdLayerIds.length + 1).padStart(2, "0")}`,
+            usedNames,
+          ),
           locked: false,
           fixed: false,
           zIndex: Math.max(...layers.map((candidate) => candidate.zIndex), 0) + 1,

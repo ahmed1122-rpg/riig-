@@ -10,6 +10,7 @@
 !.env.example
 !.env.production.example
 node_modules
+.npm-cache
 **/node_modules
 **/dist
 coverage

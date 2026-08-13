@@ -84,4 +84,41 @@ describe("ExportsView failed export recovery", () => {
     fireEvent.click(view.getByRole("button", { name: "فتح المشروع" }));
     await waitFor(() => expect(onOpenProject).toHaveBeenCalledWith(project));
   });
+
+  it("presents an expired artifact as expired and offers recovery", async () => {
+    vi.mocked(listExports).mockResolvedValue([
+      {
+        ...failedExport,
+        status: "ready",
+        progress: 100,
+        errorCode: null,
+        artifact: {
+          filename: "expired.psd",
+          sizeBytes: 1_024,
+          sha256: "a".repeat(64),
+          expiresAt: "2020-01-01T00:00:00.000Z",
+        },
+      },
+    ]);
+    const view = render(
+      <ExportsView
+        authenticated
+        onRequireAuth={vi.fn()}
+        onCreateProject={vi.fn()}
+        onViewProjects={vi.fn()}
+        onOpenProject={vi.fn()}
+        onNotify={vi.fn()}
+      />,
+    );
+
+    expect(await view.findByText("انتهت الصلاحية")).toBeTruthy();
+    expect(
+      view.getByRole("button", { name: "فتح المشروع وإعادة التصدير" }),
+    ).toBeTruthy();
+    expect(
+      (view.getByRole("button", {
+        name: "انتهت صلاحية رابط التنزيل",
+      }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
 });

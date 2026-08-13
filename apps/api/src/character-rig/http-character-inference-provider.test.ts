@@ -137,6 +137,8 @@ describe("HttpCharacterInferenceProvider", () => {
       modelVersion: model,
       attempt,
       references,
+      outputObjectKey:
+        `projects/${bible.projectId}/character-rig/generations/${attempt.id}.png`,
     });
     expect(result.artifact).toMatchObject({
       kind: "stored-object",

@@ -23,7 +23,7 @@ function useController() {
     selectedIds: [],
     imageLayers: [],
     bookLayers: [],
-    setBookLayers: vi.fn(),
+    onArrangeReadingOrder: vi.fn(),
     onNotify: vi.fn(),
   });
 }

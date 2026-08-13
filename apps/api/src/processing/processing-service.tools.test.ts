@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { LayerDocument, LayerStateUpdate } from "@motionprep/contracts";
+import {
+  MAX_LAYER_TEXT_CHARACTERS,
+  type LayerDocument,
+  type LayerStateUpdate,
+} from "@motionprep/contracts";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { InMemoryUploadRepository } from "../uploads/upload-repository.js";
@@ -28,6 +32,11 @@ describe("ProcessingService document tools", () => {
         locked: false,
         opacity: 1,
         zIndex: 1,
+        bounds: { x: 25, y: 30, width: 400, height: 50 },
+        direction: "ltr",
+        fontFamily: "Inter",
+        fontSize: 22,
+        fullText: "نص مصحح يدويًا",
       },
     ];
 
@@ -52,6 +61,13 @@ describe("ProcessingService document tools", () => {
 
     expect(saved.revision).toBe(2);
     expect(replay.revision).toBe(2);
+    expect(saved.layers.find((layer) => layer.id === "text-a")).toMatchObject({
+      bounds: { x: 25, y: 30, width: 400, height: 50 },
+      direction: "ltr",
+      fontFamily: "Inter",
+      fontSize: 22,
+      fullText: "نص مصحح يدويًا",
+    });
     expect((await documents.findBySource(projectId, sourceVersionId))?.revision)
       .toBe(2);
     await expect(
@@ -65,6 +81,127 @@ describe("ProcessingService document tools", () => {
         "autosave-operation-001",
       ),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+  });
+
+  it("validates manual text edits and rejects locked or non-text targets", async () => {
+    const { service } = await createFixture();
+    const editable: LayerStateUpdate = {
+      id: "text-a",
+      name: "+مرحبا_بالعالم",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      zIndex: 1,
+      fullText: "   نص مصحح   ",
+    };
+    const saved = await service.updateLayerStates(
+      projectId,
+      sourceVersionId,
+      "book",
+      1,
+      [editable],
+      actorUserId,
+      "manual-text-edit-001",
+    );
+    expect(saved.layers.find((layer) => layer.id === "text-a")?.fullText)
+      .toBe("نص مصحح");
+
+    await expect(
+      service.updateLayerStates(
+        projectId,
+        sourceVersionId,
+        "book",
+        2,
+        [{ ...editable, locked: true, fullText: "نص مصحح" }],
+        actorUserId,
+        "lock-text-layer-001",
+      ),
+    ).resolves.toMatchObject({ revision: 3 });
+
+    await expect(
+      service.updateLayerStates(
+        projectId,
+        sourceVersionId,
+        "book",
+        3,
+        [{ ...editable, locked: true, fullText: "تعديل مرفوض" }],
+        actorUserId,
+        "locked-text-edit-001",
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_LAYER_UPDATE" });
+
+    await expect(
+      service.updateLayerStates(
+        projectId,
+        sourceVersionId,
+        "book",
+        3,
+        [
+          {
+            ...editable,
+            name: "+locked_properties_changed",
+            locked: true,
+            bounds: { x: 1, y: 1, width: 10, height: 10 },
+            fontSize: 24,
+            fullText: "نص مصحح",
+          },
+        ],
+        actorUserId,
+        "locked-properties-edit-001",
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_LAYER_UPDATE" });
+
+    await expect(
+      service.updateLayerStates(
+        projectId,
+        sourceVersionId,
+        "book",
+        3,
+        [
+          {
+            id: "background",
+            name: "+page_001_background",
+            visible: true,
+            locked: true,
+            opacity: 1,
+            zIndex: 0,
+            fullText: "ليس نصًا",
+          },
+        ],
+        actorUserId,
+        "raster-text-edit-001",
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_LAYER_UPDATE" });
+
+    await expect(
+      service.updateLayerStates(
+        projectId,
+        sourceVersionId,
+        "book",
+        3,
+        [
+          {
+            ...editable,
+            locked: true,
+            fullText: "x".repeat(MAX_LAYER_TEXT_CHARACTERS + 1),
+          },
+        ],
+        actorUserId,
+        "oversized-text-edit-001",
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_LAYER_UPDATE" });
+
+    await expect(
+      service.updateLayerStates(
+        projectId,
+        sourceVersionId,
+        "book",
+        3,
+        [{ ...editable, visible: false, locked: false, fullText: "نص مصحح" }],
+        actorUserId,
+        "unlock-and-hide-text-001",
+      ),
+    ).resolves.toMatchObject({ revision: 4 });
   });
 
   it("splits text idempotently and persists undo and redo snapshots", async () => {
@@ -354,8 +491,21 @@ function createDocument(): LayerDocument {
     pages: [{ pageNumber: 1, width: 1000, height: 1400 }],
     layers: [
       {
-        id: "background",
+        id: "page-1",
         parentId: null,
+        kind: "group",
+        name: "+page_001",
+        visible: true,
+        locked: true,
+        opacity: 1,
+        fixed: true,
+        zIndex: 0,
+        pageNumber: 1,
+        bounds: { x: 0, y: 0, width: 1000, height: 1400 },
+      },
+      {
+        id: "background",
+        parentId: "page-1",
         kind: "raster",
         name: "+page_001_background",
         visible: true,
@@ -368,7 +518,7 @@ function createDocument(): LayerDocument {
       },
       {
         id: "text-a",
-        parentId: null,
+        parentId: "page-1",
         kind: "text",
         name: "+مرحبا_بالعالم",
         visible: true,
@@ -384,7 +534,7 @@ function createDocument(): LayerDocument {
       },
       {
         id: "text-b",
-        parentId: null,
+        parentId: "page-1",
         kind: "text",
         name: "+سطر_ثان",
         visible: true,

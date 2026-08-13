@@ -1,9 +1,11 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
+import type { LayerDocumentCommand } from "@motionprep/contracts";
 import type { Layer } from "../../types";
 import {
   mergeImageLayers,
   mergePdfTextLayers,
   refineImageLayerEdges,
+  runLayerDocumentCommand,
   runPdfRegionOcr,
   splitPdfTextLayer,
   type LayerDocumentView,
@@ -13,6 +15,11 @@ import type {
   ImageRasterOperation,
   PdfTextOperation,
 } from "./useWorkspaceToolController";
+import type {
+  DocumentCommandContext,
+  DocumentCommandCoordinator,
+} from "./useDocumentCommandCoordinator";
+import type { RecordDocumentChange } from "./documentChangeSummary";
 
 type SetState<Value> = Dispatch<SetStateAction<Value>>;
 
@@ -31,7 +38,9 @@ interface WorkspaceLayerMutationOptions {
   imageRasterOperation: ImageRasterOperation | undefined;
   pdfRegionOcrLayer: Layer | undefined;
   pdfRegionOcrPageSize: { width: number; height: number } | undefined;
-  flushLayerReview: () => Promise<number>;
+  layers: readonly Layer[];
+  onDocumentChanged: RecordDocumentChange;
+  commandCoordinator: DocumentCommandCoordinator;
   adoptDocument: (
     document: LayerDocumentView,
     preferredLayerId?: string,
@@ -56,12 +65,12 @@ export function useWorkspaceLayerMutations(
   options: WorkspaceLayerMutationOptions,
 ) {
   const runMutation = useCallback(
-    async (mutation: () => Promise<void>) => {
+    async (mutation: (context: DocumentCommandContext) => Promise<void>) => {
       options.setProcessing(true);
       options.setUploadState("verifying");
       options.setUploadProgress(0);
       try {
-        await mutation();
+        await options.commandCoordinator.run(mutation);
         options.setUploadState("ready");
         options.setUploadProgress(100);
       } catch (error) {
@@ -76,6 +85,7 @@ export function useWorkspaceLayerMutations(
       options.setProcessing,
       options.setUploadProgress,
       options.setUploadState,
+      options.commandCoordinator,
     ],
   );
 
@@ -87,19 +97,20 @@ export function useWorkspaceLayerMutations(
       );
       const operation = options.pdfTextOperation;
       if (!operation) throw new Error("لم تعد العملية النصية متاحة.");
-      await runMutation(async () => {
-        const baseRevision = await options.flushLayerReview();
+      await runMutation(async ({ baseRevision }) => {
+        const before = options.layers;
+        const revision = requireRevision(baseRevision);
         const result =
           input.operation === "split"
             ? await splitPdfTextLayer(source.projectId, {
                 sourceVersionId: source.sourceVersionId,
-                baseRevision,
+                baseRevision: revision,
                 layerId: operation.layerIds[0]!,
                 offset: input.offset,
               })
             : await mergePdfTextLayers(source.projectId, {
                 sourceVersionId: source.sourceVersionId,
-                baseRevision,
+                baseRevision: revision,
                 layerIds: operation.layerIds,
                 separator: input.separator,
               });
@@ -108,6 +119,11 @@ export function useWorkspaceLayerMutations(
           result.affectedLayerIds.find((id) =>
             result.document.layers.some((layer) => layer.id === id),
           );
+        options.onDocumentChanged(
+          input.operation === "split" ? "تقسيم نص PDF" : "دمج نصوص PDF",
+          before,
+          result.document,
+        );
         await options.adoptDocument(result.document, preferredLayerId);
         options.onNotify(
           input.operation === "split"
@@ -118,8 +134,9 @@ export function useWorkspaceLayerMutations(
     },
     [
       options.adoptDocument,
-      options.flushLayerReview,
       options.onNotify,
+      options.layers,
+      options.onDocumentChanged,
       options.pdfTextOperation,
       options.projectId,
       options.sourceVersionId,
@@ -157,19 +174,20 @@ export function useWorkspaceLayerMutations(
             layer.bounds.y + layer.bounds.height + paddingY,
           ) / pageSize.height,
       };
-      await runMutation(async () => {
-        const baseRevision = await options.flushLayerReview();
+      await runMutation(async ({ baseRevision }) => {
+        const before = options.layers;
         const document = await runPdfRegionOcr(
           source.projectId,
           {
             sourceVersionId: source.sourceVersionId,
-            baseRevision,
+            baseRevision: requireRevision(baseRevision),
             pageNumber: layer.pageNumber!,
             start,
             end,
           },
           { onProgress: options.setUploadProgress },
         );
+        options.onDocumentChanged("OCR إقليمي", before, document);
         await options.adoptDocument(document);
         options.onNotify(
           "اكتمل OCR الإقليمي وحُفظ النص الجديد كمراجعة قابلة للتراجع.",
@@ -178,8 +196,9 @@ export function useWorkspaceLayerMutations(
     },
     [
       options.adoptDocument,
-      options.flushLayerReview,
       options.onNotify,
+      options.layers,
+      options.onDocumentChanged,
       options.pdfRegionOcrLayer,
       options.pdfRegionOcrPageSize,
       options.projectId,
@@ -197,22 +216,30 @@ export function useWorkspaceLayerMutations(
       );
       const operation = options.imageRasterOperation;
       if (!operation) throw new Error("لم تعد عملية Raster متاحة.");
-      await runMutation(async () => {
-        const baseRevision = await options.flushLayerReview();
+      await runMutation(async ({ baseRevision }) => {
+        const before = options.layers;
+        const revision = requireRevision(baseRevision);
         const result =
           input.operation === "edge-refine"
             ? await refineImageLayerEdges(source.projectId, {
                 sourceVersionId: source.sourceVersionId,
-                baseRevision,
+                baseRevision: revision,
                 layerId: operation.layerIds[0]!,
                 radius: input.radius,
                 strength: input.strength,
               })
             : await mergeImageLayers(source.projectId, {
                 sourceVersionId: source.sourceVersionId,
-                baseRevision,
+                baseRevision: revision,
                 layerIds: operation.layerIds,
               });
+        options.onDocumentChanged(
+          input.operation === "edge-refine"
+            ? "تحسين حواف Raster"
+            : "دمج طبقات Raster",
+          before,
+          result.document,
+        );
         await options.adoptDocument(
           result.document,
           result.createdLayerIds[0] ?? result.affectedLayerIds[0],
@@ -226,9 +253,37 @@ export function useWorkspaceLayerMutations(
     },
     [
       options.adoptDocument,
-      options.flushLayerReview,
       options.imageRasterOperation,
+      options.layers,
       options.onNotify,
+      options.onDocumentChanged,
+      options.projectId,
+      options.sourceVersionId,
+      runMutation,
+    ],
+  );
+
+  const applyLayerCommand = useCallback(
+    async (command: LayerDocumentCommand): Promise<void> => {
+      const source = requireSource(options.projectId, options.sourceVersionId);
+      await runMutation(async ({ baseRevision }) => {
+        const before = options.layers;
+        const document = await runLayerDocumentCommand(
+          source.projectId,
+          source.sourceVersionId,
+          requireRevision(baseRevision),
+          command,
+        );
+        options.onDocumentChanged(layerCommandChangeLabel(command), before, document);
+        await options.adoptDocument(document);
+        options.onNotify("تم تنفيذ أمر الطبقات وحفظه كعملية ذرّية واحدة.");
+      });
+    },
+    [
+      options.adoptDocument,
+      options.layers,
+      options.onNotify,
+      options.onDocumentChanged,
       options.projectId,
       options.sourceVersionId,
       runMutation,
@@ -236,8 +291,23 @@ export function useWorkspaceLayerMutations(
   );
 
   return {
+    applyLayerCommand,
     applyImageRasterOperation,
     applyPdfRegionOcr,
     applyPdfTextOperation,
   };
+}
+
+function requireRevision(revision: number | undefined): number {
+  if (revision === undefined) {
+    throw new Error("وثيقة الطبقات غير جاهزة لتنفيذ الأمر.");
+  }
+  return revision;
+}
+
+function layerCommandChangeLabel(command: LayerDocumentCommand): string {
+  if (command.kind === "normalize-names") return "توحيد أسماء الطبقات";
+  if (command.kind === "move-layer") return "تحريك طبقة";
+  if (command.kind === "update-state") return "تحديث حالة طبقات";
+  return command.order === "reading" ? "ترتيب القراءة" : "عكس الترتيب";
 }

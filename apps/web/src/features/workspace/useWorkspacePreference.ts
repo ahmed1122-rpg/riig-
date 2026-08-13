@@ -1,10 +1,21 @@
 import { useEffect, useState } from "react";
 
-export function useWorkspacePreference<T>(key: string, fallback: T) {
+export type WorkspacePreferenceValidator<T> = (
+  value: unknown,
+) => value is T;
+
+export function useWorkspacePreference<T>(
+  key: string,
+  fallback: T,
+  validate: WorkspacePreferenceValidator<T> = (value): value is T =>
+    samePrimitiveType(value, fallback),
+) {
   const [value, setValue] = useState<T>(() => {
     try {
       const stored = window.localStorage.getItem(key);
-      return stored === null ? fallback : JSON.parse(stored) as T;
+      if (stored === null) return fallback;
+      const parsed: unknown = JSON.parse(stored);
+      return validate(parsed) ? parsed : fallback;
     } catch {
       return fallback;
     }
@@ -19,4 +30,9 @@ export function useWorkspacePreference<T>(key: string, fallback: T) {
   }, [key, value]);
 
   return [value, setValue] as const;
+}
+
+function samePrimitiveType<T>(value: unknown, fallback: T): value is T {
+  if (typeof value !== typeof fallback) return false;
+  return typeof value !== "number" || Number.isFinite(value);
 }

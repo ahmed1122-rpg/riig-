@@ -45,7 +45,14 @@ export class EmailOutboxDispatcher {
     );
     if (!delivery) return false;
     try {
-      await this.sender.sendPasswordReset(delivery.message);
+      if (delivery.delivery.kind === "password-reset") {
+        await this.sender.sendPasswordReset(delivery.delivery.message);
+      } else {
+        if (!this.sender.sendEmailVerification) {
+          throw new Error("Email verification delivery is not configured.");
+        }
+        await this.sender.sendEmailVerification(delivery.delivery.message);
+      }
     } catch {
       const failedAt = this.now();
       const status = await this.outbox.retryOrFail(

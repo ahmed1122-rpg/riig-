@@ -25,9 +25,11 @@ export type PdfSegmentation = "headings" | "topics" | "sentences" | "lines" | "w
 export interface Layer {
   id: string;
   name: string;
-  kind: "head" | "body" | "hand" | "face" | "text" | "page";
+  kind: "head" | "body" | "hand" | "face" | "text" | "page" | "group";
+  parentId?: string | null;
   visible: boolean;
   locked: boolean;
+  fixed?: boolean;
   opacity: number;
   zIndex?: number;
   confidence?: number;
@@ -43,6 +45,7 @@ export interface Layer {
   };
   readingOrder?: number;
   direction?: "ltr" | "rtl";
+  textAlign?: "start" | "center" | "end" | "justify";
   fontFamily?: string;
   fontSize?: number;
 }

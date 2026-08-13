@@ -2,9 +2,10 @@ import { API_ORIGIN, ApiError, request } from "./transport";
 import { waitForJob } from "./job-polling";
 import type { ExportSummary } from "./models";
 import type { ExportFormat } from "@motionprep/contracts";
+import { triggerBrowserDownload } from "../../shared/browserDownload";
 
-export function listExports(): Promise<ExportSummary[]> {
-  return request<ExportSummary[]>("/v1/exports");
+export function listExports(signal?: AbortSignal): Promise<ExportSummary[]> {
+  return request<ExportSummary[]>("/v1/exports", { signal });
 }
 
 export function cancelExport(exportId: string): Promise<ExportSummary> {
@@ -15,13 +16,10 @@ export function cancelExport(exportId: string): Promise<ExportSummary> {
 }
 
 export function downloadExport(exportId: string): void {
-  const anchor = document.createElement("a");
-  anchor.href = `${API_ORIGIN}/v1/exports/${encodeURIComponent(exportId)}/download`;
-  anchor.download = "motionprep-export.zip";
-  anchor.hidden = true;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
+  triggerBrowserDownload(
+    `${API_ORIGIN}/v1/exports/${encodeURIComponent(exportId)}/download`,
+    "motionprep-export.zip",
+  );
 }
 
 export async function createExportArtifact(

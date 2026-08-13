@@ -155,7 +155,7 @@ if (evaluationPolicy?.openedAt === null) {
         "OCR implementation changed after the holdout was opened; rotate the holdout before benchmarking again."
     ) {
       const productionTemplate = await readFile(
-        join(repositoryRoot, ".env.production.example"),
+          join(repositoryRoot, ".env.production.api.example"),
         "utf8",
       );
       if (/^PDF_REGION_OCR_ENABLED=false$/mu.test(productionTemplate)) {

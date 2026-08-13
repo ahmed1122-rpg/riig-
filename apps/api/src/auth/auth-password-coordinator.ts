@@ -56,7 +56,7 @@ export class AuthPasswordCoordinator {
   async reset(input: {
     token: string;
     newPassword: string;
-  }): Promise<void> {
+  }): Promise<string> {
     const reset = await this.options.repository.consumePasswordReset(
       this.options.hashToken(input.token),
       this.options.now().toISOString(),
@@ -78,6 +78,7 @@ export class AuthPasswordCoordinator {
       );
     }
     await this.revokeCredentials(reset.userId);
+    return reset.userId;
   }
 
   async change(input: {

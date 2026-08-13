@@ -139,7 +139,7 @@ export class CharacterReferenceService {
       }
       return reference;
     } catch (error) {
-      await this.storage.delete(objectKey);
+      await this.storage.purge([objectKey], []);
       throw error;
     }
   }

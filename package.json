@@ -1,6 +1,6 @@
 {
   "name": "motionprep-studio",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "packageManager": "npm@11.16.0",
   "allowScripts": {
@@ -19,6 +19,7 @@
   "scripts": {
     "dev": "concurrently --kill-others --names api,web \"npm:dev:api\" \"npm:dev:web\"",
     "dev:stack": "concurrently --kill-others --names api,web,media,document,export \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\"",
+    "dev:durable": "node scripts/run-durable-dev.mjs",
     "dev:stack:character": "concurrently --kill-others --names api,web,media,document,export,character \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\" \"npm:dev:worker-character\"",
     "dev:api": "npm run dev --workspace @motionprep/api",
     "dev:web": "npm run dev --workspace @motionprep/web",
@@ -61,23 +62,25 @@
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
     "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
     "verify:incident": "node --test scripts/verify-incident-manifest.test.mjs && node scripts/verify-incident-manifest.mjs docs/runbooks/incident-manifest.example.json",
+    "verify:security-license": "node --test scripts/verify-security-license.test.mjs && node scripts/verify-security-license.mjs",
     "verify:css": "node scripts/verify-css-architecture.mjs",
     "verify:fixtures": "node --test scripts/ocr-corpus-wikitext.test.mjs scripts/ocr-holdout-policy.test.mjs && node scripts/verify-fixture-corpus.mjs && node scripts/verify-ocr-corpus.mjs --allow-stale-implementation-when-disabled",
     "verify:ocr-corpus": "node scripts/verify-ocr-corpus.mjs",
     "verify:visuals": "node scripts/verify-visual-assets.mjs",
     "verify:bundle": "node scripts/verify-bundle-budget.mjs",
-    "verify:release-env:test": "node --test scripts/run-production-compose.test.mjs scripts/verify-release-environment.test.mjs",
+    "verify:release-env:test": "node --test scripts/run-production-compose.test.mjs scripts/verify-release-environment.test.mjs scripts/verify-release-checkout.test.mjs",
     "verify:release-evidence:test": "node --test scripts/create-release-evidence.test.mjs",
     "test:release-drill:utils": "node --test scripts/release-drill-config.test.mjs",
     "test:release-rollback": "node scripts/run-release-rollback-drill.mjs",
     "verify:release-env": "node scripts/verify-release-environment.mjs",
+    "verify:release-checkout": "node scripts/verify-release-checkout.mjs",
     "production:compose": "node scripts/run-production-compose.mjs",
     "verify:staging-application": "node scripts/verify-staging-application.mjs",
     "verify:clean": "node --test scripts/clean.test.mjs",
     "test:topology": "node scripts/verify-production-topology.mjs",
     "test:faults:topology": "node scripts/verify-runtime-fault-recovery.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:contracts && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run verify:adobe-golden && npm run test:character-rig:benchmark && npm run verify:character-rig:benchmark && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:contracts && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:security-license && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run verify:adobe-golden && npm run test:character-rig:benchmark && npm run verify:character-rig:benchmark && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=24.18.1 <25",
