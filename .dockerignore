@@ -9,6 +9,11 @@
 .env.*
 !.env.example
 !.env.production.example
+!.env.production.api.example
+!.env.production.maintenance.example
+!.env.production.migrate.example
+!.env.production.worker-character.example
+!.env.production.worker.example
 node_modules
 .npm-cache
 **/node_modules

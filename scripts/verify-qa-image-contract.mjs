@@ -23,6 +23,12 @@ export function verifyQaImageContract({ dockerfile, ciWorkflow, dockerignore }) 
     }
   }
   for (const evidencePath of [
+    "!.env.production.example",
+    "!.env.production.api.example",
+    "!.env.production.migrate.example",
+    "!.env.production.maintenance.example",
+    "!.env.production.worker.example",
+    "!.env.production.worker-character.example",
     "!artifacts/adobe-golden/photoshop-result.txt",
     "!artifacts/adobe-golden/after-effects-result.txt",
   ]) {

@@ -14,7 +14,13 @@ tags: motionprep-qa:ci
 name: Run the complete source quality gate in the QA image
 path: artifacts/qa/quality-summary.json
 `;
-const dockerignore = `!artifacts/adobe-golden/photoshop-result.txt
+const dockerignore = `!.env.production.example
+!.env.production.api.example
+!.env.production.migrate.example
+!.env.production.maintenance.example
+!.env.production.worker.example
+!.env.production.worker-character.example
+!artifacts/adobe-golden/photoshop-result.txt
 !artifacts/adobe-golden/after-effects-result.txt
 `;
 
@@ -36,5 +42,6 @@ test("rejects a QA image without Git and CI execution", () => {
   });
   assert.match(violations.join("\n"), /git --version/u);
   assert.match(violations.join("\n"), /Dockerfile\.qa/u);
+  assert.match(violations.join("\n"), /\.env\.production\.api\.example/u);
   assert.match(violations.join("\n"), /photoshop-result\.txt/u);
 });
