@@ -11,11 +11,15 @@ function validConfig() {
       name,
       use: {
         browserName,
-        ...(name.startsWith("mobile-") ? { hasTouch: true } : {}),
+        ...(name.startsWith("mobile-") && name !== "mobile-webkit"
+          ? { hasTouch: true }
+          : {}),
         ...(name.endsWith("-webkit")
           ? { trace: "on-first-retry", video: "off" }
           : {}),
-        ...(name === "mobile-webkit" ? { deviceScaleFactor: 1 } : {}),
+        ...(name === "mobile-webkit"
+          ? { deviceScaleFactor: 1, hasTouch: false }
+          : {}),
         viewport: {
           width: name.startsWith("mobile-") ? 412 : 1_440,
           height: name.startsWith("mobile-") ? 915 : 900,
@@ -91,16 +95,17 @@ test("rejects a combined or incomplete engine execution contract", () => {
   );
 });
 
-test("rejects unstable iOS emulation in the Linux WebKit profile", () => {
+test("rejects unstable mobile emulation in the Linux WebKit profile", () => {
   const config = validConfig();
   config.projects = config.projects.map((project) =>
     project.name === "mobile-webkit"
-      ? { ...project, use: { ...project.use, isMobile: true } }
+      ? { ...project, use: { ...project.use, hasTouch: true, isMobile: true } }
       : project,
   );
 
   assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
     "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
+    "mobile-webkit must avoid unstable touch emulation on Linux.",
   ]);
 });
 
