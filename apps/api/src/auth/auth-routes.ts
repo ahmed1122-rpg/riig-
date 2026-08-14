@@ -282,7 +282,9 @@ export async function registerAuthRoutes(
     }
   });
 
-  app.post("/v1/auth/mfa/setup", async (request, reply) => {
+  app.post("/v1/auth/mfa/setup", {
+    config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
     try {
       const user = await requireUser(request, auth);
       return { data: await auth.beginMfaSetup(user.id), error: null };
@@ -291,7 +293,9 @@ export async function registerAuthRoutes(
     }
   });
 
-  app.post("/v1/auth/mfa/setup/confirm", async (request, reply) => {
+  app.post("/v1/auth/mfa/setup/confirm", {
+    config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
     const body = mfaConfirmSchema.safeParse(request.body);
     if (!body.success) return validationError(request, reply);
     try {
@@ -321,7 +325,9 @@ export async function registerAuthRoutes(
     }
   });
 
-  app.post("/v1/auth/mfa/disable", async (request, reply) => {
+  app.post("/v1/auth/mfa/disable", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
     const body = mfaDisableSchema.safeParse(request.body);
     if (!body.success) return validationError(request, reply);
     try {
@@ -383,7 +389,9 @@ export async function registerAuthRoutes(
     }
   });
 
-  app.post("/v1/auth/password/change", async (request, reply) => {
+  app.post("/v1/auth/password/change", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
     const body = passwordChangeSchema.safeParse(request.body);
     if (!body.success) return validationError(request, reply);
     try {
