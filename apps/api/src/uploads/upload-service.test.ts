@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { InMemoryIdempotencyStore } from "../idempotency/idempotency-store.js";
 import { InMemoryProjectRepository } from "../projects/project-repository.js";
@@ -6,6 +8,7 @@ import {
   InMemoryObjectStorage,
   type StoredObject,
   type StoredObjectMetadata,
+  type StoredObjectWriteStream,
 } from "../storage/object-storage.js";
 import { InMemoryUploadRepository } from "./upload-repository.js";
 import { UploadService } from "./upload-service.js";
@@ -25,7 +28,55 @@ class MismatchedCleanupFailingObjectStorage extends MismatchedObjectStorage {
   }
 }
 
+class StreamingObservedStorage extends InMemoryObjectStorage {
+  streamedWrites = 0;
+
+  override async putStream(
+    object: StoredObjectWriteStream,
+  ): Promise<StoredObjectMetadata> {
+    this.streamedWrites += 1;
+    return super.putStream(object);
+  }
+}
+
 describe("UploadService", () => {
+  it("publishes prepared content through the streaming storage contract", async () => {
+    const projects = new InMemoryProjectRepository();
+    const uploads = new InMemoryUploadRepository();
+    const sources = new InMemorySourceVersionRepository();
+    const storage = new StreamingObservedStorage();
+    const ownerId = crypto.randomUUID();
+    const project = await projects.create(ownerId, {
+      name: "Streaming source",
+      kind: "image",
+    });
+    const service = new UploadService(
+      uploads,
+      () => new Date("2026-08-14T12:00:00.000Z"),
+      new InMemoryIdempotencyStore(),
+      storage,
+      sources,
+      new InMemoryUploadFinalizationCommand(uploads, sources, projects),
+    );
+    const png = onePixelPng();
+    const intent = await service.createIntent({
+      projectId: project.id,
+      filename: "stream.png",
+      contentType: "image/png",
+      sizeBytes: png.byteLength,
+    }, "streaming-upload");
+
+    const ready = await service.receive(intent.uploadId, {
+      detectedContentType: "image/png",
+      sizeBytes: png.byteLength,
+      sha256: createHash("sha256").update(png).digest("hex"),
+      openStream: () => Readable.from([png.subarray(0, 8), png.subarray(8)]),
+    });
+
+    expect(ready.status).toBe("ready");
+    expect(storage.streamedWrites).toBe(1);
+  });
+
   it("replays an identical intent and rejects a changed payload for the same key", async () => {
     const service = new UploadService(
       new InMemoryUploadRepository(),

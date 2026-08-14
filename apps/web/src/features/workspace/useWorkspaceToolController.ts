@@ -10,6 +10,7 @@ import type { Layer, ProjectMode } from "../../types";
 import {
   canMergeRasterLayers,
   canMergeTextLayers,
+  type MergeEligibility,
 } from "@motionprep/layer-domain";
 import { toDomainLayer } from "./workspaceLayerDomain";
 import {
@@ -46,6 +47,30 @@ export interface ImageRasterOperation {
 
 function initialTool(mode: ProjectMode): ReadyWorkspaceToolId {
   return mode === "image" ? "image.keep" : "pdf.line";
+}
+
+function mergeRejectionMessage(
+  kind: "text" | "raster",
+  reason: MergeEligibility["reason"],
+): string {
+  if (reason === "COUNT") {
+    return kind === "text"
+      ? "اختر من طبقتين إلى 50 طبقة نصية للدمج."
+      : "اختر من طبقتين إلى 15 طبقة Raster للدمج.";
+  }
+  if (reason === "MISSING") return "تغيّر التحديد؛ أعد تحديد الطبقات ثم حاول مرة أخرى.";
+  if (reason === "KIND") {
+    return kind === "text"
+      ? "لا يمكن دمج التحديد لأنه يتضمن طبقات غير نصية."
+      : "لا يمكن دمج التحديد لأنه يتضمن طبقات ليست Raster.";
+  }
+  if (reason === "PROTECTED") return "افتح قفل الطبقات غير الثابتة قبل دمجها.";
+  if (reason === "PAGE") return "يجب أن تكون طبقات النص في الصفحة نفسها قبل الدمج.";
+  if (reason === "PARENT") return "يجب أن تكون الطبقات داخل المجلد نفسه قبل الدمج.";
+  if (reason === "DIRECTION") return "وحّد اتجاه النص في الطبقات المحددة قبل الدمج.";
+  if (reason === "ALIGNMENT") return "وحّد محاذاة النص في الطبقات المحددة قبل الدمج.";
+  if (reason === "CONTENT") return "توجد طبقة بلا محتوى أو حدود صالحة ولا يمكن دمجها.";
+  return "تعذر دمج الطبقات المحددة.";
 }
 
 export function useWorkspaceToolController(
@@ -148,9 +173,7 @@ export function useWorkspaceToolController(
           options.selectedIds,
         );
         if (!eligibility.allowed) {
-          options.onNotify(
-            "اختر 2–50 طبقة نص شقيقة قابلة للتحرير وموحدة التنسيق.",
-          );
+          options.onNotify(mergeRejectionMessage("text", eligibility.reason));
           return;
         }
         setPdfTextOperation({
@@ -189,7 +212,9 @@ export function useWorkspaceToolController(
           selected.some((layer) => !layer.visible || !layer.bounds)
         ) {
           options.onNotify(
-            "اختر طبقتين Raster ظاهرتين وغير مقفلتين على الأقل قبل الدمج.",
+            eligibility.allowed
+              ? "يجب أن تكون طبقات Raster ظاهرة ولها حدود صالحة قبل الدمج."
+              : mergeRejectionMessage("raster", eligibility.reason),
           );
           return;
         }

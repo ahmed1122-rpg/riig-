@@ -16,7 +16,11 @@ import { Icon } from "../../shared/Icon";
 import type { Layer, ProjectMode } from "../../types";
 import { getLayerCheckSummary } from "./layerChecks";
 import { ChecksPanel, LayerSkeleton } from "./LayerDockPanels";
-import { LayerDockInteractiveRow } from "./LayerDockInteractiveRow";
+import {
+  LayerDockInteractiveRow,
+  type LayerDropPosition,
+  type LayerDropTarget,
+} from "./LayerDockInteractiveRow";
 import { LayerCommandActivity } from "./LayerCommandActivity";
 import { DocumentChangeActivity } from "./DocumentChangeActivity";
 import type { DocumentChangeSummary } from "./documentChangeSummary";
@@ -35,9 +39,19 @@ import {
 } from "./layerDockSelectors";
 import { useWorkspacePreference } from "./useWorkspacePreference";
 import { useLayerCommandWorkflow } from "./useLayerCommandWorkflow";
+import { VirtualLayerList } from "./VirtualLayerList";
+import { layerReorderIssue } from "./layerReorderGuard";
+import {
+  handleLayerDockTabKeyDown,
+  startLayerDockResize,
+  type LayerDockTab,
+} from "./layerDockInteractions";
+import {
+  navigateLayerSelection,
+  openLayerDiagnostic,
+} from "./layerDockNavigation";
 
 type LayerDensity = "dense" | "comfortable";
-const LAYER_WINDOW_SIZE = 32;
 
 interface LayerDockProps {
   mode: ProjectMode;
@@ -80,7 +94,7 @@ export function LayerDock({
   onLayerCommand,
   onNotify,
 }: LayerDockProps) {
-  const [tab, setTab] = useState<"layers" | "checks">("layers");
+  const [tab, setTab] = useState<LayerDockTab>("layers");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [filter, setFilter] = useWorkspacePreference<LayerFilter>(
@@ -99,9 +113,8 @@ export function LayerDock({
   const [renameDraft, setRenameDraft] = useState("");
   const [renameError, setRenameError] = useState("");
   const [anchorId, setAnchorId] = useState(activeId);
-  const [windowStart, setWindowStart] = useState(0);
   const [draggedLayerId, setDraggedLayerId] = useState<string>();
-  const [dragOverLayerId, setDragOverLayerId] = useState<string>();
+  const [dragOverTarget, setDragOverTarget] = useState<LayerDropTarget>();
   const dockRef = useRef<HTMLElement>(null);
   const layersTabId = useId();
   const checksTabId = useId();
@@ -120,7 +133,6 @@ export function LayerDock({
 
   useEffect(() => {
     setSearch("");
-    setWindowStart(0);
     setRenamingId(null);
     setRenameError("");
   }, [mode]);
@@ -146,13 +158,9 @@ export function LayerDock({
     () => filteredLayers.filter((layer) => layer.kind === "page"),
     [filteredLayers],
   );
-  const windowedLayers = useMemo(
-    () => unpinnedLayers.slice(windowStart, windowStart + LAYER_WINDOW_SIZE),
-    [unpinnedLayers, windowStart],
-  );
   const renderedLayers = useMemo(
-    () => [...windowedLayers, ...pinnedBackgrounds],
-    [pinnedBackgrounds, windowedLayers],
+    () => [...unpinnedLayers, ...pinnedBackgrounds],
+    [pinnedBackgrounds, unpinnedLayers],
   );
   const duplicateIds = useMemo(
     () => duplicateLayerIds(layers, mode === "book"),
@@ -165,11 +173,7 @@ export function LayerDock({
   const activeLayer = layers.find((layer) => layer.id === activeId);
 
   useEffect(() => {
-    setWindowStart(0);
-  }, [deferredSearch, filter]);
-
-  useEffect(() => {
-    if (!activeId || collapsed || tab !== "layers") return;
+    if (mode !== "book" || !activeId || collapsed || tab !== "layers") return;
     const frame = window.requestAnimationFrame(() => {
       const row = [...dockRef.current?.querySelectorAll<HTMLElement>(
         ".pro-layer-row[data-layer-id]",
@@ -177,7 +181,7 @@ export function LayerDock({
       row?.scrollIntoView?.({ block: "nearest" });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [activeId, activePdfPage, collapsed, pageFolders, tab]);
+  }, [activeId, activePdfPage, collapsed, mode, pageFolders, tab]);
 
   const selectLayer = (
     id: string,
@@ -251,7 +255,11 @@ export function LayerDock({
     });
   };
 
-  const moveLayerTo = (sourceId: string, targetId: string) => {
+  const moveLayerTo = (
+    sourceId: string,
+    targetId: string,
+    position: LayerDropPosition,
+  ) => {
     const source = layers.find((layer) => layer.id === sourceId);
     const target = layers.find((layer) => layer.id === targetId);
     if (
@@ -261,11 +269,16 @@ export function LayerDock({
       !isLayerContentEditable(source) ||
       !isLayerContentEditable(target)
     ) return;
+    const issue = layerReorderIssue(source, target);
+    if (issue) {
+      onNotify(issue);
+      return;
+    }
     executeCommand({
       kind: "move-layer",
       layerId: source.id,
       targetLayerId: target.id,
-      position: "before",
+      position,
     });
   };
 
@@ -273,38 +286,25 @@ export function LayerDock({
     id: string,
     direction: "previous" | "next" | "first" | "last",
   ) => {
-    const current = filteredLayers.findIndex((layer) => layer.id === id);
-    if (current < 0 || filteredLayers.length === 0) return;
-    const targetIndex =
-      direction === "first"
-        ? 0
-        : direction === "last"
-          ? filteredLayers.length - 1
-          : Math.max(
-              0,
-              Math.min(
-                filteredLayers.length - 1,
-                current + (direction === "previous" ? -1 : 1),
-              ),
-            );
-    const target = filteredLayers[targetIndex];
-    if (!target || target.id === id) return;
-    const unpinnedIndex = unpinnedLayers.findIndex(
-      (layer) => layer.id === target.id,
-    );
-    if (unpinnedIndex >= 0) {
-      setWindowStart(
-        Math.floor(unpinnedIndex / LAYER_WINDOW_SIZE) * LAYER_WINDOW_SIZE,
-      );
-    }
-    onSelectionChange([target.id], target.id);
-    window.requestAnimationFrame(() => {
-      const rows = document.querySelectorAll<HTMLElement>(
-        ".pro-layer-row[data-layer-id]",
-      );
-      [...rows].find(
-        (row) => row.dataset.layerId === target.id,
-      )?.focus();
+    navigateLayerSelection({
+      layers: filteredLayers,
+      layerId: id,
+      direction,
+      onSelectionChange,
+    });
+  };
+
+  const openDiagnosticLayer = async (layerId: string) => {
+    await openLayerDiagnostic({
+      layerId,
+      layers,
+      mode,
+      activePdfPage,
+      dock: dockRef.current,
+      onPdfPageChange,
+      onSelectionChange,
+      onActiveLayerChange: setAnchorId,
+      onOpenLayers: () => setTab("layers"),
     });
   };
 
@@ -329,52 +329,6 @@ export function LayerDock({
     onNotify(`تم حفظ الاسم ${nextName}.`);
   };
 
-  const resizeStart = (event: React.PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const startX = event.clientX;
-    const startWidth = width;
-    let frame: number | null = null;
-    let nextWidth = startWidth;
-    const handleMove = (moveEvent: PointerEvent) => {
-      nextWidth = Math.max(260, Math.min(430, startWidth + startX - moveEvent.clientX));
-      if (frame === null) {
-        frame = window.requestAnimationFrame(() => {
-          onWidthChange(nextWidth);
-          frame = null;
-        });
-      }
-    };
-    const handleEnd = () => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
-      onWidthChange(nextWidth);
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleEnd);
-    };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleEnd, { once: true });
-  };
-
-  const handleTabKeyDown = (
-    event: React.KeyboardEvent<HTMLButtonElement>,
-  ) => {
-    const tabs = ["layers", "checks"] as const;
-    const currentIndex = tabs.indexOf(tab);
-    let nextIndex: number | undefined;
-    if (event.key === "ArrowLeft") nextIndex = (currentIndex + 1) % tabs.length;
-    if (event.key === "ArrowRight") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
-    if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = tabs.length - 1;
-    if (nextIndex === undefined) return;
-    event.preventDefault();
-    const nextTab = tabs[nextIndex];
-    if (!nextTab) return;
-    setTab(nextTab);
-    const tabButtons = event.currentTarget.parentElement
-      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    tabButtons?.[nextIndex]?.focus();
-  };
-
   const renderLayerRow = (layer: Layer) => (
     <LayerDockInteractiveRow
       key={layer.id}
@@ -387,7 +341,7 @@ export function LayerDock({
       renameError={renameError}
       canReorder={canReorder && isLayerContentEditable(layer)}
       draggedLayerId={draggedLayerId}
-      dragOverLayerId={dragOverLayerId}
+      dragOverTarget={dragOverTarget}
       onRenameDraftChange={(value) => { setRenameDraft(value); setRenameError(""); }}
       onSelect={(event) => selectLayer(layer.id, event)}
       onStartRename={() => {
@@ -416,7 +370,23 @@ export function LayerDock({
       onNavigate={(direction) => navigateLayer(layer.id, direction)}
       onMoveTo={moveLayerTo}
       onDraggedLayerChange={setDraggedLayerId}
-      onDragOverLayerChange={setDragOverLayerId}
+      onDragOverTargetChange={(target) => {
+        if (!target) {
+          setDragOverTarget(undefined);
+          return;
+        }
+        const source = layers.find(
+          (candidate) => candidate.id === draggedLayerId,
+        );
+        const destination = layers.find(
+          (candidate) => candidate.id === target.layerId,
+        );
+        setDragOverTarget(
+          source && destination && !layerReorderIssue(source, destination)
+            ? target
+            : undefined,
+        );
+      }}
     />
   );
 
@@ -441,7 +411,9 @@ export function LayerDock({
         aria-valuemin={260}
         aria-valuemax={430}
         aria-valuenow={width}
-        onPointerDown={resizeStart}
+        onPointerDown={(event) =>
+          startLayerDockResize(event, width, onWidthChange)
+        }
         onKeyDown={(event) => {
           if (event.key === "ArrowLeft") onWidthChange(Math.min(430, width + 16));
           if (event.key === "ArrowRight") onWidthChange(Math.max(260, width - 16));
@@ -450,15 +422,19 @@ export function LayerDock({
 
       <header className="pro-dock-header">
         <div className="panel-tabs" role="tablist" aria-label="تفاصيل المشروع">
-          <button id={layersTabId} type="button" role="tab" aria-selected={tab === "layers"} aria-controls={layersPanelId} tabIndex={tab === "layers" ? 0 : -1} className={tab === "layers" ? "is-active" : ""} onClick={() => setTab("layers")} onKeyDown={handleTabKeyDown}>الطبقات <span>{layerCounts.totalLayerCount}</span></button>
-          <button id={checksTabId} type="button" role="tab" aria-selected={tab === "checks"} aria-controls={checksPanelId} tabIndex={tab === "checks" ? 0 : -1} className={tab === "checks" ? "is-active" : ""} onClick={() => setTab("checks")} onKeyDown={handleTabKeyDown}>الفحص <span className="check-count">{checkSummary.issueCount}</span></button>
+          <button id={layersTabId} type="button" role="tab" aria-selected={tab === "layers"} aria-controls={layersPanelId} tabIndex={tab === "layers" ? 0 : -1} className={tab === "layers" ? "is-active" : ""} onClick={() => setTab("layers")} onKeyDown={(event) => handleLayerDockTabKeyDown(event, tab, setTab)}>الطبقات <span>{layerCounts.totalLayerCount}</span></button>
+          <button id={checksTabId} type="button" role="tab" aria-selected={tab === "checks"} aria-controls={checksPanelId} tabIndex={tab === "checks" ? 0 : -1} className={tab === "checks" ? "is-active" : ""} onClick={() => setTab("checks")} onKeyDown={(event) => handleLayerDockTabKeyDown(event, tab, setTab)}>الفحص <span className="check-count">{checkSummary.issueCount}</span></button>
         </div>
         <button className="pro-icon-button" type="button" aria-label="طي رصيف الطبقات" onClick={() => onCollapsedChange(true)}><Icon name="panelClose" size={16} /></button>
       </header>
 
       {tab === "checks" ? (
         <div id={checksPanelId} className="pro-layer-tabpanel pro-layer-tabpanel--checks" role="tabpanel" aria-labelledby={checksTabId} tabIndex={0}>
-          <ChecksPanel mode={mode} layers={layers} />
+          <ChecksPanel
+            mode={mode}
+            layers={layers}
+            onSelectLayer={(layerId) => void openDiagnosticLayer(layerId)}
+          />
         </div>
       ) : (
         <div id={layersPanelId} className="pro-layer-tabpanel pro-layer-tabpanel--layers" role="tabpanel" aria-labelledby={layersTabId} tabIndex={0}>
@@ -528,19 +504,6 @@ export function LayerDock({
             </div>
           )}
 
-          {mode === "image" && unpinnedLayers.length > LAYER_WINDOW_SIZE && (
-            <div className="pro-layer-window" aria-label="نافذة عرض طبقات PDF">
-              <span>
-                عرض <b dir="ltr">{windowStart + 1}–{Math.min(windowStart + LAYER_WINDOW_SIZE, unpinnedLayers.length)}</b>
-                {" "}من <strong dir="ltr">{unpinnedLayers.length}</strong> طبقة نصية
-              </span>
-              <div>
-                <button type="button" disabled={windowStart === 0} onClick={() => setWindowStart(Math.max(0, windowStart - LAYER_WINDOW_SIZE))} aria-label="الدفعة السابقة"><Icon name="chevron" size={13} /></button>
-                <button type="button" disabled={windowStart + LAYER_WINDOW_SIZE >= unpinnedLayers.length} onClick={() => setWindowStart(Math.min(Math.max(0, unpinnedLayers.length - LAYER_WINDOW_SIZE), windowStart + LAYER_WINDOW_SIZE))} aria-label="الدفعة التالية"><Icon name="chevron" size={13} /></button>
-              </div>
-            </div>
-          )}
-
           {mode === "book" ? (
             loading ? <LayerSkeleton /> : (
               <PdfPageLayerTree
@@ -552,12 +515,21 @@ export function LayerDock({
               />
             )
           ) : (
-            <div className="pro-layer-list" role="group" aria-label="قائمة الطبقات">
-              {loading ? <LayerSkeleton /> : !expanded ? null : renderedLayers.length === 0 ? (
+            loading ? <div className="pro-layer-list"><LayerSkeleton /></div> : !expanded ? null : renderedLayers.length === 0 ? (
+                <div className="pro-layer-list">
                 <div className="pro-layer-empty"><Icon name="search" size={19} /><strong>لا توجد طبقات مطابقة</strong><span>جرّب اسمًا آخر أو ألغِ عامل التصفية.</span></div>
-              ) : renderedLayers.map(renderLayerRow)}
-              {unpinnedLayers.length > LAYER_WINDOW_SIZE && <p className="pro-window-note">تُعرض 32 طبقة في كل دفعة لحماية الأداء.</p>}
-            </div>
+                </div>
+              ) : (
+                <VirtualLayerList
+                  items={renderedLayers}
+                  itemKey={(layer) => layer.id}
+                  renderItem={renderLayerRow}
+                  rowHeight={density === "dense" ? 54 : 64}
+                  activeKey={activeId}
+                  className="pro-layer-list"
+                  ariaLabel="قائمة الطبقات الافتراضية"
+                />
+              )
           )}
           <footer className="pro-layer-footer">
             <span>{mode === "image" ? `${layerCounts.totalLayerCount} من ${MAX_IMAGE_LAYERS} طبقة` : `${layerCounts.currentPageLayerCount} في الصفحة / ${layerCounts.totalLayerCount} إجمالًا`}</span>

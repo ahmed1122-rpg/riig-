@@ -21,6 +21,7 @@ import {
   summarizeDocumentChange,
   type RecordDocumentChange,
 } from "./documentChangeSummary";
+import type { WorkspaceCommandStatus } from "./workspaceCommandStatus";
 
 type SetState<Value> = Dispatch<SetStateAction<Value>>;
 
@@ -69,6 +70,9 @@ interface WorkspaceCommandOptions {
 }
 
 export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
+  const [commandStatus, setCommandStatus] = useState<WorkspaceCommandStatus>({
+    phase: "idle",
+  });
   const [documentChangeLog, setDocumentChangeLog] = useState<
     ReturnType<typeof summarizeDocumentChange>[]
   >([]);
@@ -88,6 +92,7 @@ export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
 
   useEffect(() => {
     setDocumentChangeLog([]);
+    setCommandStatus({ phase: "idle" });
   }, [options.projectId, options.sourceVersionId]);
 
   const adoptDocument = useWorkspaceDocumentAdoption({
@@ -122,8 +127,7 @@ export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
     requestConfirmation: options.requestConfirmation,
     setProcessing: options.setProcessing,
     setSaveState: options.setSaveState,
-    setUploadState: options.setUploadState,
-    setUploadProgress: options.setUploadProgress,
+    setCommandStatus,
     setPdfMode: options.setPdfMode,
     onNotify: options.onNotify,
   });
@@ -142,8 +146,7 @@ export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
     commandCoordinator: options.commandCoordinator,
     adoptDocument,
     setProcessing: options.setProcessing,
-    setUploadState: options.setUploadState,
-    setUploadProgress: options.setUploadProgress,
+    setCommandStatus,
     onNotify: options.onNotify,
   });
 
@@ -170,6 +173,7 @@ export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
   });
 
   return {
+    commandStatus,
     documentChangeLog,
     ...mutations,
     ...operations,

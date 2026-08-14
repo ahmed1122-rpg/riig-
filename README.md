@@ -12,6 +12,8 @@ ephemeral runtime explicitly.
 
 Production-readiness gates and remaining external evidence are tracked in
 [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
+The release-qualified browser matrix and its evidence boundary are documented
+in [docs/BROWSER_SUPPORT.md](docs/BROWSER_SUPPORT.md).
 
 خريطة التنفيذ الحالية والوحيدة: [docs/BUILD_MAP.md](docs/BUILD_MAP.md).
 
@@ -115,6 +117,17 @@ npm run benchmark:ocr
 npm run verify:ocr-corpus
 npm run benchmark:ocr:corpus
 ```
+
+تبقى تجارب محدد OCR خارج holdout المحجوب. شغّل شبكة المرشحين الكاملة على
+development أولاً، ثم أنشئ تقرير validation مستقلاً:
+
+```bash
+npm run benchmark:ocr:selector
+npm run benchmark:ocr:selector:validation
+```
+
+ترفض الأداة `--split=holdout`؛ فتح جيل holdout مجمد جديد يتم فقط عبر البوابة
+المحمية المخصصة لذلك.
 
 يتضمن corpus الحالي 91 صفحة من 20 كتابًا ملكية عامة موزعة على
 development/validation/holdout معزولة بحسب الكتاب. نتيجة الجيل السادس هي

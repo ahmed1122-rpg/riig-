@@ -218,7 +218,9 @@ const processingModes: {
 ];
 
 export function normalizedPoint(
-  event: React.PointerEvent<SVGSVGElement>,
+  event:
+    | React.PointerEvent<SVGSVGElement>
+    | React.MouseEvent<SVGSVGElement>,
 ): Point {
   const bounds = event.currentTarget.getBoundingClientRect();
   return {

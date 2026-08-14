@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "@motionprep/contracts": "*",
-    "@motionprep/layer-domain": "*",
-    "@motionprep/presets": "*"
+    "@motionprep/layer-domain": "*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

@@ -21,6 +21,10 @@ export interface StoredObjectStream extends StoredObjectMetadata {
   body: Readable;
 }
 
+export interface StoredObjectWriteStream extends StoredObjectMetadata {
+  body: Readable;
+}
+
 export interface ObjectReadOptions {
   maxBytes?: number;
   signal?: AbortSignal;
@@ -28,6 +32,7 @@ export interface ObjectReadOptions {
 
 export interface ObjectStorage {
   put(object: StoredObject): Promise<StoredObjectMetadata>;
+  putStream(object: StoredObjectWriteStream): Promise<StoredObjectMetadata>;
   list(prefix: string): Promise<string[]>;
   purge(keys: readonly string[], prefixes: readonly string[]): Promise<void>;
   inspect(key: string): Promise<StoredObjectMetadata | null>;
@@ -49,6 +54,35 @@ export class InMemoryObjectStorage implements ObjectStorage {
       body: Buffer.from(object.body),
     });
     return metadataFor(object);
+  }
+
+  async putStream(
+    object: StoredObjectWriteStream,
+  ): Promise<StoredObjectMetadata> {
+    const chunks: Buffer[] = [];
+    const hash = createHash("sha256");
+    let sizeBytes = 0;
+    for await (const value of object.body) {
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+      sizeBytes += chunk.byteLength;
+      if (sizeBytes > object.sizeBytes) {
+        object.body.destroy();
+        throw new ObjectStorageIntegrityError(object.key);
+      }
+      hash.update(chunk);
+      chunks.push(chunk);
+    }
+    if (sizeBytes !== object.sizeBytes || hash.digest("hex") !== object.sha256) {
+      throw new ObjectStorageIntegrityError(object.key);
+    }
+    const stored = {
+      key: object.key,
+      contentType: object.contentType,
+      sizeBytes,
+      body: Buffer.concat(chunks, sizeBytes),
+    };
+    this.#objects.set(object.key, stored);
+    return metadataFor(stored);
   }
 
   async list(prefix: string): Promise<string[]> {

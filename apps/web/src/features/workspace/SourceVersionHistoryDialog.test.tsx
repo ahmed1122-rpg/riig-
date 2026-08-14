@@ -67,7 +67,7 @@ describe("SourceVersionHistoryDialog", () => {
         currentSourceVersionId="source-1"
         onClose={onClose}
         onRestored={onRestored}
-        onExecuteRestore={async (restore) => restore()}
+        onExecuteRestore={async (restore) => restore(new AbortController().signal)}
         onNotify={onNotify}
       />,
     );

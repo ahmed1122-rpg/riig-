@@ -6,11 +6,17 @@ import { validateLayerGraph } from "@motionprep/layer-domain";
 import { toDomainLayer } from "./workspaceLayerDomain";
 
 interface LayerCheckItem {
-  id: "names" | "graph" | "structure" | "confidence";
+  id: "names" | "graph" | "assets" | "structure" | "confidence";
   label: string;
   message: string;
   valid: boolean;
   icon: IconName;
+}
+
+interface LayerCheckDiagnostic {
+  id: string;
+  message: string;
+  layerId?: string;
 }
 
 export interface LayerCheckSummary {
@@ -18,7 +24,7 @@ export interface LayerCheckSummary {
   title: string;
   description: string;
   items: LayerCheckItem[];
-  diagnostics: string[];
+  diagnostics: LayerCheckDiagnostic[];
 }
 
 function hasLowConfidence(layer: Layer): boolean {
@@ -42,6 +48,14 @@ export function getLayerCheckSummary(
     ["INVALID_LAYER_PREFIX", "INVALID_LAYER_NAME", "DUPLICATE_LAYER_NAME"].includes(code));
   const structuralIssues = graphIssues.filter(({ code }) =>
     !["INVALID_LAYER_PREFIX", "INVALID_LAYER_NAME", "DUPLICATE_LAYER_NAME"].includes(code));
+  const missingRasterAssets = mode === "image"
+    ? contentLayers.filter(
+        (layer) =>
+          layer.kind !== "text" &&
+          layer.kind !== "page" &&
+          layer.hasRasterAsset === false,
+      )
+    : [];
   const lowConfidence = contentLayers.filter(hasLowConfidence).length;
   const backgroundValid =
     mode === "image" ||
@@ -53,6 +67,7 @@ export function getLayerCheckSummary(
   const issueCount =
     namingIssues.length +
     structuralIssues.length +
+    missingRasterAssets.length +
     lowConfidence +
     Number(!backgroundValid) +
     Number(!layerLimitValid);
@@ -76,6 +91,22 @@ export function getLayerCheckSummary(
       valid: structuralIssues.length === 0,
       icon: structuralIssues.length === 0 ? "check" : "warning",
     },
+    ...(mode === "image"
+      ? [
+          {
+            id: "assets" as const,
+            label: "أصول Raster",
+            message:
+              missingRasterAssets.length === 0
+                ? "كل طبقة صورة مرتبطة بأصل محفوظ"
+                : `${missingRasterAssets.length} طبقات بلا أصل Raster محفوظ`,
+            valid: missingRasterAssets.length === 0,
+            icon: (missingRasterAssets.length === 0
+              ? "check"
+              : "warning") as IconName,
+          },
+        ]
+      : []),
     {
       id: "structure",
       label: mode === "image" ? "حد الطبقات" : "خلفيات الصفحات",
@@ -106,7 +137,18 @@ export function getLayerCheckSummary(
     description:
       issueCount === 0 ? "لا توجد مشكلات مكتشفة" : `${issueCount} ملاحظات فعلية`,
     items,
-    diagnostics: graphIssues.slice(0, 20).map((issue) => diagnosticLabel(issue, layers)),
+    diagnostics: [
+      ...graphIssues.map((issue, index) => ({
+        id: `${issue.code}:${issue.layerId ?? issue.pageNumber ?? index}`,
+        message: diagnosticLabel(issue, layers),
+        ...(issue.layerId ? { layerId: issue.layerId } : {}),
+      })),
+      ...missingRasterAssets.map((layer) => ({
+        id: `IMAGE_RASTER_ASSET_MISSING:${layer.id}`,
+        message: `أصل Raster مفقود · ${layer.name}`,
+        layerId: layer.id,
+      })),
+    ].slice(0, 20),
   };
 }
 

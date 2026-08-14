@@ -1,11 +1,13 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   type MutableRefObject,
 } from "react";
 
 export interface DocumentCommandContext {
   baseRevision: number | undefined;
+  signal: AbortSignal;
 }
 
 export interface DocumentCommandCoordinator {
@@ -13,6 +15,7 @@ export interface DocumentCommandCoordinator {
     command: (context: DocumentCommandContext) => Promise<T>,
     options?: { flush?: boolean; allowIdentityChange?: boolean },
   ): Promise<T>;
+  cancelPending(): void;
 }
 
 interface CoordinatorOptions {
@@ -22,10 +25,10 @@ interface CoordinatorOptions {
   saveInFlightRef: MutableRefObject<boolean>;
 }
 
-export class StaleDocumentCommandError extends Error {
+export class DocumentCommandCancelledError extends Error {
   constructor() {
-    super("اكتملت العملية لإصدار مصدر لم يعد مفتوحًا؛ لم تُعتمد نتيجتها في الواجهة.");
-    this.name = "StaleDocumentCommandError";
+    super("أُلغيت العملية.");
+    this.name = "DocumentCommandCancelledError";
   }
 }
 
@@ -35,11 +38,29 @@ export function useDocumentCommandCoordinator(
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const identityRef = useRef("");
   const generationRef = useRef(0);
+  const activeRef = useRef<{
+    controller: AbortController;
+    allowIdentityChange: boolean;
+  } | null>(null);
   const identity = `${options.projectId ?? "none"}:${options.sourceVersionId ?? "none"}`;
-  if (identityRef.current !== identity) {
+
+  const cancelPending = useCallback(() => {
+    generationRef.current += 1;
+    activeRef.current?.controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (identityRef.current === identity) return;
     identityRef.current = identity;
     generationRef.current += 1;
-  }
+    if (!activeRef.current?.allowIdentityChange) {
+      activeRef.current?.controller.abort();
+    }
+  }, [identity]);
+
+  useEffect(() => () => {
+    activeRef.current?.controller.abort();
+  }, []);
 
   const run = useCallback(
     async <T,>(
@@ -51,20 +72,34 @@ export function useDocumentCommandCoordinator(
     ): Promise<T> => {
       const generation = generationRef.current;
       const execute = async (): Promise<T> => {
+        if (generationRef.current !== generation) {
+          throw new DocumentCommandCancelledError();
+        }
+        const controller = new AbortController();
+        activeRef.current = {
+          controller,
+          allowIdentityChange: runOptions.allowIdentityChange === true,
+        };
         options.saveInFlightRef.current = true;
         try {
           const baseRevision = runOptions.flush === false
             ? undefined
             : await options.flushLayerReview();
-          const result = await command({ baseRevision });
-          if (
-            !runOptions.allowIdentityChange &&
-            generationRef.current !== generation
-          ) {
-            throw new StaleDocumentCommandError();
+          if (controller.signal.aborted) {
+            throw new DocumentCommandCancelledError();
+          }
+          const result = await command({
+            baseRevision,
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted) {
+            throw new DocumentCommandCancelledError();
           }
           return result;
         } finally {
+          if (activeRef.current?.controller === controller) {
+            activeRef.current = null;
+          }
           options.saveInFlightRef.current = false;
         }
       };
@@ -78,5 +113,5 @@ export function useDocumentCommandCoordinator(
     [options.flushLayerReview, options.saveInFlightRef],
   );
 
-  return { run };
+  return { run, cancelPending };
 }

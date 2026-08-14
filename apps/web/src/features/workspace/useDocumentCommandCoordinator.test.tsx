@@ -3,7 +3,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
-  StaleDocumentCommandError,
+  DocumentCommandCancelledError,
   useDocumentCommandCoordinator,
 } from "./useDocumentCommandCoordinator";
 
@@ -54,10 +54,13 @@ describe("useDocumentCommandCoordinator", () => {
       await gate;
       return "old";
     });
+    await act(async () => Promise.resolve());
     sourceVersionId = "source-2";
     rerender();
     finish();
-    await expect(pending).rejects.toBeInstanceOf(StaleDocumentCommandError);
+    await expect(pending).rejects.toBeInstanceOf(
+      DocumentCommandCancelledError,
+    );
   });
 
   it("allows commands that intentionally replace the source identity", async () => {
@@ -77,9 +80,46 @@ describe("useDocumentCommandCoordinator", () => {
       await gate;
       return "source-2";
     }, { allowIdentityChange: true });
+    await act(async () => Promise.resolve());
     sourceVersionId = "source-2";
     rerender();
     finish();
     await expect(pending).resolves.toBe("source-2");
+  });
+
+  it("aborts the active command and rejects queued commands on cancellation", async () => {
+    const busy = { current: false };
+    const second = vi.fn().mockResolvedValue("second");
+    const { result } = renderHook(() => useDocumentCommandCoordinator({
+      projectId: "project",
+      sourceVersionId: "source",
+      flushLayerReview: vi.fn().mockResolvedValue(4),
+      saveInFlightRef: busy,
+    }));
+    let receivedSignal: AbortSignal | undefined;
+    const first = result.current.run(async ({ signal }) => {
+      receivedSignal = signal;
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(
+          new DocumentCommandCancelledError(),
+        ), { once: true });
+      });
+      return "first";
+    });
+    const queued = result.current.run(second);
+    const firstExpectation = expect(first).rejects.toBeInstanceOf(
+      DocumentCommandCancelledError,
+    );
+    const queuedExpectation = expect(queued).rejects.toBeInstanceOf(
+      DocumentCommandCancelledError,
+    );
+
+    await act(async () => Promise.resolve());
+    await act(async () => result.current.cancelPending());
+
+    expect(receivedSignal?.aborted).toBe(true);
+    await firstExpectation;
+    await queuedExpectation;
+    expect(second).not.toHaveBeenCalled();
   });
 });

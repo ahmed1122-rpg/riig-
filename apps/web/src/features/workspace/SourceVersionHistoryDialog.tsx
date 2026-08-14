@@ -17,7 +17,9 @@ interface SourceVersionHistoryDialogProps {
     result: SourceVersionRestoreResult,
     version: SourceVersionSummary,
   ) => Promise<void>;
-  onExecuteRestore: (restore: () => Promise<void>) => Promise<void>;
+  onExecuteRestore: (
+    restore: (signal: AbortSignal) => Promise<void>,
+  ) => Promise<void>;
   onNotify: (message: string) => void;
 }
 
@@ -87,12 +89,12 @@ export function SourceVersionHistoryDialog({
     setSubmitting(true);
     setError(undefined);
     try {
-      await onExecuteRestore(async () => {
+      await onExecuteRestore(async (signal) => {
         const attempt = pendingHydration ?? {
           result: await restoreSourceVersion(projectId, selected!.id, {
             expectedCurrentSourceVersionId: currentSourceVersionId,
             reason: reason.trim(),
-          }),
+          }, signal),
           version: selected!,
         };
         setPendingHydration(attempt);

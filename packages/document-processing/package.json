@@ -19,7 +19,6 @@
   "dependencies": {
     "@motionprep/contracts": "*",
     "@motionprep/layer-domain": "*",
-    "@motionprep/presets": "*",
     "@napi-rs/canvas": "^1.0.2",
     "@tesseract.js-data/ara": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",

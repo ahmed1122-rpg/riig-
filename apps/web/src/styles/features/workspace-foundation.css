@@ -18,6 +18,7 @@
 .layer-counter { display: flex; align-items: center; min-height: 32px; gap: 6px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; color: var(--text-soft); font-size: 9px; font-weight: 800; white-space: nowrap; direction: rtl; }
 .layer-counter svg { color: var(--primary); }
 .layer-counter b { font: inherit; direction: ltr; }
+.layer-counter.is-near-limit { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }
 .layer-counter.is-full { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }
 .export-button { min-height: 34px; padding: 0 12px; }
 

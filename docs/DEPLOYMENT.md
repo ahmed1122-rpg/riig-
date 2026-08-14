@@ -16,6 +16,11 @@ The web client also reads `/v1/capabilities` before enabling gated tools. A
 missing or malformed capability response disables those tools rather than
 assuming they are available.
 
+The public compatibility claim is limited to the release-qualified matrix in
+[`BROWSER_SUPPORT.md`](BROWSER_SUPPORT.md). Chromium desktop/mobile E2E is a
+required release gate; it is not independent evidence of branded Chrome/Edge,
+Firefox, Safari, or iOS support.
+
 The `provider-readiness` GitHub environment is a release gate. Its protected
 workflow must pass against deployment-owned object storage and a completed
 isolated recovery manifest before production approval. Configure its

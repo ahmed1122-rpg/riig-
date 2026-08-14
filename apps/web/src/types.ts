@@ -35,6 +35,7 @@ export interface Layer {
   confidence?: number;
   color: string;
   previewUrl?: string;
+  hasRasterAsset?: boolean;
   fullContent?: string;
   pageNumber?: number;
   bounds?: {

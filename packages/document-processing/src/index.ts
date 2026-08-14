@@ -11,6 +11,13 @@ export {
   type PdfOcrTextItem,
 } from "./pdf-ocr.js";
 export {
+  OCR_SELECTOR_PIPELINES,
+  ocrSegmentationMode,
+  prepareOcrImage,
+  type OcrPipelineConfiguration,
+  type PreparedOcrImage,
+} from "./ocr-pipeline.js";
+export {
   renderPdfRegion,
   type RenderedPdfRegion,
   type RenderPdfRegionInput,

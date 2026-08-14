@@ -4,7 +4,7 @@ import type {
   LayerEditKind,
   ProjectKind,
 } from "@motionprep/contracts";
-import { validateProductionDocument } from "@motionprep/presets";
+import { validateProductionDocument } from "@motionprep/layer-domain";
 import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import { ProcessingDomainError } from "./processing-errors.js";
 import type { LayerDocumentRepository } from "./processing-repository.js";

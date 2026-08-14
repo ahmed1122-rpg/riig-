@@ -2,6 +2,7 @@
 
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Layer } from "../../types";
 import { useWorkspaceToolController } from "./useWorkspaceToolController";
 
 const features = {
@@ -77,5 +78,58 @@ describe("useWorkspaceToolController", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "2" }));
     });
     expect(result.current.activeTool).toBe("image.exclude");
+  });
+
+  it("explains a merge rejection before opening the PDF operation", () => {
+    const onNotify = vi.fn();
+    const textLayer: Layer = {
+      id: "text-1",
+      name: "+سطر_01",
+      kind: "text",
+      parentId: "page-1",
+      visible: true,
+      locked: false,
+      fixed: false,
+      opacity: 1,
+      color: "#2563eb",
+      pageNumber: 1,
+      fullContent: "السطر الأول",
+      bounds: { x: 0, y: 0, width: 100, height: 20 },
+    };
+    const bookLayers = [
+      textLayer,
+      {
+        ...textLayer,
+        id: "text-2",
+        name: "+سطر_02",
+        parentId: "page-2",
+      },
+    ];
+    const { result } = renderHook(() =>
+      useWorkspaceToolController({
+        mode: "book",
+        persistedSource: true,
+        features,
+        activeLayer: bookLayers[0],
+        selectedIds: bookLayers.map((layer) => layer.id),
+        imageLayers: [],
+        bookLayers,
+        onArrangeReadingOrder: vi.fn(),
+        onNotify,
+      }),
+    );
+    const mergeTool = result.current.workspaceTools.find(
+      (tool) => tool.id === "pdf.merge",
+    );
+    expect(mergeTool).toBeDefined();
+
+    act(() => {
+      if (mergeTool) result.current.useTool(mergeTool);
+    });
+
+    expect(onNotify).toHaveBeenCalledWith(
+      "يجب أن تكون الطبقات داخل المجلد نفسه قبل الدمج.",
+    );
+    expect(result.current.pdfTextOperation).toBeUndefined();
   });
 });

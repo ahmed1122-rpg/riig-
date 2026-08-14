@@ -4,6 +4,7 @@ import { Icon } from "../../shared/Icon";
 import type { PdfSegmentation, ProjectMode } from "../../types";
 import { pdfSegmentationLabels } from "./pdfSegmentation";
 import type { WorkspaceMobilePanel } from "./workspaceMobilePanel";
+import type { WorkspaceCommandStatus } from "./workspaceCommandStatus";
 
 export type WorkspaceSaveState =
   | "unavailable"
@@ -63,6 +64,20 @@ export function WorkspaceHeader({
             : saveState === "error"
               ? "تعذر حفظ آخر تعديل"
               : "كل التعديلات محفوظة";
+  const layerLimitClass =
+    mode !== "image"
+      ? ""
+      : imageLayerCount >= MAX_IMAGE_LAYERS
+        ? " is-full"
+        : imageLayerCount >= Math.ceil(MAX_IMAGE_LAYERS * 0.8)
+          ? " is-near-limit"
+          : "";
+  const layerLimitHint =
+    mode === "image" && layerLimitClass
+      ? imageLayerCount >= MAX_IMAGE_LAYERS
+        ? "بلغ المشروع الحد الأقصى لطبقات الصورة"
+        : `اقترب المشروع من حد طبقات الصورة: ${imageLayerCount} من ${MAX_IMAGE_LAYERS}`
+      : undefined;
 
   return (
     <header className="workspace-header pro-workspace-header">
@@ -111,11 +126,8 @@ export function WorkspaceHeader({
       </div>
       <div className="workspace-meta">
         <span
-          className={
-            mode === "image" && imageLayerCount >= MAX_IMAGE_LAYERS
-              ? "layer-counter is-full"
-              : "layer-counter"
-          }
+          className={`layer-counter${layerLimitClass}`}
+          title={layerLimitHint}
         >
           <Icon name="layers" size={15} />
           {mode === "image" ? (
@@ -191,6 +203,7 @@ export function WorkspaceStatusBar({
   persistedSource,
   sourceVersion,
   processing,
+  commandStatus = { phase: "idle" },
   mode,
   imageCanvasSize,
   pdfPageSize,
@@ -201,6 +214,7 @@ export function WorkspaceStatusBar({
   persistedSource: boolean;
   sourceVersion: number;
   processing: boolean;
+  commandStatus?: WorkspaceCommandStatus;
   mode: ProjectMode;
   imageCanvasSize?: { width: number; height: number };
   pdfPageSize?: { width: number; height: number };
@@ -220,11 +234,20 @@ export function WorkspaceStatusBar({
             : saveState === "error"
               ? "خطأ في الحفظ"
               : "محفوظ";
-  const processLabel = processing
-    ? "معالجة موضعية"
-    : persistedSource
-      ? "جاهز للمراجعة"
-      : "ابدأ باختيار ملف";
+  const processLabel =
+    commandStatus.phase === "running"
+      ? `${commandStatus.label}${
+          commandStatus.progress === undefined
+            ? ""
+            : ` · ${commandStatus.progress}%`
+        }`
+      : commandStatus.phase === "error"
+        ? `فشل ${commandStatus.label}`
+        : processing
+          ? "معالجة موضعية"
+          : persistedSource
+            ? "جاهز للمراجعة"
+            : "ابدأ باختيار ملف";
 
   return (
     <div
@@ -243,14 +266,22 @@ export function WorkspaceStatusBar({
           ? `المصدر v${sourceVersion}`
           : "بانتظار الرفع"}
       </span>
-      <span>
+      <span
+        title={
+          commandStatus.phase === "error"
+            ? commandStatus.message
+            : undefined
+        }
+      >
         <i
           className={
-            processing
-              ? "is-processing"
-              : persistedSource
-                ? "is-ready"
-                : ""
+            commandStatus.phase === "error"
+              ? "is-error"
+              : commandStatus.phase === "running" || processing
+                ? "is-processing"
+                : persistedSource
+                  ? "is-ready"
+                  : ""
           }
         />{" "}
         {processLabel}

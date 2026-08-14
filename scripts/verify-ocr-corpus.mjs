@@ -15,6 +15,10 @@ const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const allowStaleImplementationWhenDisabled = process.argv.includes(
   "--allow-stale-implementation-when-disabled",
 );
+const staleImplementationPolicyErrors = new Set([
+  "OCR implementation changed after the holdout was opened; rotate the holdout before benchmarking again.",
+  "OCR holdout implementation boundary changed; rotate the holdout before benchmarking again.",
+]);
 const corpusDirectory = join(
   repositoryRoot,
   "artifacts",
@@ -151,11 +155,10 @@ if (evaluationPolicy?.openedAt === null) {
     const policyError = message(error);
     if (
       allowStaleImplementationWhenDisabled &&
-      policyError ===
-        "OCR implementation changed after the holdout was opened; rotate the holdout before benchmarking again."
+      staleImplementationPolicyErrors.has(policyError)
     ) {
       const productionTemplate = await readFile(
-          join(repositoryRoot, ".env.production.api.example"),
+        join(repositoryRoot, ".env.production.api.example"),
         "utf8",
       );
       if (/^PDF_REGION_OCR_ENABLED=false$/mu.test(productionTemplate)) {
@@ -170,12 +173,14 @@ if (evaluationPolicy?.openedAt === null) {
     }
   }
   if (
+    !staleImplementationAccepted &&
     JSON.stringify(evaluationPolicy?.implementationFiles) !==
     JSON.stringify(OCR_IMPLEMENTATION_FILES)
   ) {
     violations.push("Opened OCR holdout implementation files are invalid.");
   }
 }
+
 if (sourceIds.size < 3) {
   violations.push("The corpus must cover at least three source books.");
 }

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import {
   assertOpenedHoldoutPolicy,
+  computeOcrImplementationDigest,
   computeOcrHoldoutContentDigest,
   OCR_IMPLEMENTATION_FILES,
 } from "./ocr-holdout-policy.mjs";
@@ -17,6 +21,43 @@ const openedPolicy = {
   implementationSha256: digest,
   holdoutContentSha256: contentDigest,
 };
+
+test("implementation digest covers the production OCR engine", async (t) => {
+  const repositoryRoot = await mkdtemp(join(tmpdir(), "ocr-policy-"));
+  t.after(() => rm(repositoryRoot, { recursive: true, force: true }));
+  for (const relativePath of OCR_IMPLEMENTATION_FILES) {
+    const absolutePath = join(repositoryRoot, relativePath);
+    await mkdir(dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, `fixture:${relativePath}\n`, "utf8");
+  }
+
+  assert.ok(
+    OCR_IMPLEMENTATION_FILES.includes(
+      "packages/document-processing/src/pdf-ocr.ts",
+    ),
+  );
+  assert.ok(
+    OCR_IMPLEMENTATION_FILES.includes(
+      "packages/document-processing/src/ocr-pipeline.ts",
+    ),
+  );
+  assert.ok(
+    OCR_IMPLEMENTATION_FILES.includes(
+      "packages/document-processing/src/ocr-review.ts",
+    ),
+  );
+  const before = await computeOcrImplementationDigest(repositoryRoot);
+  await writeFile(
+    join(repositoryRoot, "packages/document-processing/src/pdf-ocr.ts"),
+    "changed production engine\n",
+    "utf8",
+  );
+
+  assert.notEqual(
+    await computeOcrImplementationDigest(repositoryRoot),
+    before,
+  );
+});
 
 test("accepts an opened holdout pinned to the current implementation", () => {
   assert.doesNotThrow(() =>

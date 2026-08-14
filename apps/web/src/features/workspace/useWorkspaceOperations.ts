@@ -10,7 +10,6 @@ import {
   reanalyzePdfSource,
   type LayerDocumentView,
 } from "../../lib/api";
-import type { UploadState } from "./SourceUploadStatus";
 import type { WorkspaceSaveState } from "./WorkspaceChrome";
 import {
   pdfApiModes,
@@ -26,6 +25,10 @@ import {
 } from "./workspaceGuidance";
 import type { DocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
 import type { RecordDocumentChange } from "./documentChangeSummary";
+import {
+  workspaceCommandError,
+  type WorkspaceCommandStatus,
+} from "./workspaceCommandStatus";
 
 type SetState<Value> = Dispatch<SetStateAction<Value>>;
 
@@ -55,8 +58,7 @@ interface WorkspaceOperationsOptions {
   requestConfirmation: (request: ConfirmationRequest) => Promise<boolean>;
   setProcessing: SetState<boolean>;
   setSaveState: SetState<WorkspaceSaveState>;
-  setUploadState: SetState<UploadState>;
-  setUploadProgress: SetState<number>;
+  setCommandStatus: SetState<WorkspaceCommandStatus>;
   setPdfMode: SetState<PdfSegmentation>;
   onNotify: (message: string) => void;
 }
@@ -74,8 +76,9 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
       }
       options.setProcessing(true);
       options.setSaveState("saving");
+      options.setCommandStatus({ phase: "running", label: changeLabel });
       try {
-        return await options.commandCoordinator.run(async ({ baseRevision }) => {
+        const result = await options.commandCoordinator.run(async ({ baseRevision, signal }) => {
           const before = options.layers;
           if (baseRevision === undefined) throw new Error("وثيقة الطبقات غير جاهزة.");
           const result = await applyGuidedRefinement(
@@ -85,6 +88,7 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
               baseRevision,
               appliedAt: new Date().toISOString(),
             }),
+            signal,
           );
           options.onDocumentChanged(changeLabel, before, result.document);
           await options.adoptDocument(
@@ -100,6 +104,18 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
             warnings: result.warnings,
           };
         });
+        options.setCommandStatus({ phase: "idle" });
+        return result;
+      } catch (error) {
+        options.setSaveState("error");
+        options.setCommandStatus(
+          workspaceCommandError(
+            changeLabel,
+            error,
+            "تعذر تطبيق التحسين الإرشادي.",
+          ),
+        );
+        throw error;
       } finally {
         options.setProcessing(false);
       }
@@ -114,6 +130,7 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
       options.projectId,
       options.setProcessing,
       options.setSaveState,
+      options.setCommandStatus,
       options.sourceVersionId,
     ],
   );
@@ -156,8 +173,10 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
         return;
       }
       options.setProcessing(true);
+      const label = direction === "undo" ? "التراجع" : "الإعادة";
+      options.setCommandStatus({ phase: "running", label });
       try {
-        await options.commandCoordinator.run(async ({ baseRevision }) => {
+        await options.commandCoordinator.run(async ({ baseRevision, signal }) => {
           const before = options.layers;
           if (baseRevision === undefined) throw new Error("وثيقة الطبقات غير جاهزة.");
           const document = await navigateLayerDocumentHistory(
@@ -167,6 +186,7 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
               baseRevision,
               direction,
             },
+            signal,
           );
           options.onDocumentChanged(
             direction === "undo" ? "تراجع" : "إعادة",
@@ -180,7 +200,15 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
             ? "تم التراجع عن آخر تعديل محفوظ."
             : "تمت إعادة التعديل المحفوظ التالي.",
         );
+        options.setCommandStatus({ phase: "idle" });
       } catch (error) {
+        options.setCommandStatus(
+          workspaceCommandError(
+            label,
+            error,
+            "تعذر التنقل في سجل التعديلات.",
+          ),
+        );
         options.onNotify(
           error instanceof Error
             ? error.message
@@ -197,6 +225,7 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
       options.onNotify,
       options.onDocumentChanged,
       options.projectId,
+      options.setCommandStatus,
       options.setProcessing,
       options.sourceVersionId,
     ],
@@ -219,29 +248,41 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
       });
       if (!confirmed) return;
       options.setProcessing(true);
-      options.setUploadState("verifying");
-      options.setUploadProgress(0);
+      const label = "إعادة تحليل PDF";
+      options.setCommandStatus({ phase: "running", label, progress: 0 });
       try {
-        await options.commandCoordinator.run(async () => {
+        await options.commandCoordinator.run(async ({ signal }) => {
           const before = options.layers;
           const document = await reanalyzePdfSource(
             options.projectId!,
             options.sourceVersionId!,
             pdfApiModes[nextMode],
-            { onProgress: options.setUploadProgress },
+            {
+              signal,
+              onProgress: (progress) =>
+                options.setCommandStatus((current) =>
+                  current.phase === "running"
+                    ? { ...current, progress }
+                    : current,
+                ),
+            },
           );
           options.onDocumentChanged("إعادة تحليل PDF", before, document);
           await options.adoptDocument(document);
         });
         options.setPdfMode(nextMode);
-        options.setUploadState("ready");
-        options.setUploadProgress(100);
+        options.setCommandStatus({ phase: "idle" });
         options.onNotify(
           `أُعيد تحليل PDF إلى ${pdfSegmentationLabels[nextMode]} مع تحديث الطبقات وترتيب القراءة.`,
         );
       } catch (error) {
-        options.setUploadState("ready");
-        options.setUploadProgress(100);
+        options.setCommandStatus(
+          workspaceCommandError(
+            label,
+            error,
+            "تعذر تغيير نمط تقطيع PDF.",
+          ),
+        );
         options.onNotify(
           error instanceof Error
             ? error.message
@@ -261,9 +302,8 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
       options.projectId,
       options.requestConfirmation,
       options.setPdfMode,
+      options.setCommandStatus,
       options.setProcessing,
-      options.setUploadProgress,
-      options.setUploadState,
       options.sourceVersionId,
     ],
   );
@@ -276,19 +316,20 @@ export function useWorkspaceOperations(options: WorkspaceOperationsOptions) {
       if (options.layerDocumentRevision === undefined) {
         throw new Error("تعذر تحديد إصدار وثيقة الطبقات. أعد تحميل المصدر.");
       }
-      await options.commandCoordinator.run(async ({ baseRevision }) => {
+      await options.commandCoordinator.run(async ({ baseRevision, signal }) => {
         if (baseRevision === undefined) throw new Error("وثيقة الطبقات غير جاهزة.");
         await approveProjectReview(
           options.projectId!,
           options.sourceVersionId!,
           baseRevision,
+          signal,
         );
         await createExportArtifact(
           options.projectId!,
           options.sourceVersionId!,
           baseRevision,
           format,
-          exportOptions,
+          { ...exportOptions, signal },
         );
       });
     },

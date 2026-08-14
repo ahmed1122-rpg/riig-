@@ -67,11 +67,13 @@ export function approveProjectReview(
   projectId: string,
   sourceVersionId: string,
   documentRevision: number,
+  signal?: AbortSignal,
 ): Promise<ProjectSummary> {
   return request<ProjectSummary>(
     `/v1/projects/${encodeURIComponent(projectId)}/review/approve`,
     {
       method: "POST",
+      signal,
       headers: { "x-idempotency-key": crypto.randomUUID() },
       body: JSON.stringify({ sourceVersionId, documentRevision }),
     },

@@ -101,6 +101,8 @@ export async function registerProcessingRoutes(
       auth,
       projectId,
       sourceVersionId,
+      projectReviewSettledAtomically:
+        processing.settlesProjectReviewAtomically,
       mutate,
     });
 
@@ -226,10 +228,18 @@ export async function registerProcessingRoutes(
           user.id,
           requestIdempotencyKey(request),
         );
-        await projects.invalidateReview(
-          project.id,
-          body.data.sourceVersionId,
-        );
+        if (!processing.settlesProjectReviewAtomically) {
+          const invalidated = await projects.invalidateReview(
+            project.id,
+            body.data.sourceVersionId,
+          );
+          if (!invalidated) {
+            throw new ProcessingDomainError(
+              "SOURCE_NOT_CURRENT",
+              "The source changed before the project review could be invalidated.",
+            );
+          }
+        }
         return { data: updated, error: null };
       } catch (error) {
         return domainError(error, request, reply);
@@ -300,12 +310,18 @@ export async function registerProcessingRoutes(
           actorUserId: user.id,
           operationId: requestIdempotencyKey(request),
         });
-        await projects.updateStatusForSource(
-          project.id,
-          body.data.sourceVersionId,
-          "needs_review",
-          null,
-        );
+        if (!processing.settlesProjectReviewAtomically) {
+          const invalidated = await projects.invalidateReview(
+            project.id,
+            body.data.sourceVersionId,
+          );
+          if (!invalidated) {
+            throw new ProcessingDomainError(
+              "SOURCE_NOT_CURRENT",
+              "The source changed before the project review could be invalidated.",
+            );
+          }
+        }
         return reply.status(200).send({ data: result, error: null });
       } catch (error) {
         return domainError(error, request, reply);

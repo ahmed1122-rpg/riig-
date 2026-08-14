@@ -16,7 +16,7 @@ import {
   createPdfMarkerRegion,
   guidanceBounds,
 } from "@motionprep/guidance";
-import { validateProductionDocument } from "@motionprep/presets";
+import { validateProductionDocument } from "@motionprep/layer-domain";
 import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
@@ -100,6 +100,10 @@ export class ProcessingService {
     this.#pdfLayers = new PdfLayerOperations(this.#edits, documents);
     this.#layerStates = new LayerStateOperations(this.#edits, documents);
     this.#layerCommands = new LayerCommandOperations(this.#edits);
+  }
+
+  get settlesProjectReviewAtomically(): boolean {
+    return this.documents.settlesProjectReviewAtomically === true;
   }
 
   async createAndRun(

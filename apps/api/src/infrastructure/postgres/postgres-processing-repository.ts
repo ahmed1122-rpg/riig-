@@ -246,6 +246,8 @@ export class PostgresProcessingJobRepository
 export class PostgresLayerDocumentRepository
   implements LayerDocumentRepository
 {
+  readonly settlesProjectReviewAtomically = true;
+
   constructor(private readonly pool: Pool) {}
 
   async findBySource(

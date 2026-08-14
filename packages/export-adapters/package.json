@@ -19,7 +19,7 @@
   "dependencies": {
     "@expo-google-fonts/noto-sans-arabic": "0.4.3",
     "@motionprep/contracts": "*",
-    "@motionprep/presets": "*",
+    "@motionprep/layer-domain": "*",
     "ag-psd": "31.0.2",
     "sharp": "^0.35.3"
   },

@@ -11,13 +11,11 @@ import {
   type PdfOcrEngine,
 } from "@motionprep/document-processing";
 import {
+  canonicalLayerName,
   createPdfTextLayerName,
+  createUniqueLayerName,
   isPdfPageRootGroup,
   validateProductionDocument,
-} from "@motionprep/presets";
-import {
-  canonicalLayerName,
-  createUniqueLayerName,
 } from "@motionprep/layer-domain";
 import { applyReadingOrder } from "./reading-order.js";
 

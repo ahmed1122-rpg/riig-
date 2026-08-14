@@ -28,6 +28,15 @@ export default defineConfig({
           ) {
             return "react-vendor";
           }
+          if (
+            normalizedId.includes("/src/features/workspace/CharacterStudio") ||
+            normalizedId.includes("/src/features/workspace/useCharacterStudio")
+          ) {
+            return "workspace-character";
+          }
+          if (normalizedId.includes("/src/features/workspace/")) {
+            return "workspace";
+          }
           const sharedPrimitives = [
             "/src/shared/DataState.tsx",
             "/src/shared/Dialog.tsx",

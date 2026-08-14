@@ -170,6 +170,34 @@ describe("production validation edges", () => {
     ]));
   });
 
+  it("rejects non-finite or out-of-range layer state in the shared validator", () => {
+    const layers = pageLayers();
+    layers.push(node({
+      id: "bad-opacity",
+      name: "+bad-opacity",
+      opacity: Number.NaN,
+    }));
+    layers.push(node({
+      id: "bad-z-index",
+      name: "+bad-z-index",
+      zIndex: 1_000_001,
+    }));
+    layers.push(node({
+      id: "bad-reading-order",
+      name: "+bad-reading-order",
+      readingOrder: -1,
+    }));
+
+    const codes = validateProductionDocument(document(layers), "book")
+      .map((entry) => entry.code);
+
+    expect(codes).toEqual(expect.arrayContaining([
+      "LAYER_OPACITY_INVALID",
+      "LAYER_Z_INDEX_INVALID",
+      "LAYER_READING_ORDER_INVALID",
+    ]));
+  });
+
   it("reports missing PDF roots and backgrounds", () => {
     const noRoot = validateProductionDocument(
       document([node({ id: "text", name: "+text", parentId: null })]),

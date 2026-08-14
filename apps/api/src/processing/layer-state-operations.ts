@@ -4,7 +4,7 @@ import {
   type LayerStateUpdate,
   type ProjectKind,
 } from "@motionprep/contracts";
-import { validateProductionDocument } from "@motionprep/presets";
+import { validateProductionDocument } from "@motionprep/layer-domain";
 import {
   DocumentEditCoordinator,
   layerEditRequestHash,

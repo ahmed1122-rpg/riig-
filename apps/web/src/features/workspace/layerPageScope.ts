@@ -1,4 +1,4 @@
-import { isPdfPageRootGroup } from "@motionprep/presets";
+import { isPdfPageRootGroup } from "@motionprep/layer-domain";
 import type { Layer, ProjectMode } from "../../types";
 
 export interface PdfPageReference {

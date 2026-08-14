@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { PoolClient } from "pg";
 import { createDatabase } from "./database.js";
 import {
   assertMigrationNames,
@@ -22,10 +23,11 @@ const migrationsDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../../migrations",
 );
-const client = await database.pool.connect();
+let client: PoolClient | undefined;
 let advisoryLockAcquired = false;
 
 try {
+  client = await database.pool.connect();
   await database.ready();
   await acquireMigrationAdvisoryLock(
     client,
@@ -128,7 +130,7 @@ try {
       ALTER COLUMN checksum_sha256 SET NOT NULL
   `);
 } finally {
-  if (advisoryLockAcquired) {
+  if (client && advisoryLockAcquired) {
     await releaseMigrationAdvisoryLock(client, advisoryLockAcquired)
       .catch((error: unknown) => {
         process.stderr.write(
@@ -139,6 +141,6 @@ try {
         );
       });
   }
-  client.release();
+  client?.release();
   await database.close();
 }

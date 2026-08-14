@@ -44,8 +44,26 @@ describe("workspace layer checks", () => {
 
     expect(summary.issueCount).toBeGreaterThanOrEqual(3);
     expect(summary.diagnostics).toEqual(expect.arrayContaining([
-      expect.stringContaining("اسم مكرر"),
-      expect.stringContaining("مجلد أب مفقود"),
+      expect.objectContaining({ message: expect.stringContaining("اسم مكرر") }),
+      expect.objectContaining({ message: expect.stringContaining("مجلد أب مفقود") }),
     ]));
+  });
+
+  it("reports a mapped raster layer whose stored asset is missing", () => {
+    const summary = getLayerCheckSummary("image", [
+      { ...layer, id: "missing-raster", hasRasterAsset: false },
+    ]);
+
+    expect(summary.issueCount).toBe(1);
+    expect(summary.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "assets", valid: false }),
+      ]),
+    );
+    expect(summary.diagnostics).toContainEqual({
+      id: "IMAGE_RASTER_ASSET_MISSING:missing-raster",
+      message: "أصل Raster مفقود · +طبقة",
+      layerId: "missing-raster",
+    });
   });
 });

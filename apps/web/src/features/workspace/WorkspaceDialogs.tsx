@@ -53,7 +53,9 @@ interface WorkspaceDialogsModel {
     result: SourceVersionRestoreResult,
     version: SourceVersionSummary,
   ) => Promise<void>;
-  onExecuteRestore: (restore: () => Promise<void>) => Promise<void>;
+  onExecuteRestore: (
+    restore: (signal: AbortSignal) => Promise<void>,
+  ) => Promise<void>;
   mobilePanel: WorkspaceMobilePanel;
   onMobilePanelChange: (panel: WorkspaceMobilePanel) => void;
   onExport: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -65,7 +67,7 @@ interface WorkspaceDialogsModel {
   activePdfPage: number;
   layerCheckSummary: LayerCheckSummary;
   onUseTool: (tool: ResolvedWorkspaceTool) => void;
-  onSelectLayer: (id: string) => void;
+  onSelectLayer: (id: string, nextSelectedIds?: string[]) => void;
   onPdfPageChange: (pageNumber: number) => Promise<boolean>;
   pdfTextOperation: PdfTextOperation | undefined;
   onClosePdfTextOperation: () => void;
@@ -132,7 +134,7 @@ interface WorkspaceDialogsProps {
     exportReturnFocusTo: HTMLElement | null;
     onRetrySave: WorkspaceDialogsModel["onRetrySave"];
     onCreateExport: WorkspaceDialogsModel["onCreateExport"];
-    onSelectLayer: (id: string) => Promise<void>;
+    onSelectLayer: (id: string, nextSelectedIds?: string[]) => Promise<void>;
     onPdfPageChange: (pageNumber: number) => Promise<boolean>;
     onLayerCommand: WorkspaceDialogsModel["onLayerCommand"];
     documentChangeLog: readonly DocumentChangeSummary[];
@@ -170,7 +172,8 @@ export function WorkspaceDialogs({
     activePdfPage: source.activePdfPage,
     layerCheckSummary: actions.layerCheckSummary,
     onUseTool: tools.useTool,
-    onSelectLayer: (id) => void actions.onSelectLayer(id),
+    onSelectLayer: (id, nextSelectedIds) =>
+      void actions.onSelectLayer(id, nextSelectedIds),
     onPdfPageChange: actions.onPdfPageChange,
     pdfTextOperation: tools.pdfTextOperation,
     onClosePdfTextOperation: () => tools.setPdfTextOperation(undefined),

@@ -216,6 +216,14 @@ describe("retention cleanup", () => {
           sha256: "0".repeat(64),
         };
       },
+      async putStream() {
+        return {
+          key: "unused",
+          contentType: "application/octet-stream",
+          sizeBytes: 0,
+          sha256: "0".repeat(64),
+        };
+      },
       async inspect() {
         return null;
       },

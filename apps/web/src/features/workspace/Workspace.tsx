@@ -366,6 +366,7 @@ export function Workspace({
     applyPdfRegionOcr,
     applyPdfTextOperation,
     changePdfSegmentation,
+    commandStatus,
     createExport,
     documentChangeLog,
     navigateDocumentHistory,
@@ -492,6 +493,7 @@ export function Workspace({
         persistedSource={persistedSource}
         sourceVersion={sourceVersion}
         processing={processing}
+        commandStatus={commandStatus}
         mode={mode}
         zoom={zoom}
         {...(activeLayer?.name ? { activeLayerName: activeLayer.name } : {})}
@@ -514,7 +516,7 @@ export function Workspace({
         actions={{
           onRestoreSourceVersion: restoreSourceVersion,
           onExecuteRestore: (restore) =>
-            commandCoordinator.run(async () => restore(), {
+            commandCoordinator.run(async ({ signal }) => restore(signal), {
               allowIdentityChange: true,
             }),
           onExport: openExportReview,

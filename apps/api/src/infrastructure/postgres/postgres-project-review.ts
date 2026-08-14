@@ -5,7 +5,7 @@ import type {
   ProjectReviewApprovalResult,
   ProjectStatus,
 } from "@motionprep/contracts";
-import { validateProductionDocument } from "@motionprep/presets";
+import { validateProductionDocument } from "@motionprep/layer-domain";
 import type { Pool, PoolClient } from "pg";
 import {
   assertReviewReplayMatches,

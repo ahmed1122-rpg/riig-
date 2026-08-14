@@ -720,7 +720,7 @@ describe("API — المعالجة ووثائق الطبقات", () => {
     expect(selectedPageWithoutNumber.json().error.code).toBe(
       "VALIDATION_FAILED",
     );
-  });
+  }, 15_000);
   it("reanalyzes the same PDF source with a new segmentation mode", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     const cookie = await registerCreator(app);

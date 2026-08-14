@@ -83,6 +83,9 @@ export function toWorkspaceLayers(
     ...(previewUrlsByLayer.has(layer.id)
       ? { previewUrl: previewUrlsByLayer.get(layer.id)! }
       : {}),
+    ...(layer.kind === "raster"
+      ? { hasRasterAsset: Boolean(layer.rasterAsset) }
+      : {}),
     ...(layer.fullText ? { fullContent: layer.fullText } : {}),
     ...layerLayoutMetadata(layer),
   }));

@@ -416,6 +416,7 @@
   overflow: hidden;
   background: #fff;
 }
+.pdf-extracted-page.is-editing-text { z-index: 9 !important; }
 .pdf-extracted-text {
   position: absolute;
   display: block;
@@ -424,6 +425,19 @@
   line-height: 1.15;
   white-space: pre-wrap;
   text-align: start;
+}
+.pdf-inline-text-editor {
+  position: absolute;
+  z-index: 2;
+  min-width: 80px;
+  padding: 3px 5px;
+  resize: both;
+  border: 2px solid #078c82;
+  border-radius: 3px;
+  outline: 3px solid rgba(7, 140, 130, .12);
+  background: #fff;
+  color: #111816;
+  line-height: 1.2;
 }
 .pdf-extracted-text.is-selected {
   outline: 2px solid #078c82;

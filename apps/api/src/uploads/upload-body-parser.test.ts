@@ -2,12 +2,32 @@ import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import {
   parseDeclaredContentLength,
-  readBoundedUploadBody,
+  stageBoundedUploadBody,
   UploadBodyGate,
   UploadBodyTooLargeError,
 } from "./upload-body-parser.js";
 
 describe("upload body parser", () => {
+  it("stages a typed upload and removes the temporary payload on disposal", async () => {
+    const pdf = Buffer.from("%PDF-1.7\nstreamed");
+    const body = await stageBoundedUploadBody(
+      Readable.from([pdf.subarray(0, 4), pdf.subarray(4)]),
+      1024,
+      pdf.byteLength,
+    );
+
+    expect(body).toMatchObject({
+      detectedContentType: "application/pdf",
+      sizeBytes: pdf.byteLength,
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of body.openStream()) chunks.push(Buffer.from(chunk));
+    expect(Buffer.concat(chunks)).toEqual(pdf);
+
+    await body.dispose();
+    expect(() => body.openStream()).toThrow(/disposed/u);
+  });
+
   it("holds twenty readers behind the configured backpressure gate", async () => {
     const gate = new UploadBodyGate(3);
     let active = 0;
@@ -28,9 +48,9 @@ describe("upload body parser", () => {
   });
 
   it("rejects declared and streamed overflow with HTTP 413 semantics", async () => {
-    await expect(readBoundedUploadBody(Readable.from([]), 30, 31))
+    await expect(stageBoundedUploadBody(Readable.from([]), 30, 31))
       .rejects.toBeInstanceOf(UploadBodyTooLargeError);
-    await expect(readBoundedUploadBody(Readable.from([Buffer.alloc(20), Buffer.alloc(11)]), 30))
+    await expect(stageBoundedUploadBody(Readable.from([Buffer.alloc(20), Buffer.alloc(11)]), 30))
       .rejects.toMatchObject({ statusCode: 413 });
     expect(parseDeclaredContentLength("30")).toBe(30);
     expect(parseDeclaredContentLength("invalid")).toBeUndefined();
@@ -48,24 +68,29 @@ describe("upload body parser", () => {
       Array.from({ length: 20 }, () => gate.run(async () => {
         active += 1;
         peakActive = Math.max(peakActive, active);
-        const body = await readBoundedUploadBody(
+        const body = await stageBoundedUploadBody(
           Readable.from(thirtyMiBPayload(mebibyte)),
           limit,
           limit,
         );
-        expect(body.byteLength).toBe(limit);
-        peakRss = Math.max(peakRss, process.memoryUsage().rss);
-        active -= 1;
+        try {
+          expect(body.sizeBytes).toBe(limit);
+          expect(body.sha256).toMatch(/^[a-f0-9]{64}$/u);
+          peakRss = Math.max(peakRss, process.memoryUsage().rss);
+        } finally {
+          await body.dispose();
+          active -= 1;
+        }
       })),
     );
     expect(peakActive).toBe(3);
-    expect(peakRss - initialRss).toBeLessThan(384 * mebibyte);
+    expect(peakRss - initialRss).toBeLessThan(160 * mebibyte);
   }, 60_000);
 
   it("rejects an actual 31 MiB stream as HTTP 413", async () => {
     const mebibyte = 1024 * 1024;
     await expect(
-      readBoundedUploadBody(
+      stageBoundedUploadBody(
         Readable.from(thirtyMiBPayload(mebibyte, 31)),
         30 * mebibyte,
       ),

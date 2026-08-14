@@ -79,6 +79,17 @@ if (buildMap.includes("/v1/projects/:projectId/uploads")) {
   );
 }
 
+if (!buildMap.includes("Redis طبقة تشغيلية")) {
+  violations.push(
+    "docs/BUILD_MAP.md must describe Redis as operational infrastructure, not authoritative data storage.",
+  );
+}
+if (buildMap.includes("PostgreSQL وRedis وS3-compatible هي مصادر الحقيقة")) {
+  violations.push(
+    "docs/BUILD_MAP.md must not describe Redis as a source of truth.",
+  );
+}
+
 const registeredSecurityRoutes = securityRouteSources.flatMap((source) =>
   [
     ...source.matchAll(
