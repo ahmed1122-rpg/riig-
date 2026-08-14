@@ -28,8 +28,7 @@ const packageManifest = {
       "playwright test --project=desktop-chromium --project=mobile-chromium",
     "test:e2e:firefox":
       "playwright test --project=desktop-firefox --project=mobile-firefox",
-    "test:e2e:webkit":
-      "playwright test --project=desktop-webkit --project=mobile-webkit",
+    "test:e2e:webkit": "node scripts/run-webkit-e2e.mjs",
     "test:e2e:install": "playwright install --with-deps chromium firefox webkit",
   },
 };
@@ -82,7 +81,7 @@ test("rejects a combined or incomplete engine execution contract", () => {
       },
     }),
     [
-      "test:e2e:webkit must run mobile-webkit.",
+      "test:e2e:webkit must isolate desktop-webkit and mobile-webkit tests through the WebKit runner.",
       "test:e2e must isolate each browser engine through the matrix runner.",
     ],
   );

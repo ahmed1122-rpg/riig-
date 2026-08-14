@@ -47,6 +47,14 @@ export function validateBrowserMatrix(config, packageManifest) {
     }
 
     const engineCommand = packageManifest.scripts?.[`test:e2e:${browserName}`] ?? "";
+    if (browserName === "webkit") {
+      if (engineCommand !== "node scripts/run-webkit-e2e.mjs") {
+        violations.push(
+          "test:e2e:webkit must isolate desktop-webkit and mobile-webkit tests through the WebKit runner.",
+        );
+      }
+      continue;
+    }
     for (const profile of ["desktop", "mobile"]) {
       if (!engineCommand.includes(`--project=${profile}-${browserName}`)) {
         violations.push(
