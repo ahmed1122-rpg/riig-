@@ -6,10 +6,20 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import Tesseract from "tesseract.js";
 import {
+  OCR_SELECTOR_PIPELINES,
+  ocrSegmentationMode,
+  prepareOcrImage,
+} from "@motionprep/document-processing";
+import {
   measureCharacterError,
   normalizeArabic,
   round,
 } from "./ocr-benchmark-utils.mjs";
+import {
+  ocrSelectorOutputFile,
+  ocrSelectorReportScope,
+  parseOcrSelectorOptions,
+} from "./ocr-selector-policy.mjs";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const corpusDirectory = join(
@@ -21,78 +31,30 @@ const corpusDirectory = join(
 const manifest = JSON.parse(
   await readFile(join(corpusDirectory, "manifest.json"), "utf8"),
 );
-const developmentSamples = manifest.samples.filter(
-  (sample) => sample.sourceFile.evaluationSplit !== "holdout",
-);
-const requestedSampleIds = new Set(
-  process.argv
-    .filter((argument) => argument.startsWith("--sample="))
-    .map((argument) => argument.slice("--sample=".length))
-    .filter(Boolean),
+const selectorOptions = parseOcrSelectorOptions(process.argv.slice(2));
+const evaluationSamples = manifest.samples.filter(
+  (sample) =>
+    sample.sourceFile.evaluationSplit === selectorOptions.evaluationSplit,
 );
 const selectedSamples =
-  requestedSampleIds.size === 0
-    ? developmentSamples
-    : developmentSamples.filter((sample) => requestedSampleIds.has(sample.id));
-if (requestedSampleIds.size > 0 && selectedSamples.length !== requestedSampleIds.size) {
-  throw new Error("One or more requested development sample identifiers were not found.");
+  selectorOptions.requestedSampleIds.size === 0
+    ? evaluationSamples
+    : evaluationSamples.filter((sample) =>
+        selectorOptions.requestedSampleIds.has(sample.id),
+      );
+if (
+  selectorOptions.requestedSampleIds.size > 0 &&
+  selectedSamples.length !== selectorOptions.requestedSampleIds.size
+) {
+  throw new Error(
+    `One or more requested ${selectorOptions.evaluationSplit} sample identifiers were not found.`,
+  );
 }
 const require = createRequire(import.meta.url);
 const language = require("@tesseract.js-data/ara");
 const fallbackConfidence = 0.5;
 const fallbackMinimumWords = 20;
-const configurations = [
-  {
-    id: "auto-normalize",
-    mode: Tesseract.PSM.AUTO,
-    preprocessing: "normalize",
-  },
-  {
-    id: "column-normalize",
-    mode: Tesseract.PSM.SINGLE_COLUMN,
-    preprocessing: "normalize",
-  },
-  {
-    id: "block-normalize",
-    mode: Tesseract.PSM.SINGLE_BLOCK,
-    preprocessing: "normalize",
-  },
-  {
-    id: "sparse-normalize",
-    mode: Tesseract.PSM.SPARSE_TEXT,
-    preprocessing: "normalize",
-  },
-  {
-    id: "column-threshold-190",
-    mode: Tesseract.PSM.SINGLE_COLUMN,
-    preprocessing: "threshold-190",
-  },
-  {
-    id: "sparse-threshold-190",
-    mode: Tesseract.PSM.SPARSE_TEXT,
-    preprocessing: "threshold-190",
-  },
-  {
-    id: "sparse-sharpen",
-    mode: Tesseract.PSM.SPARSE_TEXT,
-    preprocessing: "sharpen",
-  },
-  {
-    id: "sparse-median",
-    mode: Tesseract.PSM.SPARSE_TEXT,
-    preprocessing: "median",
-  },
-  {
-    id: "auto-sharpen",
-    mode: Tesseract.PSM.AUTO,
-    preprocessing: "sharpen",
-  },
-  {
-    id: "auto-trim-sharpen",
-    mode: Tesseract.PSM.AUTO,
-    preprocessing: "trim-sharpen",
-  },
-];
+const configurations = OCR_SELECTOR_PIPELINES;
 const worker = await Tesseract.createWorker(
   language.code,
   Tesseract.OEM.LSTM_ONLY,
@@ -130,6 +92,7 @@ try {
     const candidates = [];
     for (const configuration of configurations) {
       if (
+        !selectorOptions.fullGrid &&
         configuration.id !== "auto-normalize" &&
         !shouldRunFallback(candidates[0])
       ) {
@@ -137,11 +100,13 @@ try {
       }
       let image = preparedImages.get(configuration.preprocessing);
       if (!image) {
-        image = await prepareImage(rendered, configuration.preprocessing);
+        image = await prepareOcrImage(rendered, configuration.preprocessing);
         preparedImages.set(configuration.preprocessing, image);
       }
       await worker.setParameters({
-        tessedit_pageseg_mode: configuration.mode,
+        tessedit_pageseg_mode: ocrSegmentationMode(
+          configuration.segmentation,
+        ),
       });
       const candidateStartedAt = performance.now();
       const result = await worker.recognize(
@@ -177,28 +142,27 @@ try {
 }
 
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   corpusId: manifest.corpusId,
-  scope:
-    requestedSampleIds.size === 0
-      ? "development-without-holdout"
-      : "targeted-development-without-holdout",
+  scope: ocrSelectorReportScope(selectorOptions),
+  evaluationSplit: selectorOptions.evaluationSplit,
   generatedAt: new Date().toISOString(),
   trigger: {
+    evaluationMode: selectorOptions.fullGrid
+      ? "full-grid"
+      : "fallback-triggered",
     minimumWords: fallbackMinimumWords,
     minimumAverageConfidence: fallbackConfidence,
   },
-  configurations: configurations.map(({ id, preprocessing }) => ({
+  configurations: configurations.map(({ id, preprocessing, segmentation }) => ({
     id,
     preprocessing,
+    segmentation,
   })),
   samples,
   durationMilliseconds: Math.round(performance.now() - startedAt),
 };
-const outputFile =
-  requestedSampleIds.size === 0
-    ? "selector-evaluation.json"
-    : "selector-evaluation-targeted.json";
+const outputFile = ocrSelectorOutputFile(selectorOptions);
 await writeFile(
   join(corpusDirectory, outputFile),
   `${JSON.stringify(report, null, 2)}\n`,
@@ -207,44 +171,6 @@ await writeFile(
 process.stdout.write(
   `Measured ${samples.reduce((sum, sample) => sum + sample.candidates.length, 0)} OCR candidates across ${samples.length} samples.\n`,
 );
-
-async function prepareImage(source, preprocessing) {
-  if (preprocessing === "trim-sharpen") {
-    return sharp(source)
-      .trim({ background: "#ffffff", threshold: 5 })
-      .extend({
-        top: 36,
-        bottom: 36,
-        left: 36,
-        right: 36,
-        background: "#ffffff",
-      })
-      .grayscale()
-      .normalize()
-      .sharpen({ sigma: 1 })
-      .png()
-      .toBuffer({ resolveWithObject: true });
-  }
-
-  let pipeline = sharp(source).grayscale();
-  switch (preprocessing) {
-    case "normalize":
-      pipeline = pipeline.normalize();
-      break;
-    case "threshold-190":
-      pipeline = pipeline.threshold(190);
-      break;
-    case "sharpen":
-      pipeline = pipeline.normalize().sharpen({ sigma: 1 });
-      break;
-    case "median":
-      pipeline = pipeline.normalize().median(3);
-      break;
-    default:
-      throw new Error(`Unknown preprocessing: ${preprocessing}`);
-  }
-  return pipeline.png().toBuffer({ resolveWithObject: true });
-}
 
 function shouldRunFallback(primary) {
   return (

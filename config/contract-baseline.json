@@ -250,6 +250,7 @@
   "rootScripts": [
     "benchmark:character-rig", "benchmark:ocr", "benchmark:ocr:corpus",
     "benchmark:ocr:development", "benchmark:ocr:holdout:open", "benchmark:ocr:selector",
+    "benchmark:ocr:selector:quick", "benchmark:ocr:selector:validation",
     "build", "clean", "coverage", "deadcode", "dev", "dev:api", "dev:durable", "dev:stack", "dev:stack:character",
     "dev:web", "dev:worker-character", "dev:worker-document", "dev:worker-export",
     "dev:worker-media", "fetch:representative-pdf", "fixture:ocr:corpus:fetch",

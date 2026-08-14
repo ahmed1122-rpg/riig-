@@ -1,18 +1,18 @@
 import { createRequire } from "node:module";
 import type { LayerBounds, OcrPageReview } from "@motionprep/contracts";
-import sharp from "sharp";
 import Tesseract from "tesseract.js";
 import {
   selectOcrFallback,
   type OcrCandidateSummary,
   type OcrFallbackStrategy,
-  type OcrPreprocessing,
-  type OcrSegmentation,
 } from "./ocr-fallback.js";
+import {
+  ocrSegmentationMode,
+  prepareOcrImage,
+  type PreparedOcrImage,
+} from "./ocr-pipeline.js";
 import { evaluateOcrPageReview } from "./ocr-review.js";
 
-const OCR_TRIM_THRESHOLD = 5;
-const OCR_TRIM_PADDING = 36;
 const LATIN_OVERLAY_MINIMUM_CONFIDENCE = 55;
 const LATIN_OVERLAY_MINIMUM_OVERLAP = 0.5;
 const require = createRequire(import.meta.url);
@@ -190,7 +190,7 @@ export class LocalArabicPdfOcrEngine implements PdfOcrEngine {
     if (strategy.latinOverlay) {
       const englishWorker = await this.getEnglishWorker();
       await englishWorker.setParameters({
-        tessedit_pageseg_mode: segmentationMode(strategy.segmentation),
+        tessedit_pageseg_mode: ocrSegmentationMode(strategy.segmentation),
       });
       const english = await recognizeWords(
         englishWorker,
@@ -203,7 +203,7 @@ export class LocalArabicPdfOcrEngine implements PdfOcrEngine {
 
     try {
       await worker.setParameters({
-        tessedit_pageseg_mode: segmentationMode(strategy.segmentation),
+        tessedit_pageseg_mode: ocrSegmentationMode(strategy.segmentation),
       });
       const prepared =
         strategy.preprocessing === "normalize"
@@ -309,73 +309,6 @@ function summarizeOcrWords(
   };
 }
 
-interface PreparedOcrImage {
-  data: Buffer;
-  info: {
-    width: number;
-    height: number;
-    offsetX: number;
-    offsetY: number;
-  };
-}
-
-async function prepareOcrImage(
-  source: Buffer,
-  preprocessing: OcrPreprocessing,
-): Promise<PreparedOcrImage> {
-  if (preprocessing === "trim-sharpen") {
-    const prepared = await sharp(source)
-      .trim({ background: "#ffffff", threshold: OCR_TRIM_THRESHOLD })
-      .extend({
-        top: OCR_TRIM_PADDING,
-        bottom: OCR_TRIM_PADDING,
-        left: OCR_TRIM_PADDING,
-        right: OCR_TRIM_PADDING,
-        background: "#ffffff",
-      })
-      .grayscale()
-      .normalize()
-      .sharpen({ sigma: 1 })
-      .png()
-      .toBuffer({ resolveWithObject: true });
-    return {
-      data: prepared.data,
-      info: {
-        width: prepared.info.width,
-        height: prepared.info.height,
-        offsetX: -(prepared.info.trimOffsetLeft ?? 0) - OCR_TRIM_PADDING,
-        offsetY: -(prepared.info.trimOffsetTop ?? 0) - OCR_TRIM_PADDING,
-      },
-    };
-  }
-
-  let pipeline = sharp(source).grayscale();
-  switch (preprocessing) {
-    case "normalize":
-      pipeline = pipeline.normalize();
-      break;
-    case "threshold-190":
-      pipeline = pipeline.threshold(190);
-      break;
-    case "sharpen":
-      pipeline = pipeline.normalize().sharpen({ sigma: 1 });
-      break;
-    case "median":
-      pipeline = pipeline.normalize().median(3);
-      break;
-  }
-  const prepared = await pipeline.png().toBuffer({ resolveWithObject: true });
-  return {
-    data: prepared.data,
-    info: {
-      width: prepared.info.width,
-      height: prepared.info.height,
-      offsetX: 0,
-      offsetY: 0,
-    },
-  };
-}
-
 function offsetOcrWords(
   words: Tesseract.Word[],
   offsetX: number,
@@ -437,19 +370,6 @@ function boundingBoxOverlap(
   const leftArea = (left.x1 - left.x0) * (left.y1 - left.y0);
   const rightArea = (right.x1 - right.x0) * (right.y1 - right.y0);
   return intersectionArea / Math.max(1, Math.min(leftArea, rightArea));
-}
-
-function segmentationMode(segmentation: OcrSegmentation): Tesseract.PSM {
-  switch (segmentation) {
-    case "auto":
-      return Tesseract.PSM.AUTO;
-    case "single-column":
-      return Tesseract.PSM.SINGLE_COLUMN;
-    case "single-block":
-      return Tesseract.PSM.SINGLE_BLOCK;
-    case "sparse-text":
-      return Tesseract.PSM.SPARSE_TEXT;
-  }
 }
 
 function calculateArabicCharacterRatio(words: Tesseract.Word[]): number {

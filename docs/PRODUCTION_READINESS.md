@@ -221,6 +221,14 @@ their hosted results remain evidence gates rather than assumptions.
 
 Generation 6 was created from two never-before-used public-domain sources, sealed before the final OCR selector change, and opened once after the complete quality and browser gates passed. Subsequent dependency and application changes invalidated its implementation digest. The corpus-content seal is still checked, but generation 6 is historical evidence only and cannot authorize re-enabling regional OCR.
 
+The holdout implementation boundary now includes the production `pdf-ocr`
+engine, review policy, and the shared preprocessing/segmentation pipeline. The
+selector evaluator imports that same pipeline. Its full-grid mode evaluates
+every declared candidate on development data first and emits validation as a
+separate report; it rejects holdout as a selectable split. A change to any
+protected production path invalidates the digest and requires a new sealed
+holdout generation.
+
 - Corpus: 91 pages, 20 public-domain books, 136 documented dimensions.
 - Opened at: `2026-07-31T11:59:59.287Z`.
 - Implementation SHA-256: `5255fe821215181b7bb75144fa1c9a194835a5519db9bd1d4e525a0c138db3a7`.
