@@ -38,6 +38,19 @@ export function validateBrowserMatrix(config, packageManifest) {
         "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
       );
     }
+    if (name.endsWith("-webkit") && (
+      project.use?.video !== "off" ||
+      project.use?.trace !== "on-first-retry"
+    )) {
+      violations.push(
+        `${name} must use low-overhead crash diagnostics on Linux.`,
+      );
+    }
+    if (name === "mobile-webkit" && project.use?.deviceScaleFactor !== 1) {
+      violations.push(
+        "mobile-webkit must use DPR 1 in the Linux qualification gate.",
+      );
+    }
   }
 
   const installCommand = packageManifest.scripts?.["test:e2e:install"] ?? "";

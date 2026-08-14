@@ -9,6 +9,10 @@ if (apiPort === webPort) {
 
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 const webOrigin = `http://127.0.0.1:${webPort}`;
+const webkitDiagnostics = {
+  trace: "on-first-retry" as const,
+  video: "off" as const,
+};
 
 export default defineConfig({
   testDir: "./e2e",
@@ -63,18 +67,22 @@ export default defineConfig({
     },
     {
       name: "desktop-webkit",
+      retries: process.env.CI ? 2 : 0,
       use: {
         ...devices["Desktop Safari"],
+        ...webkitDiagnostics,
         browserName: "webkit",
         viewport: { width: 1_440, height: 900 },
       },
     },
     {
       name: "mobile-webkit",
+      retries: process.env.CI ? 2 : 0,
       use: {
         ...devices["Desktop Safari"],
+        ...webkitDiagnostics,
         browserName: "webkit",
-        deviceScaleFactor: 2,
+        deviceScaleFactor: 1,
         hasTouch: true,
         // Playwright's iOS-only isMobile emulation crashes WebKitGTK on Linux.
         // This profile still qualifies the WebKit engine at a phone viewport.

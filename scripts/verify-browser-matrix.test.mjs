@@ -12,6 +12,10 @@ function validConfig() {
       use: {
         browserName,
         ...(name.startsWith("mobile-") ? { hasTouch: true } : {}),
+        ...(name.endsWith("-webkit")
+          ? { trace: "on-first-retry", video: "off" }
+          : {}),
+        ...(name === "mobile-webkit" ? { deviceScaleFactor: 1 } : {}),
         viewport: {
           width: name.startsWith("mobile-") ? 412 : 1_440,
           height: name.startsWith("mobile-") ? 915 : 900,
@@ -97,5 +101,21 @@ test("rejects unstable iOS emulation in the Linux WebKit profile", () => {
 
   assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
     "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
+  ]);
+});
+
+test("rejects high-overhead WebKit diagnostics and mobile pixel density", () => {
+  const config = validConfig();
+  config.projects = config.projects.map((project) =>
+    project.name === "desktop-webkit"
+      ? { ...project, use: { ...project.use, video: "retain-on-failure" } }
+      : project.name === "mobile-webkit"
+        ? { ...project, use: { ...project.use, deviceScaleFactor: 2 } }
+        : project,
+  );
+
+  assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
+    "desktop-webkit must use low-overhead crash diagnostics on Linux.",
+    "mobile-webkit must use DPR 1 in the Linux qualification gate.",
   ]);
 });

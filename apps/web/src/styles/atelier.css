@@ -9,6 +9,7 @@
   --atelier-cyan: #20d9ee;
   --atelier-mint: #4ce1bd;
   --atelier-indigo: #7167ff;
+  --atelier-indigo-ink: #6257e8;
   --atelier-orchid: #b56cff;
   --atelier-coral: #ff6f83;
   --atelier-apricot: #ffbd74;
@@ -368,7 +369,7 @@ textarea {
 }
 
 .campaign-gallery__heading span {
-  color: var(--atelier-indigo);
+  color: var(--atelier-indigo-ink);
   font-size: 12px;
   font-weight: 800;
 }
@@ -496,7 +497,7 @@ textarea {
 }
 
 .campaign-props figcaption bdi {
-  color: var(--atelier-indigo);
+  color: var(--atelier-indigo-ink);
   font: 700 12px ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 

@@ -22,9 +22,12 @@ Chrome, Edge, and Chrome on Android remain compatibility targets because they
 share the Chromium engine family, but they are not installed as separate release
 projects and an engine run is not branded-browser evidence.
 
-On Linux, every WebKit test runs in its own Playwright process and shard. This
-preserves the complete journey and accessibility coverage while preventing a
-WebKitGTK renderer crash from poisoning the browser process used by later tests.
+On Linux, every WebKit test runs in its own Playwright process and shard. Video
+capture is disabled, traces begin on the first retry, and the phone-sized gate
+uses DPR 1; failure screenshots and retry traces remain available. These limits
+preserve the complete journey and accessibility coverage while reducing
+WebKitGTK renderer pressure and preventing one crash from poisoning later tests.
+Real device pixel density remains part of the Safari/iOS hardware gate below.
 
 ## Branded-browser evidence boundary
 

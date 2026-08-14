@@ -39,7 +39,7 @@ export function Dashboard({
           <h1>جهّز ملفك للتحريك،<br />واترك الترتيب علينا.</h1>
           <p>ملف واحد في كل مرة. فصل ذكي، تسمية واضحة، وتصدير جاهز لبيئة Adobe.</p>
           <div className="hero-actions">
-            <button className="primary-button primary-button--large" type="button" onClick={() => setWizardOpen(true)}>
+            <button className="primary-button primary-button--large" type="button" onClick={(event) => { event.currentTarget.focus(); setWizardOpen(true); }}>
               <Icon name="plus" size={19} /> مشروع جديد
             </button>
             <button className="text-button" type="button" onClick={onNavigateProjects}>
