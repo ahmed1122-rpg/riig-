@@ -10,7 +10,8 @@ Playwright Chromium, Firefox, and WebKit engines in six profiles:
 - desktop Firefox at 1440 × 900;
 - Firefox at a 412 × 915 mobile-sized viewport with touch input;
 - desktop WebKit at 1440 × 900;
-- mobile WebKit using the iPhone 15 device profile.
+- mobile WebKit using the iPhone 15 CSS viewport, touch, and user-agent profile;
+  the Linux release runner bounds raster memory at device scale factor 1.
 
 The release gate covers authentication, upload, PDF page/layer navigation,
 review and export journeys, keyboard/focus behavior, RTL layout, and automated
@@ -31,7 +32,7 @@ manual evidence on the actual browser and operating-system combination.
 Before making a branded Safari/iOS support claim:
 
 1. verify PDF upload, layer-tree interactions, dialogs/focus, downloads, and RTL
-   rendering manually on real Safari/iOS hardware;
+   rendering manually on real Safari/iOS hardware at its native pixel density;
 2. record the browser/OS versions, screenshots, failures, and review cadence in
    release evidence;
 3. assign an owner and regression test to every engine-specific defect.

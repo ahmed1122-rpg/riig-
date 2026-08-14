@@ -11,6 +11,7 @@ function validConfig() {
       name,
       use: {
         browserName,
+        ...(name === "mobile-webkit" ? { deviceScaleFactor: 1 } : {}),
         viewport: {
           width: name.startsWith("mobile-") ? 412 : 1_440,
           height: name.startsWith("mobile-") ? 915 : 900,
@@ -85,4 +86,17 @@ test("rejects a combined or incomplete engine execution contract", () => {
       "test:e2e must isolate each browser engine through the matrix runner.",
     ],
   );
+});
+
+test("rejects an unbounded mobile WebKit raster profile", () => {
+  const config = validConfig();
+  config.projects = config.projects.map((project) =>
+    project.name === "mobile-webkit"
+      ? { ...project, use: { ...project.use, deviceScaleFactor: 3 } }
+      : project,
+  );
+
+  assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
+    "mobile-webkit must bound Linux CI raster memory at device scale factor 1.",
+  ]);
 });

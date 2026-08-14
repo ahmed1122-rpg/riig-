@@ -30,6 +30,11 @@ export function validateBrowserMatrix(config, packageManifest) {
     if (name.startsWith("mobile-") && (!Number.isFinite(width) || width > 430)) {
       violations.push(`${name} must exercise a mobile-sized viewport.`);
     }
+    if (name === "mobile-webkit" && project.use?.deviceScaleFactor !== 1) {
+      violations.push(
+        "mobile-webkit must bound Linux CI raster memory at device scale factor 1.",
+      );
+    }
   }
 
   const installCommand = packageManifest.scripts?.["test:e2e:install"] ?? "";

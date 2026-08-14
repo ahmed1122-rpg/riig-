@@ -74,6 +74,9 @@ export default defineConfig({
       use: {
         ...devices["iPhone 15"],
         browserName: "webkit",
+        // Preserve the iPhone CSS viewport, touch, and user-agent contract while
+        // bounding Linux CI raster memory. Real DPR 3 remains a hardware check.
+        deviceScaleFactor: 1,
       },
     },
   ],
