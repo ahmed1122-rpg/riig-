@@ -32,6 +32,7 @@ export default defineConfig({
       name: "desktop-chromium",
       use: {
         ...devices["Desktop Chrome"],
+        browserName: "chromium",
         viewport: { width: 1_440, height: 900 },
       },
     },
@@ -39,6 +40,40 @@ export default defineConfig({
       name: "mobile-chromium",
       use: {
         ...devices["Pixel 7"],
+        browserName: "chromium",
+      },
+    },
+    {
+      name: "desktop-firefox",
+      use: {
+        ...devices["Desktop Firefox"],
+        browserName: "firefox",
+        viewport: { width: 1_440, height: 900 },
+      },
+    },
+    {
+      name: "mobile-firefox",
+      use: {
+        ...devices["Desktop Firefox"],
+        browserName: "firefox",
+        deviceScaleFactor: 2,
+        hasTouch: true,
+        viewport: { width: 412, height: 915 },
+      },
+    },
+    {
+      name: "desktop-webkit",
+      use: {
+        ...devices["Desktop Safari"],
+        browserName: "webkit",
+        viewport: { width: 1_440, height: 900 },
+      },
+    },
+    {
+      name: "mobile-webkit",
+      use: {
+        ...devices["iPhone 15"],
+        browserName: "webkit",
       },
     },
   ],

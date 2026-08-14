@@ -1,37 +1,40 @@
 # Browser support policy
 
-## Automated release-qualified engine
+## Automated release-qualified engines
 
 MotionPrep qualifies its critical browser journeys against the pinned
-Playwright Chromium engine in two profiles:
+Playwright Chromium, Firefox, and WebKit engines in six profiles:
 
 - desktop Chromium at 1440 × 900;
 - mobile Chromium using the Pixel 7 device profile.
+- desktop Firefox at 1440 × 900;
+- Firefox at a 412 × 915 mobile-sized viewport with touch input;
+- desktop WebKit at 1440 × 900;
+- mobile WebKit using the iPhone 15 device profile.
 
 The release gate covers authentication, upload, PDF page/layer navigation,
 review and export journeys, keyboard/focus behavior, RTL layout, and automated
-accessibility checks. CI installs Chromium explicitly. Current stable Chrome,
-Edge, and Chrome on Android are the compatibility target because they share the
-engine family, but they are not installed as separate release projects and a
-passing Chromium run is not branded-browser evidence.
+accessibility checks. CI installs all three engines explicitly and a repository
+contract fails if any engine or mobile-sized profile is removed. Current stable
+Chrome, Edge, and Chrome on Android remain compatibility targets because they
+share the Chromium engine family, but they are not installed as separate release
+projects and an engine run is not branded-browser evidence.
 
-## Best-effort browsers
+## Branded-browser evidence boundary
 
-Branded Chrome/Edge, current Firefox, Safari, and iOS browsers are best-effort
-where they are not explicitly covered above. The application does not
-intentionally block them, but they are not independently release-qualified until
-equivalent Playwright Firefox/WebKit projects pass the same critical journeys
-in CI and any engine-specific defects have an owner and regression test.
+Playwright Firefox and WebKit qualify the rendering engines and application
+journeys above. They do not independently qualify a specific branded Firefox
+release, macOS Safari, or iOS Safari. The application does not intentionally
+block those browsers, but a production compatibility promise for them requires
+manual evidence on the actual browser and operating-system combination.
 
-Before widening the production support claim:
+Before making a branded Safari/iOS support claim:
 
-1. add pinned Firefox and WebKit projects to `playwright.config.ts`;
-2. install those engines in CI and the release-source gate;
-3. pass the complete critical-journey and Axe matrix on desktop and mobile-sized
-   viewports;
-4. verify PDF upload, layer-tree interactions, dialogs/focus, downloads, and RTL
+1. verify PDF upload, layer-tree interactions, dialogs/focus, downloads, and RTL
    rendering manually on real Safari/iOS hardware;
-5. record the browser/version matrix and review cadence in release evidence.
+2. record the browser/OS versions, screenshots, failures, and review cadence in
+   release evidence;
+3. assign an owner and regression test to every engine-specific defect.
 
 This policy is an evidence boundary, not a user-agent policy. Unsupported means
 that no production compatibility promise is made; it does not authorize silent
