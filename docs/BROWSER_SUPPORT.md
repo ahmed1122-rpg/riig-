@@ -10,8 +10,9 @@ Playwright Chromium, Firefox, and WebKit engines in six profiles:
 - desktop Firefox at 1440 × 900;
 - Firefox at a 412 × 915 mobile-sized viewport with touch input;
 - desktop WebKit at 1440 × 900;
-- mobile WebKit using the iPhone 15 CSS viewport, touch, and user-agent profile;
-  the Linux release runner bounds raster memory at device scale factor 1.
+- WebKit at a 390 × 844 mobile-sized viewport with touch input. The Linux gate
+  deliberately avoids Playwright's iOS-only `isMobile` emulation because that
+  mode crashes the WebKitGTK renderer; real iOS remains a hardware gate below.
 
 The release gate covers authentication, upload, PDF page/layer navigation,
 review and export journeys, keyboard/focus behavior, RTL layout, and automated

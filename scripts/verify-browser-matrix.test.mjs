@@ -11,7 +11,7 @@ function validConfig() {
       name,
       use: {
         browserName,
-        ...(name === "mobile-webkit" ? { deviceScaleFactor: 1 } : {}),
+        ...(name.startsWith("mobile-") ? { hasTouch: true } : {}),
         viewport: {
           width: name.startsWith("mobile-") ? 412 : 1_440,
           height: name.startsWith("mobile-") ? 915 : 900,
@@ -88,15 +88,15 @@ test("rejects a combined or incomplete engine execution contract", () => {
   );
 });
 
-test("rejects an unbounded mobile WebKit raster profile", () => {
+test("rejects unstable iOS emulation in the Linux WebKit profile", () => {
   const config = validConfig();
   config.projects = config.projects.map((project) =>
     project.name === "mobile-webkit"
-      ? { ...project, use: { ...project.use, deviceScaleFactor: 3 } }
+      ? { ...project, use: { ...project.use, isMobile: true } }
       : project,
   );
 
   assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
-    "mobile-webkit must bound Linux CI raster memory at device scale factor 1.",
+    "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
   ]);
 });

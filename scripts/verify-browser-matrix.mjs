@@ -30,9 +30,12 @@ export function validateBrowserMatrix(config, packageManifest) {
     if (name.startsWith("mobile-") && (!Number.isFinite(width) || width > 430)) {
       violations.push(`${name} must exercise a mobile-sized viewport.`);
     }
-    if (name === "mobile-webkit" && project.use?.deviceScaleFactor !== 1) {
+    if (name.startsWith("mobile-") && project.use?.hasTouch !== true) {
+      violations.push(`${name} must exercise touch input.`);
+    }
+    if (name === "mobile-webkit" && project.use?.isMobile === true) {
       violations.push(
-        "mobile-webkit must bound Linux CI raster memory at device scale factor 1.",
+        "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
       );
     }
   }

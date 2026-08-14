@@ -72,11 +72,13 @@ export default defineConfig({
     {
       name: "mobile-webkit",
       use: {
-        ...devices["iPhone 15"],
+        ...devices["Desktop Safari"],
         browserName: "webkit",
-        // Preserve the iPhone CSS viewport, touch, and user-agent contract while
-        // bounding Linux CI raster memory. Real DPR 3 remains a hardware check.
-        deviceScaleFactor: 1,
+        deviceScaleFactor: 2,
+        hasTouch: true,
+        // Playwright's iOS-only isMobile emulation crashes WebKitGTK on Linux.
+        // This profile still qualifies the WebKit engine at a phone viewport.
+        viewport: { width: 390, height: 844 },
       },
     },
   ],
