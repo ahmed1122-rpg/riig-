@@ -525,6 +525,9 @@
 .pdf-layer-count-summary strong { color: var(--text-soft); font-size: var(--ws-text-xs); }
 .pdf-layer-count-summary span { color: var(--text-muted); font-size: var(--ws-text-xs); text-align: end; }
 .pdf-page-tree { min-height: 0; flex: 1; padding: 5px; overflow-y: auto; scrollbar-gutter: stable; }
+.pdf-page-tree__spacer { position: relative; min-width: 0; }
+.pdf-page-tree__item { position: absolute; inset-inline: 0; padding-bottom: 5px; }
+.pdf-page-tree__item > .pdf-page-folder { margin-bottom: 0; }
 .pdf-page-folder { margin-bottom: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); overflow: clip; }
 .pdf-page-folder.is-current { border-color: color-mix(in srgb, var(--primary) 52%, var(--line)); box-shadow: inset -3px 0 var(--primary); }
 .pdf-page-folder__header { position: sticky; z-index: 2; top: 0; display: grid; width: 100%; min-height: 46px; grid-template-columns: 15px 18px minmax(0, 1fr) auto auto auto; align-items: center; gap: 6px; padding: 5px 8px; background: var(--surface); color: var(--text-soft); text-align: start; }
@@ -826,6 +829,7 @@
 .pro-mobile-layer-actions input:not([type="range"]) { padding: 0 9px; }
 .pro-mobile-layer-filters select { padding-inline: 7px 24px; }
 .pro-mobile-layer-list .pdf-page-tree { padding: 0; overflow: visible; }
+.pro-mobile-layer-list .pdf-page-tree.is-virtualized { height: min(42vh, 360px); min-height: 180px; overflow-y: auto; }
 .pro-mobile-layer-list .pdf-page-folder { margin-bottom: 6px; }
 .pro-mobile-layer-list .pdf-page-folder__header { min-height: 48px; grid-template-columns: 15px 18px minmax(0, 1fr) auto auto; }
 .pro-mobile-layer-list .pdf-page-folder__header i,
