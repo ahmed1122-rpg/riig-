@@ -134,6 +134,15 @@ export function verifyWorkflowSecurity(workflows) {
       continue;
     }
     documents.push(document);
+    for (const [jobName, job] of Object.entries(document?.jobs ?? {})) {
+      const container = job?.container;
+      const image = typeof container === "string" ? container : container?.image;
+      if (typeof image === "string" && !/@sha256:[a-f0-9]{64}$/u.test(image)) {
+        violations.push(
+          `Workflow ${index + 1} job ${jobName} container image is not pinned by digest.`,
+        );
+      }
+    }
     for (const usage of workflowUses(document)) {
       if (usage.startsWith("./")) continue;
       const separator = usage.lastIndexOf("@");

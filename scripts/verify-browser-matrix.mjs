@@ -11,6 +11,9 @@ export const requiredBrowserProjects = Object.freeze({
   "mobile-webkit": "webkit",
 });
 
+export const releasePlaywrightImage =
+  "mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e";
+
 export function validateBrowserMatrix(config, packageManifest) {
   const violations = [];
   const projects = new Map(
@@ -30,21 +33,12 @@ export function validateBrowserMatrix(config, packageManifest) {
     if (name.startsWith("mobile-") && (!Number.isFinite(width) || width > 430)) {
       violations.push(`${name} must exercise a mobile-sized viewport.`);
     }
-    if (
-      name.startsWith("mobile-") &&
-      name !== "mobile-webkit" &&
-      project.use?.hasTouch !== true
-    ) {
+    if (name.startsWith("mobile-") && project.use?.hasTouch !== true) {
       violations.push(`${name} must exercise touch input.`);
     }
     if (name === "mobile-webkit" && project.use?.isMobile === true) {
       violations.push(
         "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
-      );
-    }
-    if (name === "mobile-webkit" && project.use?.hasTouch !== false) {
-      violations.push(
-        "mobile-webkit must avoid unstable touch emulation on Linux.",
       );
     }
     if (name.endsWith("-webkit") && (
@@ -93,12 +87,36 @@ export function validateBrowserMatrix(config, packageManifest) {
   return violations;
 }
 
+export function validateBrowserWorkflow(workflowSource) {
+  const violations = [];
+  if (!workflowSource.includes(`image: ${releasePlaywrightImage}`)) {
+    violations.push(
+      "browser-e2e must use the repository-approved Playwright image and digest.",
+    );
+  }
+  if (!workflowSource.includes("options: --user 1001 --init --ipc=host")) {
+    violations.push(
+      "browser-e2e must run the Playwright container with the approved non-root, init, and IPC options.",
+    );
+  }
+  if (workflowSource.includes("npm run test:e2e:install")) {
+    violations.push(
+      "browser-e2e must use the browsers preinstalled in the pinned Playwright image.",
+    );
+  }
+  return violations;
+}
+
 async function main() {
-  const [{ default: config }, packageSource] = await Promise.all([
+  const [{ default: config }, packageSource, workflowSource] = await Promise.all([
     import("../playwright.config.ts"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"),
   ]);
-  const violations = validateBrowserMatrix(config, JSON.parse(packageSource));
+  const violations = [
+    ...validateBrowserMatrix(config, JSON.parse(packageSource)),
+    ...validateBrowserWorkflow(workflowSource),
+  ];
   assert.deepEqual(violations, [], violations.join("\n"));
   process.stdout.write(
     `Browser matrix verified (${Object.keys(requiredBrowserProjects).length} release projects).\n`,

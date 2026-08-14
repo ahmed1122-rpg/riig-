@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  releasePlaywrightImage,
   requiredBrowserProjects,
   validateBrowserMatrix,
+  validateBrowserWorkflow,
 } from "./verify-browser-matrix.mjs";
 
 function validConfig() {
@@ -11,14 +13,12 @@ function validConfig() {
       name,
       use: {
         browserName,
-        ...(name.startsWith("mobile-") && name !== "mobile-webkit"
-          ? { hasTouch: true }
-          : {}),
+        ...(name.startsWith("mobile-") ? { hasTouch: true } : {}),
         ...(name.endsWith("-webkit")
           ? { trace: "on-first-retry", video: "off" }
           : {}),
         ...(name === "mobile-webkit"
-          ? { deviceScaleFactor: 1, hasTouch: false }
+          ? { deviceScaleFactor: 1 }
           : {}),
         viewport: {
           width: name.startsWith("mobile-") ? 412 : 1_440,
@@ -95,17 +95,44 @@ test("rejects a combined or incomplete engine execution contract", () => {
   );
 });
 
-test("rejects unstable mobile emulation in the Linux WebKit profile", () => {
+test("rejects iOS-only mobile emulation in the Linux WebKit profile", () => {
   const config = validConfig();
   config.projects = config.projects.map((project) =>
     project.name === "mobile-webkit"
-      ? { ...project, use: { ...project.use, hasTouch: true, isMobile: true } }
+      ? { ...project, use: { ...project.use, isMobile: true } }
       : project,
   );
 
   assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
     "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
-    "mobile-webkit must avoid unstable touch emulation on Linux.",
+  ]);
+});
+
+test("accepts the pinned release browser container contract", () => {
+  const workflow = [
+    "browser-e2e:",
+    "  container:",
+    `    image: ${releasePlaywrightImage}`,
+    "    options: --user 1001 --init --ipc=host",
+  ].join("\n");
+
+  assert.deepEqual(validateBrowserWorkflow(workflow), []);
+});
+
+test("rejects a mutable or self-installed release browser runtime", () => {
+  const workflow = [
+    "browser-e2e:",
+    "  container:",
+    "    image: mcr.microsoft.com/playwright:v1.62.1-noble",
+    "    options: --user 1001",
+    "  steps:",
+    "    - run: npm run test:e2e:install",
+  ].join("\n");
+
+  assert.deepEqual(validateBrowserWorkflow(workflow), [
+    "browser-e2e must use the repository-approved Playwright image and digest.",
+    "browser-e2e must run the Playwright container with the approved non-root, init, and IPC options.",
+    "browser-e2e must use the browsers preinstalled in the pinned Playwright image.",
   ]);
 });
 

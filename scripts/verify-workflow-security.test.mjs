@@ -75,6 +75,31 @@ test("rejects stale checkout and setup-node action runtimes", () => {
   assert.match(violations.join("\n"), /actions\/setup-node must use/u);
 });
 
+test("requires immutable job container images", () => {
+  const pinnedDigest = "a".repeat(64);
+  const pinnedWorkflow = [
+    ordinaryWorkflow,
+    "  browser:",
+    "    runs-on: ubuntu-latest",
+    `    container: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:${pinnedDigest}`,
+    "    steps:",
+    "      - run: echo ready",
+  ].join("\n");
+  assert.doesNotMatch(
+    verifyWorkflowSecurity([pinnedWorkflow, auditWorkflow]).join("\n"),
+    /container image is not pinned/u,
+  );
+
+  const mutableWorkflow = pinnedWorkflow.replace(
+    `@sha256:${pinnedDigest}`,
+    "",
+  );
+  assert.match(
+    verifyWorkflowSecurity([mutableWorkflow, auditWorkflow]).join("\n"),
+    /job browser container image is not pinned by digest/u,
+  );
+});
+
 test("requires setup-node in every job that invokes the Node or npm CLI", () => {
   const workflow = [
     ordinaryWorkflow,

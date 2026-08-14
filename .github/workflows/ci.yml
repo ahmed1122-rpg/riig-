@@ -215,8 +215,11 @@ jobs:
 
   browser-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     needs: validate
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+      options: --user 1001 --init --ipc=host
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -224,7 +227,10 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npm run test:e2e:install
+      - name: Verify pinned Playwright runtime
+        run: |
+          test -d /ms-playwright
+          npx playwright --version
       - run: npm run test:e2e
       - name: Upload browser failure evidence
         if: failure()

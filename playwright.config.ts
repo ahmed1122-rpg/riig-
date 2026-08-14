@@ -83,9 +83,9 @@ export default defineConfig({
         ...webkitDiagnostics,
         browserName: "webkit",
         deviceScaleFactor: 1,
-        hasTouch: false,
+        hasTouch: true,
         // Playwright's iOS-only isMobile emulation crashes WebKitGTK on Linux.
-        // This profile still qualifies the WebKit engine at a phone viewport.
+        // Touch remains enabled so this profile exercises the phone interaction path.
         viewport: { width: 390, height: 844 },
       },
     },

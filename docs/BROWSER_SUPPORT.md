@@ -10,10 +10,9 @@ Playwright Chromium, Firefox, and WebKit engines in six profiles:
 - desktop Firefox at 1440 × 900;
 - Firefox at a 412 × 915 mobile-sized viewport with touch input;
 - desktop WebKit at 1440 × 900;
-- WebKit at a 390 × 844 mobile-sized viewport. The Linux gate deliberately
-  avoids Playwright's iOS-only `isMobile` and `hasTouch` emulation because file
-  selection can crash the WebKitGTK renderer; real iOS remains a hardware gate
-  below. Touch input stays automated in the Chromium and Firefox phone profiles.
+- WebKit at a 390 × 844 mobile-sized viewport with touch input. The Linux gate
+  deliberately avoids Playwright's iOS-only `isMobile` emulation; real iOS
+  remains a hardware gate below.
 
 The release gate covers authentication, upload, PDF page/layer navigation,
 review and export journeys, keyboard/focus behavior, RTL layout, and automated
@@ -25,10 +24,12 @@ projects and an engine run is not branded-browser evidence.
 
 On Linux, every WebKit test runs in its own Playwright process and shard. Video
 capture is disabled, traces begin on the first retry, and the phone-sized gate
-uses DPR 1 without touch emulation; failure screenshots and retry traces remain
-available. These limits
-preserve the complete journey and accessibility coverage while reducing
-WebKitGTK renderer pressure and preventing one crash from poisoning later tests.
+uses DPR 1 with touch input; failure screenshots and retry traces remain
+available. The CI browser job uses the official Playwright image pinned to the
+package version and an immutable digest, with a non-root user, an init process,
+and host IPC. These limits preserve the complete journey and accessibility
+coverage while reducing WebKitGTK renderer pressure and preventing one crash
+from poisoning later tests.
 Real device pixel density remains part of the Safari/iOS hardware gate below.
 
 ## Branded-browser evidence boundary
