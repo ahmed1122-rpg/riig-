@@ -58,8 +58,9 @@ function makeOptions() {
     onNotify: vi.fn(),
     requestConfirmation: vi.fn().mockResolvedValue(true),
     commandCoordinator: {
-      run: async <T,>(command: (context: { baseRevision: number | undefined }) => Promise<T>) =>
-        command({ baseRevision: undefined }),
+      run: async <T,>(command: (context: { baseRevision: number | undefined; signal: AbortSignal }) => Promise<T>) =>
+        command({ baseRevision: undefined, signal: new AbortController().signal }),
+      cancelPending: vi.fn(),
     },
     adoptSavedReview: vi.fn(),
     resetLayerSelection: vi.fn(),

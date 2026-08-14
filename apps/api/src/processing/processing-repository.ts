@@ -41,6 +41,11 @@ export interface ProcessingJobRepository {
 }
 
 export interface LayerDocumentRepository {
+  /**
+   * True when a successful document write also invalidates the matching
+   * project review inside the same durable transaction.
+   */
+  readonly settlesProjectReviewAtomically?: boolean;
   findBySource(
     projectId: string,
     sourceVersionId: string,
@@ -155,6 +160,7 @@ export class InMemoryProcessingJobRepository
 export class InMemoryLayerDocumentRepository
   implements LayerDocumentRepository
 {
+  readonly settlesProjectReviewAtomically = false;
   readonly #documents = new Map<string, LayerDocument>();
   readonly #revisions = new Map<string, LayerDocument>();
 

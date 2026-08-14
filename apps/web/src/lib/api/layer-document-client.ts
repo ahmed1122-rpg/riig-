@@ -25,11 +25,13 @@ export function updateLayerDocument(
     fullText?: string;
   }>,
   operationId: string = crypto.randomUUID(),
+  signal?: AbortSignal,
 ): Promise<LayerDocumentView> {
   return request<LayerDocumentView>(
     `/v1/projects/${projectId}/layer-document`,
     {
       method: "PATCH",
+      signal,
       headers: { "x-idempotency-key": operationId },
       body: JSON.stringify({
         sourceVersionId,
@@ -46,11 +48,13 @@ export function runLayerDocumentCommand(
   baseRevision: number,
   command: LayerDocumentCommand,
   operationId: string = crypto.randomUUID(),
+  signal?: AbortSignal,
 ): Promise<LayerDocumentView> {
   return request<LayerDocumentView>(
     `/v1/projects/${encodeURIComponent(projectId)}/layer-document/commands`,
     {
       method: "POST",
+      signal,
       headers: { "x-idempotency-key": operationId },
       body: JSON.stringify({ sourceVersionId, baseRevision, command }),
     },
@@ -81,6 +85,7 @@ export function applyGuidedRefinement(
       createdAt: string;
     }>;
   },
+  signal?: AbortSignal,
 ): Promise<{
   document: LayerDocumentView;
   affectedLayerIds: string[];
@@ -89,7 +94,7 @@ export function applyGuidedRefinement(
 }> {
   return request(
     `/v1/projects/${encodeURIComponent(projectId)}/guided-refinements`,
-    { method: "POST", body: JSON.stringify(input) },
+    { method: "POST", signal, body: JSON.stringify(input) },
   );
 }
 
@@ -101,11 +106,13 @@ export function splitPdfTextLayer(
     layerId: string;
     offset: number;
   },
+  signal?: AbortSignal,
 ): Promise<LayerDocumentEditView> {
   return request(
     `/v1/projects/${encodeURIComponent(projectId)}/layer-document/text/split`,
     {
       method: "POST",
+      signal,
       headers: { "x-idempotency-key": crypto.randomUUID() },
       body: JSON.stringify(input),
     },
@@ -120,11 +127,13 @@ export function mergePdfTextLayers(
     layerIds: string[];
     separator: "space" | "newline";
   },
+  signal?: AbortSignal,
 ): Promise<LayerDocumentEditView> {
   return request(
     `/v1/projects/${encodeURIComponent(projectId)}/layer-document/text/merge`,
     {
       method: "POST",
+      signal,
       headers: { "x-idempotency-key": crypto.randomUUID() },
       body: JSON.stringify(input),
     },
@@ -138,10 +147,11 @@ export function navigateLayerDocumentHistory(
     baseRevision: number;
     direction: "undo" | "redo";
   },
+  signal?: AbortSignal,
 ): Promise<LayerDocumentView> {
   return request(
     `/v1/projects/${encodeURIComponent(projectId)}/layer-document/history`,
-    { method: "POST", body: JSON.stringify(input) },
+    { method: "POST", signal, body: JSON.stringify(input) },
   );
 }
 
@@ -154,11 +164,13 @@ export function refineImageLayerEdges(
     radius: 1 | 2 | 3;
     strength: number;
   },
+  signal?: AbortSignal,
 ): Promise<LayerDocumentEditView> {
   return request(
     `/v1/projects/${encodeURIComponent(projectId)}/layer-document/image/refine-edges`,
     {
       method: "POST",
+      signal,
       headers: { "x-idempotency-key": crypto.randomUUID() },
       body: JSON.stringify(input),
     },
@@ -172,11 +184,13 @@ export function mergeImageLayers(
     baseRevision: number;
     layerIds: string[];
   },
+  signal?: AbortSignal,
 ): Promise<LayerDocumentEditView> {
   return request(
     `/v1/projects/${encodeURIComponent(projectId)}/layer-document/image/merge`,
     {
       method: "POST",
+      signal,
       headers: { "x-idempotency-key": crypto.randomUUID() },
       body: JSON.stringify(input),
     },

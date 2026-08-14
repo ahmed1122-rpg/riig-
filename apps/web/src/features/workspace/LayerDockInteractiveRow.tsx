@@ -1,6 +1,13 @@
 import type { Layer } from "../../types";
 import { LayerRow } from "./LayerDockPanels";
 
+export type LayerDropPosition = "before" | "after";
+
+export interface LayerDropTarget {
+  layerId: string;
+  position: LayerDropPosition;
+}
+
 interface LayerDockInteractiveRowProps {
   layer: Layer;
   selected: boolean;
@@ -11,7 +18,7 @@ interface LayerDockInteractiveRowProps {
   renameDraft: string;
   renameError: string;
   draggedLayerId: string | undefined;
-  dragOverLayerId: string | undefined;
+  dragOverTarget: LayerDropTarget | undefined;
   onRenameDraftChange: (value: string) => void;
   onSelect: (event: React.MouseEvent | React.KeyboardEvent) => void;
   onStartRename: () => void;
@@ -21,9 +28,32 @@ interface LayerDockInteractiveRowProps {
   onToggleLock: () => void;
   onMove: (direction: -1 | 1) => void;
   onNavigate: (direction: "previous" | "next" | "first" | "last") => void;
-  onMoveTo: (sourceId: string, targetId: string) => void;
+  onMoveTo: (
+    sourceId: string,
+    targetId: string,
+    position: LayerDropPosition,
+  ) => void;
   onDraggedLayerChange: (id?: string) => void;
-  onDragOverLayerChange: (id?: string) => void;
+  onDragOverTargetChange: (target?: LayerDropTarget) => void;
+}
+
+export function layerDropPosition(
+  pointerY: number,
+  targetTop: number,
+  targetHeight: number,
+): LayerDropPosition {
+  return pointerY < targetTop + targetHeight / 2 ? "before" : "after";
+}
+
+function dropTarget(
+  event: React.DragEvent<HTMLDivElement>,
+  layerId: string,
+): LayerDropTarget {
+  const bounds = event.currentTarget.getBoundingClientRect();
+  return {
+    layerId,
+    position: layerDropPosition(event.clientY, bounds.top, bounds.height),
+  };
 }
 
 export function LayerDockInteractiveRow({
@@ -36,7 +66,7 @@ export function LayerDockInteractiveRow({
   renameDraft,
   renameError,
   draggedLayerId,
-  dragOverLayerId,
+  dragOverTarget,
   onRenameDraftChange,
   onSelect,
   onStartRename,
@@ -48,7 +78,7 @@ export function LayerDockInteractiveRow({
   onNavigate,
   onMoveTo,
   onDraggedLayerChange,
-  onDragOverLayerChange,
+  onDragOverTargetChange,
 }: LayerDockInteractiveRowProps) {
   return (
     <LayerRow
@@ -61,7 +91,11 @@ export function LayerDockInteractiveRow({
       renameError={renameError}
       canReorder={canReorder}
       dragging={draggedLayerId === layer.id}
-      dragOver={dragOverLayerId === layer.id}
+      dragOverPosition={
+        dragOverTarget?.layerId === layer.id
+          ? dragOverTarget.position
+          : undefined
+      }
       onRenameDraftChange={onRenameDraftChange}
       onSelect={onSelect}
       onStartRename={onStartRename}
@@ -80,19 +114,20 @@ export function LayerDockInteractiveRow({
         if (!draggedLayerId || draggedLayerId === layer.id) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
-        onDragOverLayerChange(layer.id);
+        onDragOverTargetChange(dropTarget(event, layer.id));
       }}
       onDrop={(event) => {
         event.preventDefault();
         const sourceId =
           draggedLayerId || event.dataTransfer.getData("text/plain");
-        if (sourceId) onMoveTo(sourceId, layer.id);
+        const target = dropTarget(event, layer.id);
+        if (sourceId) onMoveTo(sourceId, target.layerId, target.position);
         onDraggedLayerChange(undefined);
-        onDragOverLayerChange(undefined);
+        onDragOverTargetChange(undefined);
       }}
       onDragEnd={() => {
         onDraggedLayerChange(undefined);
-        onDragOverLayerChange(undefined);
+        onDragOverTargetChange(undefined);
       }}
     />
   );

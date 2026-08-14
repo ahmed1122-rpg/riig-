@@ -4,6 +4,7 @@ import type {
   StoredObject,
   StoredObjectMetadata,
   StoredObjectStream,
+  StoredObjectWriteStream,
 } from "./object-storage.js";
 
 type ObjectWriterType = "upload" | "export" | "character" | "derived";
@@ -60,28 +61,44 @@ export class LeaseGuardedObjectStorage implements ObjectStorage {
   ) {}
 
   async put(object: StoredObject): Promise<StoredObjectMetadata> {
+    return this.writeWithLease(object.key, () => this.storage.put(object));
+  }
+
+  async putStream(
+    object: StoredObjectWriteStream,
+  ): Promise<StoredObjectMetadata> {
+    return this.writeWithLease(
+      object.key,
+      () => this.storage.putStream(object),
+    );
+  }
+
+  private async writeWithLease(
+    objectKey: string,
+    write: () => Promise<StoredObjectMetadata>,
+  ): Promise<StoredObjectMetadata> {
     let lease: ObjectWriteLease;
     try {
-      lease = await this.acquire(object.key);
+      lease = await this.acquire(objectKey);
     } catch (error) {
-      await this.storage.purge([object.key], []).catch(() => undefined);
+      await this.storage.purge([objectKey], []).catch(() => undefined);
       throw error;
     }
     const heartbeat = this.startHeartbeat(lease);
     let stored: StoredObjectMetadata;
     try {
-      stored = await this.storage.put(object);
+      stored = await write();
     } catch (error) {
       await heartbeat.stop();
-      await this.storage.purge([object.key], []).catch(() => undefined);
+      await this.storage.purge([objectKey], []).catch(() => undefined);
       await this.enterCooldown(lease).catch(() => undefined);
       throw error;
     }
 
     await heartbeat.stop();
     if (heartbeat.lost() || !(await this.enterCooldown(lease))) {
-      await this.storage.purge([object.key], []);
-      throw new ObjectWriteLeaseLostError(object.key);
+      await this.storage.purge([objectKey], []);
+      throw new ObjectWriteLeaseLostError(objectKey);
     }
     return stored;
   }

@@ -13,7 +13,7 @@ export interface LayerRowProps {
   renameError: string;
   canReorder: boolean;
   dragging: boolean;
-  dragOver: boolean;
+  dragOverPosition: "before" | "after" | undefined;
   onRenameDraftChange: (value: string) => void;
   onSelect: (event: React.MouseEvent | React.KeyboardEvent) => void;
   onStartRename: () => void;
@@ -41,7 +41,7 @@ export const LayerRow = memo(function LayerRow({
   renameError,
   canReorder,
   dragging,
-  dragOver,
+  dragOverPosition,
   onRenameDraftChange,
   onSelect,
   onStartRename,
@@ -64,7 +64,7 @@ export const LayerRow = memo(function LayerRow({
 
   return (
     <div
-      className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${layer.kind === "page" ? "is-fixed" : ""} ${dragging ? "is-dragging" : ""} ${dragOver ? "is-drag-over" : ""}`}
+      className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${layer.kind === "page" ? "is-fixed" : ""} ${dragging ? "is-dragging" : ""} ${dragOverPosition ? `is-drag-over-${dragOverPosition}` : ""}`}
       data-layer-id={layer.id}
       role="group"
       aria-label={`${layer.name}، ${selected ? "محددة" : "غير محددة"}`}
@@ -191,7 +191,9 @@ export const LayerRow = memo(function LayerRow({
                 ? "خلفية ثابتة"
                 : layer.kind === "text"
                   ? "نص · قابل للتحريك"
-                  : `${layer.confidence ?? 94}% · جزء صورة`}
+                  : typeof layer.confidence === "number"
+                    ? `${layer.confidence}% · جزء صورة`
+                    : "جزء صورة · الثقة غير متاحة"}
             </span>
           </>
         )}
@@ -262,9 +264,11 @@ export function LayerSkeleton() {
 export function ChecksPanel({
   mode,
   layers,
+  onSelectLayer,
 }: {
   mode: ProjectMode;
   layers: Layer[];
+  onSelectLayer?: (layerId: string) => void;
 }) {
   const summary = getLayerCheckSummary(mode, layers);
   return (
@@ -284,7 +288,19 @@ export function ChecksPanel({
       {summary.diagnostics.length > 0 && (
         <details className="pro-layer-diagnostics">
           <summary>تفاصيل التشخيص <span>{summary.diagnostics.length}</span></summary>
-          <ol>{summary.diagnostics.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ol>
+          <ol>
+            {summary.diagnostics.map((item) => (
+              <li key={item.id}>
+                {item.layerId && onSelectLayer ? (
+                  <button type="button" onClick={() => onSelectLayer(item.layerId!)}>
+                    {item.message}
+                  </button>
+                ) : (
+                  item.message
+                )}
+              </li>
+            ))}
+          </ol>
         </details>
       )}
     </div>

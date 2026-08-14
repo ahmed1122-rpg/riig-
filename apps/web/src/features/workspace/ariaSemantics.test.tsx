@@ -86,6 +86,50 @@ describe("truthful selection semantics", () => {
     expect(conflictFooter).toContain('aria-live="polite"');
   });
 
+  it("warns before an image project reaches the layer limit", () => {
+    const markup = renderToStaticMarkup(
+      <WorkspaceHeader
+        mode="image"
+        persistedSource
+        sourceName="source.png"
+        saveState="saved"
+        imageLayerCount={12}
+        activePdfPage={1}
+        pdfPageCount={1}
+        pdfMode="lines"
+        exportTriggerRef={createRef<HTMLButtonElement>()}
+        onBack={noop}
+        onModeChange={allowModeChange}
+        onExport={noop}
+      />,
+    );
+
+    expect(markup).toContain("layer-counter is-near-limit");
+    expect(markup).toContain("اقترب المشروع من حد طبقات الصورة");
+  });
+
+  it("reports command failures separately from source readiness", () => {
+    const markup = renderToStaticMarkup(
+      <WorkspaceStatusBar
+        saveState="saved"
+        persistedSource
+        sourceVersion={3}
+        processing={false}
+        commandStatus={{
+          phase: "error",
+          label: "ترتيب القراءة",
+          message: "تغيرت مراجعة المستند",
+        }}
+        mode="book"
+        zoom={100}
+      />,
+    );
+
+    expect(markup).toContain("فشل ترتيب القراءة");
+    expect(markup).toContain('class="is-error"');
+    expect(markup).toContain("المصدر v3");
+  });
+
   it("links dock tabs to a panel and exposes interactive layers as named groups", () => {
     const markup = renderToStaticMarkup(
       <LayerDock

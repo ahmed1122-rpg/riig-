@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LayerDocumentView } from "../../lib/api";
 import { stableLayerColor, toWorkspaceLayers } from "./workspaceDocument";
+import { toDomainLayer } from "./workspaceLayerDomain";
 
 describe("toWorkspaceLayers", () => {
   it("retains PDF group kinds and parent ownership", () => {
@@ -44,7 +45,8 @@ describe("toWorkspaceLayers", () => {
       ],
     };
 
-    expect(toWorkspaceLayers(document, "book")).toEqual([
+    const workspaceLayers = toWorkspaceLayers(document, "book");
+    expect(workspaceLayers).toEqual([
       expect.objectContaining({
         id: "page-root",
         kind: "group",
@@ -54,9 +56,17 @@ describe("toWorkspaceLayers", () => {
         id: "text",
         kind: "text",
         parentId: "page-root",
+        fullContent: "Intro",
         textAlign: "end",
       }),
     ]);
+    expect(toDomainLayer(workspaceLayers[1]!)).toEqual(
+      expect.objectContaining({
+        id: "text",
+        fullText: "Intro",
+        parentId: "page-root",
+      }),
+    );
   });
 
   it("derives layer colors from stable IDs instead of list order", () => {
@@ -66,5 +76,55 @@ describe("toWorkspaceLayers", () => {
     expect(stableLayerColor("layer-first")).toBe(first);
     expect(stableLayerColor("layer-second")).toBe(second);
     expect([first, second].every((color) => /^#[0-9a-f]{6}$/u.test(color))).toBe(true);
+  });
+
+  it("exposes raster availability without leaking storage object keys", () => {
+    const document: LayerDocumentView = {
+      schemaVersion: "1.0",
+      projectId: "project",
+      sourceVersionId: "source",
+      revision: 1,
+      generatedAt: "2026-08-14T00:00:00.000Z",
+      width: 100,
+      height: 100,
+      colorSpace: "sRGB",
+      layers: [
+        {
+          id: "with-asset",
+          parentId: null,
+          kind: "raster",
+          name: "+with_asset",
+          visible: true,
+          locked: false,
+          opacity: 1,
+          fixed: false,
+          zIndex: 2,
+          rasterAsset: {
+            objectKey: "private/project/layer.png",
+            contentType: "image/png",
+            sizeBytes: 10,
+            sha256: "a".repeat(64),
+          },
+        },
+        {
+          id: "without-asset",
+          parentId: null,
+          kind: "raster",
+          name: "+without_asset",
+          visible: true,
+          locked: false,
+          opacity: 1,
+          fixed: false,
+          zIndex: 1,
+        },
+      ],
+    };
+
+    const workspaceLayers = toWorkspaceLayers(document, "image");
+    expect(workspaceLayers).toEqual([
+      expect.objectContaining({ id: "with-asset", hasRasterAsset: true }),
+      expect.objectContaining({ id: "without-asset", hasRasterAsset: false }),
+    ]);
+    expect(JSON.stringify(workspaceLayers)).not.toContain("private/project");
   });
 });

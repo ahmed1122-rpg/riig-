@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ExportJob, ProjectKind } from "@motionprep/contracts";
 import { ExportAdapterError } from "@motionprep/export-adapters";
-import { validateProductionDocument } from "@motionprep/presets";
+import { validateProductionDocument } from "@motionprep/layer-domain";
 import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";

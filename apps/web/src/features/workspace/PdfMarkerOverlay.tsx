@@ -43,6 +43,7 @@ export function PdfMarkerOverlay({
   onCreate,
   onSelect,
   onCanvasClick,
+  onCanvasDoubleClick,
 }: {
   regions: PdfRegion[];
   selectedId: string;
@@ -50,6 +51,7 @@ export function PdfMarkerOverlay({
   onCreate: (region: Omit<PdfRegion, "id" | "order">) => void;
   onSelect: (id: string) => void;
   onCanvasClick?: (point: Point) => void;
+  onCanvasDoubleClick?: (point: Point) => void;
 }) {
   const startRef = useRef<Point | null>(null);
   const currentRef = useRef<Point | null>(null);
@@ -121,6 +123,12 @@ export function PdfMarkerOverlay({
       onPointerDown={pointerDown}
       onPointerMove={pointerMove}
       onPointerUp={pointerUp}
+      onDoubleClick={(event) => {
+        if (!onCanvasDoubleClick) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCanvasDoubleClick(normalizedPoint(event));
+      }}
       onPointerCancel={pointerUp}
     >
       {regions.map((region) => (

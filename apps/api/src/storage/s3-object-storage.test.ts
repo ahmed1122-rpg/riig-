@@ -221,6 +221,31 @@ describe("S3ObjectStorage", () => {
     expect(commands[3]).toBeInstanceOf(DeleteObjectCommand);
   });
 
+  it("streams a pre-hashed object without buffering it in the adapter", async () => {
+    const commands: object[] = [];
+    const source = Buffer.from("streamed-motionprep");
+    const storage = storageWith(async (command) => {
+      commands.push(command);
+      if (command instanceof HeadObjectCommand) {
+        return storedHead(source, "application/pdf", "AES256");
+      }
+      return {};
+    });
+
+    await storage.putStream({
+      key: "sources/project/source.pdf",
+      contentType: "application/pdf",
+      sizeBytes: source.byteLength,
+      sha256: createHash("sha256").update(source).digest("hex"),
+      body: Readable.from([source.subarray(0, 5), source.subarray(5)]),
+    });
+
+    expect(commands[0]).toBeInstanceOf(PutObjectCommand);
+    expect((commands[0] as PutObjectCommand).input.Body)
+      .toBeInstanceOf(Readable);
+    expect(commands[1]).toBeInstanceOf(HeadObjectCommand);
+  });
+
   it("permanently purges every version and delete marker under private prefixes", async () => {
     const commands: object[] = [];
     let listed = 0;

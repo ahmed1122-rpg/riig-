@@ -33,6 +33,7 @@ import {
   uploadLimitForSourceType,
 } from "./upload-limits.js";
 import type { UploadCancellationCommand } from "./upload-cancellation.js";
+import type { PreparedUploadContent } from "./upload-content.js";
 
 export class UploadDomainError extends Error {
   constructor(
@@ -104,7 +105,10 @@ export class UploadService {
     );
   }
 
-  async receive(uploadId: string, bytes: Buffer): Promise<UploadSession> {
+  async receive(
+    uploadId: string,
+    content: Buffer | PreparedUploadContent,
+  ): Promise<UploadSession> {
     const session = await this.requireSession(uploadId);
     if (session.status === "ready") return this.reconcileReady(session);
     if (session.status !== "uploading") {
@@ -114,7 +118,15 @@ export class UploadService {
       );
     }
 
-    const inspection = inspectSource(bytes);
+    const inspection = Buffer.isBuffer(content)
+      ? inspectSource(content)
+      : content.detectedContentType
+        ? {
+            contentType: content.detectedContentType,
+            sizeBytes: content.sizeBytes,
+            sha256: content.sha256,
+          }
+        : null;
     if (!inspection) {
       await this.fail(session);
       throw new UploadDomainError(
@@ -146,12 +158,20 @@ export class UploadService {
 
     let objectVerified = false;
     try {
-      const stored = await this.storage.put({
-        key: session.objectKey,
-        contentType: inspection.contentType,
-        sizeBytes: inspection.sizeBytes,
-        body: bytes,
-      });
+      const stored = Buffer.isBuffer(content)
+        ? await this.storage.put({
+            key: session.objectKey,
+            contentType: inspection.contentType,
+            sizeBytes: inspection.sizeBytes,
+            body: content,
+          })
+        : await this.storage.putStream({
+            key: session.objectKey,
+            contentType: inspection.contentType,
+            sizeBytes: inspection.sizeBytes,
+            sha256: inspection.sha256,
+            body: content.openStream(),
+          });
       if (
         stored.key !== session.objectKey ||
         stored.contentType !== inspection.contentType ||

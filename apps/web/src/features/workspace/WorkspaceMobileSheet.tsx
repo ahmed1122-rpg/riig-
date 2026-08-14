@@ -24,6 +24,14 @@ import type {
 import type { WorkspaceMobilePanel } from "./workspaceMobilePanel";
 import { DocumentChangeActivity } from "./DocumentChangeActivity";
 import type { DocumentChangeSummary } from "./documentChangeSummary";
+import { VirtualLayerList } from "./VirtualLayerList";
+
+const mobileBulkActions = [
+  { label: "إظهار", icon: "eye", patch: { visible: true } },
+  { label: "إخفاء", icon: "eyeOff", patch: { visible: false } },
+  { label: "قفل", icon: "lock", patch: { locked: true } },
+  { label: "فتح", icon: "unlock", patch: { locked: false } },
+] as const;
 
 export function WorkspaceMobileSheet({
   activePanel,
@@ -59,28 +67,64 @@ export function WorkspaceMobileSheet({
   layerCheckSummary: ReturnType<typeof getLayerCheckSummary>;
   onClose: () => void;
   onUseTool: (tool: ResolvedWorkspaceTool) => void;
-  onSelectLayer: (layerId: string) => void;
+  onSelectLayer: (layerId: string, nextSelectedIds?: string[]) => void;
   onPdfPageChange: (pageNumber: number) => Promise<boolean>;
   onLayersChange: (layers: Layer[]) => void;
   onLayerCommand: (command: LayerDocumentCommand) => Promise<void>;
   documentChangeLog?: readonly DocumentChangeSummary[];
   onNotify: (message: string) => void;
 }) {
-  const [layerWindowSize, setLayerWindowSize] = useState(64);
   const [search, setSearch] = useState("");
+  const [multiSelect, setMultiSelect] = useState(false);
   const deferredSearch = useDeferredValue(search);
   const [filter, setFilter] = useWorkspacePreference<LayerFilter>(
     "motionprep.mobile-layer-filter",
     "all",
     isLayerFilter,
   );
+  const openDiagnosticLayer = async (layerId: string) => {
+    const layer = layers.find((candidate) => candidate.id === layerId);
+    if (!layer) return;
+    if (
+      mode === "book" &&
+      layer.pageNumber !== undefined &&
+      layer.pageNumber !== activePdfPage &&
+      !(await onPdfPageChange(layer.pageNumber))
+    ) {
+      return;
+    }
+    onSelectLayer(layer.id);
+    onClose();
+  };
   const pageLayers = layersForWorkspacePage(mode, layers, activePdfPage)
     .filter((layer) => matchesLayerFilter(layer, deferredSearch, filter));
-  const visibleLayers = pageLayers.slice(0, layerWindowSize);
   const pageFolders = createPdfPageFolders(layers, pdfPages, (layer) =>
     matchesLayerFilter(layer, deferredSearch, filter));
   const layerCounts = workspaceLayerCounts(mode, layers, activePdfPage, pdfPages);
   const activeLayer = layers.find((layer) => layer.id === activeLayerId);
+  const selectMobileLayer = (layer: Layer) => {
+    if (!multiSelect || layer.kind === "group" || layer.kind === "page") {
+      onSelectLayer(layer.id, [layer.id]);
+      return;
+    }
+    const selected = layers.filter((candidate) =>
+      selectedIds.includes(candidate.id) &&
+      candidate.kind !== "group" &&
+      candidate.kind !== "page" &&
+      (candidate.pageNumber ?? 1) === (layer.pageNumber ?? 1) &&
+      (candidate.parentId ?? null) === (layer.parentId ?? null));
+    const sameScope = selected.length === selectedIds.length;
+    const next = sameScope && selectedIds.includes(layer.id)
+      ? selectedIds.filter((id) => id !== layer.id)
+      : sameScope
+        ? [...selectedIds, layer.id]
+        : [layer.id];
+    const normalizedSelection = next.length > 0 ? [...next] : [layer.id];
+    const nextActiveLayerId = normalizedSelection.includes(layer.id)
+      ? layer.id
+      : normalizedSelection[normalizedSelection.length - 1] ?? layer.id;
+    onSelectLayer(nextActiveLayerId, normalizedSelection);
+  };
   const label = activePanel === "tools" ? "الأدوات" : activePanel === "layers" ? "الطبقات" : "الفحص";
   return (
     <section className="mobile-sheet pro-mobile-sheet" aria-label={label}>
@@ -136,7 +180,33 @@ export function WorkspaceMobileSheet({
                 <option value="low-confidence">ثقة منخفضة</option>
               </select>
             </label>
+            <button
+              type="button"
+              className={multiSelect ? "is-active" : ""}
+              aria-pressed={multiSelect}
+              onClick={() => setMultiSelect((current) => !current)}
+            >
+              <Icon name="layers" size={14} /> تحديد متعدد
+            </button>
           </div>
+          {multiSelect && selectedIds.length > 1 && (
+            <div className="pro-mobile-bulk-toolbar" role="toolbar" aria-label="إجراءات الطبقات المحددة">
+              <strong>{selectedIds.length} طبقات</strong>
+              {mobileBulkActions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={() => void onLayerCommand({
+                    kind: "update-state",
+                    scope: { kind: "layers", layerIds: [...selectedIds] },
+                    ...action.patch,
+                  })}
+                >
+                  <Icon name={action.icon} size={13} /> {action.label}
+                </button>
+              ))}
+            </div>
+          )}
           {mode === "book" ? (
             <PdfPageLayerTree
               folders={pageFolders}
@@ -144,16 +214,21 @@ export function WorkspaceMobileSheet({
               compact
               onPageChange={onPdfPageChange}
               renderLayer={(node) => (
-                <MobileLayerButton key={node.layer.id} layer={node.layer} active={activeLayerId === node.layer.id} onSelect={onSelectLayer} />
+                <MobileLayerButton key={node.layer.id} layer={node.layer} active={activeLayerId === node.layer.id} selected={selectedIds.includes(node.layer.id)} onSelect={selectMobileLayer} />
               )}
             />
-          ) : visibleLayers.map((layer) => (
-            <MobileLayerButton key={layer.id} layer={layer} active={activeLayerId === layer.id} onSelect={onSelectLayer} />
-          ))}
-          {mode === "image" && pageLayers.length > visibleLayers.length && (
-            <button type="button" className="pro-mobile-layer-more" onClick={() => setLayerWindowSize((current) => current + 64)}>
-              عرض 64 طبقة إضافية ({pageLayers.length - visibleLayers.length} متبقية)
-            </button>
+          ) : (
+            <VirtualLayerList
+              items={pageLayers}
+              itemKey={(layer) => layer.id}
+              renderItem={(layer) => (
+                <MobileLayerButton layer={layer} active={activeLayerId === layer.id} selected={selectedIds.includes(layer.id)} onSelect={selectMobileLayer} />
+              )}
+              rowHeight={44}
+              activeKey={activeLayerId}
+              className="pro-mobile-virtual-layer-list"
+              ariaLabel="قائمة الطبقات الافتراضية للهاتف"
+            />
           )}
           {activeLayer && (
             <>
@@ -184,20 +259,39 @@ export function WorkspaceMobileSheet({
               <Icon name={item.icon} size={14} /> <span><b>{item.label}</b> · {item.message}</span>
             </p>
           ))}
+          {layerCheckSummary.diagnostics.length > 0 && (
+            <div className="pro-mobile-check-diagnostics">
+              <strong>تفاصيل قابلة للتنقل</strong>
+              {layerCheckSummary.diagnostics.map((diagnostic) =>
+                diagnostic.layerId ? (
+                  <button
+                    key={diagnostic.id}
+                    type="button"
+                    onClick={() => void openDiagnosticLayer(diagnostic.layerId!)}
+                  >
+                    {diagnostic.message}
+                  </button>
+                ) : (
+                  <p key={diagnostic.id}>{diagnostic.message}</p>
+                ),
+              )}
+            </div>
+          )}
         </div>
       ) : <div className="pro-mobile-checks"><strong>بانتظار المصدر</strong><p>تبدأ الفحوص بعد رفع الملف وتجهيز الطبقات.</p></div>)}
     </section>
   );
 }
 
-function MobileLayerButton({ layer, active, onSelect }: { layer: Layer; active: boolean; onSelect: (layerId: string) => void }) {
+function MobileLayerButton({ layer, active, selected, onSelect }: { layer: Layer; active: boolean; selected: boolean; onSelect: (layer: Layer) => void }) {
   return (
     <button
       type="button"
-      className={active ? "is-active" : ""}
-      aria-label={`${layer.name}، ${active ? "محددة" : "غير محددة"}`}
+      className={`${active ? "is-active" : ""} ${selected ? "is-selected" : ""}`.trim()}
+      aria-pressed={selected}
+      aria-label={`${layer.name}، ${selected ? "محددة" : "غير محددة"}`}
       title={layer.name}
-      onClick={() => onSelect(layer.id)}
+      onClick={() => onSelect(layer)}
     >
       <span style={{ background: layer.color }} /><strong dir="auto">{layer.name}</strong>
       <Icon name={layer.locked ? "lock" : layer.visible ? "eye" : "eyeOff"} size={14} />

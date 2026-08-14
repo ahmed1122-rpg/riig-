@@ -1,5 +1,43 @@
 # Production readiness
 
+Latest working-candidate verification on 2026-08-14 supersedes the local
+counts below. The ordered remediation separates document-command feedback from
+source upload state, adds storage-key-safe Raster diagnostics with layer
+navigation, blocks incompatible cross-page/cross-folder reorder, and adds
+bounded direct PDF text correction through the existing revisioned autosave
+path. The exact tree passed 116 API files/492 tests, 73 web files/251 tests,
+108 package tests across contracts/layer-domain/guidance/document/export,
+every workspace typecheck and production build, coverage thresholds, lint,
+CSS/architecture/contracts/dead-code/maintainability gates, and the isolated
+Chromium E2E matrix 12/12. The measured bundle is 181.3 KiB gzip JavaScript
+under a narrowly revised 182 KiB ratchet and 45.3 KiB CSS under 50 KiB; landing
+startup remains eight requests, a 207.0 KiB hero, and zero blocking font
+requests. `npm audit --omit=dev` reports zero vulnerabilities. Interactive QA
+also completed account creation, a real PDF upload, two page folders, direct
+text correction, and the 375 px mobile layer sheet. Production approval is
+still withheld until managed PostgreSQL/S3 integration, immutable staging,
+recovery/rollback, and representative load evidence exist for the same Git
+SHA. See `artifacts/ordered-remediation-execution-2026-08-14.md`.
+
+Earlier same-day candidate checkpoint on 2026-08-14: the report-guided hardening pass adds
+bounded disk-staged upload streaming, end-to-end command cancellation,
+central numeric layer validation, atomic project-review settlement awareness,
+true virtualization for flat desktop/mobile layer lists, and scoped mobile
+bulk state actions. During browser verification the new virtual list exposed a
+menu stacking defect; the row positioning was corrected and the complete
+isolated Chromium matrix then passed 12/12 on desktop and mobile. The exact
+working tree also passed 116 API files/492 tests, 66 web files/232 tests, every
+package/worker test, typecheck, ESLint, Stylelint, dead-code analysis,
+architecture/contracts/maintainability verification, and every production
+build. At that checkpoint the web bundle was 179.4 KiB gzip JavaScript,
+45.1 KiB gzip CSS, and 63.19 KiB for the largest lazy chunk; a production
+preview smoke also loaded the PDF workspace without a JavaScript error. These
+are local source-candidate results only. No managed PostgreSQL/S3
+run, provider IAM/versioning proof, staging deployment, recovery drill, or
+representative load result has been produced for this exact working tree, so
+production approval remains withheld. See
+`artifacts/report-guided-remediation-2026-08-14.md`.
+
 Working-candidate status on 2026-08-13: the sequenced local remediation and
 Character Rig hardening are complete on the `0.1.8` package line. The
 Turntable/Character Studio surface is deliberately image-only: capabilities
@@ -220,8 +258,8 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
   001-039. Every repetition passed 13 unit race cases and 4 real PostgreSQL
   integration cases. A deployment-contract test prevents the integration file
   from being silently excluded by Vitest again.
-- The current web bundle is 178.1 KiB JavaScript and 44.7 KiB CSS, gzip, within
-  the enforced 180 KiB / 50 KiB total budgets. The measured public landing
+- That historical candidate measured 178.1 KiB JavaScript and 44.7 KiB CSS,
+  gzip, within the then-enforced 180 KiB / 50 KiB total budgets. Its public landing
   route uses eight initial asset requests, a 207.0 KiB LCP image, and no
   blocking web-font request; every JavaScript chunk remains below 64 KiB gzip.
 - Historical: `npm run quality` passed on 2026-08-04 after the account-privacy remediation.

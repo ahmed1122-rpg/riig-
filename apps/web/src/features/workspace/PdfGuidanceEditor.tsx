@@ -29,6 +29,10 @@ import {
   findTopPreviewLayerAtPoint,
   projectPreviewLayers,
 } from "./layerPreviewProjection";
+import {
+  PdfExtractedTextPage,
+  type PdfTextEdit,
+} from "./PdfExtractedTextPage";
 
 interface PdfGuidanceEditorProps extends SharedEditorProps {
   segmentation: PdfSegmentation;
@@ -42,6 +46,7 @@ interface PdfGuidanceEditorProps extends SharedEditorProps {
   selectedLayerId?: string;
   solo?: boolean;
   onSelectedLayerChange?: (id: string) => void;
+  onTextLayerChange?: (id: string, fullContent: string) => void;
   onPageChange?: (pageNumber: number) => void;
   onSegmentationChange: (
     value: PdfSegmentation,
@@ -71,25 +76,6 @@ const markerLabels = createGuidancePromptTools(
   "#8f99a6",
 );
 
-function positionedTextStyle(
-  layer: Layer,
-  pageSize: { width: number; height: number },
-): React.CSSProperties {
-  const bounds = layer.bounds;
-  if (!bounds) return {};
-  return {
-    insetInlineStart: `${(bounds.x / pageSize.width) * 100}%`,
-    top: `${(bounds.y / pageSize.height) * 100}%`,
-    width: `${(bounds.width / pageSize.width) * 100}%`,
-    minHeight: `${(bounds.height / pageSize.height) * 100}%`,
-    textAlign: layer.textAlign ?? "start",
-    fontSize: `${Math.max(
-      6,
-      Math.min(22, ((layer.fontSize ?? 12) / pageSize.width) * 410),
-    )}px`,
-  };
-}
-
 export function PdfGuidanceEditor({
   segmentation,
   layers,
@@ -99,6 +85,7 @@ export function PdfGuidanceEditor({
   selectedLayerId = "",
   solo = false,
   onSelectedLayerChange,
+  onTextLayerChange,
   onPageChange,
   onSegmentationChange,
   segmentationBusy = false,
@@ -134,6 +121,7 @@ export function PdfGuidanceEditor({
   const historyNavigateRef = useRef(onHistoryNavigate);
   historyNavigateRef.current = onHistoryNavigate;
   const [selectedId, setSelectedId] = useState("");
+  const [textEdit, setTextEdit] = useState<PdfTextEdit>();
   const {
     reviewState,
     setReviewState,
@@ -153,7 +141,6 @@ export function PdfGuidanceEditor({
       }).filter((layer) => layer.bounds && layer.fullContent),
     [layers, pageNumber, selectedLayerId, solo],
   );
-  const hasExtractedPage = Boolean(pageSize && extractedTextLayers.length > 0);
   const names = useMemo(
     () => extractedTextLayers.slice(0, 3),
     [extractedTextLayers],
@@ -164,11 +151,32 @@ export function PdfGuidanceEditor({
     )?.name ??
     `+page_${String(pageNumber).padStart(3, "0")}_background`;
   const selectedRegion = regions.find((region) => region.id === selectedId);
+  const beginTextEdit = (layer: Layer) => {
+    onSelectedLayerChange?.(layer.id);
+    if (!onTextLayerChange) return;
+    if (layer.locked || layer.fixed) {
+      onNotify("افتح قفل طبقة النص قبل تحرير محتواها على الصفحة.");
+      return;
+    }
+    setTextEdit({ layerId: layer.id, draft: layer.fullContent ?? "" });
+  };
+  const finishTextEdit = (save: boolean) => {
+    if (!textEdit) return;
+    const normalized = textEdit.draft.trim();
+    if (save && normalized.length > 0) {
+      onTextLayerChange?.(textEdit.layerId, normalized);
+      onNotify("تم تحديث النص وسيُحفظ تلقائيًا كمراجعة قابلة للتراجع.");
+    } else if (save) {
+      onNotify("لا يمكن حفظ طبقة نصية فارغة.");
+    }
+    setTextEdit(undefined);
+  };
 
   useEffect(() => {
     setRegions([]);
     setSelectedId("");
     setKeyboardRegionError("");
+    setTextEdit(undefined);
   }, [segmentation]);
 
   const addRegion = (region: Omit<PdfRegion, "id" | "order">) => {
@@ -264,33 +272,15 @@ export function PdfGuidanceEditor({
         <div className="pdf-artboard pdf-artboard--guided">
           <span className="page-number">{String(pageNumber).padStart(3, "0")}</span>
           <article className="pdf-page">
-            {hasExtractedPage && pageSize ? (
-              <div
-                className="pdf-extracted-page"
-                role="region"
-                aria-label={`النص المستخرج من الصفحة ${pageNumber}`}
-              >
-                {extractedTextLayers.map((layer) => (
-                  <span
-                    key={layer.id}
-                    className={`pdf-extracted-text ${selectedLayerId === layer.id ? "is-selected" : ""}`}
-                    dir={layer.direction ?? "auto"}
-                    style={{
-                      ...positionedTextStyle(layer, pageSize),
-                      opacity: layer.opacity / 100,
-                    }}
-                    title={layer.name}
-                  >
-                    {layer.fullContent}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <div className="preview-unavailable" role="status">
-                <Icon name="warning" size={18} />
-                لا توجد طبقات نص مستخرجة في هذه الصفحة.
-              </div>
-            )}
+            <PdfExtractedTextPage
+              layers={extractedTextLayers}
+              pageNumber={pageNumber}
+              pageSize={pageSize}
+              selectedLayerId={selectedLayerId}
+              textEdit={textEdit}
+              onTextEditChange={setTextEdit}
+              onTextEditFinish={finishTextEdit}
+            />
             <PdfMarkerOverlay
               regions={regions}
               selectedId={selectedId}
@@ -306,6 +296,17 @@ export function PdfGuidanceEditor({
                   { x, y },
                 );
                 if (target) onSelectedLayerChange(target.id);
+              }}
+              onCanvasDoubleClick={(point) => {
+                if (!pageSize) return;
+                const target = findTopPreviewLayerAtPoint(
+                  extractedTextLayers,
+                  {
+                    x: point.x * pageSize.width,
+                    y: point.y * pageSize.height,
+                  },
+                );
+                if (target) beginTextEdit(target);
               }}
             />
           </article>

@@ -2,9 +2,9 @@ import type {
   LayerDocument,
   LayerNode,
 } from "@motionprep/contracts";
-import { createPdfTextLayerName } from "@motionprep/presets";
 import {
   canonicalLayerName,
+  createPdfTextLayerName,
   createUniqueLayerName,
 } from "@motionprep/layer-domain";
 import { ProcessingDomainError } from "./processing-errors.js";

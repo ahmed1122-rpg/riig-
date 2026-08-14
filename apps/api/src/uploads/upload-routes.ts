@@ -24,7 +24,8 @@ import {
 } from "./upload-limits.js";
 import {
   parseDeclaredContentLength,
-  readBoundedUploadBody,
+  stageBoundedUploadBody,
+  StagedUploadBody,
   UploadBodyGate,
 } from "./upload-body-parser.js";
 
@@ -110,13 +111,29 @@ export async function registerUploadRoutes(
     [...acceptedSourceTypes],
     { bodyLimit: maxUploadBytes },
     (request, payload, done) => {
-      void uploadBodyGate.run(() => readBoundedUploadBody(
-        payload,
-        maxUploadBytes,
-        parseDeclaredContentLength(request.headers["content-length"]),
-      )).then((body) => done(null, body), done);
+      void uploadBodyGate.acquire().then(async (release) => {
+        try {
+          const body = await stageBoundedUploadBody(
+            payload,
+            maxUploadBytes,
+            parseDeclaredContentLength(request.headers["content-length"]),
+            release,
+          );
+          done(null, body);
+        } catch (error) {
+          release();
+          done(error as Error);
+        }
+      }, done);
     },
   );
+  const disposeStagedBody = async (request: FastifyRequest) => {
+    if (request.body instanceof StagedUploadBody) {
+      await request.body.dispose();
+    }
+  };
+  app.addHook("onResponse", disposeStagedBody);
+  app.addHook("onRequestAbort", disposeStagedBody);
 
   app.post("/v1/uploads/intents", async (request, reply) => {
     let user;
@@ -236,7 +253,8 @@ export async function registerUploadRoutes(
   app.put("/v1/uploads/:uploadId/content", async (request, reply) => {
     const params = uploadParamsSchema.safeParse(request.params);
     const content = request.body;
-    if (!params.success || !Buffer.isBuffer(content)) {
+    if (!params.success || !(content instanceof StagedUploadBody)) {
+      if (content instanceof StagedUploadBody) await content.dispose();
       return sendApiError(
         reply,
         request.id,
@@ -251,6 +269,8 @@ export async function registerUploadRoutes(
       return { data: session, error: null };
     } catch (error) {
       return domainError(error, request, reply);
+    } finally {
+      await content.dispose();
     }
   });
 

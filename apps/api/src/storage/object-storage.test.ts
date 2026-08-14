@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   createVerifiedObjectStream,
@@ -9,6 +10,28 @@ import {
 } from "./object-storage.js";
 
 describe("ObjectStorage streaming contract", () => {
+  it("verifies streamed writes before publishing them", async () => {
+    const storage = new InMemoryObjectStorage();
+    const body = Buffer.from("streamed-object");
+    await expect(storage.putStream({
+      key: "sources/project/stream.bin",
+      contentType: "application/octet-stream",
+      sizeBytes: body.byteLength,
+      sha256: createHash("sha256").update(body).digest("hex"),
+      body: Readable.from([body.subarray(0, 5), body.subarray(5)]),
+    })).resolves.toMatchObject({ sizeBytes: body.byteLength });
+    await expect(storage.get("sources/project/stream.bin"))
+      .resolves.toMatchObject({ body });
+
+    await expect(storage.putStream({
+      key: "sources/project/corrupt-stream.bin",
+      contentType: "application/octet-stream",
+      sizeBytes: body.byteLength,
+      sha256: "0".repeat(64),
+      body: Readable.from([body]),
+    })).rejects.toBeInstanceOf(ObjectStorageIntegrityError);
+  });
+
   it("rejects a write whose declared size differs from its bytes", async () => {
     const storage = new InMemoryObjectStorage();
 

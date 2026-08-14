@@ -30,6 +30,7 @@ export function validateLayerGraph(document: LayerDocument): ProductionIssue[] {
     } else if (!isValidLayerName(layer.name)) {
       issues.push(issue("INVALID_LAYER_NAME", "Layer names must be normalized and safe.", layer));
     }
+    validateLayerNumbers(layer, issues);
     const scope = layerNameScopeKey(layer);
     const names = namesByScope.get(scope) ?? new Map<string, string>();
     const canonical = canonicalLayerName(layer.name);
@@ -64,6 +65,48 @@ export function validateLayerGraph(document: LayerDocument): ProductionIssue[] {
 
   detectParentCycles(document.layers, byId, issues);
   return issues;
+}
+
+function validateLayerNumbers(
+  layer: LayerNode,
+  issues: ProductionIssue[],
+): void {
+  if (
+    !Number.isFinite(layer.opacity) ||
+    layer.opacity < 0 ||
+    layer.opacity > 1
+  ) {
+    issues.push(issue(
+      "LAYER_OPACITY_INVALID",
+      "Layer opacity must be a finite number between zero and one.",
+      layer,
+    ));
+  }
+  if (
+    !Number.isSafeInteger(layer.zIndex) ||
+    layer.zIndex < 0 ||
+    layer.zIndex > 1_000_000
+  ) {
+    issues.push(issue(
+      "LAYER_Z_INDEX_INVALID",
+      "Layer z-index must be a non-negative safe integer no greater than 1,000,000.",
+      layer,
+    ));
+  }
+  if (
+    layer.readingOrder !== undefined &&
+    (
+      !Number.isSafeInteger(layer.readingOrder) ||
+      layer.readingOrder < 0 ||
+      layer.readingOrder > 1_000_000
+    )
+  ) {
+    issues.push(issue(
+      "LAYER_READING_ORDER_INVALID",
+      "Layer reading order must be a non-negative safe integer no greater than 1,000,000.",
+      layer,
+    ));
+  }
 }
 
 function detectParentCycles(

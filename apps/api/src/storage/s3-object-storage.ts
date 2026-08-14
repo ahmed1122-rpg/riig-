@@ -28,6 +28,7 @@ import {
   type StoredObject,
   type StoredObjectMetadata,
   type StoredObjectStream,
+  type StoredObjectWriteStream,
 } from "./object-storage.js";
 
 export { ObjectStorageIntegrityError } from "./object-storage.js";
@@ -118,6 +119,28 @@ export class S3ObjectStorage implements ObjectStorage {
   async put(object: StoredObject): Promise<StoredObjectMetadata> {
     assertWritableSize(object);
     const sha256 = createHash("sha256").update(object.body).digest("hex");
+    return this.#putVerified({ ...object, sha256 });
+  }
+
+  async putStream(
+    object: StoredObjectWriteStream,
+  ): Promise<StoredObjectMetadata> {
+    if (
+      !Number.isSafeInteger(object.sizeBytes) ||
+      object.sizeBytes < 0 ||
+      !/^[a-f0-9]{64}$/u.test(object.sha256)
+    ) {
+      throw new ObjectStorageIntegrityError(object.key);
+    }
+    return this.#putVerified(object);
+  }
+
+  async #putVerified(
+    object: StoredObject | StoredObjectWriteStream,
+  ): Promise<StoredObjectMetadata> {
+    const sha256 = "sha256" in object
+      ? object.sha256
+      : createHash("sha256").update(object.body).digest("hex");
     await this.#client.send(
       new PutObjectCommand({
         Bucket: this.options.bucket,

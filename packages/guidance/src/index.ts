@@ -9,10 +9,10 @@ import {
   type PdfMarkerKind,
   type PdfMarkerRegion,
 } from "@motionprep/contracts";
-import { isPdfPageRootGroup } from "@motionprep/presets";
 import {
   canonicalLayerName,
   createUniqueLayerName,
+  isPdfPageRootGroup,
   layerNameScopeKey,
 } from "@motionprep/layer-domain";
 

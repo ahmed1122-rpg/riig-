@@ -64,8 +64,9 @@ describe("useWorkspaceUpload", () => {
     const setSourceName = vi.fn();
     const commandCoordinator = {
       run: async <T,>(
-        command: (context: { baseRevision: number | undefined }) => Promise<T>,
-      ) => command({ baseRevision: 3 }),
+        command: (context: { baseRevision: number | undefined; signal: AbortSignal }) => Promise<T>,
+      ) => command({ baseRevision: 3, signal: new AbortController().signal }),
+      cancelPending: vi.fn(),
     } satisfies DocumentCommandCoordinator;
     const coordinatorRun = vi.spyOn(commandCoordinator, "run");
     const options = {

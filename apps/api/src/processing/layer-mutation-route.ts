@@ -15,6 +15,7 @@ interface OwnedLayerMutationOptions<TResult> {
   auth: AuthService;
   projectId: string;
   sourceVersionId: string;
+  projectReviewSettledAtomically: boolean;
   mutate: (context: {
     project: ProjectSummary;
     userId: string;
@@ -32,6 +33,7 @@ export async function runOwnedLayerMutation<TResult>(
     auth,
     projectId,
     sourceVersionId,
+    projectReviewSettledAtomically,
     mutate,
   } = options;
   try {
@@ -49,13 +51,18 @@ export async function runOwnedLayerMutation<TResult>(
       userId: user.id,
       operationId: requestIdempotencyKey(request),
     });
-    await projects.updateStatusForSource(
-      project.id,
-      sourceVersionId,
-      "needs_review",
-      null,
-    );
-    await projects.invalidateReview(project.id, sourceVersionId);
+    if (!projectReviewSettledAtomically) {
+      const invalidated = await projects.invalidateReview(
+        project.id,
+        sourceVersionId,
+      );
+      if (!invalidated) {
+        throw new ProcessingDomainError(
+          "SOURCE_NOT_CURRENT",
+          "The source changed before the project review could be invalidated.",
+        );
+      }
+    }
     return reply.status(200).send({ data: result, error: null });
   } catch (error) {
     return sendProcessingError(error, request, reply);

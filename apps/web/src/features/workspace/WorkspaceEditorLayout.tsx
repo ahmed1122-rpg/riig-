@@ -367,6 +367,13 @@ export function WorkspaceEditorLayout({
               selectedLayerId={props.activeLayerId}
               solo={props.solo}
               onSelectedLayerChange={props.onSelectLayer}
+              onTextLayerChange={(layerId, fullContent) =>
+                props.onLayersChange(
+                  props.layers.map((layer) =>
+                    layer.id === layerId ? { ...layer, fullContent } : layer,
+                  ),
+                )
+              }
               {...(props.pdfPageSize ? { pageSize: props.pdfPageSize } : {})}
               onPageChange={(nextPage) => {
                 void actions.onPdfPageChange(nextPage);

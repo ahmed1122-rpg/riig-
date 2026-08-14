@@ -33,11 +33,13 @@ export function restoreSourceVersion(
     reason: string;
     idempotencyKey?: string;
   },
+  signal?: AbortSignal,
 ): Promise<SourceVersionRestoreResult> {
   return request<SourceVersionRestoreResult>(
     `/v1/projects/${encodeURIComponent(projectId)}/source-versions/${encodeURIComponent(versionId)}/restore`,
     {
       method: "POST",
+      signal,
       headers: {
         "x-idempotency-key":
           input.idempotencyKey ?? crypto.randomUUID(),

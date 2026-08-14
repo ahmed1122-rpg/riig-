@@ -3,7 +3,7 @@ import type {
   ProjectReviewApproval,
   ProjectReviewApprovalResult,
 } from "@motionprep/contracts";
-import { validateProductionDocument } from "@motionprep/presets";
+import { validateProductionDocument } from "@motionprep/layer-domain";
 import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import { InMemoryProjectOperationLock } from "./in-memory-project-operation-lock.js";
 import type { ProjectRepository } from "./project-repository.js";

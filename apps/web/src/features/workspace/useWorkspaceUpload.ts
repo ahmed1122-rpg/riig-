@@ -160,7 +160,10 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
       uploadSequenceRef.current === operationId &&
       uploadAbortRef.current === controller;
     try {
-      await options.commandCoordinator.run(async () => {
+      await options.commandCoordinator.run(async ({ signal }) => {
+        const abortFromCoordinator = () => controller.abort();
+        signal.addEventListener("abort", abortFromCoordinator, { once: true });
+        try {
         options.setUploadState("uploading");
         const result = await createAndUploadSource(
           file,
@@ -223,6 +226,9 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
         options.setUploadDetailsOpen(false);
         options.onNotify(uploadSuccessMessage(options.mode, result));
         previousSourceNameRef.current = undefined;
+        } finally {
+          signal.removeEventListener("abort", abortFromCoordinator);
+        }
       }, {
         flush: options.persistedSource,
         allowIdentityChange: true,
@@ -250,6 +256,7 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
 
   const cancelUpload = () => {
     uploadSequenceRef.current += 1;
+    options.commandCoordinator.cancelPending();
     uploadAbortRef.current?.abort();
     uploadAbortRef.current = null;
     if (previousSourceNameRef.current !== undefined) {
