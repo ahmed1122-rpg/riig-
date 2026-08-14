@@ -95,7 +95,8 @@ npm run build
 npm run quality
 ```
 
-تشغّل اختبارات المتصفح المسار الكامل على سطح المكتب وهاتف Pixel 7:
+تشغّل اختبارات المتصفح المسار الكامل على Chromium وFirefox وWebKit عبر سطح
+المكتب وعروض الهاتف:
 
 ```bash
 npm run test:e2e:install
