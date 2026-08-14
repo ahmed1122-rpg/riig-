@@ -22,6 +22,13 @@ function validConfig() {
 
 const packageManifest = {
   scripts: {
+    "test:e2e": "node scripts/run-browser-matrix.mjs",
+    "test:e2e:chromium":
+      "playwright test --project=desktop-chromium --project=mobile-chromium",
+    "test:e2e:firefox":
+      "playwright test --project=desktop-firefox --project=mobile-firefox",
+    "test:e2e:webkit":
+      "playwright test --project=desktop-webkit --project=mobile-webkit",
     "test:e2e:install": "playwright install --with-deps chromium firefox webkit",
   },
 };
@@ -52,11 +59,30 @@ test("rejects missing, implicit, and non-mobile browser projects", () => {
 test("rejects an incomplete Playwright browser installation", () => {
   assert.deepEqual(
     validateBrowserMatrix(validConfig(), {
-      scripts: { "test:e2e:install": "playwright install chromium" },
+      scripts: {
+        ...packageManifest.scripts,
+        "test:e2e:install": "playwright install chromium",
+      },
     }),
     [
       "test:e2e:install must install firefox.",
       "test:e2e:install must install webkit.",
+    ],
+  );
+});
+
+test("rejects a combined or incomplete engine execution contract", () => {
+  assert.deepEqual(
+    validateBrowserMatrix(validConfig(), {
+      scripts: {
+        ...packageManifest.scripts,
+        "test:e2e": "playwright test",
+        "test:e2e:webkit": "playwright test --project=desktop-webkit",
+      },
+    }),
+    [
+      "test:e2e:webkit must run mobile-webkit.",
+      "test:e2e must isolate each browser engine through the matrix runner.",
     ],
   );
 });

@@ -37,6 +37,19 @@ export function validateBrowserMatrix(config, packageManifest) {
     if (!new RegExp(`(?:^|\\s)${browserName}(?:\\s|$)`, "u").test(installCommand)) {
       violations.push(`test:e2e:install must install ${browserName}.`);
     }
+
+    const engineCommand = packageManifest.scripts?.[`test:e2e:${browserName}`] ?? "";
+    for (const profile of ["desktop", "mobile"]) {
+      if (!engineCommand.includes(`--project=${profile}-${browserName}`)) {
+        violations.push(
+          `test:e2e:${browserName} must run ${profile}-${browserName}.`,
+        );
+      }
+    }
+  }
+
+  if (packageManifest.scripts?.["test:e2e"] !== "node scripts/run-browser-matrix.mjs") {
+    violations.push("test:e2e must isolate each browser engine through the matrix runner.");
   }
 
   return violations;
