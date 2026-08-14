@@ -154,7 +154,7 @@
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
 }
 
-:root[data-theme="light"] .app-shell--workspace .pro-workspace-header :where(.workspace-title strong, .workspace-meta, .layer-counter) {
+:root[data-theme="light"] .app-shell--workspace .pro-workspace-header :where(.workspace-title h1, .workspace-meta, .layer-counter) {
   color: var(--workspace-ink);
 }
 
@@ -187,7 +187,6 @@
   .pro-upload-pill,
   .pro-upload-pill b,
   .pro-preview-control button,
-  .pro-quality-switch button,
   .pro-focus-button,
   .pro-zoom-control output,
   .pro-status-bar,

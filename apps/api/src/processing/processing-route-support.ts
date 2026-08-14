@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { MAX_LAYER_TEXT_CHARACTERS } from "@motionprep/contracts";
 import { z } from "zod";
 import { UsageLimitError } from "../billing/usage-meter.js";
 import { sendApiError } from "../http/api-response.js";
@@ -43,11 +44,81 @@ const layerStateUpdateSchema = z.object({
   opacity: z.number().finite().min(0).max(1),
   zIndex: z.number().int().nonnegative().max(1_000_000),
   readingOrder: z.number().int().nonnegative().max(1_000_000).optional(),
+  bounds: z
+    .object({
+      x: z.number().finite().nonnegative().max(1_000_000),
+      y: z.number().finite().nonnegative().max(1_000_000),
+      width: z.number().finite().positive().max(1_000_000),
+      height: z.number().finite().positive().max(1_000_000),
+    })
+    .optional(),
+  direction: z.enum(["ltr", "rtl"]).optional(),
+  textAlign: z.enum(["start", "center", "end", "justify"]).optional(),
+  fontFamily: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .refine((value) => !/[\u0000-\u001F\u007F]/u.test(value))
+    .optional(),
+  fontSize: z.number().finite().min(1).max(500).optional(),
+  fullText: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_LAYER_TEXT_CHARACTERS)
+    .refine((value) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value))
+    .optional(),
 });
 export const updateDocumentSchema = z.object({
   sourceVersionId: z.string().uuid(),
   baseRevision: z.number().int().positive(),
   layers: z.array(layerStateUpdateSchema).min(1).max(1_000),
+});
+const layerCommandScopeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("document") }),
+  z.object({
+    kind: z.literal("page"),
+    pageNumber: z.number().int().positive().max(250),
+  }),
+  z.object({
+    kind: z.literal("parent"),
+    parentId: z.string().min(1).max(128).nullable(),
+  }),
+  z.object({
+    kind: z.literal("layers"),
+    layerIds: z.array(z.string().min(1).max(128)).min(1).max(5_000),
+  }),
+]);
+const layerDocumentCommandSchema = z.union([
+  z.object({
+    kind: z.literal("normalize-names"),
+    scope: layerCommandScopeSchema,
+  }),
+  z.object({
+    kind: z.literal("arrange-reading-order"),
+    scope: layerCommandScopeSchema,
+    order: z.enum(["reading", "reverse"]),
+  }),
+  z
+    .object({
+      kind: z.literal("update-state"),
+      scope: layerCommandScopeSchema,
+      visible: z.boolean().optional(),
+      locked: z.boolean().optional(),
+    })
+    .refine((value) => value.visible !== undefined || value.locked !== undefined),
+  z.object({
+    kind: z.literal("move-layer"),
+    layerId: z.string().min(1).max(128),
+    targetLayerId: z.string().min(1).max(128),
+    position: z.enum(["before", "after"]),
+  }),
+]);
+export const layerCommandRequestSchema = z.object({
+  sourceVersionId: z.string().uuid(),
+  baseRevision: z.number().int().positive(),
+  command: layerDocumentCommandSchema,
 });
 const normalizedPointSchema = z.object({
   x: z.number().finite().min(0).max(1),
@@ -61,15 +132,28 @@ const imageStrokeSchema = z.object({
   points: z.array(normalizedPointSchema).min(2).max(1_000),
   createdAt: z.string().datetime(),
 });
-const pdfRegionSchema = z.object({
-  id: z.string().min(1).max(128),
-  pageNumber: z.number().int().positive().max(250),
-  kind: z.enum(["heading", "line", "topic", "ignore"]),
-  start: normalizedPointSchema,
-  end: normalizedPointSchema,
-  readingOrder: z.number().int().nonnegative().nullable(),
-  createdAt: z.string().datetime(),
-});
+const pdfRegionSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    pageNumber: z.number().int().positive().max(250),
+    kind: z.enum(["heading", "line", "topic", "ignore"]),
+    start: normalizedPointSchema,
+    end: normalizedPointSchema,
+    readingOrder: z.number().int().nonnegative().nullable(),
+    createdAt: z.string().datetime(),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.end.x - value.start.x < 0.005 ||
+      value.end.y - value.start.y < 0.005
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["end"],
+        message: "The PDF marker region must have a visible positive area.",
+      });
+    }
+  });
 export const guidedRefinementSchema = z
   .object({
     sourceVersionId: z.string().uuid(),

@@ -451,28 +451,62 @@ describe("API — المعالجة ووثائق الطبقات", () => {
     expect(document.json().data.pages).toEqual([
       { pageNumber: 1, width: 400, height: 300 },
     ]);
-    expect(document.json().data.layers[0]).toMatchObject({
-      name: "+page_001_background",
-      fillColor: "#ffffff",
+    const pdfLayers = document.json().data.layers as Array<{
+      id: string;
+      parentId: string | null;
+      kind: "group" | "raster" | "text";
+      name: string;
+      pageNumber?: number;
+      readingOrder?: number;
+      fullText?: string;
+      bounds: { x: number; y: number; width: number; height: number };
+      [key: string]: unknown;
+    }>;
+    const pageGroup = pdfLayers[0];
+    const background = pdfLayers[1];
+
+    expect(pageGroup).toMatchObject({
+      kind: "group",
+      name: "+page_001",
+      parentId: null,
+      pageNumber: 1,
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      visible: true,
+      opacity: 1,
       locked: true,
       fixed: true,
+      zIndex: 0,
     });
+    expect(pageGroup?.id).toEqual(expect.any(String));
+    expect(background).toMatchObject({
+      kind: "raster",
+      name: "+page_001_background",
+      parentId: pageGroup?.id,
+      pageNumber: 1,
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      fillColor: "#ffffff",
+      visible: true,
+      opacity: 1,
+      locked: true,
+      fixed: true,
+      zIndex: 0,
+    });
+    const textLayers = pdfLayers.filter((layer) => layer.kind === "text");
+    expect(textLayers.map((layer) => layer.fullText)).toEqual([
+      "First",
+      "motion",
+      "line",
+    ]);
+    expect(textLayers.map((layer) => layer.readingOrder)).toEqual([0, 1, 2]);
     expect(
-      document
-        .json()
-        .data.layers.filter(
-          (layer: { kind: string }) => layer.kind === "text",
-        )
-        .map((layer: { fullText: string }) => layer.fullText),
-    ).toEqual(["First", "motion", "line"]);
+      textLayers.every(
+        (layer) =>
+          layer.parentId === pageGroup?.id && layer.pageNumber === 1,
+      ),
+    ).toBe(true);
 
-    const firstTextLayer = document
-      .json()
-      .data.layers.find(
-        (layer: { kind: string }) => layer.kind === "text",
-      ) as {
-      bounds: { x: number; y: number; width: number; height: number };
-    };
+    const firstTextLayer = textLayers[0];
+    if (!firstTextLayer) throw new Error("Expected a PDF text layer.");
     const pdfGuidance = await app.inject({
       method: "POST",
       url: `/v1/projects/${projectId}/guided-refinements`,
@@ -588,9 +622,25 @@ describe("API — المعالجة ووثائق الطبقات", () => {
       Buffer.from(archive["pages/page_001_background.png"]!).subarray(1, 4).toString(),
     ).toBe("PNG");
     expect(manifest.layers[0]).toMatchObject({
+      id: pageGroup?.id,
+      kind: "group",
+      name: "+page_001",
+      parentId: null,
+      pageNumber: 1,
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
+      locked: true,
+      fixed: true,
+    });
+    expect(manifest.layers[1]).toMatchObject({
+      kind: "raster",
       name: "+page_001_background",
+      parentId: pageGroup?.id,
+      pageNumber: 1,
+      bounds: { x: 0, y: 0, width: 400, height: 300 },
       file: "pages/page_001_background.png",
       fillColor: "#ffffff",
+      locked: true,
+      fixed: true,
     });
 
     const psdExport = await app.inject({

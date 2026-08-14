@@ -558,6 +558,16 @@ describe("API — الفوترة والإدارة", () => {
       layers: [],
     };
     await layerDocuments.save(document);
+    await projects.updateStatus(project.id, "needs_review");
+    await projects.applyReviewApproval({
+      id: crypto.randomUUID(),
+      projectId: project.id,
+      sourceVersionId,
+      documentRevision: 1,
+      actorUserId: admin.id,
+      operationId: "admin-export-retry-approval",
+      approvedAt: "2026-08-01T00:00:00.000Z",
+    });
     await exports.save({
       id: jobId,
       projectId: project.id,
@@ -620,6 +630,32 @@ describe("API — الفوترة والإدارة", () => {
       lease: null,
     });
     expect(listed.json().data[0]).not.toHaveProperty("traceContext");
+
+    await projects.invalidateReview(project.id, sourceVersionId);
+    const rejectedWithoutApproval = await app.inject({
+      method: "POST",
+      url: `/v1/admin/exports/${jobId}/retry`,
+      headers: { cookie },
+      payload: {
+        reason: "The old approval was invalidated before this retry",
+      },
+    });
+    expect(rejectedWithoutApproval.statusCode).toBe(409);
+    expect(rejectedWithoutApproval.json().error.code).toBe(
+      "EXPORT_JOB_NOT_RETRYABLE",
+    );
+    await expect(exports.findById(jobId)).resolves.toMatchObject({
+      status: "failed",
+    });
+    await projects.applyReviewApproval({
+      id: crypto.randomUUID(),
+      projectId: project.id,
+      sourceVersionId,
+      documentRevision: 1,
+      actorUserId: admin.id,
+      operationId: "admin-export-retry-reapproval",
+      approvedAt: "2026-08-01T00:01:00.000Z",
+    });
 
     const retried = await app.inject({
       method: "POST",

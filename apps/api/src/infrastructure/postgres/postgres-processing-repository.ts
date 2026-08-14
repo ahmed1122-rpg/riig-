@@ -16,6 +16,11 @@ import {
   mapProcessingRow,
   type ProcessingRow,
 } from "./processing-row.js";
+import {
+  insertProcessingJob,
+  upsertProcessingJob,
+} from "./postgres-processing-job-write.js";
+import { availableProjectWorkFenceSql } from "./postgres-project-work-fence.js";
 
 interface DocumentRow {
   document: LayerDocument;
@@ -100,63 +105,72 @@ export class PostgresProcessingJobRepository
     return result.rows[0] ? mapProcessingRow(result.rows[0]) : null;
   }
 
+  async enqueue(
+    job: ProcessingJob,
+    _activateProject?: () => Promise<boolean>,
+  ): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const activated = await client.query(
+        `UPDATE projects AS project
+         SET status = 'processing',
+             current_review_approval_id = NULL,
+             active_job_type = 'processing',
+             active_job_id = $3,
+             updated_at = now()
+         WHERE project.id = $1
+            AND project.current_source_version_id = $2
+            ${availableProjectWorkFenceSql("project", "now()")}
+           AND EXISTS (
+             SELECT 1
+             FROM upload_sessions AS upload
+             WHERE upload.project_id = project.id
+               AND upload.source_version_id = $2
+               AND upload.status = 'ready'
+           )
+           AND EXISTS (
+             SELECT 1
+             FROM users AS owner
+             WHERE owner.id = project.owner_user_id
+               AND owner.deletion_requested_at IS NULL
+               AND owner.deleted_at IS NULL
+           )`,
+        [job.projectId, job.sourceVersionId, job.id],
+      );
+      if (activated.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      const inserted = await insertProcessingJob(client, job);
+      if (!inserted) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      await client.query("COMMIT");
+      return true;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async save(job: ProcessingJob): Promise<void> {
-    await this.pool.query(
-      `
-        INSERT INTO processing_jobs (
-          id, project_id, source_version_id, project_kind, options, status,
-          progress, attempt, max_attempts, next_attempt_at, lease_owner,
-          lease_expires_at, error_code, correlation_id, trace_parent,
-          trace_state, created_at, updated_at
-        )
-        VALUES (
-          $1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13,
-          $14, $15, $16, $17, $18
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          options = EXCLUDED.options,
-          status = EXCLUDED.status,
-          progress = EXCLUDED.progress,
-          attempt = EXCLUDED.attempt,
-          max_attempts = EXCLUDED.max_attempts,
-          next_attempt_at = EXCLUDED.next_attempt_at,
-          lease_owner = EXCLUDED.lease_owner,
-          lease_expires_at = EXCLUDED.lease_expires_at,
-          error_code = EXCLUDED.error_code,
-          correlation_id = COALESCE(EXCLUDED.correlation_id, processing_jobs.correlation_id),
-          trace_parent = COALESCE(EXCLUDED.trace_parent, processing_jobs.trace_parent),
-          trace_state = COALESCE(EXCLUDED.trace_state, processing_jobs.trace_state),
-          updated_at = EXCLUDED.updated_at
-      `,
-      [
-        job.id,
-        job.projectId,
-        job.sourceVersionId,
-        job.projectKind,
-        JSON.stringify(job.options),
-        job.status,
-        job.progress,
-        job.attempt,
-        job.maxAttempts,
-        job.nextAttemptAt,
-        job.leaseOwner,
-        job.leaseExpiresAt,
-        job.errorCode,
-        job.correlationId ?? null,
-        job.traceContext?.traceparent ?? null,
-        job.traceContext?.tracestate ?? null,
-        job.createdAt,
-        job.updatedAt,
-      ],
-    );
+    await upsertProcessingJob(this.pool, job);
   }
 
   async retryFailed(
     id: string,
     retriedAt: string,
+    _activateProject?: (job: ProcessingJob) => Promise<boolean>,
   ): Promise<ProcessingJob | null> {
-    const result = await this.pool.query<ProcessingRow>(
-      `UPDATE processing_jobs AS job
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<ProcessingRow>(
+        `UPDATE processing_jobs AS job
        SET status = 'queued',
            progress = 0,
            attempt = 0,
@@ -169,27 +183,63 @@ export class PostgresProcessingJobRepository
          AND job.status = 'failed'
          AND EXISTS (
            SELECT 1
-           FROM projects AS project
-           WHERE project.id = job.project_id
-             AND project.current_source_version_id = job.source_version_id
-             AND project.active_job_type = 'processing'
-             AND project.active_job_id = job.id
-         )
-         AND EXISTS (
-           SELECT 1
            FROM upload_sessions AS upload
            WHERE upload.project_id = job.project_id
              AND upload.source_version_id = job.source_version_id
              AND upload.status = 'ready'
+         )
+         AND EXISTS (
+           SELECT 1
+           FROM projects AS project
+           JOIN users AS owner ON owner.id = project.owner_user_id
+           WHERE project.id = job.project_id
+              AND project.current_source_version_id = job.source_version_id
+              ${availableProjectWorkFenceSql("project", "$2")}
+              AND owner.deletion_requested_at IS NULL
+             AND owner.deleted_at IS NULL
          )
        RETURNING
          id, project_id, source_version_id, project_kind, options, status,
          progress, attempt, max_attempts, next_attempt_at, lease_owner,
          lease_expires_at, error_code, correlation_id, trace_parent,
          trace_state, created_at, updated_at`,
-      [id, retriedAt],
-    );
-    return result.rows[0] ? mapProcessingRow(result.rows[0]) : null;
+        [id, retriedAt],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const activated = await client.query(
+        `UPDATE projects
+         SET status = 'queued',
+             current_review_approval_id = NULL,
+             active_job_type = 'processing',
+             active_job_id = $3,
+             updated_at = $4
+         WHERE id = $1
+           AND current_source_version_id = $2
+           ${availableProjectWorkFenceSql("projects", "$4")}
+           AND EXISTS (
+             SELECT 1 FROM users AS owner
+             WHERE owner.id = projects.owner_user_id
+               AND owner.deletion_requested_at IS NULL
+               AND owner.deleted_at IS NULL
+           )`,
+        [row.project_id, row.source_version_id, row.id, retriedAt],
+      );
+      if (activated.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      await client.query("COMMIT");
+      return mapProcessingRow(row);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 
@@ -248,7 +298,14 @@ export class PostgresLayerDocumentRepository
       const timestamp = document.generatedAt ?? new Date().toISOString();
       try {
         await client.query("BEGIN");
-        await lockProjectForDocumentMutation(client, document.projectId);
+        const sourceIsCurrent = await lockProjectForDocumentMutation(
+          client,
+          document.projectId,
+          document.sourceVersionId,
+        );
+        if (!sourceIsCurrent) {
+          throw new Error("LayerDocument source is no longer current.");
+        }
         const current = await client.query<{
         revision: number;
         document: LayerDocument;
@@ -328,7 +385,15 @@ export class PostgresLayerDocumentRepository
       const updatedAt = new Date().toISOString();
       try {
         await client.query("BEGIN");
-        await lockProjectForDocumentMutation(client, document.projectId);
+        const sourceIsCurrent = await lockProjectForDocumentMutation(
+          client,
+          document.projectId,
+          document.sourceVersionId,
+        );
+        if (!sourceIsCurrent) {
+          await client.query("ROLLBACK");
+          return false;
+        }
         const current = await client.query<{
         revision: number;
         document: LayerDocument;
@@ -468,10 +533,16 @@ async function invalidateProjectReview(
 async function lockProjectForDocumentMutation(
   client: PoolClient,
   projectId: string,
-): Promise<void> {
-  await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [
-    projectId,
-  ]);
+  sourceVersionId: string,
+): Promise<boolean> {
+  const result = await client.query<{ current_source_version_id: string | null }>(
+    `SELECT current_source_version_id
+     FROM projects
+     WHERE id = $1
+     FOR UPDATE`,
+    [projectId],
+  );
+  return result.rows[0]?.current_source_version_id === sourceVersionId;
 }
 
 const processingSelect = `

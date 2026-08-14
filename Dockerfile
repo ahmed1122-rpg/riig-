@@ -18,6 +18,7 @@ COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY packages/document-processing/package.json ./packages/document-processing/package.json
 COPY packages/export-adapters/package.json ./packages/export-adapters/package.json
 COPY packages/guidance/package.json ./packages/guidance/package.json
+COPY packages/layer-domain/package.json ./packages/layer-domain/package.json
 COPY packages/media-processing/package.json ./packages/media-processing/package.json
 COPY packages/presets/package.json ./packages/presets/package.json
 RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
@@ -48,6 +49,8 @@ COPY --from=build /workspace/package.json /workspace/package-lock.json ./
 COPY --from=build /workspace/node_modules ./node_modules
 COPY --from=build /workspace/packages/contracts/package.json ./packages/contracts/package.json
 COPY --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
+COPY --from=build /workspace/packages/layer-domain/package.json ./packages/layer-domain/package.json
+COPY --from=build /workspace/packages/layer-domain/dist ./packages/layer-domain/dist
 COPY --from=build /workspace/packages/export-adapters/package.json ./packages/export-adapters/package.json
 COPY --from=build /workspace/packages/export-adapters/dist ./packages/export-adapters/dist
 COPY scripts/generate-adobe-golden.mjs ./scripts/generate-adobe-golden.mjs
@@ -79,6 +82,8 @@ COPY --from=build /workspace/packages/export-adapters/package.json ./packages/ex
 COPY --from=build /workspace/packages/export-adapters/dist ./packages/export-adapters/dist
 COPY --from=build /workspace/packages/guidance/package.json ./packages/guidance/package.json
 COPY --from=build /workspace/packages/guidance/dist ./packages/guidance/dist
+COPY --from=build /workspace/packages/layer-domain/package.json ./packages/layer-domain/package.json
+COPY --from=build /workspace/packages/layer-domain/dist ./packages/layer-domain/dist
 COPY --from=build /workspace/packages/media-processing/package.json ./packages/media-processing/package.json
 COPY --from=build /workspace/packages/media-processing/dist ./packages/media-processing/dist
 COPY --from=build /workspace/packages/presets/package.json ./packages/presets/package.json

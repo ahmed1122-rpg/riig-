@@ -5,6 +5,7 @@ import type {
   AccountDeletionRequest,
   AccountPrivacyRepository,
   PrepareAccountDeletionResult,
+  ReconcileAccountDeletionResult,
 } from "./privacy/account-privacy.js";
 import { InMemoryObjectStorage } from "./storage/object-storage.js";
 import {
@@ -31,6 +32,15 @@ class ActiveSubscriptionPrivacyRepository implements AccountPrivacyRepository {
   async listPendingDeletions(): Promise<AccountDeletionRequest[]> {
     return [];
   }
+  async claimDeletion(): Promise<boolean> {
+    return true;
+  }
+  async reconcileDeletion(): Promise<ReconcileAccountDeletionResult> {
+    throw new Error("not used");
+  }
+  async recordDeletionInventory(): Promise<AccountDeletionRequest> {
+    throw new Error("not used");
+  }
   async markDeletionFailed(): Promise<void> {}
   async completeDeletion(): Promise<void> {}
 }
@@ -38,21 +48,34 @@ class ActiveSubscriptionPrivacyRepository implements AccountPrivacyRepository {
 class FailingDeletionPrivacyRepository extends ActiveSubscriptionPrivacyRepository {
   failed = false;
   broken = false;
+  request: AccountDeletionRequest | null = null;
   override async prepareDeletion(userId: string): Promise<PrepareAccountDeletionResult> {
     if (this.broken) throw new Error("privacy repository unavailable");
+    this.request = {
+      id: crypto.randomUUID(),
+      userId,
+      status: "processing",
+      phase: "purging",
+      objectKeys: ["sources/private.png"],
+      objectPrefixes: [],
+      attempt: 1,
+      requestedAt: "2026-08-04T10:00:00.000Z",
+      updatedAt: "2026-08-04T10:00:00.000Z",
+      completedAt: null,
+      drainedAt: "2026-08-04T10:00:00.000Z",
+    };
     return {
       kind: "ready",
-      request: {
-        id: crypto.randomUUID(),
-        userId,
-        status: "processing",
-        objectKeys: ["sources/private.png"],
-        attempt: 1,
-        requestedAt: "2026-08-04T10:00:00.000Z",
-        updatedAt: "2026-08-04T10:00:00.000Z",
-        completedAt: null,
-      },
+      request: this.request,
     };
+  }
+  override async reconcileDeletion() {
+    if (!this.request) throw new Error("missing request");
+    return { kind: "ready" as const, request: this.request };
+  }
+  override async recordDeletionInventory() {
+    if (!this.request) throw new Error("missing request");
+    return this.request;
   }
   override async markDeletionFailed(): Promise<void> {
     this.failed = true;
@@ -60,7 +83,7 @@ class FailingDeletionPrivacyRepository extends ActiveSubscriptionPrivacyReposito
 }
 
 class AlwaysFailStorage extends InMemoryObjectStorage {
-  override async delete(): Promise<void> {
+  override async purge(): Promise<void> {
     throw new Error("storage unavailable");
   }
 }
@@ -188,6 +211,55 @@ describe("API — المصادقة والصلاحيات", () => {
     expect(otherExports.json().data).toEqual([]);
     expect(hiddenExport.statusCode).toBe(404);
   });
+
+  it("reads an owned project and deletes only a truly empty draft", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+    const ownerCookie = await registerCreator(app, "draft-owner@example.com");
+    const otherCookie = await registerCreator(app, "draft-other@example.com");
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      headers: { cookie: ownerCookie },
+      payload: { name: "مسودة قابلة للحذف", kind: "image" },
+    });
+    const projectId = created.json().data.id as string;
+
+    const owned = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}`,
+      headers: { cookie: ownerCookie },
+    });
+    const hidden = await app.inject({
+      method: "GET",
+      url: `/v1/projects/${projectId}`,
+      headers: { cookie: otherCookie },
+    });
+    const forbiddenDelete = await app.inject({
+      method: "DELETE",
+      url: `/v1/projects/${projectId}`,
+      headers: { cookie: otherCookie },
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/v1/projects/${projectId}`,
+      headers: { cookie: ownerCookie },
+    });
+
+    expect(owned.statusCode).toBe(200);
+    expect(owned.json().data).toMatchObject({ id: projectId, status: "draft" });
+    expect(hidden.statusCode).toBe(404);
+    expect(forbiddenDelete.statusCode).toBe(404);
+    expect(deleted.statusCode).toBe(204);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/projects/${projectId}`,
+          headers: { cookie: ownerCookie },
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
   it("registers with a secure cookie, resolves the session, and logs out", async () => {
     const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
     const registered = await app.inject({
@@ -240,11 +312,20 @@ describe("API — المصادقة والصلاحيات", () => {
     });
     expect(exported.statusCode).toBe(200);
     expect(exported.json().data).toMatchObject({
-      schemaVersion: "1",
+      schemaVersion: "2",
       account: { email: "privacy@example.com" },
       legal: {
         termsVersion: legalAcceptance.termsVersion,
         privacyVersion: legalAcceptance.privacyVersion,
+      },
+      content: {
+        layerDocuments: [],
+        layerDocumentRevisions: [],
+      },
+      character: {
+        bibles: [],
+        generations: [],
+        rigs: [],
       },
     });
     expect(exported.json().data.account.passwordHash).toBeUndefined();
@@ -329,6 +410,7 @@ describe("API — المصادقة والصلاحيات", () => {
     const unexpected = await app.inject({
       method: "DELETE",
       url: "/v1/account",
+      remoteAddress: "198.51.100.42",
       headers: { cookie },
       payload: { password: TEST_PASSWORD, confirmation: "DELETE" },
     });

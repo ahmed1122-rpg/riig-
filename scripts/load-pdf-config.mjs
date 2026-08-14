@@ -37,7 +37,7 @@ export function loadPdfConfiguration(environment) {
     environment.LOAD_CONCURRENCY,
     1,
     "LOAD_CONCURRENCY",
-    16,
+    32,
   );
   const iterationsPerUser = parsePositiveInteger(
     environment.LOAD_ITERATIONS,
@@ -45,11 +45,20 @@ export function loadPdfConfiguration(environment) {
     "LOAD_ITERATIONS",
     20,
   );
+  const accountPoolSize = parsePositiveInteger(
+    environment.LOAD_ACCOUNT_POOL_SIZE,
+    Math.min(concurrency, 10),
+    "LOAD_ACCOUNT_POOL_SIZE",
+    32,
+  );
+  if (accountPoolSize > concurrency) {
+    throw new Error("LOAD_ACCOUNT_POOL_SIZE cannot exceed LOAD_CONCURRENCY.");
+  }
   const minConcurrency = parsePositiveInteger(
     environment.LOAD_MIN_CONCURRENCY,
     1,
     "LOAD_MIN_CONCURRENCY",
-    16,
+    32,
   );
   const minTotalJourneys = parsePositiveInteger(
     environment.LOAD_MIN_TOTAL_JOURNEYS,
@@ -89,6 +98,7 @@ export function loadPdfConfiguration(environment) {
       environment.LOAD_REPORT_PATH ?? ".tmp/pdf-load-report.json",
     ),
     concurrency,
+    accountPoolSize,
     iterationsPerUser,
     minConcurrency,
     minTotalJourneys,

@@ -10,6 +10,7 @@ interface ProjectJobStatusInput {
   status: ProjectStatus;
   finished: boolean;
   documentRevision?: number;
+  requireActiveOwner?: boolean;
 }
 
 export async function updateProjectStatusForJob(
@@ -38,7 +39,17 @@ export async function updateProjectStatusForJob(
      WHERE id = $1
        AND current_source_version_id = $2
        AND active_job_type = $3
-       AND active_job_id = $4`,
+       AND active_job_id = $4
+       AND (
+         NOT $8::boolean
+         OR EXISTS (
+           SELECT 1
+           FROM users AS owner
+           WHERE owner.id = projects.owner_user_id
+             AND owner.deletion_requested_at IS NULL
+             AND owner.deleted_at IS NULL
+         )
+       )`,
     [
       input.projectId,
       input.sourceVersionId,
@@ -47,6 +58,7 @@ export async function updateProjectStatusForJob(
       input.status,
       input.finished,
       input.documentRevision ?? null,
+      input.requireActiveOwner ?? false,
     ],
   );
   return result.rowCount === 1;

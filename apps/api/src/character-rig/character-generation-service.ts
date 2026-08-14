@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type {
   CharacterGenerationAttempt,
   CharacterGenerationControls,
@@ -9,6 +8,7 @@ import type {
 import type { CharacterJobRepository } from "./character-job-repository.js";
 import { CharacterJobService } from "./character-job-service.js";
 import type { CharacterRigRepository } from "./character-rig-repository.js";
+import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 
 export interface QueueCharacterGenerationInput {
   projectId: string;
@@ -70,16 +70,12 @@ export class CharacterGenerationService {
       throw new CharacterGenerationError("CHARACTER_MODEL_NOT_READY");
     }
     validateControls(input.target, input.controls, references);
-    const requestHash = createHash("sha256")
-      .update(
-        stableJson({
-          bibleId: bible.id,
-          modelVersionId: model.id,
-          target: input.target,
-          controls: input.controls,
-        }),
-      )
-      .digest("hex");
+    const requestHash = requestFingerprint("character-generation", {
+      bibleId: bible.id,
+      modelVersionId: model.id,
+      target: input.target,
+      controls: input.controls,
+    });
     const existing = await this.repository.findGenerationByIdempotencyKey(
       input.projectId,
       input.idempotencyKey,
@@ -87,7 +83,8 @@ export class CharacterGenerationService {
     if (existing && existing.requestHash !== requestHash) {
       throw new CharacterGenerationError("CHARACTER_GENERATION_IDEMPOTENCY_CONFLICT");
     }
-    const attempt: CharacterGenerationAttempt =
+    let replayed = Boolean(existing);
+    let attempt: CharacterGenerationAttempt =
       existing ?? {
         id: crypto.randomUUID(),
         projectId: input.projectId,
@@ -99,13 +96,26 @@ export class CharacterGenerationService {
         requestHash,
         idempotencyKey: input.idempotencyKey,
         outputArtifact: null,
+        outputGeometry: null,
         qualityReport: null,
         failureCode: null,
         createdByUserId: input.actorUserId,
         createdAt: input.requestedAt,
         updatedAt: input.requestedAt,
       };
-    if (!existing) await this.repository.saveGenerationAttempt(attempt);
+    if (!existing && !(await this.repository.saveGenerationAttempt(attempt))) {
+      const raced = await this.repository.findGenerationByIdempotencyKey(
+        input.projectId,
+        input.idempotencyKey,
+      );
+      if (!raced || raced.requestHash !== requestHash) {
+        throw new CharacterGenerationError(
+          "CHARACTER_GENERATION_IDEMPOTENCY_CONFLICT",
+        );
+      }
+      attempt = raced;
+      replayed = true;
+    }
     const job = await this.#jobs.enqueue({
       projectId: input.projectId,
       type: jobTypeFor(input.target),
@@ -114,7 +124,7 @@ export class CharacterGenerationService {
       payload: { generationAttemptId: attempt.id },
       now: input.requestedAt,
     });
-    return { attempt, job, replayed: Boolean(existing) };
+    return { attempt, job, replayed };
   }
 
   async review(input: ReviewCharacterGenerationInput): Promise<{
@@ -147,7 +157,15 @@ export class CharacterGenerationService {
           "CHARACTER_REVIEW_IDEMPOTENCY_CONFLICT",
         );
       }
-      return { attempt, review: existing, replayed: true };
+      return {
+        attempt:
+          (await this.repository.findGenerationAttempt(
+            input.projectId,
+            attempt.id,
+          )) ?? attempt,
+        review: existing,
+        replayed: true,
+      };
     }
     if (
       attempt.status !== "needs-review" ||
@@ -241,15 +259,4 @@ function jobTypeFor(
 ): "generate-view" | "generate-part" | "repair-part" {
   if (target.kind === "canonical-view") return "generate-view";
   return target.kind === "part" ? "generate-part" : "repair-part";
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
 }

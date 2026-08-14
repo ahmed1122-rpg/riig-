@@ -2,7 +2,8 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import {
   MAX_IMAGE_LAYERS,
-  MAX_UPLOAD_MEBIBYTES,
+  MAX_IMAGE_UPLOAD_MEBIBYTES,
+  MAX_PDF_UPLOAD_MEBIBYTES,
 } from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
 import { Dialog } from "../../shared/Dialog";
@@ -50,7 +51,7 @@ export function Dashboard({
         <div className="time-saved" aria-label="حدود عملية التجهيز">
           <span className="time-saved__icon"><Icon name="shieldCheck" size={23} /></span>
           <span>عقد تجهيز واضح</span>
-          <strong>30 <small>MB</small></strong>
+          <strong>{MAX_PDF_UPLOAD_MEBIBYTES} <small>MiB</small></strong>
           <p>ملف واحد لكل عملية · تحقق من النوع والمحتوى</p>
           <div className="time-line"><span style={{ width: "100%" }} /></div>
         </div>
@@ -62,7 +63,7 @@ export function Dashboard({
             <span className="section-index">01</span>
             <h2 id="start-title">ماذا تريد أن تجهّز؟</h2>
           </div>
-          <p>اختر المسار، ثم ارفع ملفًا واحدًا بحد أقصى {MAX_UPLOAD_MEBIBYTES} MiB.</p>
+          <p>اختر المسار، ثم ارفع صورة حتى {MAX_IMAGE_UPLOAD_MEBIBYTES} MiB أو PDF حتى {MAX_PDF_UPLOAD_MEBIBYTES} MiB.</p>
         </div>
 
         <div className="creation-paths">

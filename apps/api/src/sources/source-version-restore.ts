@@ -13,6 +13,7 @@ export type SourceVersionRestoreErrorCode =
   | "SOURCE_VERSION_NOT_READY"
   | "SOURCE_VERSION_CONFLICT"
   | "SOURCE_VERSION_ALREADY_CURRENT"
+  | "SOURCE_VERSION_BUSY"
   | "IDEMPOTENCY_CONFLICT";
 
 export class SourceVersionRestoreDomainError extends Error {
@@ -71,6 +72,12 @@ export class InMemorySourceVersionRestoreCommand
       }
 
       const project = await this.requireOwnedProject(input);
+      if (await this.projects.hasActiveJob(project.id)) {
+        throw new SourceVersionRestoreDomainError(
+          "SOURCE_VERSION_BUSY",
+          "لا يمكن استعادة إصدار مصدر بينما توجد مهمة معالجة أو تصدير نشطة. انتظر اكتمالها أو ألغها ثم أعد المحاولة.",
+        );
+      }
       if (
         project.currentSourceVersionId !==
         input.expectedCurrentSourceVersionId
@@ -106,11 +113,12 @@ export class InMemorySourceVersionRestoreCommand
         project.id,
         target.id,
         target.versionNumber,
+        true,
       );
       if (!updated) {
         throw new SourceVersionRestoreDomainError(
-          "PROJECT_NOT_FOUND",
-          "المشروع غير موجود أو لا تملك صلاحية الوصول إليه.",
+          "SOURCE_VERSION_BUSY",
+          "لا يمكن استعادة إصدار مصدر بينما توجد مهمة معالجة أو تصدير نشطة. انتظر اكتمالها أو ألغها ثم أعد المحاولة.",
         );
       }
       const reviewed =

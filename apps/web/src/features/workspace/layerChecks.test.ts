@@ -35,4 +35,17 @@ describe("workspace layer checks", () => {
       description: "3 ملاحظات فعلية",
     });
   });
+
+  it("reports graph diagnostics for missing parents and scoped duplicate names", () => {
+    const summary = getLayerCheckSummary("image", [
+      { ...layer, id: "first", name: "+مكرر", parentId: "missing" },
+      { ...layer, id: "second", name: "+مكرر", parentId: "missing" },
+    ]);
+
+    expect(summary.issueCount).toBeGreaterThanOrEqual(3);
+    expect(summary.diagnostics).toEqual(expect.arrayContaining([
+      expect.stringContaining("اسم مكرر"),
+      expect.stringContaining("مجلد أب مفقود"),
+    ]));
+  });
 });

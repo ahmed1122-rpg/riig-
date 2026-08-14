@@ -3,6 +3,7 @@ export function verifyNodeToolchain({
   packageManifest,
   npmConfig,
   dockerfiles,
+  qaDockerfiles = [],
 }) {
   const violations = [];
   if (!/^\d+\.\d+\.\d+$/u.test(nodeVersion)) {
@@ -51,6 +52,30 @@ export function verifyNodeToolchain({
     violations.push(
       "Every Dockerfile must use one identical digest-pinned Node.js base image.",
     );
+  }
+  const expectedQaNodeImage = `node:${nodeVersion}-bookworm@sha256:`;
+  const expectedQaDependencyImage = `node:${nodeVersion}-bookworm-slim@sha256:`;
+  for (const dockerfile of qaDockerfiles) {
+    const definedStages = new Set();
+    for (const line of dockerfile.split(/\r?\n/u)) {
+      const from = /^FROM\s+(\S+)(?:\s+AS\s+(\S+))?$/iu.exec(line.trim());
+      if (!from) continue;
+      const source = from[1];
+      const internalStage = definedStages.has(source.toLowerCase());
+      if (!internalStage && !/@sha256:[a-f0-9]{64}$/iu.test(source)) {
+        violations.push(`QA Dockerfile base image must be pinned by digest: ${line}`);
+      }
+      if (
+        source.startsWith("node:") &&
+        !source.includes(expectedQaNodeImage) &&
+        !source.includes(expectedQaDependencyImage)
+      ) {
+        violations.push(
+          `QA Dockerfile Node.js base must use an approved digest-pinned Bookworm image for ${nodeVersion}: ${line}`,
+        );
+      }
+      if (from[2]) definedStages.add(from[2].toLowerCase());
+    }
   }
   return violations;
 }

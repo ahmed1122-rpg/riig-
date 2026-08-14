@@ -98,6 +98,24 @@ export class PostgresProjectRepository implements ProjectRepository {
     return result.rows.map((row) => mapPostgresProject(row));
   }
 
+  async deleteEmptyDraft(ownerUserId: string, id: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM projects AS project
+       WHERE project.id = $1
+         AND project.owner_user_id = $2
+         AND project.status = 'draft'
+         AND project.current_source_version_id IS NULL
+         AND project.active_job_id IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM upload_sessions AS upload
+           WHERE upload.project_id = project.id
+         )
+       RETURNING project.id`,
+      [id, ownerUserId],
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
   async updateStatus(
     id: string,
     status: ProjectStatus,
@@ -114,6 +132,7 @@ export class PostgresProjectRepository implements ProjectRepository {
               active_job_id = NULL,
               updated_at = now()
           WHERE id = $1
+            AND active_job_id IS NULL
           ${updatedProjectResult()}
       `,
       [id, status],
@@ -140,6 +159,7 @@ export class PostgresProjectRepository implements ProjectRepository {
               updated_at = now()
           WHERE id = $1
             AND current_source_version_id = $2
+            AND ($5::uuid IS NULL OR status NOT IN ('validating', 'uploading'))
             AND (
               active_job_id IS NULL
               OR (active_job_type = $4 AND active_job_id = $5)
@@ -295,6 +315,7 @@ export class PostgresProjectRepository implements ProjectRepository {
     id: string,
     sourceVersionId: string,
     _versionNumber: number,
+    requireIdle = false,
   ): Promise<ProjectSummary | null> {
     const result = await this.pool.query<PostgresProjectRow>(
       `
@@ -306,9 +327,10 @@ export class PostgresProjectRepository implements ProjectRepository {
               active_job_id = NULL,
               updated_at = now()
           WHERE id = $1
+            AND (NOT $3::boolean OR active_job_id IS NULL)
           ${updatedProjectResult()}
       `,
-      [id, sourceVersionId],
+      [id, sourceVersionId, requireIdle],
     );
     return result.rows[0] ? mapPostgresProject(result.rows[0]) : null;
   }

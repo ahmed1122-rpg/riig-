@@ -15,6 +15,51 @@ import { ExportService } from "./export-service.js";
 const timestamp = "2026-07-28T10:00:00.000Z";
 
 describe("ExportService worker execution", () => {
+  it("does not retain a job when the project fence activation fails", async () => {
+    const repository = new InMemoryExportRepository();
+    const storage = new InMemoryObjectStorage();
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = { ...createBookDocument(), revision: 1 };
+    await documents.save(document);
+    const service = createWorkerService(repository, storage, documents);
+
+    await expect(
+      service.create(
+        { ...createRequest(document, "txt"), documentRevision: 1 },
+        "book",
+        "failed-project-fence",
+        async () => false,
+      ),
+    ).rejects.toMatchObject({ code: "EXPORT_SOURCE_NOT_CURRENT" });
+    await expect(repository.list(200)).resolves.toHaveLength(0);
+  });
+
+  it("does not mutate an existing job when a generated export id collides", async () => {
+    const repository = new CollidingExportRepository();
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = createBookDocument();
+    await documents.save(document);
+    const service = createWorkerService(
+      repository,
+      new InMemoryObjectStorage(),
+      documents,
+    );
+
+    await expect(
+      service.create(
+        createRequest(document, "txt"),
+        "book",
+        "forced-export-id-collision",
+      ),
+    ).rejects.toMatchObject({ code: "EXPORT_SOURCE_NOT_CURRENT" });
+
+    expect(repository.collidingJob).not.toBeNull();
+    await expect(
+      repository.findById(repository.collidingJob!.id),
+    ).resolves.toEqual(repository.collidingJob);
+    expect(repository.collidingJob).toMatchObject({ status: "queued" });
+  });
+
   it("rejects an export requested from a stale layer-document revision", async () => {
     const repository = new InMemoryExportRepository();
     const storage = new InMemoryObjectStorage();
@@ -226,6 +271,8 @@ describe("ExportService worker execution", () => {
       expect(repeated.id).toBe(ready.id);
       if (format === "csv") {
         expect(artifact.contentType).toBe("text/csv; charset=utf-8");
+        expect(artifact.body.toString("utf8")).toContain("text_align");
+        expect(artifact.body.toString("utf8")).toContain("justify");
         expect(artifact.body.toString("utf8")).toContain(
           ',+الفصل_الأول,"""الفصل, الأول"""',
         );
@@ -420,7 +467,7 @@ describe("ExportService worker execution", () => {
     });
     expect(cleanupErrors).toEqual([
       {
-        error: expect.objectContaining({ message: "storage delete unavailable" }),
+        error: expect.objectContaining({ message: "storage purge unavailable" }),
         objectKey: repository.lostObjectKey,
       },
     ]);
@@ -544,6 +591,22 @@ describe("ExportService worker execution", () => {
   });
 });
 
+class CollidingExportRepository extends InMemoryExportRepository {
+  collidingJob: ExportJob | null = null;
+
+  override async enqueue(job: ExportJob): Promise<boolean> {
+    this.collidingJob = {
+      ...job,
+      projectId: crypto.randomUUID(),
+      sourceVersionId: crypto.randomUUID(),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    await this.save(this.collidingJob);
+    return false;
+  }
+}
+
 class ConcurrentFinalizationRepository extends InMemoryExportRepository {
   lostObjectKey: string | undefined;
   winnerObjectKey: string | undefined;
@@ -623,6 +686,10 @@ class FailingDeleteObjectStorage extends InMemoryObjectStorage {
   override async delete(): Promise<void> {
     throw new Error("storage delete unavailable");
   }
+
+  override async purge(): Promise<void> {
+    throw new Error("storage purge unavailable");
+  }
 }
 
 function createWorkerService(
@@ -659,9 +726,22 @@ function createRequest(
 function createBookDocument(fullText = "الفصل الأول"): LayerDocument {
   const projectId = crypto.randomUUID();
   const sourceVersionId = crypto.randomUUID();
-  const background: LayerNode = {
+  const pageGroup: LayerNode = {
     id: crypto.randomUUID(),
     parentId: null,
+    kind: "group",
+    name: "+page_001",
+    visible: true,
+    locked: true,
+    opacity: 1,
+    fixed: true,
+    zIndex: 0,
+    pageNumber: 1,
+    bounds: { x: 0, y: 0, width: 320, height: 180 },
+  };
+  const background: LayerNode = {
+    id: crypto.randomUUID(),
+    parentId: pageGroup.id,
     kind: "raster",
     name: "+page_001_background",
     visible: true,
@@ -675,7 +755,7 @@ function createBookDocument(fullText = "الفصل الأول"): LayerDocument {
   };
   const text: LayerNode = {
     id: crypto.randomUUID(),
-    parentId: null,
+    parentId: pageGroup.id,
     kind: "text",
     name: "+الفصل_الأول",
     visible: true,
@@ -688,6 +768,7 @@ function createBookDocument(fullText = "الفصل الأول"): LayerDocument {
     fullText,
     readingOrder: 0,
     direction: "rtl",
+    textAlign: "justify",
   };
   return {
     schemaVersion: "1.0",
@@ -699,6 +780,6 @@ function createBookDocument(fullText = "الفصل الأول"): LayerDocument {
     height: 180,
     colorSpace: "sRGB",
     pages: [{ pageNumber: 1, width: 320, height: 180 }],
-    layers: [background, text],
+    layers: [pageGroup, background, text],
   };
 }

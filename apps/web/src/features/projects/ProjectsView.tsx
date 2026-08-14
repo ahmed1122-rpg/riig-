@@ -1,11 +1,14 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useDebounce } from "../../shared/hooks/useDebounce";
+import { useResourcePolling } from "../../shared/hooks/useResourcePolling";
 import { DataState } from "../../shared/DataState";
 import { formatBytes, formatDateTime } from "../../shared/formatters";
 import { Icon } from "../../shared/Icon";
+import { useConfirmation } from "../../shared/useConfirmation";
 import type { DemoState, ProjectMode } from "../../types";
 import {
   ApiError,
+  deleteEmptyProject,
   listProjects,
   listSourceVersions,
   type ProjectSummary,
@@ -41,6 +44,13 @@ const statusLabel: Record<ProjectSummary["status"], string> = {
   failed: "فشل",
   cancelled: "ملغى",
 };
+const liveProjectStatuses = new Set<ProjectSummary["status"]>([
+  "validating",
+  "uploading",
+  "queued",
+  "processing",
+  "exporting",
+]);
 
 export function ProjectsView({
   demoState,
@@ -63,30 +73,35 @@ export function ProjectsView({
   const [state, setState] = useState<DemoState>(
     authenticated ? "loading" : "empty",
   );
+  const [actionError, setActionError] = useState<string>();
+  const { requestConfirmation, confirmationDialog } = useConfirmation();
 
   useEffect(() => {
-    if (!authenticated) {
+    if (authenticated) {
+      setState("loading");
+    } else {
       setItems([]);
       setState("empty");
-      return;
     }
-    let active = true;
-    setState("loading");
-    void listProjects()
-      .then((projects) => {
-        if (!active) return;
-        setItems(projects);
-        setState(projects.length ? "ready" : "empty");
-      })
-      .catch((error) => {
-        if (!active) return;
-        setState("error");
-        if (error instanceof ApiError && error.status === 401) onRequireAuth();
-      });
-    return () => {
-      active = false;
-    };
-  }, [authenticated, onRequireAuth, reloadVersion]);
+  }, [authenticated]);
+
+  useResourcePolling({
+    enabled: authenticated,
+    resourceKey: "projects:list",
+    revision: reloadVersion,
+    intervalMs: 3_000,
+    load: listProjects,
+    shouldPoll: (projects) =>
+      projects.some((project) => liveProjectStatuses.has(project.status)),
+    onSuccess: (projects) => {
+      setItems(projects);
+      setState(projects.length ? "ready" : "empty");
+    },
+    onError: (error) => {
+      setState("error");
+      if (error instanceof ApiError && error.status === 401) onRequireAuth();
+    },
+  });
 
   const debouncedQuery = useDebounce(query, 250);
   const filtered = useMemo(
@@ -137,6 +152,31 @@ export function ProjectsView({
     await loadVersions(projectId);
   };
 
+  const removeEmptyDraft = async (project: ProjectSummary) => {
+    const confirmed = await requestConfirmation({
+      title: "حذف المسودة الفارغة؟",
+      description:
+        "سيُحذف سجل المشروع فقط بعد أن يؤكد الخادم أنه لم يبدأ أي رفع أو معالجة.",
+      confirmLabel: "حذف المسودة",
+      cancelLabel: "إبقاء المشروع",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setActionError(undefined);
+    try {
+      await deleteEmptyProject(project.id);
+      const next = items.filter((item) => item.id !== project.id);
+      setItems(next);
+      setState(next.length ? "ready" : "empty");
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "تعذر حذف المسودة الفارغة.",
+      );
+    }
+  };
+
   return (
     <div className="projects-view page-enter">
       <section className="page-title-row">
@@ -157,9 +197,29 @@ export function ProjectsView({
         <label className="project-search"><Icon name="search" size={17} /><span className="sr-only">بحث</span><input type="search" placeholder="ابحث باسم المشروع" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
       </div>
 
+      {actionError && <p className="form-error" role="alert">{actionError}</p>}
+
       {demoState === "ready" && state === "ready" ? (
         <section className="project-list">
-          {filtered.map((project) => (
+          {filtered.length === 0 ? (
+            <div className="data-state project-filter-empty" role="status">
+              <span className="state-icon"><Icon name="fileSearch" size={23} /></span>
+              <div>
+                <strong>لا توجد مشروعات تطابق البحث</strong>
+                <p>جرّب عبارة أخرى أو امسح عوامل التصفية لعرض كل المشروعات.</p>
+              </div>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setFilter("all");
+                  setQuery("");
+                }}
+              >
+                مسح عوامل التصفية
+              </button>
+            </div>
+          ) : filtered.map((project) => (
             <Fragment key={project.id}>
               <article className="project-row">
                 <button className={`project-preview project-preview--${project.kind}`} type="button" onClick={() => onOpenWorkspace(project.kind, {
@@ -184,6 +244,16 @@ export function ProjectsView({
                 >
                   <Icon name="history" size={18} />
                 </button>
+                {project.status === "draft" &&
+                  !project.currentSourceVersionId && (
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => void removeEmptyDraft(project)}
+                    >
+                      حذف
+                    </button>
+                  )}
               </article>
               {expandedProjectId === project.id && (
                 <section className="project-version-panel" aria-label={`إصدارات ${project.name}`}>
@@ -240,6 +310,7 @@ export function ProjectsView({
           onRetry={() => setReloadVersion((version) => version + 1)}
         />
       )}
+      {confirmationDialog}
     </div>
   );
 }

@@ -45,6 +45,30 @@ describe("CharacterIdentityBootstrapService", () => {
     expect(first.modelVersion.datasetFingerprint).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.job.payload.modelVersionId).toBe(first.modelVersion.id);
   });
+
+  it("creates a new model version when the training configuration changes", async () => {
+    const rigs = new InMemoryCharacterRigRepository();
+    const jobs = new InMemoryCharacterJobRepository();
+    const service = new CharacterIdentityBootstrapService(rigs, jobs);
+    const bible = makeBible("approved");
+    await rigs.saveBibleIfRevision(bible, null);
+    await rigs.addReference(makeReference(bible, "identity-primary"));
+    await rigs.addReference(makeReference(bible, "canonical-view"));
+
+    const first = await service.bootstrap(inputFor(bible));
+    const changed = await service.bootstrap({
+      ...inputFor(bible),
+      trainingConfiguration: { learningRate: 0.0001, rank: 32 },
+    });
+
+    expect(changed.modelVersion.id).not.toBe(first.modelVersion.id);
+    expect(changed.modelVersion.version).toBe(2);
+    expect(changed.modelVersion.trainingConfiguration).toEqual({
+      learningRate: 0.0001,
+      rank: 32,
+    });
+    expect(changed.job.payload.modelVersionId).toBe(changed.modelVersion.id);
+  });
 });
 
 function inputFor(bible: CharacterBible) {

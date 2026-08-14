@@ -1,4 +1,5 @@
 import type { Layer } from "../../types";
+import { projectPreviewLayers } from "./layerPreviewProjection";
 
 interface RasterLayerPreviewProps {
   layers: readonly Layer[];
@@ -21,15 +22,9 @@ export function RasterLayerPreview({
   className = "",
   label,
 }: RasterLayerPreviewProps) {
-  const renderable = layers
-    .filter(
-      (layer) =>
-        layer.visible &&
-        !hiddenLayerIds.includes(layer.id) &&
-        layer.previewUrl,
-    )
-    .slice()
-    .sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0));
+  const renderable = projectPreviewLayers(layers, { hiddenLayerIds }).filter(
+    (layer) => layer.previewUrl,
+  );
 
   if (
     renderable.length > 0 &&

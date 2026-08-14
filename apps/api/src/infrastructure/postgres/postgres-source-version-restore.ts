@@ -21,6 +21,7 @@ interface ProjectRestoreRow {
   kind: ProjectKind;
   status: ProjectStatus;
   current_source_version_id: string | null;
+  active_job_id: string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -69,12 +70,32 @@ export class PostgresSourceVersionRestoreCommand
       if (existing) {
         const event = mapEvent(existing);
         assertReplayMatches(event, input);
-        const project = await findOwnedProject(client, input, false);
+        const { activeJobId: _activeJobId, ...project } =
+          await findOwnedProject(client, input, false);
         await client.query("COMMIT");
         return { project, event, replayed: true };
       }
 
+      // Serialize restore with source-version allocation. Upload intent creation
+      // uses the same project-scoped advisory lock before publishing its
+      // uploading source version.
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtext($1))",
+        [input.projectId],
+      );
+
       const current = await findOwnedProject(client, input, true);
+      if (
+        current.activeJobId !== null ||
+        current.status === "validating" ||
+        current.status === "uploading" ||
+        (await hasActiveUpload(client, input.projectId))
+      ) {
+        throw new SourceVersionRestoreDomainError(
+          "SOURCE_VERSION_BUSY",
+          "لا يمكن استعادة إصدار مصدر بينما توجد عملية رفع أو مهمة معالجة أو تصدير نشطة. انتظر اكتمالها أو ألغها ثم أعد المحاولة.",
+        );
+      }
       if (
         current.currentSourceVersionId !==
         input.expectedCurrentSourceVersionId
@@ -134,11 +155,37 @@ export class PostgresSourceVersionRestoreCommand
                 current_review_approval_id = NULL,
                 updated_at = now()
           WHERE id = $1
+            AND current_source_version_id = $3
+            AND active_job_id IS NULL
+            AND status NOT IN ('validating', 'uploading')
+            AND NOT EXISTS (
+              SELECT 1 FROM upload_sessions AS active_upload
+              WHERE active_upload.project_id = projects.id
+                AND active_upload.status IN ('validating', 'uploading', 'verifying')
+                AND active_upload.expires_at > now()
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM source_versions AS active_source
+              WHERE active_source.project_id = projects.id
+                AND active_source.status IN ('validating', 'uploading', 'verifying')
+                AND active_source.updated_at > now() - interval '15 minutes'
+            )
           RETURNING id, name, kind, status, current_source_version_id,
-            created_at, updated_at
+            active_job_id, created_at, updated_at
         `,
-        [input.projectId, input.targetSourceVersionId],
+        [
+          input.projectId,
+          input.targetSourceVersionId,
+          input.expectedCurrentSourceVersionId,
+        ],
       );
+      const updated = updatedResult.rows[0];
+      if (!updated) {
+        throw new SourceVersionRestoreDomainError(
+          "SOURCE_VERSION_BUSY",
+          "لا يمكن استعادة إصدار مصدر بينما توجد عملية رفع أو مهمة معالجة أو تصدير نشطة. انتظر اكتمالها أو ألغها ثم أعد المحاولة.",
+        );
+      }
       await client.query(
         `
           INSERT INTO source_version_restore_events (
@@ -163,7 +210,6 @@ export class PostgresSourceVersionRestoreCommand
         ],
       );
       await client.query("COMMIT");
-      const updated = requiredRow(updatedResult.rows[0]);
       return {
         project: mapPostgresProject(updated, target.version_number),
         event,
@@ -211,14 +257,35 @@ export class PostgresSourceVersionRestoreCommand
   }
 }
 
+async function hasActiveUpload(
+  client: PoolClient,
+  projectId: string,
+): Promise<boolean> {
+  const result = await client.query<{ busy: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM upload_sessions AS active_upload
+       WHERE active_upload.project_id = $1
+         AND active_upload.status IN ('validating', 'uploading', 'verifying')
+         AND active_upload.expires_at > now()
+       UNION ALL
+       SELECT 1 FROM source_versions AS active_source
+       WHERE active_source.project_id = $1
+         AND active_source.status IN ('validating', 'uploading', 'verifying')
+         AND active_source.updated_at > now() - interval '15 minutes'
+     ) AS busy`,
+    [projectId],
+  );
+  return result.rows[0]?.busy === true;
+}
+
 async function findOwnedProject(
   client: PoolClient,
   input: Pick<RestoreSourceVersionInput, "projectId" | "actorUserId">,
   lock: boolean,
-): Promise<ProjectSummary> {
+): Promise<ProjectSummary & { activeJobId: string | null }> {
   const result = await client.query<ProjectRestoreRow>(
     `
-      SELECT id, name, kind, status, current_source_version_id,
+      SELECT id, name, kind, status, current_source_version_id, active_job_id,
         created_at, updated_at
       FROM projects
       WHERE id = $1 AND owner_user_id = $2
@@ -237,7 +304,10 @@ async function findOwnedProject(
     "SELECT version_number FROM source_versions WHERE id = $1",
     [row.current_source_version_id],
   );
-  return mapPostgresProject(row, requiredRow(version.rows[0]).version_number);
+  return {
+    ...mapPostgresProject(row, requiredRow(version.rows[0]).version_number),
+    activeJobId: row.active_job_id,
+  };
 }
 
 async function findEventByIdempotencyKey(

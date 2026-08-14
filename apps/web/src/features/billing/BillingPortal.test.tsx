@@ -56,6 +56,21 @@ afterEach(() => {
 });
 
 describe("BillingPortal checkout return", () => {
+  it("does not present a synthetic starter plan when billing loading fails", async () => {
+    vi.mocked(getSubscription).mockRejectedValueOnce(new Error("billing offline"));
+    render(
+      <BillingPortal
+        authenticated
+        onRequireAuth={vi.fn()}
+        onNotify={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("تعذّر تحميل بيانات الفوترة")).toBeTruthy();
+    expect(screen.queryByText("الخطة الحالية")).toBeNull();
+    expect(screen.getByRole("button", { name: /إعادة المحاولة/u })).toBeTruthy();
+  });
+
   it("does not show success when the URL has no owned checkout id", async () => {
     window.history.replaceState(
       {},

@@ -4,6 +4,57 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
+  - name: API down and absent application metrics page operators
+    interval: 1m
+    input_series:
+      - series: 'up{job="motionprep-api"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MotionPrepApiDown
+        exp_alerts:
+          - exp_labels:
+              job: motionprep-api
+              severity: critical
+            exp_annotations:
+              summary: MotionPrep API target is unavailable
+              runbook: docs/runbooks/production-dependency-recovery.md
+      - eval_time: 3m
+        alertname: MotionPrepApiMetricsAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: MotionPrep API metrics are absent
+              runbook: docs/runbooks/production-dependency-recovery.md
+
+  - name: character worker absence and queue age retain feature identity
+    interval: 1m
+    input_series:
+      - series: 'motionprep_worker_up{worker_type="character",instance="missing",release="unknown"}'
+        values: '0x10'
+      - series: 'motionprep_queue_oldest_queued_seconds{queue="character"}'
+        values: '420x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MotionPrepWorkerMissing
+        exp_alerts:
+          - exp_labels:
+              worker_type: character
+              severity: critical
+            exp_annotations:
+              summary: A required MotionPrep worker type has no healthy heartbeat
+              runbook: docs/runbooks/processing-job-recovery.md
+      - eval_time: 6m
+        alertname: MotionPrepQueueTooOld
+        exp_alerts:
+          - exp_labels:
+              queue: character
+              severity: warning
+            exp_annotations:
+              summary: MotionPrep queue age exceeds five minutes
+              runbook: docs/runbooks/processing-job-recovery.md
+
   - name: provider readiness and outbox failures page operators
     interval: 1m
     input_series:

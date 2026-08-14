@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { ApplicationDrainingError } from "../observability/operational-readiness.js";
 
 export function registerHealthRoutes(
   app: FastifyInstance,
@@ -37,7 +38,8 @@ export function registerHealthRoutes(
     try {
       await options.readiness?.();
       return healthPayload();
-    } catch {
+    } catch (error) {
+      const draining = error instanceof ApplicationDrainingError;
       return reply.status(503).send({
         data: {
           status: "degraded",
@@ -47,8 +49,10 @@ export function registerHealthRoutes(
           timestamp: new Date().toISOString(),
         },
         error: {
-          code: "DEPENDENCY_UNAVAILABLE",
-          message: "إحدى خدمات التخزين المطلوبة غير جاهزة.",
+          code: draining ? "APPLICATION_DRAINING" : "DEPENDENCY_UNAVAILABLE",
+          message: draining
+            ? "الخادم يستكمل الطلبات الجارية ولا يقبل عملاً جديدًا."
+            : "إحدى خدمات التخزين المطلوبة غير جاهزة.",
           requestId: request.id,
         },
       });

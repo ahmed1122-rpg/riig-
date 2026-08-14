@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../../shared/Icon";
 import {
   PASSWORD_MAX_LENGTH,
@@ -12,11 +12,22 @@ import {
   confirmPasswordReset,
   login,
   register,
+  resendEmailVerification,
   requestPasswordReset,
+  verifyEmail,
 } from "../../lib/api";
 
-type AuthScreen = "login" | "register" | "forgot" | "reset" | "mfa" | "verified";
+type AuthScreen =
+  | "login"
+  | "register"
+  | "forgot"
+  | "reset"
+  | "mfa"
+  | "verified"
+  | "email_sent"
+  | "verifying";
 type SubmitState = "idle" | "loading" | "error" | "locked" | "rate_limited";
+type MfaFailure = "invalid" | "expired" | "server" | null;
 
 interface AuthGatewayProps {
   onAuthenticated: () => void;
@@ -94,9 +105,24 @@ function isRateLimited(error: unknown): boolean {
   return error instanceof ApiError && error.status === 429;
 }
 
+function classifyMfaFailure(error: unknown): Exclude<MfaFailure, null> {
+  if (error instanceof ApiError && error.code === "MFA_CODE_INVALID") {
+    return "invalid";
+  }
+  if (error instanceof ApiError && error.code === "MFA_CHALLENGE_INVALID") {
+    return "expired";
+  }
+  return "server";
+}
+
 export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProps) {
+  const onAuthenticatedRef = useRef(onAuthenticated);
   const initialResetToken = new URLSearchParams(window.location.search).get("token");
-  const [screen, setScreen] = useState<AuthScreen>(initialResetToken ? "reset" : "login");
+  const initialVerificationToken = new URLSearchParams(window.location.search)
+    .get("verificationToken");
+  const [screen, setScreen] = useState<AuthScreen>(
+    initialVerificationToken ? "verifying" : initialResetToken ? "reset" : "login",
+  );
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -104,9 +130,14 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
   const [showPassword, setShowPassword] = useState(false);
   const [consent, setConsent] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  const [mfaFailure, setMfaFailure] = useState<MfaFailure>(null);
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [seconds, setSeconds] = useState(42);
   const [mfaChallengeToken, setMfaChallengeToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    onAuthenticatedRef.current = onAuthenticated;
+  }, [onAuthenticated]);
 
   useEffect(() => {
     if (screen !== "mfa" || seconds <= 0) return;
@@ -117,6 +148,25 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
     return () => window.clearTimeout(timeout);
   }, [screen, seconds]);
 
+  useEffect(() => {
+    if (!initialVerificationToken) return;
+    let active = true;
+    void verifyEmail(initialVerificationToken)
+      .then(() => {
+        if (!active) return;
+        const url = new URL(window.location.href);
+        url.searchParams.delete("verificationToken");
+        window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+        onAuthenticatedRef.current();
+      })
+      .catch(() => {
+        if (active) setSubmitState("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialVerificationToken]);
+
   const title = useMemo(() => ({
     login: "مرحبًا بعودتك",
     register: "أنشئ مساحة إنتاجك",
@@ -124,6 +174,8 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
     reset: "تعيين كلمة مرور جديدة",
     mfa: "تحقق بخطوة إضافية",
     verified: "تحقق من بريدك",
+    email_sent: "أكمل تفعيل حسابك",
+    verifying: "جارٍ تأكيد بريدك",
   })[screen], [screen]);
 
   const resetSubmit = (next: AuthScreen) => {
@@ -139,6 +191,7 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
       if (result.kind === "mfa_required") {
         setMfaChallengeToken(result.challengeToken);
         setMfaCode("");
+        setMfaFailure(null);
         setSeconds(
           Math.max(
             0,
@@ -170,9 +223,13 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
     }
     setSubmitState("loading");
     try {
-      await register(name, email, password);
+      const result = await register(name, email, password);
       setSubmitState("idle");
-      onAuthenticated();
+      if (result.kind === "verification_required") {
+        setScreen("email_sent");
+      } else {
+        onAuthenticated();
+      }
     } catch (error) {
       setSubmitState(isRateLimited(error) ? "rate_limited" : "error");
     }
@@ -180,17 +237,39 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
 
   const handleMfa = async (event: FormEvent) => {
     event.preventDefault();
-    const valid = recoveryMode ? mfaCode.trim().length >= 8 : /^\d{6}$/.test(mfaCode);
-    if (!valid) {
+    if (seconds <= 0) {
+      setMfaFailure("expired");
       setSubmitState("error");
       return;
     }
+    const valid = recoveryMode ? mfaCode.trim().length >= 8 : /^\d{6}$/.test(mfaCode);
+    if (!valid) {
+      setMfaFailure("invalid");
+      setSubmitState("error");
+      return;
+    }
+    setMfaFailure(null);
     setSubmitState("loading");
     try {
       if (!mfaChallengeToken) throw new Error("Missing MFA challenge.");
       await completeMfaLogin(mfaChallengeToken, mfaCode);
       setSubmitState("idle");
       onAuthenticated();
+    } catch (error) {
+      if (isRateLimited(error)) {
+        setSubmitState("rate_limited");
+      } else {
+        setMfaFailure(classifyMfaFailure(error));
+        setSubmitState("error");
+      }
+    }
+  };
+
+  const handleVerificationResend = async () => {
+    setSubmitState("loading");
+    try {
+      await resendEmailVerification(email);
+      setSubmitState("idle");
     } catch (error) {
       setSubmitState(isRateLimited(error) ? "rate_limited" : "error");
     }
@@ -339,23 +418,34 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
                 <input
                   className={recoveryMode ? "recovery-input" : "mfa-input"}
                   value={mfaCode}
-                  onChange={(event) => setMfaCode(recoveryMode ? event.target.value : event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  onChange={(event) => {
+                    setMfaCode(recoveryMode ? event.target.value : event.target.value.replace(/\D/g, "").slice(0, 6));
+                    if (seconds > 0) setMfaFailure(null);
+                  }}
                   inputMode={recoveryMode ? "text" : "numeric"}
                   autoComplete="one-time-code"
                   placeholder={recoveryMode ? "MP-XXXX-XXXX" : "••••••"}
                   aria-label={recoveryMode ? "رمز الاسترداد" : "رمز التحقق"}
-                  aria-invalid={submitState === "error" || undefined}
-                  aria-describedby={submitState === "error" ? "mfa-error" : undefined}
+                  aria-invalid={mfaFailure !== null || seconds <= 0 || undefined}
+                  aria-describedby={mfaFailure !== null || seconds <= 0 ? "mfa-error" : undefined}
                   autoFocus
                 />
               </label>
-              {submitState === "error" && <div id="mfa-error" className="form-message is-error" role="alert">أدخل {recoveryMode ? "رمز استرداد صالحًا" : "ستة أرقام"} للمتابعة.</div>}
+              {(mfaFailure !== null || seconds <= 0) && (
+                <div id="mfa-error" className="form-message is-error" role="alert">
+                  {mfaFailure === "server"
+                    ? "تعذّر التحقق بسبب خطأ في الخادم. لم تُفتح جلسة؛ أعد المحاولة."
+                    : mfaFailure === "expired" || seconds <= 0
+                      ? "انتهت صلاحية محاولة التحقق. ارجع وسجّل الدخول للحصول على محاولة جديدة."
+                      : `أدخل ${recoveryMode ? "رمز استرداد صالحًا" : "ستة أرقام صحيحة"} للمتابعة.`}
+                </div>
+              )}
               <RateLimitedMessage state={submitState} />
-              <button className="primary-button auth-submit" type="submit" disabled={submitState === "loading"}>
+              <button className="primary-button auth-submit" type="submit" disabled={submitState === "loading" || seconds <= 0}>
                 {submitState === "loading" ? "جارٍ فتح الجلسة…" : "تحقق وادخل"}
               </button>
               <div className="auth-form-row auth-mfa-actions">
-                <button type="button" className="text-link" onClick={() => { setRecoveryMode((value) => !value); setMfaCode(""); setSubmitState("idle"); }}>
+                <button type="button" className="text-link" onClick={() => { setRecoveryMode((value) => !value); setMfaCode(""); setMfaFailure(seconds <= 0 ? "expired" : null); setSubmitState("idle"); }}>
                   {recoveryMode ? "استخدام رمز التحقق" : "استخدام رمز استرداد"}
                 </button>
                 <span className="auth-helper">{seconds > 0 ? `تنتهي المحاولة خلال ${seconds} ث` : "انتهت المحاولة؛ أعد تسجيل الدخول."}</span>
@@ -369,6 +459,26 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
               <h2>تحقق من بريدك</h2>
               <p>إذا كان <bdi>{email}</bdi> مرتبطًا بحساب نشط فسيصل رابط صالح لمدة 30 دقيقة.</p>
               <button type="button" className="primary-button auth-submit" onClick={() => resetSubmit("login")}>العودة لتسجيل الدخول</button>
+            </div>
+          )}
+
+          {screen === "email_sent" && (
+            <div className="auth-success" role="status">
+              <span><Icon name="mail" size={28} /></span>
+              <h2>أرسلنا رابط التفعيل</h2>
+              <p>افتح الرابط المرسل إلى <bdi>{email}</bdi> خلال 24 ساعة. لن يبدأ الحساب قبل تأكيد البريد.</p>
+              <button type="button" className="secondary-button auth-submit" disabled={submitState === "loading"} onClick={() => void handleVerificationResend()}>{submitState === "loading" ? "جارٍ الإرسال…" : "إعادة إرسال الرابط"}</button>
+              <RateLimitedMessage state={submitState} />
+              <button type="button" className="primary-button auth-submit" onClick={() => resetSubmit("login")}>العودة لتسجيل الدخول</button>
+            </div>
+          )}
+
+          {screen === "verifying" && (
+            <div className="auth-success" role="status">
+              <span><Icon name="shieldCheck" size={28} /></span>
+              <h2>{submitState === "error" ? "تعذر تأكيد البريد" : "جارٍ تأكيد بريدك"}</h2>
+              <p>{submitState === "error" ? "الرابط منتهي أو مستخدم. اطلب رابطًا جديدًا ثم حاول مجددًا." : "لحظات ونفتح مساحة العمل الآمنة."}</p>
+              {submitState === "error" && <button type="button" className="primary-button auth-submit" onClick={() => resetSubmit("login")}>العودة لتسجيل الدخول</button>}
             </div>
           )}
 

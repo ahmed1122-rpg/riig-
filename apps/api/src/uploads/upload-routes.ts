@@ -1,4 +1,5 @@
 import {
+  MAX_IMAGE_UPLOAD_BYTES,
   MAX_UPLOAD_BYTES,
   acceptedSourceTypes,
 } from "@motionprep/contracts";
@@ -16,9 +17,16 @@ import { runResourceRoute } from "../http/resource-route.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import { UploadDomainError, type UploadService } from "./upload-service.js";
 import {
+  assertImageUploadLimit,
   assertUploadLimit,
   formatUploadMebibytes,
+  uploadLimitForSourceType,
 } from "./upload-limits.js";
+import {
+  parseDeclaredContentLength,
+  readBoundedUploadBody,
+  UploadBodyGate,
+} from "./upload-body-parser.js";
 
 const uploadParamsSchema = z.object({ uploadId: z.string().uuid() });
 
@@ -46,18 +54,51 @@ export async function registerUploadRoutes(
   projects: ProjectRepository,
   uploads: UploadService,
   auth: AuthService,
-  options: { maxUploadBytes?: number } = {},
+  options: {
+    maxUploadBytes?: number;
+    maxImageUploadBytes?: number;
+    bodyConcurrency?: number;
+  } = {},
 ): Promise<void> {
   const maxUploadBytes = options.maxUploadBytes ?? MAX_UPLOAD_BYTES;
+  const maxImageUploadBytes =
+    options.maxImageUploadBytes ?? MAX_IMAGE_UPLOAD_BYTES;
+  const uploadBodyGate = new UploadBodyGate(options.bodyConcurrency ?? 3);
   assertUploadLimit(maxUploadBytes);
-  const maxUploadMebibytes = formatUploadMebibytes(maxUploadBytes);
-  const uploadIntentSchema = z.object({
-    projectId: z.string().uuid(),
-    filename: z.string().trim().min(1).max(255),
-    contentType: z.enum(acceptedSourceTypes),
-    sizeBytes: z.number().int().positive().max(maxUploadBytes),
-    replaceSourceVersion: z.boolean().optional(),
-  });
+  assertImageUploadLimit(maxImageUploadBytes);
+  const maxPdfUploadMebibytes = formatUploadMebibytes(maxUploadBytes);
+  const effectiveImageUploadBytes = Math.min(
+    maxImageUploadBytes,
+    maxUploadBytes,
+  );
+  const maxImageUploadMebibytes = formatUploadMebibytes(
+    effectiveImageUploadBytes,
+  );
+  const uploadIntentSchema = z
+    .object({
+      projectId: z.string().uuid(),
+      filename: z.string().trim().min(1).max(255),
+      contentType: z.enum(acceptedSourceTypes),
+      sizeBytes: z.number().int().positive().max(maxUploadBytes),
+      replaceSourceVersion: z.boolean().optional(),
+    })
+    .superRefine((input, context) => {
+      const limit = uploadLimitForSourceType(
+        input.contentType,
+        maxUploadBytes,
+        maxImageUploadBytes,
+      );
+      if (input.sizeBytes > limit) {
+        context.addIssue({
+          code: z.ZodIssueCode.too_big,
+          maximum: limit,
+          inclusive: true,
+          type: "number",
+          path: ["sizeBytes"],
+          message: "The file exceeds its media-specific upload limit.",
+        });
+      }
+    });
   const requireRequestUpload = async (
     request: FastifyRequest,
     uploadId: string,
@@ -67,8 +108,14 @@ export async function registerUploadRoutes(
   };
   app.addContentTypeParser(
     [...acceptedSourceTypes],
-    { parseAs: "buffer", bodyLimit: maxUploadBytes },
-    (_request, body, done) => done(null, body),
+    { bodyLimit: maxUploadBytes },
+    (request, payload, done) => {
+      void uploadBodyGate.run(() => readBoundedUploadBody(
+        payload,
+        maxUploadBytes,
+        parseDeclaredContentLength(request.headers["content-length"]),
+      )).then((body) => done(null, body), done);
+    },
   );
 
   app.post("/v1/uploads/intents", async (request, reply) => {
@@ -86,7 +133,7 @@ export async function registerUploadRoutes(
         request.id,
         400,
         "UPLOAD_REJECTED",
-        `الملف غير مدعوم أو يتجاوز الحد الأقصى ${maxUploadMebibytes} MiB.`,
+        `الملف غير مدعوم أو يتجاوز الحد الأقصى: ${maxImageUploadMebibytes} MiB للصور و${maxPdfUploadMebibytes} MiB لملفات PDF.`,
       );
     }
 
@@ -151,7 +198,23 @@ export async function registerUploadRoutes(
         requestIdempotencyKey(request),
         project.status,
       );
-      await projects.updateStatus(session.projectId, "uploading");
+      if (session.status !== "uploading") {
+        return reply.status(200).send({ data: session, error: null });
+      }
+      const uploadReserved = await projects.updateStatus(
+        session.projectId,
+        "uploading",
+      );
+      if (!uploadReserved) {
+        await uploads.cancel(session.uploadId);
+        return sendApiError(
+          reply,
+          request.id,
+          409,
+          "PROJECT_JOB_ACTIVE",
+          "بدأت مهمة معالجة أو تصدير قبل حجز الرفع. أعد المحاولة بعد اكتمالها.",
+        );
+      }
       return reply.status(201).send({ data: session, error: null });
     } catch (error) {
       return domainError(error, request, reply);

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_IMAGE_LAYERS,
+  MAX_IMAGE_UPLOAD_BYTES,
+  MAX_IMAGE_UPLOAD_MEBIBYTES,
+  MAX_PDF_UPLOAD_BYTES,
+  MAX_PDF_UPLOAD_MEBIBYTES,
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_MEBIBYTES,
   MAX_PDF_PAGES,
@@ -31,7 +35,11 @@ import {
 } from "./index.js";
 
 describe("upload contract", () => {
-  it("locks the server contract to 30 MiB", () => {
+  it("locks images and PDFs to 30 MiB", () => {
+    expect(MAX_IMAGE_UPLOAD_MEBIBYTES).toBe(30);
+    expect(MAX_IMAGE_UPLOAD_BYTES).toBe(31_457_280);
+    expect(MAX_PDF_UPLOAD_MEBIBYTES).toBe(30);
+    expect(MAX_PDF_UPLOAD_BYTES).toBe(31_457_280);
     expect(MAX_UPLOAD_MEBIBYTES).toBe(30);
     expect(MAX_UPLOAD_BYTES).toBe(31_457_280);
     expect(MAX_PDF_PAGES).toBe(250);
@@ -120,12 +128,14 @@ describe("upload contract", () => {
           readingOrder: 0,
           fullText: "مرحبا",
           direction: "rtl",
+          textAlign: "center",
         },
       ],
     };
 
     expect(document.layers[0]?.bounds?.width).toBe(100);
     expect(document.layers[0]?.direction).toBe("rtl");
+    expect(document.layers[0]?.textAlign).toBe("center");
   });
 
   it("serializes optional layer layout metadata consistently", () => {
@@ -143,6 +153,7 @@ describe("upload contract", () => {
       bounds: { x: 12, y: 20, width: 180, height: 36 },
       readingOrder: 4,
       direction: "rtl",
+      textAlign: "justify",
       fontFamily: "Noto Sans Arabic",
       fontSize: 24,
     };
@@ -152,6 +163,7 @@ describe("upload contract", () => {
       bounds: layer.bounds,
       readingOrder: 4,
       direction: "rtl",
+      textAlign: "justify",
       fontFamily: "Noto Sans Arabic",
       fontSize: 24,
     });

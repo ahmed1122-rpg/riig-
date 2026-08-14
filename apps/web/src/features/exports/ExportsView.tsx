@@ -9,6 +9,7 @@ import {
 } from "../../lib/api";
 import { DataState } from "../../shared/DataState";
 import { formatBytes, formatDateTime } from "../../shared/formatters";
+import { useResourcePolling } from "../../shared/hooks/useResourcePolling";
 import { Icon } from "../../shared/Icon";
 import type { DemoState } from "../../types";
 import { getExportFormatPresentation } from "./exportPresentation";
@@ -32,13 +33,14 @@ interface ExportsViewProps {
   onNotify: (message: string) => void;
 }
 
-const statusLabels: Record<ExportSummary["status"], string> = {
+const statusLabels: Record<ExportSummary["status"] | "expired", string> = {
   queued: "في الانتظار",
   generating: "قيد الإنشاء",
   verifying: "قيد التحقق",
   ready: "جاهز",
   failed: "فشل",
   cancelled: "ملغى",
+  expired: "انتهت الصلاحية",
 };
 
 export function ExportsView({
@@ -58,54 +60,30 @@ export function ExportsView({
   const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
-    if (!authenticated) {
+    if (authenticated) {
+      setState("loading");
+    } else {
       setState("empty");
       setItems([]);
-      return;
     }
-    let active = true;
-    let refreshTimer: number | undefined;
-    setState("loading");
-    const refresh = () => {
-      if (document.visibilityState === "hidden") return;
-      void listExports()
-        .then((exports) => {
-          if (!active) return;
-          setItems(exports);
-          setState(exports.length ? "ready" : "empty");
-          if (
-            exports.some((item) =>
-              ["queued", "generating", "verifying"].includes(
-                item.status,
-              ),
-            )
-          ) {
-            refreshTimer = window.setTimeout(refresh, 1_500);
-          }
-        })
-        .catch(() => {
-          if (!active) return;
-          setState("error");
-        });
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible") {
-        if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-        refreshTimer = undefined;
-        return;
-      }
-      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-      refreshTimer = undefined;
-      refresh();
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    refresh();
-    return () => {
-      active = false;
-      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [authenticated, reloadVersion]);
+  }, [authenticated]);
+
+  useResourcePolling({
+    enabled: authenticated,
+    resourceKey: "exports:list",
+    revision: reloadVersion,
+    intervalMs: 1_500,
+    load: listExports,
+    shouldPoll: (exports) =>
+      exports.some((item) =>
+        ["queued", "generating", "verifying"].includes(item.status),
+      ),
+    onSuccess: (exports) => {
+      setItems(exports);
+      setState(exports.length ? "ready" : "empty");
+    },
+    onError: () => setState("error"),
+  });
 
   if (!authenticated) {
     return (
@@ -179,10 +157,18 @@ export function ExportsView({
       {state === "ready" ? (
         <section className="project-list" aria-label="ملفات التصدير">
           {items.map((item) => {
+            const artifactExpiry = item.artifact
+              ? Date.parse(item.artifact.expiresAt)
+              : Number.NaN;
+            const expired =
+              item.status === "ready" &&
+              Boolean(item.artifact) &&
+              (!Number.isFinite(artifactExpiry) || artifactExpiry <= Date.now());
+            const presentedStatus = expired ? "expired" : item.status;
             const downloadable =
               item.status === "ready" &&
               item.artifact &&
-              new Date(item.artifact.expiresAt).getTime() > Date.now();
+              !expired;
             return (
               <article className="project-row export-row" key={item.id}>
                 <span className="project-preview project-preview--image">
@@ -192,7 +178,11 @@ export function ExportsView({
                   <strong dir="ltr">
                     {item.artifact?.filename ?? `${item.format}.${item.id.slice(0, 8)}`}
                   </strong>
-                  {item.status === "failed" ? (
+                  {expired ? (
+                    <small className="export-failure-message">
+                      انتهت صلاحية رابط التنزيل. افتح المشروع لمراجعته وإعادة التصدير.
+                    </small>
+                  ) : item.status === "failed" ? (
                     <small className="export-failure-message">
                       <span>{getExportFailureMessage(item.errorCode)}</span>
                       {item.errorCode && (
@@ -216,14 +206,14 @@ export function ExportsView({
                   <span><i style={{ width: `${item.progress}%` }} /></span>
                   <small>{item.progress}%</small>
                 </div>
-                <span className={`status status--${item.status}`}>
-                  {statusLabels[item.status]}
+                <span className={`status status--${presentedStatus}`}>
+                  {statusLabels[presentedStatus]}
                 </span>
                 <span className="project-updated">
                   {formatDateTime(item.updatedAt)}
                 </span>
                 <div className="export-row-actions">
-                  {item.status === "failed" && (
+                  {(item.status === "failed" || expired) && (
                     <button
                       className="secondary-button export-recovery-button"
                       type="button"
@@ -234,7 +224,9 @@ export function ExportsView({
                       <span>
                         {openingProjectId === item.projectId
                           ? "جارٍ الفتح…"
-                          : "فتح المشروع"}
+                          : expired
+                            ? "فتح المشروع وإعادة التصدير"
+                            : "فتح المشروع"}
                       </span>
                     </button>
                   )}
@@ -255,7 +247,13 @@ export function ExportsView({
                     type="button"
                     disabled={!downloadable}
                     onClick={() => downloadExport(item.id)}
-                    aria-label={downloadable ? "تنزيل الملف" : "الملف غير جاهز"}
+                    aria-label={
+                      downloadable
+                        ? "تنزيل الملف"
+                        : expired
+                          ? "انتهت صلاحية رابط التنزيل"
+                          : "الملف غير جاهز"
+                    }
                   >
                     <Icon name="download" size={18} />
                   </button>

@@ -9,6 +9,7 @@ import type {
   CharacterReferenceAsset,
   CharacterReferenceRights,
   CharacterReferenceRole,
+  CharacterRigReview,
   CharacterRigVersion,
 } from "@motionprep/contracts";
 import { API_ORIGIN, request } from "./transport";
@@ -19,6 +20,7 @@ export interface CharacterRigStudioState {
   identityModel: CharacterIdentityModelVersion | null;
   generations: CharacterGenerationAttempt[];
   rig: CharacterRigVersion | null;
+  jobs: CharacterJob[];
 }
 
 export function bootstrapCharacterIdentity(
@@ -46,6 +48,10 @@ export function queueCharacterGeneration(
     target: CharacterGenerationTarget;
     angleDegrees: number;
     seed: number;
+    canvas: { width: number; height: number };
+    poseReferenceId?: string | null;
+    depthReferenceId?: string | null;
+    maskReferenceId?: string | null;
   },
 ): Promise<{
   attempt: CharacterGenerationAttempt;
@@ -63,9 +69,10 @@ export function queueCharacterGeneration(
         target: input.target,
         controls: {
           seed: input.seed,
-          poseReferenceId: null,
-          depthReferenceId: null,
-          maskReferenceId: null,
+          canvas: input.canvas,
+          poseReferenceId: input.poseReferenceId ?? null,
+          depthReferenceId: input.depthReferenceId ?? null,
+          maskReferenceId: input.maskReferenceId ?? null,
           parameters: { angleDegrees: input.angleDegrees },
         },
       }),
@@ -114,6 +121,33 @@ export function characterGenerationArtifactUrl(
   generationAttemptId: string,
 ): string {
   return `${API_ORIGIN}/v1/projects/${encodeURIComponent(projectId)}/character-rig/generations/${encodeURIComponent(generationAttemptId)}/artifact`;
+}
+
+export function characterRigArtifactUrl(
+  projectId: string,
+  rigVersionId: string,
+  artifactType: "psd" | "manifest",
+): string {
+  return `${API_ORIGIN}/v1/projects/${encodeURIComponent(projectId)}/character-rig/rigs/${encodeURIComponent(rigVersionId)}/artifacts/${artifactType}`;
+}
+
+export function reviewCharacterRig(
+  projectId: string,
+  rigVersionId: string,
+  input: { decision: CharacterRigReview["decision"]; reason: string },
+): Promise<{
+  rig: CharacterRigVersion;
+  review: CharacterRigReview;
+  replayed: boolean;
+}> {
+  return request(
+    `/v1/projects/${encodeURIComponent(projectId)}/character-rig/rigs/${encodeURIComponent(rigVersionId)}/reviews`,
+    {
+      method: "POST",
+      headers: { "x-idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export function getCharacterRigStudio(

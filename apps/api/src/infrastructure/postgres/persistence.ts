@@ -24,6 +24,8 @@ import { PostgresEmailOutboxRepository } from "./postgres-email-outbox.js";
 import { PostgresAccountPrivacyRepository } from "./postgres-account-privacy-repository.js";
 import { PostgresCharacterRigRepository } from "./postgres-character-rig-repository.js";
 import { PostgresCharacterJobRepository } from "./postgres-character-job-repository.js";
+import { PostgresDerivedAssetRegistry } from "./postgres-derived-asset-registry.js";
+import { PostgresObjectWriteLeaseCoordinator } from "./postgres-object-write-lease.js";
 
 export function createPostgresPersistence(config: AppConfig) {
   if (!config.DATABASE_URL) {
@@ -58,14 +60,18 @@ export function createPostgresPersistence(config: AppConfig) {
       accountPrivacy: new PostgresAccountPrivacyRepository(database.pool),
       characterRigs: new PostgresCharacterRigRepository(database.pool),
       characterJobs: new PostgresCharacterJobRepository(database.pool),
+      derivedAssets: new PostgresDerivedAssetRegistry(database.pool),
     },
     adminAccess: new PostgresAdminAccessCommand(database.pool),
     usageMeter: new PostgresUsageMeter(
       database.pool,
       config.USAGE_METERING_MODE,
     ),
-    operationalStatus: new PostgresOperationalStatusProvider(database.pool),
+    operationalStatus: new PostgresOperationalStatusProvider(database.pool, {
+      characterWorkerExpected: config.CHARACTER_RIG_ENABLED,
+    }),
     emailOutbox: new PostgresEmailOutboxRepository(database.pool),
+    objectWriteLeases: new PostgresObjectWriteLeaseCoordinator(database.pool),
     ready: () => database.ready(),
     close: () => database.close(),
   };

@@ -94,6 +94,10 @@ describe("migration integrity", () => {
       path.join(directory, "039_character_worker_observability.sql"),
       "utf8",
     );
+    const privacyRetentionMigration = await readFile(
+      path.join(directory, "042_privacy_retention_state_machines.sql"),
+      "utf8",
+    );
 
     expect(() => assertMigrationNames(files)).not.toThrow();
     expect(sourceVersionMigration).not.toMatch(
@@ -214,5 +218,43 @@ describe("migration integrity", () => {
       "worker_duration_metrics_worker_type_check",
     );
     expect(characterWorkerObservabilityMigration.match(/'character'/gu)).toHaveLength(3);
+    expect(privacyRetentionMigration).not.toMatch(
+      /RENAME\s+COLUMN|DROP\s+(TABLE|COLUMN)/iu,
+    );
+    expect(privacyRetentionMigration).toContain("phase IN ('draining', 'purging', 'completed')");
+    expect(privacyRetentionMigration).toContain("processing_jobs_prevent_tombstoned_insert");
+    expect(privacyRetentionMigration).toContain("export_jobs_prevent_tombstoned_insert");
+    expect(privacyRetentionMigration).toContain("character_jobs_prevent_tombstoned_insert");
+    expect(privacyRetentionMigration).toContain("upload_sessions_prevent_tombstoned_insert");
+    expect(privacyRetentionMigration).toContain("derived_assets_prevent_tombstoned_insert");
+    expect(privacyRetentionMigration).toContain("owner.deleted_at IS NULL");
+    expect(privacyRetentionMigration).toContain("FOR KEY SHARE OF owner");
+    expect(privacyRetentionMigration).toContain("projects_prevent_tombstoned_insert");
+    expect(privacyRetentionMigration).toContain(
+      "subscriptions_prevent_tombstoned_billable_transition",
+    );
+    expect(privacyRetentionMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS object_write_leases",
+    );
+    expect(privacyRetentionMigration).toContain(
+      "object_write_leases_validate_owner",
+    );
+    expect(privacyRetentionMigration).toContain(
+      "account_deletion_requests_completed_phase_check",
+    );
+    expect(privacyRetentionMigration).toContain(
+      "cardinality(request.object_prefixes) = 0",
+    );
+    expect(privacyRetentionMigration).toContain(
+      "export_jobs_prevent_tombstoned_publication",
+    );
+    expect(privacyRetentionMigration).toContain(
+      "character_generations_prevent_tombstoned_publication",
+    );
+    expect(privacyRetentionMigration).toContain(
+      "NEW.status IN ('draft', 'training', 'ready')",
+    );
+    expect(privacyRetentionMigration).toContain("layer_documents_lock_object_keys");
+    expect(privacyRetentionMigration).toContain("purge_claimed_at");
   });
 });

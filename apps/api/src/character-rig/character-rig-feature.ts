@@ -13,6 +13,7 @@ import {
 } from "./character-job-repository.js";
 import { CharacterReferenceService } from "./character-reference-service.js";
 import { CharacterRigCompilerService } from "./character-rig-compiler-service.js";
+import { CharacterRigReviewService } from "./character-rig-review-service.js";
 import {
   InMemoryCharacterRigRepository,
   type CharacterRigRepository,
@@ -44,6 +45,7 @@ export async function registerCharacterRigFeature(
     projects: options.projects,
     auth: options.auth,
     characterRigs: rigs,
+    characterJobs: jobs,
     bibleService: new CharacterBibleService(rigs),
     referenceService: new CharacterReferenceService(
       rigs,
@@ -54,6 +56,7 @@ export async function registerCharacterRigFeature(
     identityService: new CharacterIdentityBootstrapService(rigs, jobs),
     generationService: new CharacterGenerationService(rigs, jobs),
     compilerService: new CharacterRigCompilerService(rigs, jobs),
+    rigReviewService: new CharacterRigReviewService(rigs, options.storage),
     objectStorage: options.storage,
     audit: options.audit,
     enabled: options.enabled,

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "../../shared/Icon";
 import {
   getReadyWorkspaceToolDefinition,
@@ -10,7 +10,7 @@ export type {
   WorkspaceEditorCommand,
 } from "./workspaceToolRegistry";
 
-export type ProcessingMode = "automatic" | "manual" | "guided";
+export type CorrectionMode = "manual" | "guided";
 export type ReviewState = "editing" | "refined" | "accepted";
 
 export interface Point {
@@ -53,6 +53,11 @@ export function useGuidanceReview(guidanceRevision: number) {
   const [version, setVersion] = useState(guidanceRevision);
   const [applying, setApplying] = useState(false);
   const [applyWarnings, setApplyWarnings] = useState<string[]>([]);
+  useEffect(() => {
+    setVersion(guidanceRevision);
+    setReviewState("editing");
+    setApplyWarnings([]);
+  }, [guidanceRevision]);
   return {
     reviewState,
     setReviewState,
@@ -135,6 +140,8 @@ export function GuidanceReview({
   warnings,
   onAccept,
   acceptedLabel,
+  disabled = false,
+  disabledReason,
 }: {
   applying: boolean;
   actionIcon: IconName;
@@ -148,18 +155,27 @@ export function GuidanceReview({
   warnings?: ReactNode;
   onAccept: () => void;
   acceptedLabel: ReactNode;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
+  const disabledReasonId = useId();
   return (
     <div className="guidance-review">
       <button
         className="refine-button"
         type="button"
         onClick={() => void onApply()}
-        disabled={applying}
+        disabled={applying || disabled}
+        aria-describedby={disabledReason ? disabledReasonId : undefined}
       >
         <Icon name={actionIcon} size={15} />{" "}
         {applying ? applyingLabel : actionLabel}
       </button>
+      {disabledReason && (
+        <small id={disabledReasonId} role="status">
+          {disabledReason}
+        </small>
+      )}
       {reviewState === "refined" && (
         <div className="refinement-summary">
           <Icon name="target" size={14} />
@@ -193,11 +209,10 @@ export function GuidanceReview({
 }
 
 const processingModes: {
-  id: ProcessingMode;
+  id: CorrectionMode;
   label: string;
   hint: string;
 }[] = [
-  { id: "automatic", label: "تلقائي", hint: "نتيجة محرك المعالجة عند الرفع" },
   { id: "manual", label: "يدوي", hint: "أنت تنشئ كل منطقة" },
   { id: "guided", label: "موجّه", hint: "الأسرع: اقترح ثم صحّح موضعيًا" },
 ];
@@ -222,8 +237,8 @@ export function ProcessingModeControl({
   value,
   onChange,
 }: {
-  value: ProcessingMode;
-  onChange: (value: ProcessingMode) => void;
+  value: CorrectionMode;
+  onChange: (value: CorrectionMode) => void;
 }) {
   return (
     <div

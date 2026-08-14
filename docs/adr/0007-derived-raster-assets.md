@@ -12,7 +12,7 @@ movable image layers, and review UI would have no trustworthy per-layer
 preview.
 
 The current deployment assumption is a modular monolith with an S3-compatible
-private bucket, PostgreSQL for metadata, a maximum 30MB upload, and at most 15
+private bucket, PostgreSQL for metadata, the then-current 30MB upload, and at most 15
 image layers. Semantic AI model hosting is not yet available in every
 environment.
 

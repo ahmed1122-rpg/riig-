@@ -18,10 +18,19 @@ const ordinaryWorkflow = [
   "          node-version-file: .node-version",
 ].join("\n");
 const auditWorkflow = [
-  ordinaryWorkflow,
-  "schedule:",
-  '  - cron: "17 4 * * *"',
-  "run: npm audit --audit-level=high",
+  "name: dependency-audit",
+  "on:",
+  "  schedule:",
+  '    - cron: "17 4 * * *"',
+  "jobs:",
+  "  audit:",
+  "    runs-on: ubuntu-latest",
+  "    steps:",
+  `      - uses: actions/checkout@${approvedGitHubActionPins["actions/checkout"]}`,
+  `      - uses: actions/setup-node@${approvedGitHubActionPins["actions/setup-node"]}`,
+  "        with:",
+  "          node-version-file: .node-version",
+  "      - run: npm audit --audit-level=high",
 ].join("\n");
 
 test("accepts pinned workflows using the shared Node version and scheduled audit", () => {
@@ -36,7 +45,17 @@ test("accepts pinned workflows using the shared Node version and scheduled audit
 
 test("reports mutable actions, Node drift, and missing scheduled audit", () => {
   const violations = verifyWorkflowSecurity([
-    "uses: actions/setup-node@v6\nwith:\n  node-version: 24\n",
+    [
+      "name: unsafe",
+      "on: push",
+      "jobs:",
+      "  test:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - uses: actions/setup-node@v6",
+      "        with:",
+      "          node-version: 24",
+    ].join("\n"),
   ]);
 
   assert.match(violations.join("\n"), /not pinned by commit SHA/u);
@@ -108,4 +127,18 @@ test("does not treat quoted npm help text as a CLI invocation", () => {
     verifyWorkflowSecurity([workflow]).join("\n"),
     /job documentation runs Node\/npm without setup-node/u,
   );
+});
+
+test("reads action pins and scheduled audits from the YAML graph, not comments", () => {
+  const commentOnly = [
+    ordinaryWorkflow,
+    "# uses: untrusted/action@" + "1".repeat(40),
+    "# schedule:",
+    '#   - cron: "17 4 * * *"',
+    "# run: npm audit --audit-level=high",
+  ].join("\n");
+
+  const violations = verifyWorkflowSecurity([commentOnly]);
+  assert.doesNotMatch(violations.join("\n"), /untrusted\/action/u);
+  assert.match(violations.join("\n"), /Scheduled dependency audit/u);
 });

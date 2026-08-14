@@ -35,4 +35,33 @@ test("maps validated environment into the export runtime", async () => {
   assert.equal(received?.objectStorage.bucket, "motionprep-test");
   assert.equal(received?.objectStorage.requireVersioning, false);
   assert.equal(received?.drainTimeoutMilliseconds, 30_000);
+  assert.equal(received?.jobTimeoutMilliseconds, 10 * 60_000);
+});
+
+test("logs an export deadline and requests an immediate process recycle", async () => {
+  const writes: string[] = [];
+  const originalWrite = process.stderr.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  let recycledWith: number | undefined;
+
+  try {
+    await main(async (_config, options) => {
+      assert.ok(options);
+      options.onJobTimeout?.("export-job-1");
+    }, environment, (code) => {
+      recycledWith = code;
+      throw new Error("terminated");
+    });
+  } catch (error) {
+    assert.match(String(error), /terminated/u);
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+
+  assert.equal(recycledWith, 1);
+  assert.match(writes.join(""), /worker\.recycle_after_export_deadline/u);
+  assert.match(writes.join(""), /export-job-1/u);
 });

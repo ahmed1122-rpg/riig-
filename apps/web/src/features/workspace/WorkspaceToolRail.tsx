@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { Icon } from "../../shared/Icon";
 import type { ProjectMode } from "../../types";
 import {
@@ -52,20 +53,34 @@ export function WorkspaceToolRail({
             {!collapsed && <h3>{groupLabels[group]}</h3>}
             <div>
               {items.map((tool) => (
+                <Fragment key={tool.id}>
                 <button
-                  key={tool.id}
                   type="button"
                   className={activeTool === tool.id ? "is-active" : ""}
-                  disabled={!tool.available}
+                  aria-disabled={!tool.available}
+                  {...(!tool.available && tool.unavailableReason
+                    ? { "aria-describedby": `desktop-tool-reason-${tool.id}` }
+                    : {})}
                   aria-pressed={activeTool === tool.id}
                   aria-label={`${tool.label}${tool.shortcut ? `، الاختصار ${tool.shortcut.label}` : ""}`}
                   title={!tool.available ? tool.unavailableReason : tool.shortcut ? `${tool.label} (${tool.shortcut.label})` : tool.label}
-                  onClick={() => onToolChange(tool)}
+                  onClick={() => {
+                    if (tool.available) onToolChange(tool);
+                  }}
                 >
                   <Icon name={tool.icon} size={17} />
                   {!collapsed && <span>{tool.label}</span>}
                   {!collapsed && tool.shortcut && <kbd>{tool.shortcut.label}</kbd>}
                 </button>
+                {!tool.available && tool.unavailableReason && (
+                  <small
+                    id={`desktop-tool-reason-${tool.id}`}
+                    className="sr-only"
+                  >
+                    {tool.unavailableReason}
+                  </small>
+                )}
+                </Fragment>
               ))}
             </div>
           </section>

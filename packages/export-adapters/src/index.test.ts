@@ -200,6 +200,26 @@ describe("createRasterPsd", () => {
       code: "INVALID_DOCUMENT_DIMENSIONS",
     } satisfies Partial<ExportAdapterError>);
   });
+
+  it("rejects excessive aggregate raster memory before decoding assets", async () => {
+    const largeDocument: LayerDocument = {
+      ...document,
+      width: 1_000,
+      height: 1_000,
+    };
+    const assets = Array.from({ length: 65 }, (_, index) => ({
+      layer: {
+        ...layer,
+        id: `large-layer-${index}`,
+        bounds: { x: 0, y: 0, width: 1_000, height: 1_000 },
+      },
+      source: Buffer.from("not-decoded"),
+    }));
+
+    await expect(createRasterPsd(largeDocument, assets)).rejects.toMatchObject({
+      code: "RASTER_MEMORY_BUDGET_EXCEEDED",
+    } satisfies Partial<ExportAdapterError>);
+  });
 });
 
 describe("createTransparentPngs", () => {
@@ -232,6 +252,28 @@ describe("createTransparentPngs", () => {
 
     expect(result?.filename).toBe("01_+layer.png");
   });
+
+  it("rejects an excessive full-canvas PNG set before decoding", async () => {
+    const largeDocument: LayerDocument = {
+      ...document,
+      width: 2_800,
+      height: 2_800,
+    };
+    const assets = Array.from({ length: 9 }, (_, index) => ({
+      layer: {
+        ...layer,
+        id: `png-layer-${index}`,
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+      },
+      source: Buffer.from("not-decoded"),
+    }));
+
+    await expect(
+      createTransparentPngs(largeDocument, assets),
+    ).rejects.toMatchObject({
+      code: "RASTER_MEMORY_BUDGET_EXCEEDED",
+    } satisfies Partial<ExportAdapterError>);
+  });
 });
 
 describe("createLayeredTiff", () => {
@@ -259,6 +301,22 @@ describe("createLayeredTiff", () => {
       pages: 2,
       channels: 4,
     });
+  });
+
+  it("rejects an excessive TIFF before decoding any layer", async () => {
+    const largeDocument: LayerDocument = {
+      ...document,
+      width: 1_000,
+      height: 1_000,
+    };
+    const assets = Array.from({ length: 33 }, (_, index) => ({
+      layer: { ...layer, id: `tiff-layer-${index}` },
+      source: Buffer.from("not-decoded"),
+    }));
+
+    await expect(createLayeredTiff(largeDocument, assets)).rejects.toMatchObject({
+      code: "TIFF_PIXEL_BUDGET_EXCEEDED",
+    } satisfies Partial<ExportAdapterError>);
   });
 });
 
@@ -300,6 +358,7 @@ describe("createPdfPagePsd", () => {
           pageNumber: 1,
           fullText: "عنوان عربي",
           direction: "rtl",
+          textAlign: "center",
           bounds: { x: 40, y: 25, width: 240, height: 42 },
         },
       ],
@@ -322,6 +381,9 @@ describe("createPdfPagePsd", () => {
       decoded.children?.find((child) => child.name === "+العنوان")?.rawData
         ?.channels.length,
     ).toBeGreaterThan(0);
+    expect(
+      decoded.children?.find((child) => child.name === "+العنوان")?.left,
+    ).toBeGreaterThan(40);
     expect(
       decoded.children?.find(
         (child) => child.name === "+page_001_background",
@@ -462,6 +524,82 @@ describe("createPdfDocumentPsd", () => {
       "+page_001",
       "+page_002",
     ]);
+  });
+
+  it("uses the persisted page root exactly once and keeps semantic groups below it", async () => {
+    const pageRoot: LayerNode = {
+      id: "page-root",
+      parentId: null,
+      kind: "group",
+      name: "+page_001",
+      visible: true,
+      locked: true,
+      opacity: 1,
+      fixed: true,
+      zIndex: 0,
+      pageNumber: 1,
+      bounds: { x: 0, y: 0, width: 240, height: 140 },
+    };
+    const background: LayerNode = {
+      ...layer,
+      id: "page-background",
+      parentId: pageRoot.id,
+      name: "+page_001_background",
+      locked: true,
+      fixed: true,
+      pageNumber: 1,
+      bounds: { x: 0, y: 0, width: 240, height: 140 },
+      fillColor: "#ffffff",
+    };
+    const semanticGroup: LayerNode = {
+      ...pageRoot,
+      id: "heading-group",
+      parentId: pageRoot.id,
+      name: "+heading_001",
+      locked: false,
+      fixed: false,
+      zIndex: 2,
+    };
+    const text: LayerNode = {
+      ...layer,
+      id: "heading-text",
+      parentId: semanticGroup.id,
+      kind: "text",
+      name: "+scene_heading",
+      pageNumber: 1,
+      fullText: "Scene heading",
+      direction: "ltr",
+      zIndex: 1,
+      bounds: { x: 20, y: 20, width: 200, height: 36 },
+    };
+
+    const decoded = readPsd(
+      await createPdfDocumentPsd({
+        ...document,
+        width: 240,
+        height: 140,
+        pages: [{ pageNumber: 1, width: 240, height: 140 }],
+        layers: [pageRoot, background, semanticGroup, text],
+      }),
+      { useRawData: true, skipThumbnail: true },
+    );
+
+    expect(adobeLayerNames(decoded.children)).toEqual(["+page_001"]);
+    const exportedPage = decoded.children?.find(
+      (child) => child.name === "+page_001",
+    );
+    expect(adobeLayerNames(exportedPage?.children)).toEqual([
+      "+heading_001",
+      "+page_001_background",
+    ]);
+    expect(
+      exportedPage?.children
+        ?.find((child) => child.name === "+heading_001")
+        ?.children?.map((child) => child.name),
+    ).toEqual(["+scene_heading"]);
+    expect(
+      exportedPage?.children?.some((child) => child.name === "+page_001"),
+    ).toBe(false);
   });
 
   it("rejects a document with no PDF pages", async () => {

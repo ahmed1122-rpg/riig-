@@ -343,38 +343,38 @@ export class ExportArtifactBuilder {
 
     const referenced = layers.filter((layer) => layer.rasterAsset);
     if (referenced.length === layers.length) {
-      return Promise.all(
-        layers.map(async (layer) => {
-          const reference = layer.rasterAsset!;
-          let object: StoredObject | null;
-          try {
-            object = await storage.get(reference.objectKey, {
-              maxBytes: reference.sizeBytes,
-            });
-          } catch (error) {
-            if (isObjectStorageIntegrityFailure(error)) {
-              throw new ExportAdapterError(
-                "RASTER_ASSET_MISMATCH",
-                `فشل التحقق من سلامة أصل الطبقة ${layer.name}.`,
-              );
-            }
-            throw error;
-          }
-          if (!object) {
-            throw new ExportAdapterError(
-              "RASTER_ASSET_MISMATCH",
-              `أصل الطبقة ${layer.name} غير متاح في التخزين.`,
-            );
-          }
-          if (!hasExpectedObjectIntegrity(object, reference)) {
+      const assets: RasterLayerAsset[] = [];
+      for (const layer of layers) {
+        const reference = layer.rasterAsset!;
+        let object: StoredObject | null;
+        try {
+          object = await storage.get(reference.objectKey, {
+            maxBytes: reference.sizeBytes,
+          });
+        } catch (error) {
+          if (isObjectStorageIntegrityFailure(error)) {
             throw new ExportAdapterError(
               "RASTER_ASSET_MISMATCH",
               `فشل التحقق من سلامة أصل الطبقة ${layer.name}.`,
             );
           }
-          return { layer, source: object.body };
-        }),
-      );
+          throw error;
+        }
+        if (!object) {
+          throw new ExportAdapterError(
+            "RASTER_ASSET_MISMATCH",
+            `أصل الطبقة ${layer.name} غير متاح في التخزين.`,
+          );
+        }
+        if (!hasExpectedObjectIntegrity(object, reference)) {
+          throw new ExportAdapterError(
+            "RASTER_ASSET_MISMATCH",
+            `فشل التحقق من سلامة أصل الطبقة ${layer.name}.`,
+          );
+        }
+        assets.push({ layer, source: object.body });
+      }
+      return assets;
     }
 
     if (referenced.length === 0 && layers.length === 1) {

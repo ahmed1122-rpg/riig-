@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../../shared/Icon";
+import { downloadBlob } from "../../shared/browserDownload";
 import { deleteAccount, exportAccountData } from "../../lib/api";
 import type { PdfSegmentation } from "../../types";
 import { useWorkspacePreference } from "../workspace/useWorkspacePreference";
 import {
   PDF_SEGMENTATION_STORAGE_KEY,
+  isPdfSegmentation,
   pdfSegmentationOptions,
 } from "../workspace/pdfSegmentation";
 
@@ -32,11 +34,7 @@ export function SettingsView({
     useWorkspacePreference<PdfSegmentation>(
       PDF_SEGMENTATION_STORAGE_KEY,
       "sentences",
-    );
-  const [previewQuality, setPreviewQuality] =
-    useWorkspacePreference<"fast" | "full">(
-      "motionprep.settings.preview-quality",
-      "fast",
+      isPdfSegmentation,
     );
   const [reducedMotion, setReducedMotion] = useWorkspacePreference(
     "motionprep.settings.reduced-motion",
@@ -68,14 +66,10 @@ export function SettingsView({
     setAccountAction("exporting");
     try {
       const data = await exportAccountData();
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
-      );
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `motionprep-account-${data.generatedAt.slice(0, 10)}.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      downloadBlob([JSON.stringify(data, null, 2)], {
+        filename: `motionprep-account-${data.generatedAt.slice(0, 10)}.json`,
+        type: "application/json",
+      });
       onNotify("تم إعداد نسخة بيانات الحساب وتنزيلها.");
     } catch {
       onNotify("تعذر تصدير بيانات الحساب الآن.");
@@ -142,14 +136,7 @@ export function SettingsView({
         </section>
 
         <section className="settings-card">
-          <header><Icon name="eye" size={18} /><div><strong>المعاينة</strong><span>توازن السرعة والجودة</span></div></header>
-          <label className="settings-row">
-            <div><strong>الجودة الافتراضية</strong><small>لا تغيّر جودة ملف التصدير النهائي</small></div>
-            <select value={previewQuality} onChange={(event) => setPreviewQuality(event.target.value as "fast" | "full")}>
-              <option value="fast">سريعة</option>
-              <option value="full">كاملة</option>
-            </select>
-          </label>
+          <header><Icon name="eye" size={18} /><div><strong>المعاينة</strong><span>إعدادات العرض ومساحة العمل</span></div></header>
           <div className="settings-row">
             <div><strong>تخطيط مساحة العمل</strong><small>الأعمدة وعرض قائمة الطبقات</small></div>
             <button className="settings-choice" type="button" onClick={resetWorkspaceLayout}><Icon name="refresh" size={15} /> إعادة الضبط</button>

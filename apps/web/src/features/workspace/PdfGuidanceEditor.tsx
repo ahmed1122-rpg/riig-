@@ -10,7 +10,7 @@ import {
   ProcessingModeControl,
   useGuidanceReview,
   WorkflowStrip,
-  type ProcessingMode,
+  type CorrectionMode,
   type ReadyWorkspaceToolId,
   type SharedEditorProps,
   type WorkspaceEditorCommand,
@@ -20,6 +20,15 @@ import {
   type MarkerLabel,
   type PdfRegion,
 } from "./PdfMarkerOverlay";
+import {
+  createPdfRegionFromPercent,
+  hasValidPdfRegionGeometry,
+  normalizePdfRegionOrders,
+} from "./pdfRegionGeometry";
+import {
+  findTopPreviewLayerAtPoint,
+  projectPreviewLayers,
+} from "./layerPreviewProjection";
 
 interface PdfGuidanceEditorProps extends SharedEditorProps {
   segmentation: PdfSegmentation;
@@ -30,6 +39,9 @@ interface PdfGuidanceEditorProps extends SharedEditorProps {
     width: number;
     height: number;
   };
+  selectedLayerId?: string;
+  solo?: boolean;
+  onSelectedLayerChange?: (id: string) => void;
   onPageChange?: (pageNumber: number) => void;
   onSegmentationChange: (
     value: PdfSegmentation,
@@ -37,13 +49,14 @@ interface PdfGuidanceEditorProps extends SharedEditorProps {
   segmentationBusy?: boolean;
   guidanceRevision?: number;
   onApply: (input: {
-    mode: ProcessingMode;
+    mode: CorrectionMode;
     regions: PdfRegion[];
   }) => Promise<{ revision: number; warnings: string[] }>;
   toolCommand?: WorkspaceEditorCommand;
   onToolSelect?: (toolId: ReadyWorkspaceToolId) => void;
   onHistoryNavigate: (direction: "undo" | "redo") => Promise<void>;
   onConfirmDiscardRegions?: (message: string) => Promise<boolean>;
+  onDraftDirtyChange?: (dirty: boolean) => void;
 }
 
 const pdfPromptTools = [
@@ -69,6 +82,7 @@ function positionedTextStyle(
     top: `${(bounds.y / pageSize.height) * 100}%`,
     width: `${(bounds.width / pageSize.width) * 100}%`,
     minHeight: `${(bounds.height / pageSize.height) * 100}%`,
+    textAlign: layer.textAlign ?? "start",
     fontSize: `${Math.max(
       6,
       Math.min(22, ((layer.fontSize ?? 12) / pageSize.width) * 410),
@@ -82,6 +96,9 @@ export function PdfGuidanceEditor({
   pageNumber = 1,
   pageCount = 1,
   pageSize,
+  selectedLayerId = "",
+  solo = false,
+  onSelectedLayerChange,
   onPageChange,
   onSegmentationChange,
   segmentationBusy = false,
@@ -92,12 +109,28 @@ export function PdfGuidanceEditor({
   onToolSelect,
   onHistoryNavigate,
   onConfirmDiscardRegions,
+  onDraftDirtyChange,
 }: PdfGuidanceEditorProps) {
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>("guided");
+  const [processingMode, setProcessingMode] = useState<CorrectionMode>("guided");
   const [activeLabel, setActiveLabel] = useState<MarkerLabel>("line");
   const [regions, setRegions] = useState<PdfRegion[]>([]);
+  const [keyboardRegion, setKeyboardRegion] = useState({
+    x: 10,
+    y: 10,
+    width: 50,
+    height: 10,
+  });
+  const [keyboardRegionError, setKeyboardRegionError] = useState("");
+  const keyboardRegionErrorId = "pdf-coordinate-error";
   const regionsRef = useRef(regions);
   regionsRef.current = regions;
+  useEffect(() => {
+    onDraftDirtyChange?.(regions.length > 0);
+  }, [onDraftDirtyChange, regions.length]);
+  useEffect(
+    () => () => onDraftDirtyChange?.(false),
+    [onDraftDirtyChange],
+  );
   const historyNavigateRef = useRef(onHistoryNavigate);
   historyNavigateRef.current = onHistoryNavigate;
   const [selectedId, setSelectedId] = useState("");
@@ -113,24 +146,16 @@ export function PdfGuidanceEditor({
   } = useGuidanceReview(guidanceRevision);
   const extractedTextLayers = useMemo(
     () =>
-      layers
-        .filter(
-          (layer) =>
-            layer.kind === "text" &&
-            layer.pageNumber === pageNumber &&
-            layer.bounds &&
-            layer.fullContent,
-        )
-        .sort(
-          (left, right) =>
-            (left.readingOrder ?? Number.MAX_SAFE_INTEGER) -
-            (right.readingOrder ?? Number.MAX_SAFE_INTEGER),
-        ),
-    [layers, pageNumber],
+      projectPreviewLayers(layers, {
+        pageNumber,
+        kinds: ["text"],
+        ...(solo && selectedLayerId ? { soloLayerId: selectedLayerId } : {}),
+      }).filter((layer) => layer.bounds && layer.fullContent),
+    [layers, pageNumber, selectedLayerId, solo],
   );
   const hasExtractedPage = Boolean(pageSize && extractedTextLayers.length > 0);
   const names = useMemo(
-    () => extractedTextLayers.slice(0, 3).map((layer) => layer.name),
+    () => extractedTextLayers.slice(0, 3),
     [extractedTextLayers],
   );
   const backgroundName =
@@ -139,6 +164,26 @@ export function PdfGuidanceEditor({
     )?.name ??
     `+page_${String(pageNumber).padStart(3, "0")}_background`;
   const selectedRegion = regions.find((region) => region.id === selectedId);
+
+  useEffect(() => {
+    setRegions([]);
+    setSelectedId("");
+    setKeyboardRegionError("");
+  }, [segmentation]);
+
+  const addRegion = (region: Omit<PdfRegion, "id" | "order">) => {
+    if (!hasValidPdfRegionGeometry(region)) {
+      onNotify("تعذر إضافة منطقة غير مرئية أو خارج حدود الصفحة.");
+      return false;
+    }
+    const id = `region-${crypto.randomUUID()}`;
+    setRegions((current) =>
+      normalizePdfRegionOrders([...current, { ...region, id, order: null }]),
+    );
+    setSelectedId(id);
+    setReviewState("editing");
+    return true;
+  };
 
   const undo = useCallback(() => {
     if (regionsRef.current.length > 0) {
@@ -169,12 +214,8 @@ export function PdfGuidanceEditor({
   }, [toolCommand, undo]);
 
   const rerun = async () => {
-    if (regions.length === 0 && processingMode !== "automatic") {
+    if (regions.length === 0) {
       onNotify("حدّد منطقة واحدة على الأقل داخل الصفحة.");
-      return;
-    }
-    if (processingMode === "automatic") {
-      onNotify("المعالجة التلقائية طُبقت عند الرفع. حدّد منطقة للتصحيح الموضعي.");
       return;
     }
     setApplying(true);
@@ -203,9 +244,11 @@ export function PdfGuidanceEditor({
 
   const changePage = async (nextPage: number) => {
     if (regions.length > 0) {
-      const confirmed = await onConfirmDiscardRegions?.(
-        "لم تُطبّق المناطق الحالية. سيؤدي الانتقال إلى تجاهلها.",
-      );
+      const confirmed = onConfirmDiscardRegions
+        ? await onConfirmDiscardRegions(
+            "لم تُطبّق المناطق الحالية. سيؤدي الانتقال إلى تجاهلها.",
+          )
+        : true;
       if (!confirmed) return;
     }
     onPageChange?.(nextPage);
@@ -224,14 +267,18 @@ export function PdfGuidanceEditor({
             {hasExtractedPage && pageSize ? (
               <div
                 className="pdf-extracted-page"
+                role="region"
                 aria-label={`النص المستخرج من الصفحة ${pageNumber}`}
               >
                 {extractedTextLayers.map((layer) => (
                   <span
                     key={layer.id}
-                    className="pdf-extracted-text"
+                    className={`pdf-extracted-text ${selectedLayerId === layer.id ? "is-selected" : ""}`}
                     dir={layer.direction ?? "auto"}
-                    style={positionedTextStyle(layer, pageSize)}
+                    style={{
+                      ...positionedTextStyle(layer, pageSize),
+                      opacity: layer.opacity / 100,
+                    }}
                     title={layer.name}
                   >
                     {layer.fullContent}
@@ -249,12 +296,16 @@ export function PdfGuidanceEditor({
               selectedId={selectedId}
               activeLabel={activeLabel}
               onSelect={setSelectedId}
-              onCreate={(region) => {
-                const nextOrder = Math.max(0, ...regions.filter((item) => item.label !== "exclude").map((item) => item.order)) + 1;
-                const next: PdfRegion = { ...region, id: `region-${Date.now()}`, order: nextOrder };
-                setRegions((current) => [...current, next]);
-                setSelectedId(next.id);
-                setReviewState("editing");
+              onCreate={addRegion}
+              onCanvasClick={(point) => {
+                if (!pageSize || !onSelectedLayerChange) return;
+                const x = point.x * pageSize.width;
+                const y = point.y * pageSize.height;
+                const target = findTopPreviewLayerAtPoint(
+                  extractedTextLayers,
+                  { x, y },
+                );
+                if (target) onSelectedLayerChange(target.id);
               }}
             />
           </article>
@@ -341,7 +392,15 @@ export function PdfGuidanceEditor({
                 value={selectedRegion.label}
                 onChange={(event) => {
                   const label = event.target.value as MarkerLabel;
-                  setRegions((current) => current.map((region) => region.id === selectedRegion.id ? { ...region, label } : region));
+                  setRegions((current) =>
+                    normalizePdfRegionOrders(
+                      current.map((region) =>
+                        region.id === selectedRegion.id
+                          ? { ...region, label }
+                          : region,
+                      ),
+                    ),
+                  );
                   setActiveLabel(label);
                   setReviewState("editing");
                 }}
@@ -354,7 +413,7 @@ export function PdfGuidanceEditor({
             <span>معاينة الأسماء</span>
             <div>
               {names.length > 0
-                ? names.map((name, index) => <code key={name}>{index + 1} · {name}</code>)
+                ? names.map((layer, index) => <code key={layer.id}>{index + 1} · {layer.name}</code>)
                 : <small>لا توجد أسماء مستخرجة في الصفحة الحالية.</small>}
             </div>
           </div>
@@ -365,6 +424,57 @@ export function PdfGuidanceEditor({
             </p>
           )}
         </div>
+
+        <form
+          className="guidance-coordinate-entry guidance-coordinate-entry--region"
+          aria-label="إضافة منطقة PDF بالإحداثيات"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const result = createPdfRegionFromPercent(
+              keyboardRegion,
+              activeLabel,
+            );
+            if (!result.valid) {
+              setKeyboardRegionError(result.message);
+              return;
+            }
+            if (addRegion(result.region)) setKeyboardRegionError("");
+          }}
+        >
+          {([
+            ["x", "الموضع الأفقي %"],
+            ["y", "الموضع الرأسي %"],
+            ["width", "العرض %"],
+            ["height", "الارتفاع %"],
+          ] as const).map(([field, label]) => (
+            <label key={field}>
+              {label}
+              <input
+                type="number"
+                min={field === "width" || field === "height" ? 1 : 0}
+                max={field === "x" || field === "y" ? 99 : 100}
+                value={keyboardRegion[field]}
+                aria-invalid={Boolean(keyboardRegionError)}
+                aria-describedby={
+                  keyboardRegionError ? keyboardRegionErrorId : undefined
+                }
+                onChange={(event) => {
+                  setKeyboardRegion((current) => ({
+                    ...current,
+                    [field]: Number(event.target.value),
+                  }));
+                  setKeyboardRegionError("");
+                }}
+              />
+            </label>
+          ))}
+          <button type="submit">إضافة منطقة</button>
+          {keyboardRegionError && (
+            <small id={keyboardRegionErrorId} className="field-error" role="alert">
+              {keyboardRegionError}
+            </small>
+          )}
+        </form>
 
         <GuidanceReview
           applying={applying}

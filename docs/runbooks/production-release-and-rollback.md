@@ -6,6 +6,9 @@
    artifact contains digest-qualified `RUNTIME_IMAGE_REF` and `WEB_IMAGE_REF`
    values, exact `RELEASE_GIT_SHA`, and `release-evidence.json`. Production does
    not accept image tags or a release SHA that differs from the image manifest.
+   Run `npm run verify:release-checkout -- --verify-images` from the exact tag
+   checkout; it fails on a dirty tree, SHA/tag/version drift, mutable
+   references, or a repository-bound Cosign identity mismatch.
 2. Review pending migrations. Production migrations must remain additive-first.
 3. Confirm queue depth is stable and no export backlog is growing.
 4. Save the current two digest-qualified image references as the rollback
@@ -33,7 +36,7 @@ node scripts/run-production-compose.mjs .env.production pull
 node scripts/run-production-compose.mjs .env.production up -d
 ```
 
-Check `/healthz`, `/v1/health/live`, and `/v1/health/ready`; readiness must report
+Check `/healthz`, `/readyz`, `/v1/health/live`, and `/v1/health/ready`; readiness must report
 the expected application version and `RELEASE_GIT_SHA`. Inspect structured API
 and worker logs using the returned request ID/correlation ID for error rate and
 processing duration. Run `staging-application-readiness` to complete the

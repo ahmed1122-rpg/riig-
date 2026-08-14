@@ -62,9 +62,72 @@ describe("layer review persistence", () => {
     ]);
   });
 
+  it("serializes editable geometry and text metadata", () => {
+    const initial: Layer = {
+      ...layer,
+      kind: "text",
+      bounds: { x: 1, y: 2, width: 30, height: 10 },
+      direction: "rtl",
+      textAlign: "start",
+      fontFamily: "Noto Sans Arabic",
+      fontSize: 16,
+      fullContent: "النص الأصلي",
+    };
+    const changed: Layer = {
+      ...initial,
+      bounds: { x: 4, y: 5, width: 40, height: 12 },
+      direction: "ltr",
+      textAlign: "justify",
+      fontFamily: "Inter",
+      fontSize: 18,
+      fullContent: "النص المصحح",
+    };
+
+    expect(
+      collectLayerReviewUpdates([changed], snapshotLayerReview([initial])),
+    ).toEqual([
+      expect.objectContaining({
+        bounds: changed.bounds,
+        direction: "ltr",
+        textAlign: "justify",
+        fontFamily: "Inter",
+        fontSize: 18,
+        fullText: "النص المصحح",
+      }),
+    ]);
+  });
+
   it("does not send unchanged layers", () => {
     expect(
       collectLayerReviewUpdates([layer], snapshotLayerReview([layer])),
+    ).toEqual([]);
+  });
+
+  it("never serializes structural group edits", () => {
+    const group: Layer = {
+      ...layer,
+      id: "page-group",
+      kind: "group",
+      name: "+page_001",
+      locked: true,
+    };
+    const snapshot = snapshotLayerReview([group]);
+
+    expect(
+      collectLayerReviewUpdates(
+        [{ ...group, name: "+changed", visible: false }],
+        snapshot,
+      ),
+    ).toEqual([]);
+  });
+
+  it("never serializes edits to any fixed layer kind", () => {
+    const fixedText: Layer = { ...layer, kind: "text", fixed: true };
+    expect(
+      collectLayerReviewUpdates(
+        [{ ...fixedText, name: "+changed", locked: true }],
+        snapshotLayerReview([fixedText]),
+      ),
     ).toEqual([]);
   });
 
@@ -127,6 +190,39 @@ describe("layer review persistence", () => {
 
     expect(moveEditableLayer([layer, page], "source", 1)).toBeNull();
     expect(moveEditableLayer([layer, page], "page", 0)).toBeNull();
+  });
+
+  it("keeps groups fixed and blocks cross-page or cross-parent moves", () => {
+    const group: Layer = {
+      ...layer,
+      id: "group",
+      name: "+page_001",
+      kind: "group",
+      parentId: null,
+      pageNumber: 1,
+    };
+    const sibling = {
+      ...layer,
+      id: "sibling",
+      parentId: "group",
+      pageNumber: 1,
+    };
+    const otherParent = {
+      ...layer,
+      id: "other-parent",
+      parentId: "nested",
+      pageNumber: 1,
+    };
+    const otherPage = {
+      ...layer,
+      id: "other-page",
+      parentId: "group-2",
+      pageNumber: 2,
+    };
+
+    expect(moveEditableLayer([group, sibling], "group", 1)).toBeNull();
+    expect(moveEditableLayer([sibling, otherParent], sibling.id, 1)).toBeNull();
+    expect(moveEditableLayer([sibling, otherPage], sibling.id, 1)).toBeNull();
   });
 
   it("arranges pages top-to-bottom and respects RTL horizontal order", () => {

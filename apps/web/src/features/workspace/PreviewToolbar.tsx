@@ -1,19 +1,16 @@
 import { Icon } from "../../shared/Icon";
 
 export type PreviewBackground = "dark" | "white" | "checker";
-export type PreviewQuality = "fast" | "full";
 
 interface PreviewToolbarProps {
   zoom: number;
   background: PreviewBackground;
-  quality: PreviewQuality;
   grid: boolean;
   safeBounds: boolean;
   solo: boolean;
   focusMode: boolean;
   onZoomChange: (zoom: number) => void;
   onBackgroundChange: (background: PreviewBackground) => void;
-  onQualityChange: (quality: PreviewQuality) => void;
   onGridChange: (value: boolean) => void;
   onSafeBoundsChange: (value: boolean) => void;
   onSoloChange: (value: boolean) => void;
@@ -23,14 +20,12 @@ interface PreviewToolbarProps {
 export function PreviewToolbar({
   zoom,
   background,
-  quality,
   grid,
   safeBounds,
   solo,
   focusMode,
   onZoomChange,
   onBackgroundChange,
-  onQualityChange,
   onGridChange,
   onSafeBoundsChange,
   onSoloChange,
@@ -41,9 +36,9 @@ export function PreviewToolbar({
   return (
     <div className="pro-preview-toolbar" role="toolbar" aria-label="أدوات المعاينة">
       {/* Group A: Zoom controls */}
-      <div className="pro-toolbar-group" aria-label="أدوات التكبير">
+      <div className="pro-toolbar-group" role="group" aria-label="أدوات التكبير">
         <div className="pro-preview-control pro-zoom-control">
-          <button type="button" aria-label="ملاءمة المعاينة" onClick={() => setZoom(74)}>ملاءمة</button>
+          <button type="button" aria-label="تكبير المعاينة إلى 75 بالمئة" onClick={() => setZoom(75)}>75%</button>
           <button type="button" aria-label="حجم 100 بالمئة" onClick={() => setZoom(100)}>100%</button>
           <button type="button" aria-label="تصغير المعاينة" onClick={() => setZoom(zoom - 10)}><Icon name="zoomOut" size={15} /></button>
           <input aria-label="تكبير المعاينة" type="range" min="25" max="200" step="5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />
@@ -55,8 +50,8 @@ export function PreviewToolbar({
       <span className="pro-toolbar-sep" aria-hidden="true" />
 
       {/* Group B: Display mode & toggles */}
-      <div className="pro-toolbar-group" aria-label="خيارات العرض">
-        <div className="pro-preview-control pro-background-control" aria-label="خلفية المعاينة">
+      <div className="pro-toolbar-group" role="group" aria-label="خيارات العرض">
+        <div className="pro-preview-control pro-background-control" role="group" aria-label="خلفية المعاينة">
           {(["dark", "white", "checker"] as const).map((item) => (
             <button
               key={item}
@@ -80,12 +75,8 @@ export function PreviewToolbar({
 
       <span className="pro-toolbar-sep" aria-hidden="true" />
 
-      {/* Group C: Quality & Focus Mode */}
+      {/* Group C: Focus Mode */}
       <div className="pro-toolbar-group pro-toolbar-end">
-        <div className="pro-quality-switch" role="group" aria-label="جودة المعاينة">
-          <button type="button" className={quality === "fast" ? "is-active" : ""} onClick={() => onQualityChange("fast")}>سريع</button>
-          <button type="button" className={quality === "full" ? "is-active" : ""} onClick={() => onQualityChange("full")}>كامل</button>
-        </div>
         <button type="button" className="pro-focus-button" aria-pressed={focusMode} onClick={() => onFocusModeChange(!focusMode)}>
           <Icon name={focusMode ? "close" : "boxSelect"} size={15} />
           {focusMode ? "إنهاء التركيز" : "تركيز المعاينة"}

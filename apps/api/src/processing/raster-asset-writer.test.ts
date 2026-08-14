@@ -41,9 +41,12 @@ class MeasuredStorage extends InMemoryObjectStorage {
     }
   }
 
-  override async delete(objectKey: string): Promise<void> {
-    this.events.push(`delete:${objectKey}`);
-    await super.delete(objectKey);
+  override async purge(
+    objectKeys: readonly string[],
+    prefixes: readonly string[],
+  ): Promise<void> {
+    objectKeys.forEach((objectKey) => this.events.push(`purge:${objectKey}`));
+    await super.purge(objectKeys, prefixes);
   }
 }
 
@@ -86,7 +89,7 @@ describe("writeRasterAssets", () => {
     ).rejects.toThrow("write failed: failure");
 
     expect(storage.events.indexOf("put:complete:successful")).toBeLessThan(
-      storage.events.indexOf("delete:successful"),
+      storage.events.indexOf("purge:successful"),
     );
     await expect(storage.inspect("successful")).resolves.toBeNull();
     expect(observations[0]).toMatchObject({
@@ -130,6 +133,29 @@ describe("writeRasterAssets", () => {
     ).resolves.toEqual(["one"]);
 
     expect(observationErrors).toHaveLength(1);
+  });
+
+  it("registers every object before storage and aborts an unregistered write", async () => {
+    const storage = new MeasuredStorage();
+    const events = storage.events;
+
+    await writeRasterAssets(storage, assets("registered"), {
+      beforeStore: async (objectKey) => {
+        events.push(`register:${objectKey}`);
+      },
+    });
+    expect(events.indexOf("register:registered")).toBeLessThan(
+      events.indexOf("put:start:registered"),
+    );
+
+    await expect(
+      writeRasterAssets(storage, assets("unregistered"), {
+        beforeStore: async () => {
+          throw new Error("registry unavailable");
+        },
+      }),
+    ).rejects.toThrow("registry unavailable");
+    expect(events).not.toContain("put:start:unregistered");
   });
 });
 

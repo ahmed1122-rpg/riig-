@@ -3,7 +3,7 @@
 ## Assumptions
 
 This deployment profile is intentionally a modular monolith with image, PDF,
-and export workers. It assumes one small product team, a TLS-terminating load balancer, and
+export, and optional Character workers. It assumes one small product team, a TLS-terminating load balancer, and
 managed PostgreSQL, Redis, S3-compatible storage, and SMTP. Kubernetes is
 deliberately deferred until independent scaling or operational ownership makes
 it necessary.
@@ -19,8 +19,12 @@ assuming they are available.
 The `provider-readiness` GitHub environment is a release gate. Its protected
 workflow must pass against deployment-owned object storage and a completed
 isolated recovery manifest before production approval. Configure its
-environment variables with the exact digest-qualified release references and
-provider bucket settings. Store the latest signed recovery-manifest JSON in
+environment variables with `RELEASE_GIT_SHA`, the matching immutable
+`RELEASE_TAG`, and the exact digest-qualified release references. Every
+readiness workflow checks out that SHA with tag history, rejects a dirty or
+mismatched checkout, and verifies both repository-bound Cosign identities
+before running local scripts. Configure the provider bucket settings and store
+the latest signed recovery-manifest JSON in
 the protected `RECOVERY_MANIFEST_JSON` secret and its Ed25519 public
 verification key in `RECOVERY_SIGNING_PUBLIC_KEY_PEM`. Static
 access keys are optional when the runner receives a workload identity. For AWS
@@ -52,6 +56,12 @@ incident manifest. `npm run verify:incident -- <manifest.json>` enforces exact
 release identity, response targets, evidence links, a stable observation
 window, owned follow-ups, and Ed25519 attestation metadata.
 
+Use `/healthz` only for Nginx process liveness. Load balancers and canary gates
+must use `/readyz`, which proxies the API dependency and release-identity
+readiness contract. Prometheus must alert both when the API target is down and
+when application metrics disappear; dependency metrics alone cannot detect a
+dead scrape target.
+
 ## Required services
 
 - PostgreSQL 17 with TLS, daily backups, and point-in-time recovery.
@@ -68,54 +78,91 @@ use Stripe Customer Portal.
 
 ## Prepare configuration
 
-1. Copy `.env.production.example` to `.env.production`.
-2. Replace every `CHANGE_ME` or `REPLACE_WITH` value.
+1. Copy `.env.production.example` to `.env.production`. This is the Compose
+   control plane only; it must contain release coordinates and paths, never
+   application credentials.
+2. Create the workload secret files from
+   `.env.production.api.example`, `.env.production.migrate.example`,
+   `.env.production.maintenance.example`, `.env.production.worker.example`,
+   and `.env.production.worker-character.example`. Copy the ordinary worker
+   template separately to `.env.production.worker-media`,
+   `.env.production.worker-document`, and `.env.production.worker-export`.
+   Replace every `CHANGE_ME` or `REPLACE_WITH` value and keep all files outside
+   source control.
 3. Set `RELEASE_GIT_SHA` to the exact 40-character commit SHA recorded in the
    signed release artifact. Readiness publishes this identity so staging can
    prove that the tested source is the deployed source.
-4. Generate `AUTH_ENCRYPTION_KEY` using `openssl rand -base64 32`.
-5. Set `WEB_ORIGIN` and `PASSWORD_RESET_URL` to the public HTTPS origin.
-6. Keep `PAYMENT_MODE=disabled` until the Stripe webhook is registered.
-7. Keep `PDF_OCR_MODE=local`; the bundled Arabic model performs OCR inside the
+4. Give migrations a dedicated TLS PostgreSQL URL in
+   `MIGRATION_DATABASE_URL`. Its role must own/apply schema changes and must
+   not be the API runtime role. Give the API, maintenance process, and every
+   worker different least-privilege database identities.
+5. Generate a 32-byte key for `AUTH_ENCRYPTION_KEYRING`, select its ID with
+   `AUTH_ENCRYPTION_ACTIVE_KEY_ID`, and retain at most four previous keys while
+   rotating. `AUTH_ENCRYPTION_KEY` is accepted only as a temporary legacy-v1
+   decrypt key during the first rotation; remove it after a verified rotation
+   and recovery drill.
+6. Set `WEB_ORIGIN`, `PASSWORD_RESET_URL`, and `EMAIL_VERIFICATION_URL` to the
+   public HTTPS origin. Production requires `EMAIL_VERIFICATION_REQUIRED=true`.
+   If the first administrator must be created, deploy a single-use random token
+   only as its SHA-256 digest in `ADMIN_BOOTSTRAP_TOKEN_HASH`, constrain
+   `ADMIN_BOOTSTRAP_EMAIL`, complete the bootstrap, enroll MFA, then remove both
+   variables and redeploy.
+7. Keep `PAYMENT_MODE=disabled` until the Stripe webhook is registered.
+8. Keep `PDF_OCR_MODE=local`; the bundled Arabic model performs OCR inside the
    document worker and does not call an external document service. Keep
    `PDF_REGION_OCR_ENABLED=false` until a newly sealed independent holdout
    reaches CER <= 25%. Ordinary PDF ingestion, page tools, and export remain
    available while regional OCR is disabled.
-8. Set `OBJECT_STORAGE_ENCRYPTION_MODE=sse-s3` when the provider accepts an
+9. Set `OBJECT_STORAGE_ENCRYPTION_MODE=sse-s3` when the provider accepts an
    explicit `AES256` request, or `bucket-default` when encryption is enforced
    by bucket policy. Both modes are verified after every write; an object that
    does not satisfy the configured mode is deleted and the operation fails.
    `none` is rejected in production and exists only for local MinIO without a
    KMS.
-9. Prefer the cloud platform workload identity. On AWS, leave the three
+10. Prefer the cloud platform workload identity. On AWS, leave the three
    credential fields blank to use the SDK default provider chain. A custom
    S3-compatible endpoint requires both static keys and may include a session
    token.
-10. Use no custom endpoint for AWS S3. Any custom production endpoint must be
+11. Use no custom endpoint for AWS S3. Any custom production endpoint must be
    HTTPS.
-11. Apply the private-bucket permissions and lifecycle requirements in
+12. Apply the private-bucket permissions and lifecycle requirements in
     [`OBJECT_STORAGE.md`](OBJECT_STORAGE.md). In particular, expire
     `artifacts/` after no more than two days and never blindly expire live
     `sources/` or `derived/`.
-12. Store the completed environment in a secrets manager. Do not commit it.
-13. Keep `CHARACTER_RIG_ENABLED=false` by default. To enable the optional
+13. Store every completed workload file in a secrets manager. The production
+    launcher rejects reused env files, workload identities, database users, or
+    explicit S3 credentials. Do not commit any of them.
+14. Keep `CHARACTER_RIG_ENABLED=false` by default. To enable the optional
     identity-preserving pipeline, configure the private HTTPS inference
     endpoint and secret, pass the Character benchmark and Adobe Golden, then
     start `worker-character` with the `character-rig` Compose profile. Follow
      [`runbooks/character-rig-operations.md`](runbooks/character-rig-operations.md).
-14. Set `TRUSTED_PROXY_CIDR` to the narrow source CIDR used by the immediate TLS
+    `CHARACTER_INFERENCE_URL` may include a provider path prefix; both
+    `https://provider.example/private-api` and the trailing-slash form resolve
+    requests below `/private-api/`. Credentials, query strings, and fragments
+    are rejected. Do not include `/v1` unless it is genuinely part of the
+    provider's prefix, because the adapter appends its own versioned routes.
+    The API advertises Character Studio only after both the flag is enabled and
+    a fresh `worker-character` heartbeat is visible. Keep
+    `CHARACTER_DRAIN_TIMEOUT_MS=30000` below the Compose stop grace period so an
+    interrupted inference request is cancelled and its fenced job is requeued.
+    For local end-to-end development, use `npm run dev:stack:character` after a
+    compatible provider is listening at the configured URL.
+15. Set `TRUSTED_PROXY_CIDR` to the narrow source CIDR used by the immediate TLS
     load balancer when it connects to Nginx. The load balancer must overwrite
     `X-Forwarded-Proto` and append the socket client address to
     `X-Forwarded-For`. Restrict port 8080 to that CIDR at the provider firewall;
     never use `0.0.0.0/0` or `::/0`.
 
-Password-reset tokens and their email deliveries are inserted in one database
-transaction. Each API replica may run the outbox dispatcher: rows are claimed
+Password-reset and email-verification tokens and their deliveries are inserted
+atomically. Each API replica may run the outbox dispatcher: rows are claimed
 with `FOR UPDATE SKIP LOCKED`, leased for a bounded period, and retried with
 backoff. SMTP delivery is therefore at-least-once. The recipient and reset URL
 are scrubbed immediately after success or terminal failure and old terminal
 rows are removed by retention maintenance. Alert on sustained queued age or
-repeated `email.delivery` retry/failure events; do not log reset URLs.
+repeated `email.delivery` retry/failure events; do not log action URLs or
+tokens. Expired verification tokens are removed by retention maintenance, and
+account deletion removes all remaining tokens before anonymization.
 
 When Stripe is enabled, configure:
 
@@ -143,9 +190,28 @@ runtime. Do not bypass either contract with `--force`.
 GitHub workflows use one reviewed `actions/setup-node` commit and one reviewed
 `actions/checkout` commit, both running on the Node 24 Actions runtime. The
 workflow security verifier rejects an older or divergent pin, and the toolchain
-verifier requires every Dockerfile to use the same immutable Node image digest.
+verifier requires every production Dockerfile to use the same immutable slim
+Node image digest. The non-production QA image uses a separately pinned full
+Bookworm image at the same exact Node version so Git/fontconfig are present
+without a mutable package-manager download during the build.
 Patch upgrades must update `.node-version`, the root manifest, Docker image
 references, tests, and evidence together in one pull request.
+
+Source QA runs in `Dockerfile.qa`, a non-production image that keeps the exact
+Node/npm contract, Git for `verify:clean`, standard font support, and all test
+dependencies. Build and run it with:
+
+```bash
+docker build --file Dockerfile.qa --tag motionprep-qa:local .
+docker run --rm \
+  --volume "$PWD/artifacts/qa:/workspace/artifacts/qa" \
+  motionprep-qa:local
+```
+
+Its single command runs `npm run quality` and writes
+`artifacts/qa/quality-summary.json`, including the application/toolchain
+identity, timestamps, duration, outcome, and CI SHA when supplied. The QA image
+must never be promoted as a runtime artifact.
 
 The repository also enables npm's strict install-script policy in `.npmrc`.
 Only the exact reviewed `esbuild` postinstall and macOS-only `fsevents` native
@@ -174,6 +240,11 @@ digest-qualified `RUNTIME_IMAGE_REF` and `WEB_IMAGE_REF` values and exact
 rejects missing references and does not contain build directives or tag
 fallbacks.
 
+The application/package version, immutable source SHA, tag, and image digest
+serve different purposes and must not be substituted for one another. Follow
+[`VERSIONING.md`](VERSIONING.md); staging verification requires an explicit
+`EXPECTED_APPLICATION_VERSION` and never falls back to an old release number.
+
 ```bash
 node scripts/verify-release-environment.mjs .env.production
 node scripts/run-production-compose.mjs .env.production pull
@@ -193,13 +264,25 @@ node scripts/run-production-compose.mjs .env.production \
   --profile character-rig up -d worker-character
 ```
 
-The `migrate` service applies additive SQL migrations before the API and workers
-start. Migration 027 adds the durable email outbox, and migration 028 retains
-the request correlation identifier on processing and export jobs. Upload publication is then
+The `migrate` service applies all additive SQL migrations through migration 043
+before the API and workers start. Migrations 038–041 add the Character Rig
+domain, worker observability, review decisions, and the derived-asset registry;
+migration 042 adds privacy/retention state machines and object-write leases,
+and migration 043 adds single-use email verification;
+earlier migrations 027 and 028 add the durable
+email outbox and job correlation. Upload publication is then
 committed atomically across the upload session, source version, and project;
 the API startup reconciler re-inspects S3 metadata before repairing an
 interrupted legacy state. The web container exposes port 8080 and proxies `/v1` to the private API
 service. Only the web port should be published.
+
+The migration runner waits at most `MIGRATION_ADVISORY_LOCK_TIMEOUT_MS` for the
+single-runner advisory lock and applies `MIGRATION_LOCK_TIMEOUT_MS` to DDL lock
+waits. `MIGRATION_STATEMENT_TIMEOUT_MS` defaults to a conservative 60 minutes,
+so both locks and statements are fail-bounded without imposing a short web-style
+deadline on legitimate DDL. Set it to `0` only as an explicit, reviewed exception
+for a measured migration with its own operator deadline. A timeout fails the
+release before API startup instead of leaving deployment indefinitely blocked.
 
 Verify:
 
@@ -288,8 +371,9 @@ restore history.
   gives `/etc/nginx/conf.d` a 1 MiB tmpfs solely for rendering its validated
   proxy template at startup; the image filesystem remains read-only.
 - Cookies are Secure and HttpOnly in production.
-- The public proxy enforces the 30 MiB request limit and emits HSTS and the
-  remaining security headers on HTML, assets, health, and proxied API paths.
+- The public proxy and API enforce the shared 30 MiB request limit and emit
+  HSTS and the remaining security headers on HTML, assets, health, and proxied
+  API paths.
   Mirror HSTS at the TLS load balancer so edge-generated error responses carry
   it as well. The CSP deliberately retains `style-src 'unsafe-inline'` for the
   current React dynamic-style surface; do not describe it as a strict CSP.
@@ -324,11 +408,20 @@ the complete artifact in API memory. PDF decoders and raster transforms still
 need complete source/asset buffers; these reads are bounded to the exact
 persisted size, but worker concurrency multiplies that memory cost. Do not
 increase document concurrency until memory use has been measured with
-representative 30 MiB PDFs.
+representative PDFs up to the 30 MiB product ceiling.
 The database job claim uses row locking, so several worker replicas can safely
 share the queue. Every processing/export job uses a renewable lease and bounded
 retry; set `PROCESSING_LEASE_MS` and `EXPORT_LEASE_MS` above the normal p99 job
 duration while retaining heartbeat headroom.
+
+`EXPORT_JOB_TIMEOUT_MS` defaults to 10 minutes and is a hard isolation limit,
+not a normal cancellation path. Export adapters use native, buffer-oriented
+work that cannot be safely interrupted inside one Node process. If that limit
+is reached, the export worker exits before settling the job; the supervisor
+restarts it, operating-system memory is reclaimed, and the renewable lease
+eventually makes the job eligible for its bounded retry. Alert on
+`export.job_deadline_exceeded` and investigate the source before raising this
+limit.
 
 On `SIGTERM`, workers stop claiming new work and drain for
 `PROCESSING_DRAIN_TIMEOUT_MS` or `EXPORT_DRAIN_TIMEOUT_MS` (30 seconds by
@@ -368,6 +461,13 @@ the job, so a request can be followed across the PostgreSQL-backed queues.
 tracing complements it rather than replacing it.
 
 ## External release gates and deliberately deferred scope
+
+Before replacing an API instance, confirm the runtime secret file contains
+`API_DEREGISTRATION_DELAY_MS=10000` and `API_SHUTDOWN_TIMEOUT_MS=130000`.
+Readiness must change to `503 APPLICATION_DRAINING` before the listener closes;
+the reverse proxy request deadline is 120 seconds and Compose grants the API
+140 seconds before forced termination. A deployment that shortens this chain
+can truncate uploads or other accepted requests and is not eligible to proceed.
 
 - Kubernetes and microservices: no current team or scaling need justifies them.
 - Paymob live processing: requires a verified merchant account, credentials,

@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignore": [
     "scripts/adobe/**",
-    "scripts/generate-adobe-golden.mjs"
+    "scripts/generate-adobe-golden.mjs",
+    "scripts/run-quality-qa.mjs"
   ]
 }

@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import swagger from "@fastify/swagger";
+import { createRequire } from "node:module";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
@@ -41,10 +41,7 @@ import { registerHttpMetrics } from "./observability/http-metrics.js";
 import { RepositoryUsageMeter } from "./billing/usage-meter.js";
 import { InMemorySourceVersionRestoreCommand } from "./sources/source-version-restore.js";
 import { registerCapabilityRoutes } from "./capabilities/capability-routes.js";
-import {
-  registerOpenApiDefaults,
-  transformOpenApiDocumentation,
-} from "./http/openapi-defaults.js";
+import { registerOpenApi } from "./http/register-openapi.js";
 import { UploadReconciliationMetrics } from "./uploads/upload-reconciliation-metrics.js";
 import { createUploadRuntime } from "./uploads/upload-runtime.js";
 import { registerHttpErrorHandler } from "./http/error-handler.js";
@@ -58,21 +55,30 @@ import {
 } from "./privacy/account-privacy.js";
 import { registerAccountPrivacyRoutes } from "./privacy/account-privacy-routes.js";
 import { registerCharacterRigFeature } from "./character-rig/character-rig-feature.js";
+import { createHttpLoggerOptions } from "./http/logger-options.js";
+import { registerCspReportRoutes } from "./security/csp-report-routes.js";
+import { ClientTelemetryMetrics } from "./observability/client-telemetry-metrics.js";
 
-const APPLICATION_VERSION = "0.1.3";
+const require = createRequire(import.meta.url);
+const rootManifest = require("../../../package.json") as { version?: unknown };
+export const APPLICATION_VERSION =
+  typeof rootManifest.version === "string" && rootManifest.version.length > 0
+    ? rootManifest.version
+    : (() => { throw new Error("The root package version is missing."); })();
 
 export async function buildApp(
   config: AppConfig,
   dependencies: AppDependencies = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: config.NODE_ENV !== "test",
+    logger: createHttpLoggerOptions(config.NODE_ENV),
     bodyLimit: config.MAX_UPLOAD_BYTES,
     requestIdHeader: false,
     genReqId: () => randomUUID(),
     trustProxy: config.TRUST_PROXY_HOPS || false,
   });
   registerHttpTracing(app);
+  registerHttpErrorHandler(app);
 
   await app.register(helmet, {
     hsts:
@@ -128,15 +134,9 @@ export async function buildApp(
       ? { store: dependencies.rateLimitStore }
       : {}),
     nameSpace: "motionprep:rate-limit:",
-    errorResponseBuilder: (request, context) => ({
-      data: null,
-      error: {
-        code: "RATE_LIMITED",
-        message: `تجاوزت حد الطلبات. أعد المحاولة بعد ${context.after}.`,
-        requestId: request.id,
-      },
-    }),
   });
+  const clientTelemetryMetrics = new ClientTelemetryMetrics();
+  await registerCspReportRoutes(app, { clientTelemetry: clientTelemetryMetrics });
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("x-request-id", request.id);
     if (
@@ -147,89 +147,10 @@ export async function buildApp(
     }
     return payload;
   });
-  await app.register(swagger, {
-    transform: transformOpenApiDocumentation,
-    openapi: {
-      openapi: "3.1.0",
-      info: {
-        title: "MotionPrep Studio API",
-        description:
-          "HTTP API for authentication, source preparation, layered editing, exports, billing, and administration.",
-        version: APPLICATION_VERSION,
-      },
-      servers: [{ url: new URL(config.WEB_ORIGIN).origin }],
-      tags: [
-        { name: "health" },
-        { name: "auth" },
-        { name: "account" },
-        { name: "projects" },
-        { name: "uploads" },
-        { name: "processing" },
-        { name: "character-rig" },
-        { name: "exports" },
-        { name: "billing" },
-        { name: "admin" },
-        { name: "system" },
-      ],
-      components: {
-        securitySchemes: {
-          sessionCookie: {
-            type: "apiKey",
-            in: "cookie",
-            name: "motionprep_session",
-          },
-          providerSignature: {
-            type: "apiKey",
-            in: "header",
-            name: "stripe-signature",
-          },
-        },
-        schemas: {
-          ApiErrorEnvelope: {
-            type: "object",
-            required: ["data", "error"],
-            properties: {
-              data: { type: "null" },
-              error: {
-                type: "object",
-                required: ["code", "message", "requestId"],
-                properties: {
-                  code: { type: "string" },
-                  message: { type: "string" },
-                  requestId: { type: "string" },
-                  fields: {
-                    type: "object",
-                    additionalProperties: { type: "string" },
-                  },
-                },
-              },
-            },
-          },
-        },
-        responses: Object.fromEntries(
-          [
-            ["BadRequest", "The request is invalid."],
-            ["Unauthorized", "Authentication is required."],
-            ["Forbidden", "The authenticated user is not authorized."],
-            ["Conflict", "The request conflicts with current state."],
-            ["RateLimited", "The request rate limit was exceeded."],
-            ["InternalError", "An unexpected server error occurred."],
-          ].map(([name, description]) => [
-            name,
-            {
-              description,
-              content: {
-                "application/json": {
-                  schema: { $ref: "#/components/schemas/ApiErrorEnvelope" },
-                },
-              },
-            },
-          ]),
-        ),
-      },
-    },
+  await registerOpenApi(app, {
+    applicationVersion: APPLICATION_VERSION,
+    webOrigin: config.WEB_ORIGIN,
   });
-  registerOpenApiDefaults(app);
   const uploadReconciliationMetrics = new UploadReconciliationMetrics();
   await registerHttpMetrics(app, {
     ...(config.METRICS_BEARER_TOKEN
@@ -246,6 +167,7 @@ export async function buildApp(
       ? { probeTimeoutMs: dependencies.metricsProbeTimeoutMs }
       : {}),
     uploadReconciliationMetrics,
+    clientTelemetryMetrics,
     buildInfo: {
       version: APPLICATION_VERSION,
       release: process.env.RELEASE_VERSION ?? "development",
@@ -274,6 +196,7 @@ export async function buildApp(
     idempotency,
     storage: objectStorage,
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    maxImageUploadBytes: config.MAX_IMAGE_UPLOAD_BYTES,
     metrics: uploadReconciliationMetrics,
     logger: app.log,
     ...(dependencies.uploadFinalization ? { finalization: dependencies.uploadFinalization } : {}),
@@ -355,8 +278,14 @@ export async function buildApp(
           "processing.raster_asset_observer_failed",
         );
       },
+      ...(dependencies.derivedAssets
+        ? { derivedAssets: dependencies.derivedAssets }
+        : {}),
     },
   );
+  const auditRepository =
+    dependencies.audit ?? new InMemoryAuditRepository();
+  const auditService = new AuditService(auditRepository);
   const authRepository = dependencies.auth ?? new InMemoryAuthRepository();
   const authService = new AuthService(
     authRepository,
@@ -373,6 +302,16 @@ export async function buildApp(
       passwordResetUrl:
         config.PASSWORD_RESET_URL ??
         new URL("/auth/reset", config.WEB_ORIGIN).toString(),
+      emailVerificationRequired: config.EMAIL_VERIFICATION_REQUIRED,
+      emailVerificationUrl:
+        config.EMAIL_VERIFICATION_URL ??
+        new URL("/auth", config.WEB_ORIGIN).toString(),
+      ...(config.ADMIN_BOOTSTRAP_EMAIL
+        ? { adminBootstrapEmail: config.ADMIN_BOOTSTRAP_EMAIL }
+        : {}),
+      ...(config.ADMIN_BOOTSTRAP_TOKEN_HASH
+        ? { adminBootstrapTokenHash: config.ADMIN_BOOTSTRAP_TOKEN_HASH }
+        : {}),
       totpIssuer: config.TOTP_ISSUER,
       ...(config.E2E_ADMIN_EMAIL ? {
         registrationRoleForEmail: (email: string) =>
@@ -391,9 +330,6 @@ export async function buildApp(
       objectStorage,
     ),
   );
-  const auditRepository =
-    dependencies.audit ?? new InMemoryAuditRepository();
-  const auditService = new AuditService(auditRepository);
   const billingService = new BillingService(
     billingRepository,
     dependencies.paymentProviders ??
@@ -421,13 +357,33 @@ export async function buildApp(
 
   await registerCapabilityRoutes(app, {
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    maxImageUploadBytes: config.MAX_IMAGE_UPLOAD_BYTES,
+    storageProfile:
+      config.PERSISTENCE_MODE === "postgres" &&
+      config.OBJECT_STORAGE_MODE === "s3" &&
+      Boolean(config.REDIS_URL)
+        ? "durable"
+        : "ephemeral",
     pdfRegionOcrEnabled: config.PDF_REGION_OCR_ENABLED,
     characterRigEnabled: config.CHARACTER_RIG_ENABLED,
+    requiredWorkers: new Set([
+      ...(config.PROCESSING_EXECUTION_MODE === "worker"
+        ? (["media", "document"] as const)
+        : []),
+      ...(config.EXPORT_EXECUTION_MODE === "worker"
+        ? (["export"] as const)
+        : []),
+      ...(config.CHARACTER_RIG_ENABLED ? (["character"] as const) : []),
+    ]),
+    ...(dependencies.operationalStatus
+      ? { operationalStatus: dependencies.operationalStatus }
+      : {}),
   });
 
   await registerAuthRoutes(app, authService, {
     secureCookies: config.COOKIE_SECURE,
     sessionTtlSeconds: config.SESSION_TTL_SECONDS,
+    audit: auditService,
   });
   await registerAccountPrivacyRoutes(app, authService, accountPrivacyService);
   await registerProjectRoutes(
@@ -462,6 +418,8 @@ export async function buildApp(
   );
   await registerUploadRoutes(app, projects, uploadRuntime.service, authService, {
     maxUploadBytes: config.MAX_UPLOAD_BYTES,
+    maxImageUploadBytes: config.MAX_IMAGE_UPLOAD_BYTES,
+    bodyConcurrency: config.UPLOAD_BODY_CONCURRENCY,
   });
   await registerExportRoutes(app, projects, exportService, authService);
   await registerProcessingRoutes(
@@ -490,8 +448,6 @@ export async function buildApp(
       ? { operationalStatus: dependencies.operationalStatus }
       : {}),
   });
-
-  registerHttpErrorHandler(app);
 
   app.setNotFoundHandler((request, reply) =>
     reply.status(404).send({

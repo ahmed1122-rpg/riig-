@@ -14,6 +14,7 @@ import {
   type SessionUser,
 } from "../../lib/api";
 import { Icon } from "../../shared/Icon";
+import { downloadBlob } from "../../shared/browserDownload";
 import { PasswordRequirements } from "./PasswordRequirements";
 
 interface SessionSecurityProps {
@@ -115,14 +116,10 @@ export default function SessionSecurity({
     });
 
   const downloadRecoveryCodes = () => {
-    const url = URL.createObjectURL(
-      new Blob([recoveryCodes.join("\n")], { type: "text/plain;charset=utf-8" }),
-    );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "motionprep-recovery-codes.txt";
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadBlob([recoveryCodes.join("\n")], {
+      filename: "motionprep-recovery-codes.txt",
+      type: "text/plain;charset=utf-8",
+    });
   };
 
   if (recoveryCodes.length > 0) {

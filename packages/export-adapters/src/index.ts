@@ -29,6 +29,8 @@ export {
 export { createPdfDocumentPsd, createPdfPagePsd } from "./pdf-psd.js";
 
 const TIFF_TOTAL_PIXEL_BUDGET = 32_000_000;
+const RASTER_DECODE_PIXEL_BUDGET = 64_000_000;
+const PNG_FULL_CANVAS_PIXEL_BUDGET = 64_000_000;
 
 export interface RasterLayerAsset {
   layer: LayerNode;
@@ -91,26 +93,25 @@ export async function createTransparentPngs(
   assets: readonly RasterLayerAsset[],
 ): Promise<TransparentPng[]> {
   assertDocumentDimensions(document, false);
+  assertFullCanvasOutputBudget(document, assets.length);
   const prepared = await prepareRasterAssets(document, assets);
-
-  return Promise.all(
-    prepared
-      .slice()
-      .sort((left, right) => left.layer.zIndex - right.layer.zIndex)
-      .map(async (item, index) => {
-        const body = await fullCanvas(document, item)
-          .png({ compressionLevel: 9, adaptiveFiltering: true })
-          .toBuffer();
-
-        return {
-          layerId: item.layer.id,
-          filename: `${String(index + 1).padStart(2, "0")}_${safeFilename(
-            item.layer.name,
-          )}.png`,
-          body,
-        };
-      }),
-  );
+  const pngs: TransparentPng[] = [];
+  const ordered = prepared
+    .slice()
+    .sort((left, right) => left.layer.zIndex - right.layer.zIndex);
+  for (const [index, item] of ordered.entries()) {
+    const body = await fullCanvas(document, item)
+      .png({ compressionLevel: 9, adaptiveFiltering: true })
+      .toBuffer();
+    pngs.push({
+      layerId: item.layer.id,
+      filename: `${String(index + 1).padStart(2, "0")}_${safeFilename(
+        item.layer.name,
+      )}.png`,
+      body,
+    });
+  }
+  return pngs;
 }
 
 /**
@@ -123,17 +124,14 @@ export async function createLayeredTiff(
   assets: readonly RasterLayerAsset[],
 ): Promise<Buffer> {
   assertDocumentDimensions(document, false);
-  const prepared = (await prepareRasterAssets(document, assets))
-    .slice()
-    .sort((left, right) => right.layer.zIndex - left.layer.zIndex);
-  if (prepared.length === 0) {
+  if (assets.length === 0) {
     throw new ExportAdapterError(
       "RASTER_LAYER_REQUIRED",
       "The image document does not contain raster layers for TIFF export.",
     );
   }
   if (
-    document.width * document.height * Math.max(1, prepared.length) >
+    document.width * document.height * Math.max(1, assets.length) >
     TIFF_TOTAL_PIXEL_BUDGET
   ) {
     throw new ExportAdapterError(
@@ -141,11 +139,13 @@ export async function createLayeredTiff(
       "The multi-page TIFF exceeds the safe memory budget; use PSD or PNG ZIP.",
     );
   }
-  const pages = await Promise.all(
-    prepared.map((item) =>
-      fullCanvas(document, item).raw().toBuffer(),
-    ),
-  );
+  const prepared = (await prepareRasterAssets(document, assets))
+    .slice()
+    .sort((left, right) => right.layer.zIndex - left.layer.zIndex);
+  const pages: Buffer[] = [];
+  for (const item of prepared) {
+    pages.push(await fullCanvas(document, item).raw().toBuffer());
+  }
   return sharp(Buffer.concat(pages), {
     raw: {
       width: document.width,
@@ -174,9 +174,11 @@ async function prepareRasterAssets(
       "لا توجد طبقة Raster قابلة للتصدير.",
     );
   }
+  assertAggregateRasterBudget(document, assets);
 
   const seen = new Set<string>();
   const prepared: PreparedRaster[] = [];
+  let decodedPixels = 0;
   for (const asset of assets) {
     if (asset.layer.kind !== "raster" || seen.has(asset.layer.id)) {
       throw new ExportAdapterError(
@@ -206,6 +208,14 @@ async function prepareRasterAssets(
       );
     }
 
+    decodedPixels += decoded.info.width * decoded.info.height;
+    if (decodedPixels > RASTER_DECODE_PIXEL_BUDGET) {
+      throw new ExportAdapterError(
+        "RASTER_MEMORY_BUDGET_EXCEEDED",
+        "The raster layers exceed the safe aggregate decode memory budget.",
+      );
+    }
+
     const placement = resolvePlacement(document, asset.layer, decoded.info);
     prepared.push({
       layer: asset.layer,
@@ -216,6 +226,46 @@ async function prepareRasterAssets(
     });
   }
   return prepared;
+}
+
+function assertAggregateRasterBudget(
+  document: LayerDocument,
+  assets: readonly RasterLayerAsset[],
+): void {
+  let estimatedPixels = 0;
+  for (const { layer } of assets) {
+    const bounds = layer.bounds;
+    const width =
+      bounds && Number.isFinite(bounds.width) && bounds.width > 0
+        ? Math.ceil(bounds.width)
+        : document.width;
+    const height =
+      bounds && Number.isFinite(bounds.height) && bounds.height > 0
+        ? Math.ceil(bounds.height)
+        : document.height;
+    estimatedPixels += width * height;
+    if (estimatedPixels > RASTER_DECODE_PIXEL_BUDGET) {
+      throw new ExportAdapterError(
+        "RASTER_MEMORY_BUDGET_EXCEEDED",
+        "The raster layers exceed the safe aggregate decode memory budget.",
+      );
+    }
+  }
+}
+
+function assertFullCanvasOutputBudget(
+  document: LayerDocument,
+  layerCount: number,
+): void {
+  if (
+    document.width * document.height * Math.max(1, layerCount) >
+    PNG_FULL_CANVAS_PIXEL_BUDGET
+  ) {
+    throw new ExportAdapterError(
+      "RASTER_MEMORY_BUDGET_EXCEEDED",
+      "The transparent PNG set exceeds the safe aggregate canvas budget.",
+    );
+  }
 }
 
 function fullCanvas(document: LayerDocument, item: PreparedRaster) {

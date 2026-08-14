@@ -6,15 +6,16 @@ import {
 } from "react";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
 import type { LayerDocumentView } from "../../lib/api";
-import type { PreviewBackground, PreviewQuality } from "./PreviewToolbar";
+import type { PreviewBackground } from "./PreviewToolbar";
 import type { UploadState } from "./SourceUploadStatus";
-import type {
-  WorkspaceMobilePanel,
-  WorkspaceSaveState,
-} from "./WorkspaceChrome";
+import type { WorkspaceSaveState } from "./WorkspaceChrome";
+import type { WorkspaceMobilePanel } from "./workspaceMobilePanel";
 import { storedPdfSegmentation } from "./pdfSegmentation";
-import { storedPreviewQuality } from "./workspaceDocument";
 import { useWorkspacePreference } from "./useWorkspacePreference";
+import {
+  firstEditableWorkspaceLayer,
+  firstEditableWorkspaceLayerId,
+} from "./workspaceLayerSelection";
 
 function emptySourceName(mode: ProjectMode): string {
   return mode === "image" ? "اختر صورة واحدة" : "اختر ملف PDF واحدًا";
@@ -33,12 +34,14 @@ export function useWorkspaceReviewState(mode: ProjectMode) {
   const setLayers = mode === "image" ? setImageLayers : setBookLayers;
   const activeLayer = useMemo(
     () =>
-      layers.find((layer) => layer.id === activeLayerId) ?? layers[0],
+      layers.find(
+        (layer) => layer.id === activeLayerId && layer.kind !== "group",
+      ) ?? firstEditableWorkspaceLayer(layers),
     [activeLayerId, layers],
   );
 
   const resetSelection = useCallback((preparedLayers: readonly Layer[]) => {
-    const firstLayerId = preparedLayers[0]?.id ?? "";
+    const firstLayerId = firstEditableWorkspaceLayerId(preparedLayers);
     setActiveLayerId(firstLayerId);
     setSelectedIds(firstLayerId ? [firstLayerId] : []);
   }, []);
@@ -94,6 +97,9 @@ export function useWorkspaceSourceState(mode: ProjectMode) {
   const [uploadDetailsOpen, setUploadDetailsOpen] = useState(false);
   const [projectId, setProjectId] = useState<string>();
   const [sourceVersionId, setSourceVersionId] = useState<string>();
+  const [pendingUploadId, setPendingUploadId] = useState<string>();
+  const [pendingSourceVersionId, setPendingSourceVersionId] = useState<string>();
+  const [processingJobId, setProcessingJobId] = useState<string>();
   const [sourceHash, setSourceHash] = useState<string>();
   const [sourcePreviewUrl, setSourcePreviewUrl] = useState<string>();
   const [imageCanvasSize, setImageCanvasSize] = useState<{
@@ -118,12 +124,18 @@ export function useWorkspaceSourceState(mode: ProjectMode) {
   const persistedSource = Boolean(projectId && sourceVersionId);
 
   const resetForMode = useCallback((nextMode: ProjectMode) => {
+    setProcessing(false);
     setSourceName(emptySourceName(nextMode));
     setSourceVersion(0);
     setUploadState("empty");
     setUploadProgress(0);
+    setUploadError(undefined);
+    setUploadDetailsOpen(false);
     setProjectId(undefined);
     setSourceVersionId(undefined);
+    setPendingUploadId(undefined);
+    setPendingSourceVersionId(undefined);
+    setProcessingJobId(undefined);
     setSourceHash(undefined);
     setSourcePreviewUrl(undefined);
     setImageCanvasSize(undefined);
@@ -155,6 +167,12 @@ export function useWorkspaceSourceState(mode: ProjectMode) {
     setProjectId,
     sourceVersionId,
     setSourceVersionId,
+    pendingUploadId,
+    setPendingUploadId,
+    pendingSourceVersionId,
+    setPendingSourceVersionId,
+    processingJobId,
+    setProcessingJobId,
     sourceHash,
     setSourceHash,
     sourcePreviewUrl,
@@ -189,8 +207,6 @@ export function useWorkspaceEditorState(mode: ProjectMode) {
   const [zoom, setZoom] = useState(100);
   const [previewBackground, setPreviewBackground] =
     useState<PreviewBackground>(mode === "image" ? "dark" : "white");
-  const [previewQuality, setPreviewQuality] =
-    useState<PreviewQuality>(storedPreviewQuality);
   const [grid, setGrid] = useState(true);
   const [safeBounds, setSafeBounds] = useState(true);
   const [solo, setSolo] = useState(false);
@@ -207,6 +223,11 @@ export function useWorkspaceEditorState(mode: ProjectMode) {
   const [layerWidth, setLayerWidth] = useWorkspacePreference(
     "motionprep.workspace.layers-width",
     326,
+    (value): value is number =>
+      typeof value === "number" &&
+      Number.isFinite(value) &&
+      value >= 260 &&
+      value <= 430,
   );
 
   useEffect(() => {
@@ -216,7 +237,11 @@ export function useWorkspaceEditorState(mode: ProjectMode) {
   }, [mode]);
 
   const resetForMode = useCallback((nextMode: ProjectMode) => {
+    setMobilePanel("none");
+    setExportOpen(false);
     setPreviewBackground(nextMode === "image" ? "dark" : "white");
+    setSolo(false);
+    setFocusMode(false);
   }, []);
 
   return {
@@ -230,8 +255,6 @@ export function useWorkspaceEditorState(mode: ProjectMode) {
     setZoom,
     previewBackground,
     setPreviewBackground,
-    previewQuality,
-    setPreviewQuality,
     grid,
     setGrid,
     safeBounds,

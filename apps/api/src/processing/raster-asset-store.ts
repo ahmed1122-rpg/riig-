@@ -7,9 +7,13 @@ import {
 } from "../storage/object-storage.js";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { ProcessingDomainError } from "./processing-errors.js";
+import type { DerivedAssetRegistry } from "../storage/derived-asset-registry.js";
 
 export class RasterAssetStore {
-  constructor(private readonly storage: ObjectStorage) {}
+  constructor(
+    private readonly storage: ObjectStorage,
+    private readonly registry?: DerivedAssetRegistry,
+  ) {}
 
   async load(reference: RasterAssetReference): Promise<StoredObject | null> {
     let object: StoredObject | null;
@@ -34,18 +38,21 @@ export class RasterAssetStore {
     revision: number,
     tool: "edge-refine" | "merge",
     layerId: string,
+    operationId: string,
     body: Buffer,
   ): Promise<RasterAssetReference> {
     return this.store(
+      document.projectId,
       [
         "derived",
         encodeURIComponent(document.projectId),
         encodeURIComponent(document.sourceVersionId ?? "source"),
         "tools",
         `revision-${revision}`,
-        `${tool}-${encodeURIComponent(layerId)}.png`,
+        `${tool}-${encodeURIComponent(layerId)}-${encodeURIComponent(operationId)}.png`,
       ].join("/"),
       body,
+      "tool",
     );
   }
 
@@ -54,24 +61,29 @@ export class RasterAssetStore {
     revision: number,
     layerId: string,
     role: "refined" | "separated",
+    operationId: string,
     body: Buffer,
   ): Promise<RasterAssetReference> {
     return this.store(
+      document.projectId,
       [
         "derived",
         encodeURIComponent(document.projectId),
         encodeURIComponent(document.sourceVersionId ?? "source"),
         "guidance",
         `revision-${revision}`,
-        `${encodeURIComponent(layerId)}-${role}.png`,
+        `${encodeURIComponent(layerId)}-${role}-${encodeURIComponent(operationId)}.png`,
       ].join("/"),
       body,
+      "guidance",
     );
   }
 
   private async store(
+    projectId: string,
     objectKey: string,
     body: Buffer,
+    category: "tool" | "guidance",
   ): Promise<RasterAssetReference> {
     const reference: RasterAssetReference = {
       objectKey,
@@ -79,6 +91,7 @@ export class RasterAssetStore {
       sizeBytes: body.byteLength,
       sha256: createHash("sha256").update(body).digest("hex"),
     };
+    await this.registry?.register(projectId, objectKey, category);
     await this.storage.put({ key: objectKey, ...reference, body });
     return reference;
   }

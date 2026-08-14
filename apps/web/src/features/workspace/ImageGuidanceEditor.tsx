@@ -12,20 +12,16 @@ import {
   useGuidanceReview,
   WorkflowStrip,
   type Point,
-  type ProcessingMode,
+  type CorrectionMode,
   type ReadyWorkspaceToolId,
   type SharedEditorProps,
   type WorkspaceEditorCommand,
 } from "./GuidanceEditorShared";
-
-type ImagePrompt = "keep" | "exclude" | "separate" | "erase";
-
-interface GuidanceStroke {
-  id: string;
-  prompt: Exclude<ImagePrompt, "erase">;
-  size: number;
-  points: Point[];
-}
+import {
+  imageStrokePath,
+  type GuidanceStroke,
+  type ImagePrompt,
+} from "./imageGuidanceGeometry";
 
 interface ImageGuidanceEditorProps extends SharedEditorProps {
   layers: Layer[];
@@ -39,7 +35,7 @@ interface ImageGuidanceEditorProps extends SharedEditorProps {
   };
   guidanceRevision?: number;
   onApply: (input: {
-    mode: ProcessingMode;
+    mode: CorrectionMode;
     strokes: GuidanceStroke[];
   }) => Promise<{ revision: number; warnings: string[] }>;
   preparation?: {
@@ -56,6 +52,7 @@ interface ImageGuidanceEditorProps extends SharedEditorProps {
   toolCommand?: WorkspaceEditorCommand;
   onToolSelect?: (toolId: ReadyWorkspaceToolId) => void;
   onHistoryNavigate: (direction: "undo" | "redo") => Promise<void>;
+  onDraftDirtyChange?: (dirty: boolean) => void;
 }
 
 const imagePromptTools = [
@@ -75,10 +72,6 @@ const promptColors: Record<Exclude<ImagePrompt, "erase">, string> = {
   separate: "#38bdf8",
 };
 
-function strokePath(points: Point[]) {
-  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x * 1000} ${point.y * 1000}`).join(" ");
-}
-
 function ImageStrokeOverlay({
   strokes,
   activePrompt,
@@ -86,6 +79,7 @@ function ImageStrokeOverlay({
   onCommit,
   onErase,
   showRefinement,
+  disabled,
 }: {
   strokes: GuidanceStroke[];
   activePrompt: ImagePrompt;
@@ -93,6 +87,7 @@ function ImageStrokeOverlay({
   onCommit: (stroke: GuidanceStroke) => void;
   onErase: (point: Point) => void;
   showRefinement: boolean;
+  disabled: boolean;
 }) {
   const currentRef = useRef<GuidanceStroke | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -120,6 +115,7 @@ function ImageStrokeOverlay({
   }, []);
 
   const pointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (disabled) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = normalizedPoint(event);
@@ -128,7 +124,7 @@ function ImageStrokeOverlay({
       return;
     }
     currentRef.current = {
-      id: `stroke-${Date.now()}`,
+      id: `stroke-${crypto.randomUUID()}`,
       prompt: activePrompt,
       size: brushSize,
       points: [point],
@@ -162,8 +158,8 @@ function ImageStrokeOverlay({
       className="guidance-overlay"
       viewBox="0 0 1000 1000"
       preserveAspectRatio="none"
-      role="application"
-      tabIndex={0}
+      role="region"
+      aria-disabled={disabled}
       aria-label="لوحة إرشاد الصورة. ارسم خطوطًا قليلة داخل الجزء وحوله، ثم حسّن المنطقة."
       aria-describedby="image-guidance-instruction"
       onPointerDown={pointerDown}
@@ -184,7 +180,7 @@ function ImageStrokeOverlay({
         <path
           key={stroke.id}
           className={`guidance-stroke guidance-stroke--${stroke.prompt}`}
-          d={strokePath(stroke.points)}
+          d={imageStrokePath(stroke.points)}
           stroke={promptColors[stroke.prompt]}
           strokeWidth={stroke.size * 2.2}
         />
@@ -207,13 +203,26 @@ export function ImageGuidanceEditor({
   toolCommand,
   onToolSelect,
   onHistoryNavigate,
+  onDraftDirtyChange,
 }: ImageGuidanceEditorProps) {
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>("guided");
+  const [processingMode, setProcessingMode] = useState<CorrectionMode>("guided");
   const [prompt, setPrompt] = useState<ImagePrompt>("keep");
   const [brushSize, setBrushSize] = useState(16);
   const [strokes, setStrokes] = useState<GuidanceStroke[]>([]);
+  const [keyboardPoint, setKeyboardPoint] = useState({ x: 50, y: 50 });
+  const editableLayers = layers.filter((layer) => !layer.locked);
+  const canEditSelectedLayer = editableLayers.some(
+    (layer) => layer.id === selectedLayerId,
+  );
   const strokesRef = useRef(strokes);
   strokesRef.current = strokes;
+  useEffect(() => {
+    onDraftDirtyChange?.(strokes.length > 0);
+  }, [onDraftDirtyChange, strokes.length]);
+  useEffect(
+    () => () => onDraftDirtyChange?.(false),
+    [onDraftDirtyChange],
+  );
   const historyNavigateRef = useRef(onHistoryNavigate);
   historyNavigateRef.current = onHistoryNavigate;
   const {
@@ -237,13 +246,35 @@ export function ImageGuidanceEditor({
     setReviewState("editing");
   };
 
-  const refine = async () => {
-    if (strokes.length === 0 && processingMode !== "automatic") {
-      onNotify("أضف إشارة واحدة على الأقل لتوجيه التحسين الموضعي.");
+  const addKeyboardMarker = () => {
+    if (!canEditSelectedLayer) return;
+    const point = {
+      x: keyboardPoint.x / 100,
+      y: keyboardPoint.y / 100,
+    };
+    if (prompt === "erase") {
+      eraseAt(point);
       return;
     }
-    if (processingMode === "automatic") {
-      onNotify("المعالجة التلقائية طُبقت عند الرفع. ارسم إشارة للتصحيح الموضعي.");
+    setStrokes((current) => [
+      ...current,
+      {
+        id: `stroke-${crypto.randomUUID()}`,
+        prompt,
+        size: brushSize,
+        points: [point],
+      },
+    ]);
+    setReviewState("editing");
+  };
+
+  const refine = async () => {
+    if (!canEditSelectedLayer) {
+      onNotify("لا توجد طبقة Raster مفتوحة يمكن تطبيق الإرشاد عليها.");
+      return;
+    }
+    if (strokes.length === 0) {
+      onNotify("أضف إشارة واحدة على الأقل لتوجيه التحسين الموضعي.");
       return;
     }
     setApplying(true);
@@ -326,6 +357,7 @@ export function ImageGuidanceEditor({
             }}
             onErase={eraseAt}
             showRefinement={false}
+            disabled={!canEditSelectedLayer}
           />
           <span className="canvas-label">
             <i /> {`${layers.find((layer) => layer.id === selectedLayerId)?.name ?? "اختر طبقة"} · ${
@@ -348,6 +380,14 @@ export function ImageGuidanceEditor({
             قلم ملء/احتفظ يصلح الشفافية موضعيًا، والاستبعاد يمسح، والفصل ينشئ طبقة Raster ويملأ مكانها تلقائيًا للمراجعة.
           </span>
         </p>
+        {preparation?.strategy === "single-source" && (
+          <p className="warning-clear" role="status">
+            <Icon name="info" size={13} />
+            الصورة المعتمة محفوظة حاليًا كطبقة مصدر واحدة؛ الفصل الدلالي
+            التلقائي غير مفعّل محليًا. استخدم «فصل» في الوضع الموجّه لإنشاء
+            أجزاء قابلة للتحرير والمراجعة.
+          </p>
+        )}
         <div className="guidance-primary">
           <ProcessingModeControl
             value={processingMode}
@@ -355,8 +395,13 @@ export function ImageGuidanceEditor({
           />
           <label className="guidance-target">
             <span><Icon name="target" size={13} /> الجزء المستهدف</span>
-            <select value={selectedLayerId} onChange={(event) => onSelectedLayerChange(event.target.value)}>
-              {layers.filter((layer) => !layer.locked).map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
+            <select
+              value={canEditSelectedLayer ? selectedLayerId : ""}
+              disabled={editableLayers.length === 0}
+              onChange={(event) => onSelectedLayerChange(event.target.value)}
+            >
+              {editableLayers.length === 0 && <option value="">لا توجد طبقة مفتوحة</option>}
+              {editableLayers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
             </select>
           </label>
         </div>
@@ -387,12 +432,58 @@ export function ImageGuidanceEditor({
           />
         </div>
 
+        <form
+          className="guidance-coordinate-entry"
+          aria-label="إضافة إشارة إرشاد بالإحداثيات"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addKeyboardMarker();
+          }}
+        >
+          <label>
+            الموضع الأفقي %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={keyboardPoint.x}
+              onChange={(event) => setKeyboardPoint((current) => ({
+                ...current,
+                x: Number(event.target.value),
+              }))}
+            />
+          </label>
+          <label>
+            الموضع الرأسي %
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={keyboardPoint.y}
+              onChange={(event) => setKeyboardPoint((current) => ({
+                ...current,
+                y: Number(event.target.value),
+              }))}
+            />
+          </label>
+          <button type="submit" disabled={!canEditSelectedLayer}>
+            إضافة إشارة
+          </button>
+        </form>
+
         <GuidanceReview
           applying={applying}
           actionIcon="spark"
           applyingLabel="جارٍ تطبيق القناع…"
           actionLabel="تطبيق وحفظ القناع"
           onApply={refine}
+          disabled={!canEditSelectedLayer}
+          {...(!canEditSelectedLayer
+            ? {
+                disabledReason:
+                  "افتح طبقة Raster أو اختر طبقة غير مقفلة قبل التطبيق.",
+              }
+            : {})}
           reviewState={reviewState}
           version={version}
           summaryTitle="تم حفظ مراجعة Raster جديدة"

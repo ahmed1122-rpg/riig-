@@ -44,6 +44,18 @@ describe("PostgresOperationalStatusProvider", () => {
             last_seen_at: "2026-07-29T00:00:00.000Z",
             stale: false,
           },
+          {
+            instance_id: "character-1",
+            worker_type: "character",
+            release_version: "sha-test",
+            concurrency: 1,
+            resident_memory_bytes: "2500",
+            heap_used_bytes: "850",
+            cpu_user_microseconds: "3000000",
+            cpu_system_microseconds: "900000",
+            last_seen_at: "2026-07-29T00:00:00.000Z",
+            stale: false,
+          },
         ],
       })
       .mockResolvedValueOnce({
@@ -54,6 +66,13 @@ describe("PostgresOperationalStatusProvider", () => {
             active: "1",
             failed: "2",
             oldest_queued_seconds: "301.5",
+          },
+          {
+            queue: "character",
+            queued: "2",
+            active: "1",
+            failed: "0",
+            oldest_queued_seconds: "42.5",
           },
         ],
       })
@@ -115,9 +134,10 @@ describe("PostgresOperationalStatusProvider", () => {
           },
         ],
       });
-    const provider = new PostgresOperationalStatusProvider({
-      query,
-    } as unknown as Pool);
+    const provider = new PostgresOperationalStatusProvider(
+      { query } as unknown as Pool,
+      { characterWorkerExpected: true },
+    );
 
     const snapshot = await provider.snapshot();
 
@@ -158,6 +178,7 @@ describe("PostgresOperationalStatusProvider", () => {
     });
     expect(query).toHaveBeenCalledTimes(6);
     expect(query.mock.calls[3]?.[0]).toContain("worker_duration_metrics");
+    expect(query.mock.calls[1]?.[0]).toContain("FROM character_jobs");
     expect(query.mock.calls[4]?.[0]).toContain("maintenance_status");
     expect(query.mock.calls[5]?.[0]).toContain("email_outbox");
   });

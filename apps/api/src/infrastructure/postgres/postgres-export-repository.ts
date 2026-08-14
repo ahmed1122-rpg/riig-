@@ -1,38 +1,18 @@
-import type {
-  ExportFormat,
-  ExportJob,
-  ExportJobStatus,
-  ExportScope,
-  ProjectKind,
-} from "@motionprep/contracts";
+import type { ExportJob } from "@motionprep/contracts";
 import type { Pool } from "pg";
 import type {
   ExportRepository,
   ExportStatusSummary,
 } from "../../exports/export-repository.js";
 import type { JobListCursor } from "../../jobs/job-list-cursor.js";
+import { updateProjectStatusForJob } from "../../projects/project-job-status.js";
 import {
-  mapQueuedJobRow,
-  type QueuedJobRow,
-} from "./queued-job-row.js";
-
-interface ExportRow extends QueuedJobRow<ExportJobStatus> {
-  id: string;
-  correlation_id: string | null;
-  trace_parent: string | null;
-  trace_state: string | null;
-  project_id: string;
-  source_version_id: string;
-  document_revision: number;
-  project_kind: ProjectKind;
-  format: ExportFormat;
-  scope: ExportScope;
-  selected_page: number | null;
-  scale: 1 | 2;
-  color_profile: "sRGB" | "display-p3";
-  naming_preset_id: string;
-  artifact: ExportJob["artifact"] | null;
-}
+  insertExportJob,
+  upsertExportJob,
+} from "./postgres-export-job-write.js";
+import { updateExportClaim } from "./postgres-export-claim-update.js";
+import { mapExportRow as mapExport, type ExportRow } from "./postgres-export-row.js";
+import { availableProjectWorkFenceSql } from "./postgres-project-work-fence.js";
 
 export class PostgresExportRepository implements ExportRepository {
   constructor(private readonly pool: Pool) {}
@@ -94,64 +74,73 @@ export class PostgresExportRepository implements ExportRepository {
     };
   }
 
+  async enqueue(
+    job: ExportJob,
+    _activateProject?: () => Promise<boolean>,
+  ): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const activated = await client.query(
+        `UPDATE projects AS project
+         SET status = 'exporting',
+             active_job_type = 'export',
+             active_job_id = $4,
+             updated_at = now()
+         WHERE project.id = $1
+            AND project.current_source_version_id = $2
+            ${availableProjectWorkFenceSql("project", "now()")}
+           AND EXISTS (
+             SELECT 1
+             FROM upload_sessions AS upload
+             WHERE upload.project_id = project.id
+               AND upload.source_version_id = $2
+               AND upload.status = 'ready'
+           )
+           AND EXISTS (
+             SELECT 1
+             FROM layer_document_revisions AS revision
+             WHERE revision.project_id = project.id
+               AND revision.source_version_id = $2
+               AND revision.revision = $3
+           )
+           AND EXISTS (
+             SELECT 1
+             FROM project_review_approvals AS approval
+             WHERE approval.id = project.current_review_approval_id
+               AND approval.source_version_id = $2
+               AND approval.document_revision = $3
+           )
+           AND EXISTS (
+             SELECT 1
+             FROM users AS owner
+             WHERE owner.id = project.owner_user_id
+               AND owner.deletion_requested_at IS NULL
+               AND owner.deleted_at IS NULL
+           )`,
+        [job.projectId, job.sourceVersionId, job.documentRevision ?? 1, job.id],
+      );
+      if (activated.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      const inserted = await insertExportJob(client, job);
+      if (!inserted) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+      await client.query("COMMIT");
+      return true;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async save(job: ExportJob): Promise<void> {
-    await this.pool.query(
-      `
-        INSERT INTO export_jobs (
-          id, project_id, source_version_id, project_kind, format, scope,
-          document_revision, selected_page, scale, color_profile,
-          naming_preset_id, status,
-          progress, attempt, max_attempts, next_attempt_at, lease_owner,
-          lease_expires_at, error_code, artifact, correlation_id, trace_parent,
-          trace_state, created_at, updated_at
-        )
-        VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-          $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          status = EXCLUDED.status,
-          progress = EXCLUDED.progress,
-          attempt = EXCLUDED.attempt,
-          max_attempts = EXCLUDED.max_attempts,
-          next_attempt_at = EXCLUDED.next_attempt_at,
-          lease_owner = EXCLUDED.lease_owner,
-          lease_expires_at = EXCLUDED.lease_expires_at,
-          error_code = EXCLUDED.error_code,
-          artifact = EXCLUDED.artifact,
-          correlation_id = COALESCE(EXCLUDED.correlation_id, export_jobs.correlation_id),
-          trace_parent = COALESCE(EXCLUDED.trace_parent, export_jobs.trace_parent),
-          trace_state = COALESCE(EXCLUDED.trace_state, export_jobs.trace_state),
-          updated_at = EXCLUDED.updated_at
-      `,
-      [
-        job.id,
-        job.projectId,
-        job.sourceVersionId,
-        job.projectKind,
-        job.format,
-        job.scope,
-        job.documentRevision ?? 1,
-        job.selectedPage ?? null,
-        job.scale,
-        job.colorProfile,
-        job.namingPresetId,
-        job.status,
-        job.progress,
-        job.attempt,
-        job.maxAttempts,
-        job.nextAttemptAt,
-        job.leaseOwner,
-        job.leaseExpiresAt,
-        job.errorCode,
-        job.artifact ? JSON.stringify(job.artifact) : null,
-        job.correlationId ?? null,
-        job.traceContext?.traceparent ?? null,
-        job.traceContext?.tracestate ?? null,
-        job.createdAt,
-        job.updatedAt,
-      ],
-    );
+    await upsertExportJob(this.pool, job);
   }
 
   async claimNext(
@@ -159,21 +148,38 @@ export class PostgresExportRepository implements ExportRepository {
     claimedAt: string,
     leaseExpiresAt: string,
   ): Promise<ExportJob | null> {
-    const result = await this.pool.query<ExportRow>(
-      `
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<ExportRow>(
+        `
         WITH candidate AS (
-          SELECT id
-          FROM export_jobs
-          WHERE attempt < max_attempts
+          SELECT queued_job.id
+          FROM export_jobs AS queued_job
+          WHERE queued_job.attempt < queued_job.max_attempts
             AND (
-              (status = 'queued' AND next_attempt_at <= $2) OR
               (
-                status IN ('generating', 'verifying') AND
-                lease_expires_at IS NOT NULL AND
-                lease_expires_at <= $2
+                queued_job.status = 'queued'
+                AND queued_job.next_attempt_at <= $2
+              ) OR
+              (
+                queued_job.status IN ('generating', 'verifying') AND
+                queued_job.lease_expires_at IS NOT NULL AND
+                queued_job.lease_expires_at <= $2
               )
             )
-          ORDER BY created_at
+            AND EXISTS (
+              SELECT 1
+              FROM projects AS project
+              JOIN users AS owner ON owner.id = project.owner_user_id
+              WHERE project.id = queued_job.project_id
+                AND project.current_source_version_id = queued_job.source_version_id
+                AND project.active_job_type = 'export'
+                AND project.active_job_id = queued_job.id
+                AND owner.deletion_requested_at IS NULL
+                AND owner.deleted_at IS NULL
+            )
+          ORDER BY queued_job.created_at
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
@@ -189,10 +195,36 @@ export class PostgresExportRepository implements ExportRepository {
         FROM candidate
         WHERE job.id = candidate.id
         RETURNING ${exportReturningColumns}
-      `,
-      [workerId, claimedAt, leaseExpiresAt],
-    );
-    return result.rows[0] ? mapExport(result.rows[0]) : null;
+        `,
+        [workerId, claimedAt, leaseExpiresAt],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        await client.query("COMMIT");
+        return null;
+      }
+      const fenced = await updateProjectStatusForJob(client, {
+        projectId: row.project_id,
+        sourceVersionId: row.source_version_id,
+        jobType: "export",
+        jobId: row.id,
+        status: "exporting",
+        finished: false,
+        documentRevision: row.document_revision,
+        requireActiveOwner: true,
+      });
+      if (!fenced) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      await client.query("COMMIT");
+      return mapExport(row);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async updateClaim(
@@ -201,59 +233,67 @@ export class PostgresExportRepository implements ExportRepository {
     changes: Partial<ExportJob>,
     updatedAt: string,
   ): Promise<ExportJob | null> {
-    const hasArtifact = Object.prototype.hasOwnProperty.call(
+    const result = await updateExportClaim(
+      this.pool,
+      exportReturningColumns,
+      id,
+      workerId,
       changes,
-      "artifact",
-    );
-    const hasLeaseOwner = Object.prototype.hasOwnProperty.call(
-      changes,
-      "leaseOwner",
-    );
-    const hasLeaseExpiry = Object.prototype.hasOwnProperty.call(
-      changes,
-      "leaseExpiresAt",
-    );
-    const hasErrorCode = Object.prototype.hasOwnProperty.call(
-      changes,
-      "errorCode",
-    );
-    const result = await this.pool.query<ExportRow>(
-      `
-        UPDATE export_jobs AS job
-        SET
-          status = COALESCE($3, status),
-          progress = COALESCE($4, progress),
-          artifact = CASE WHEN $5 THEN $6::jsonb ELSE artifact END,
-          lease_owner = CASE WHEN $7 THEN $8 ELSE lease_owner END,
-          lease_expires_at = CASE
-            WHEN $9 THEN $10::timestamptz
-            ELSE lease_expires_at
-          END,
-          error_code = CASE WHEN $11 THEN $12 ELSE error_code END,
-          updated_at = $13
-        WHERE job.id = $1
-          AND job.lease_owner = $2
-          AND job.status <> 'cancelled'
-          AND job.lease_expires_at > $13
-        RETURNING ${exportReturningColumns}
-      `,
-      [
-        id,
-        workerId,
-        changes.status ?? null,
-        changes.progress ?? null,
-        hasArtifact,
-        changes.artifact ? JSON.stringify(changes.artifact) : null,
-        hasLeaseOwner,
-        changes.leaseOwner ?? null,
-        hasLeaseExpiry,
-        changes.leaseExpiresAt ?? null,
-        hasErrorCode,
-        changes.errorCode ?? null,
-        updatedAt,
-      ],
+      updatedAt,
     );
     return result.rows[0] ? mapExport(result.rows[0]) : null;
+  }
+
+  async settleClaim(
+    id: string,
+    workerId: string,
+    changes: Partial<ExportJob>,
+    updatedAt: string,
+  ): Promise<ExportJob | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await updateExportClaim(
+        client,
+        exportReturningColumns,
+        id,
+        workerId,
+        changes,
+        updatedAt,
+      );
+      const row = result.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      if (["ready", "failed", "cancelled"].includes(row.status)) {
+        const settled = await updateProjectStatusForJob(client, {
+          projectId: row.project_id,
+          sourceVersionId: row.source_version_id,
+          jobType: "export",
+          jobId: row.id,
+          status:
+            row.status === "ready"
+              ? "completed"
+              : row.status === "cancelled"
+                ? "cancelled"
+                : "failed",
+          finished: true,
+          documentRevision: row.document_revision,
+        });
+        if (!settled) {
+          await client.query("ROLLBACK");
+          return null;
+        }
+      }
+      await client.query("COMMIT");
+      return mapExport(row);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async retryOrFailClaim(
@@ -263,8 +303,11 @@ export class PostgresExportRepository implements ExportRepository {
     nextAttemptAt: string,
     updatedAt: string,
   ): Promise<ExportJob | null> {
-    const result = await this.pool.query<ExportRow>(
-      `
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<ExportRow>(
+        `
         UPDATE export_jobs AS job
         SET
           status = CASE
@@ -284,18 +327,54 @@ export class PostgresExportRepository implements ExportRepository {
           AND job.lease_owner = $2
           AND job.status <> 'cancelled'
         RETURNING ${exportReturningColumns}
-      `,
-      [id, workerId, errorCode, nextAttemptAt, updatedAt],
-    );
-    return result.rows[0] ? mapExport(result.rows[0]) : null;
+        `,
+        [id, workerId, errorCode, nextAttemptAt, updatedAt],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      if (row.status === "failed") {
+        const settled = await updateProjectStatusForJob(client, {
+          projectId: row.project_id,
+          sourceVersionId: row.source_version_id,
+          jobType: "export",
+          jobId: row.id,
+          status: "failed",
+          finished: true,
+          documentRevision: row.document_revision,
+        });
+        if (!settled) {
+          await client.query("ROLLBACK");
+          return null;
+        }
+      }
+      const mapped = mapExport(row);
+      await client.query("COMMIT");
+      return mapped;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the authoritative job-settlement error.
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async retryFailed(
     id: string,
     retriedAt: string,
+    _activateProject?: (job: ExportJob) => Promise<boolean>,
   ): Promise<ExportJob | null> {
-    const result = await this.pool.query<ExportRow>(
-      `UPDATE export_jobs AS job
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<ExportRow>(
+        `UPDATE export_jobs AS job
        SET status = 'queued',
            progress = 0,
            attempt = 0,
@@ -310,10 +389,12 @@ export class PostgresExportRepository implements ExportRepository {
          AND EXISTS (
            SELECT 1
            FROM projects AS project
+           JOIN users AS owner ON owner.id = project.owner_user_id
            WHERE project.id = job.project_id
              AND project.current_source_version_id = job.source_version_id
-             AND project.active_job_type = 'export'
-             AND project.active_job_id = job.id
+             ${availableProjectWorkFenceSql("project", "$2")}
+             AND owner.deletion_requested_at IS NULL
+             AND owner.deleted_at IS NULL
          )
          AND EXISTS (
            SELECT 1
@@ -329,18 +410,75 @@ export class PostgresExportRepository implements ExportRepository {
              AND revision.source_version_id = job.source_version_id
              AND revision.revision = job.document_revision
          )
+         AND EXISTS (
+           SELECT 1
+           FROM projects AS approved_project
+           JOIN project_review_approvals AS approval
+             ON approval.id = approved_project.current_review_approval_id
+           WHERE approved_project.id = job.project_id
+             AND approval.source_version_id = job.source_version_id
+             AND approval.document_revision = job.document_revision
+         )
        RETURNING ${exportReturningColumns}`,
-      [id, retriedAt],
-    );
-    return result.rows[0] ? mapExport(result.rows[0]) : null;
+        [id, retriedAt],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      const activated = await client.query(
+        `UPDATE projects
+         SET status = 'exporting',
+             active_job_type = 'export',
+             active_job_id = $3,
+             updated_at = $4
+         WHERE id = $1
+           AND current_source_version_id = $2
+           ${availableProjectWorkFenceSql("projects", "$4")}
+           AND EXISTS (
+             SELECT 1 FROM users AS owner
+             WHERE owner.id = projects.owner_user_id
+               AND owner.deletion_requested_at IS NULL
+               AND owner.deleted_at IS NULL
+           )
+           AND EXISTS (
+             SELECT 1 FROM project_review_approvals AS approval
+             WHERE approval.id = projects.current_review_approval_id
+               AND approval.source_version_id = $2
+               AND approval.document_revision = $5
+           )`,
+        [
+          row.project_id,
+          row.source_version_id,
+          row.id,
+          retriedAt,
+          row.document_revision,
+        ],
+      );
+      if (activated.rowCount !== 1) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      await client.query("COMMIT");
+      return mapExport(row);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async requestCancel(
     id: string,
     updatedAt: string,
   ): Promise<ExportJob | null> {
-    const result = await this.pool.query<ExportRow>(
-      `
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query<ExportRow>(
+        `
         UPDATE export_jobs AS job
         SET
           status = 'cancelled',
@@ -350,11 +488,35 @@ export class PostgresExportRepository implements ExportRepository {
         WHERE job.id = $1
           AND job.status IN ('queued', 'generating')
         RETURNING ${exportReturningColumns}
-      `,
-      [id, updatedAt],
-    );
-    if (result.rows[0]) return mapExport(result.rows[0]);
-    return this.findById(id);
+        `,
+        [id, updatedAt],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        return this.findById(id);
+      }
+      const settled = await updateProjectStatusForJob(client, {
+        projectId: row.project_id,
+        sourceVersionId: row.source_version_id,
+        jobType: "export",
+        jobId: row.id,
+        status: "cancelled",
+        finished: true,
+        documentRevision: row.document_revision,
+      });
+      if (!settled) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      await client.query("COMMIT");
+      return mapExport(row);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 
@@ -380,32 +542,3 @@ const exportReturningColumns = `
 `;
 
 const exportSelect = `SELECT ${exportColumns} FROM export_jobs`;
-
-function mapExport(row: ExportRow): ExportJob {
-  return {
-    id: row.id,
-    ...(row.correlation_id ? { correlationId: row.correlation_id } : {}),
-    ...(row.trace_parent
-      ? {
-          traceContext: {
-            traceparent: row.trace_parent,
-            ...(row.trace_state ? { tracestate: row.trace_state } : {}),
-          },
-        }
-      : {}),
-    projectId: row.project_id,
-    sourceVersionId: row.source_version_id,
-    documentRevision: row.document_revision,
-    projectKind: row.project_kind,
-    format: row.format,
-    scope: row.scope,
-    ...(row.selected_page === null
-      ? {}
-      : { selectedPage: row.selected_page }),
-    scale: row.scale,
-    colorProfile: row.color_profile,
-    namingPresetId: row.naming_preset_id,
-    ...mapQueuedJobRow(row),
-    ...(row.artifact ? { artifact: row.artifact } : {}),
-  };
-}

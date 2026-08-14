@@ -3,6 +3,7 @@ import type {
   LayerDocumentEditView,
   LayerDocumentView,
 } from "./models";
+import type { LayerDocumentCommand } from "@motionprep/contracts";
 
 export function updateLayerDocument(
   projectId: string,
@@ -16,6 +17,12 @@ export function updateLayerDocument(
     opacity: number;
     zIndex: number;
     readingOrder?: number;
+    bounds?: { x: number; y: number; width: number; height: number };
+    direction?: "ltr" | "rtl";
+    textAlign?: "start" | "center" | "end" | "justify";
+    fontFamily?: string;
+    fontSize?: number;
+    fullText?: string;
   }>,
   operationId: string = crypto.randomUUID(),
 ): Promise<LayerDocumentView> {
@@ -29,6 +36,23 @@ export function updateLayerDocument(
         baseRevision,
         layers,
       }),
+    },
+  );
+}
+
+export function runLayerDocumentCommand(
+  projectId: string,
+  sourceVersionId: string,
+  baseRevision: number,
+  command: LayerDocumentCommand,
+  operationId: string = crypto.randomUUID(),
+): Promise<LayerDocumentView> {
+  return request<LayerDocumentView>(
+    `/v1/projects/${encodeURIComponent(projectId)}/layer-document/commands`,
+    {
+      method: "POST",
+      headers: { "x-idempotency-key": operationId },
+      body: JSON.stringify({ sourceVersionId, baseRevision, command }),
     },
   );
 }

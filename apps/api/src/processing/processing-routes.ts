@@ -3,7 +3,10 @@ import type {
   FastifyReply,
   FastifyRequest,
 } from "fastify";
-import type { ProcessingJob, ProjectSummary } from "@motionprep/contracts";
+import type {
+  ProcessingJob,
+  ProjectSummary,
+} from "@motionprep/contracts";
 import { requireUser } from "../auth/authorize.js";
 import type { AuthService } from "../auth/auth-service.js";
 import {
@@ -18,10 +21,13 @@ import {
   ProcessingDomainError,
   type ProcessingService,
 } from "./processing-service.js";
+import { toLayerDocumentCommand } from "./layer-command-request.js";
+import { runOwnedLayerMutation } from "./layer-mutation-route.js";
 import {
   createSchema,
   documentParamsSchema,
   guidedRefinementSchema,
+  layerCommandRequestSchema,
   mergeImageLayersSchema,
   mergeTextLayersSchema,
   navigateHistorySchema,
@@ -87,27 +93,16 @@ export async function registerProcessingRoutes(
       userId: string;
       operationId: string;
     }) => Promise<TResult>,
-  ) => {
-    try {
-      const user = await requireUser(request, auth);
-      const project = await projects.findOwnedById(user.id, projectId);
-      if (!project) return sendProjectNotFound(reply, request.id);
-      const result = await mutate({
-        project,
-        userId: user.id,
-        operationId: requestIdempotencyKey(request),
-      });
-      await projects.updateStatusForSource(
-        project.id,
-        sourceVersionId,
-        "needs_review",
-        null,
-      );
-      return reply.status(200).send({ data: result, error: null });
-    } catch (error) {
-      return domainError(error, request, reply);
-    }
-  };
+  ) =>
+    runOwnedLayerMutation({
+      request,
+      reply,
+      projects,
+      auth,
+      projectId,
+      sourceVersionId,
+      mutate,
+    });
 
   await registerProcessingReadRoutes(app, projects, processing, auth);
 
@@ -190,6 +185,12 @@ export async function registerProcessingRoutes(
         if (!project) {
           return sendProjectNotFound(reply, request.id);
         }
+        if (project.currentSourceVersionId !== body.data.sourceVersionId) {
+          throw new ProcessingDomainError(
+            "SOURCE_NOT_CURRENT",
+            "لا يمكن حفظ طبقات إصدار مصدر لم يعد هو الإصدار الحالي.",
+          );
+        }
         const updated = await processing.updateLayerStates(
           project.id,
           body.data.sourceVersionId,
@@ -205,6 +206,22 @@ export async function registerProcessingRoutes(
             ...(layer.readingOrder === undefined
               ? {}
               : { readingOrder: layer.readingOrder }),
+            ...(layer.bounds === undefined ? {} : { bounds: layer.bounds }),
+            ...(layer.direction === undefined
+              ? {}
+              : { direction: layer.direction }),
+            ...(layer.textAlign === undefined
+              ? {}
+              : { textAlign: layer.textAlign }),
+            ...(layer.fontFamily === undefined
+              ? {}
+              : { fontFamily: layer.fontFamily }),
+            ...(layer.fontSize === undefined
+              ? {}
+              : { fontSize: layer.fontSize }),
+            ...(layer.fullText === undefined
+              ? {}
+              : { fullText: layer.fullText }),
           })),
           user.id,
           requestIdempotencyKey(request),
@@ -217,6 +234,39 @@ export async function registerProcessingRoutes(
       } catch (error) {
         return domainError(error, request, reply);
       }
+    },
+  );
+
+  app.post(
+    "/v1/projects/:projectId/layer-document/commands",
+    async (request, reply) => {
+      const params = documentParamsSchema.safeParse(request.params);
+      const body = layerCommandRequestSchema.safeParse(request.body);
+      if (!params.success || !body.success) {
+        return sendApiError(
+          reply,
+          request.id,
+          400,
+          "VALIDATION_FAILED",
+          "بيانات أمر الطبقات غير صالحة.",
+        );
+      }
+      return runLayerMutation(
+        request,
+        reply,
+        params.data.projectId,
+        body.data.sourceVersionId,
+        ({ project, userId, operationId }) =>
+          processing.applyLayerCommand(
+            project.id,
+            body.data.sourceVersionId,
+            project.kind,
+            body.data.baseRevision,
+            toLayerDocumentCommand(body.data.command),
+            userId,
+            operationId,
+          ),
+      );
     },
   );
 

@@ -2,10 +2,13 @@ import type { LayerBounds, PdfSeparationMode } from "@motionprep/contracts";
 import { createCanvas } from "@napi-rs/canvas";
 import type { PDFPageProxy } from "pdfjs-dist";
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
+import {
+  assertRenderSurface,
+  boundedOcrRenderScale,
+} from "./pdf-geometry.js";
 
 const OCR_TARGET_SCALE = 2;
 const OCR_TARGET_LONG_EDGE = 1_600;
-const OCR_MAX_RENDER_PIXELS = 24_000_000;
 const imageOperations = new Set([
   OPS.paintImageMaskXObject,
   OPS.paintImageMaskXObjectGroup,
@@ -82,24 +85,23 @@ export async function pageContainsRasterImage(
 
 export async function renderPageForOcr(
   page: PDFPageProxy,
+  pageNumber: number,
   width: number,
   height: number,
 ): Promise<{ image: Buffer; scale: number }> {
-  const safePixelScale = Math.sqrt(
-    OCR_MAX_RENDER_PIXELS / Math.max(1, width * height),
-  );
-  const targetLongEdgeScale =
-    OCR_TARGET_LONG_EDGE / Math.max(1, width, height);
-  const scale = clamp(
-    Math.min(OCR_TARGET_SCALE, targetLongEdgeScale, safePixelScale),
-    0.25,
-    OCR_TARGET_SCALE,
-  );
+  const scale = boundedOcrRenderScale({
+    width,
+    height,
+    pageNumber,
+    targetScale: OCR_TARGET_SCALE,
+    targetLongEdge: OCR_TARGET_LONG_EDGE,
+    maxScale: OCR_TARGET_SCALE,
+  });
   const viewport = page.getViewport({ scale });
-  const canvas = createCanvas(
-    Math.max(1, Math.ceil(viewport.width)),
-    Math.max(1, Math.ceil(viewport.height)),
-  );
+  const canvasWidth = Math.ceil(viewport.width);
+  const canvasHeight = Math.ceil(viewport.height);
+  assertRenderSurface(canvasWidth, canvasHeight, pageNumber);
+  const canvas = createCanvas(canvasWidth, canvasHeight);
   await page.render({
     canvas: canvas as unknown as HTMLCanvasElement,
     viewport,

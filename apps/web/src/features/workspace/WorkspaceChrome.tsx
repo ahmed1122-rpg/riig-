@@ -1,13 +1,9 @@
-import type { MouseEvent, RefObject } from "react";
+import { type MouseEvent, type RefObject } from "react";
 import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
-import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
-import type { getLayerCheckSummary } from "./layerChecks";
+import type { PdfSegmentation, ProjectMode } from "../../types";
 import { pdfSegmentationLabels } from "./pdfSegmentation";
-import type {
-  ReadyWorkspaceToolId,
-  ResolvedWorkspaceTool,
-} from "./workspaceToolRegistry";
+import type { WorkspaceMobilePanel } from "./workspaceMobilePanel";
 
 export type WorkspaceSaveState =
   | "unavailable"
@@ -16,11 +12,6 @@ export type WorkspaceSaveState =
   | "saved"
   | "conflict"
   | "error";
-export type WorkspaceMobilePanel =
-  | "none"
-  | "tools"
-  | "layers"
-  | "checks";
 
 export interface WorkspacePipelineStep {
   name: string;
@@ -33,7 +24,7 @@ export function WorkspaceHeader({
   sourceName,
   saveState,
   imageLayerCount,
-  activePdfPage,
+  activePdfPage = 1,
   pdfPageCount,
   pdfMode,
   exportTriggerRef,
@@ -46,12 +37,12 @@ export function WorkspaceHeader({
   sourceName: string;
   saveState: WorkspaceSaveState;
   imageLayerCount: number;
-  activePdfPage: number;
+  activePdfPage?: number;
   pdfPageCount: number;
   pdfMode: PdfSegmentation;
   exportTriggerRef: RefObject<HTMLButtonElement | null>;
   onBack: () => void;
-  onModeChange: (mode: ProjectMode) => void;
+  onModeChange: (mode: ProjectMode) => Promise<void>;
   onExport: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const projectName = persistedSource
@@ -86,7 +77,7 @@ export function WorkspaceHeader({
           <Icon name="arrow" size={18} />
         </button>
         <div>
-          <strong>{projectName}</strong>
+          <h1>{projectName}</h1>
           <span
             className={`save-state is-${saveState}`}
             role="status"
@@ -105,7 +96,7 @@ export function WorkspaceHeader({
           type="button"
           aria-pressed={mode === "image"}
           className={mode === "image" ? "is-active" : ""}
-          onClick={() => onModeChange("image")}
+          onClick={() => void onModeChange("image")}
         >
           <Icon name="image" size={16} /> صورة
         </button>
@@ -113,7 +104,7 @@ export function WorkspaceHeader({
           type="button"
           aria-pressed={mode === "book"}
           className={mode === "book" ? "is-active" : ""}
-          onClick={() => onModeChange("book")}
+          onClick={() => void onModeChange("book")}
         >
           <Icon name="scan" size={16} /> PDF
         </button>
@@ -236,8 +227,10 @@ export function WorkspaceStatusBar({
       : "ابدأ باختيار ملف";
 
   return (
-    <footer
+    <div
       className="pro-status-bar"
+      role="status"
+      aria-live="polite"
       aria-label="حالة مساحة العمل"
     >
       <span>
@@ -274,7 +267,7 @@ export function WorkspaceStatusBar({
       <span dir="ltr">{zoom}%</span>
       <span dir="ltr">RGB · sRGB</span>
       <strong>{activeLayerName}</strong>
-    </footer>
+    </div>
   );
 }
 
@@ -323,161 +316,5 @@ export function WorkspaceMobileDock({
         <span>تصدير</span>
       </button>
     </nav>
-  );
-}
-
-export function WorkspaceMobileSheet({
-  activePanel,
-  mode,
-  persistedSource,
-  tools,
-  activeTool,
-  layers,
-  selectedIds,
-  activeLayerId,
-  layerCheckSummary,
-  onClose,
-  onUseTool,
-  onSelectLayer,
-}: {
-  activePanel: Exclude<WorkspaceMobilePanel, "none">;
-  mode: ProjectMode;
-  persistedSource: boolean;
-  tools: readonly ResolvedWorkspaceTool[];
-  activeTool: ReadyWorkspaceToolId;
-  layers: readonly Layer[];
-  selectedIds: readonly string[];
-  activeLayerId: string;
-  layerCheckSummary: ReturnType<typeof getLayerCheckSummary>;
-  onClose: () => void;
-  onUseTool: (tool: ResolvedWorkspaceTool) => void;
-  onSelectLayer: (layerId: string) => void;
-}) {
-  const label =
-    activePanel === "tools"
-      ? "الأدوات"
-      : activePanel === "layers"
-        ? "الطبقات"
-        : "الفحص";
-  return (
-    <section
-      className="mobile-sheet pro-mobile-sheet"
-      aria-label={label}
-    >
-      <button
-        className="sheet-handle"
-        type="button"
-        aria-label="إغلاق اللوحة"
-        onClick={onClose}
-      />
-      {activePanel === "tools" && (
-        <div className="mobile-tools-panel">
-          {!persistedSource && (
-            <p
-              id="mobile-tools-prerequisite"
-              className="mobile-tools-prerequisite"
-            >
-              <Icon name="info" size={15} />
-              <span>
-                <strong>الأدوات بانتظار المصدر</strong> ارفع المصدر
-                لتفعيل أدوات التحديد.
-              </span>
-            </p>
-          )}
-          <div
-            className="mobile-tools"
-            aria-describedby={
-              !persistedSource
-                ? "mobile-tools-prerequisite"
-                : undefined
-            }
-          >
-            {tools.map((tool) => (
-              <button
-                key={tool.id}
-                type="button"
-                disabled={!tool.available}
-                title={
-                  tool.available
-                    ? tool.label
-                    : tool.unavailableReason
-                }
-                aria-describedby={
-                  !tool.available
-                    ? "mobile-tools-prerequisite"
-                    : undefined
-                }
-                onClick={() => onUseTool(tool)}
-                className={
-                  activeTool === tool.id ? "is-active" : ""
-                }
-              >
-                <Icon name={tool.icon} />
-                <span>{tool.label}</span>
-                {tool.shortcut && <kbd>{tool.shortcut.label}</kbd>}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {activePanel === "layers" && (
-        <div className="pro-mobile-layer-list">
-          <header>
-            <strong>
-              {mode === "image"
-                ? `${layers.length} / ${MAX_IMAGE_LAYERS} طبقة`
-                : `${layers.length} طبقات · بلا حد`}
-            </strong>
-            <span>{selectedIds.length} محددة</span>
-          </header>
-          {layers.slice(0, 8).map((layer) => (
-            <button
-              key={layer.id}
-              type="button"
-              className={
-                activeLayerId === layer.id ? "is-active" : ""
-              }
-              onClick={() => onSelectLayer(layer.id)}
-            >
-              <span style={{ background: layer.color }} />
-              <strong>{layer.name}</strong>
-              <Icon
-                name={
-                  layer.locked
-                    ? "lock"
-                    : layer.visible
-                      ? "eye"
-                      : "eyeOff"
-                }
-                size={14}
-              />
-            </button>
-          ))}
-        </div>
-      )}
-      {activePanel === "checks" &&
-        (persistedSource ? (
-          <div className="pro-mobile-checks">
-            <strong>{layerCheckSummary.title}</strong>
-            <p>{layerCheckSummary.description}</p>
-            {layerCheckSummary.items.map((item) => (
-              <p
-                key={item.id}
-                className={item.valid ? "is-ok" : "is-review"}
-              >
-                <Icon name={item.icon} size={14} />{" "}
-                <span>
-                  <b>{item.label}</b> · {item.message}
-                </span>
-              </p>
-            ))}
-          </div>
-        ) : (
-          <div className="pro-mobile-checks">
-            <strong>بانتظار المصدر</strong>
-            <p>تبدأ الفحوص بعد رفع الملف وتجهيز الطبقات.</p>
-          </div>
-        ))}
-    </section>
   );
 }

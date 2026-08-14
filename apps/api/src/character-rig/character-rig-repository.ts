@@ -4,6 +4,7 @@ import type {
   CharacterGenerationReview,
   CharacterIdentityModelVersion,
   CharacterReferenceAsset,
+  CharacterRigReview,
   CharacterRigVersion,
 } from "@motionprep/contracts";
 
@@ -27,7 +28,7 @@ export interface CharacterRigRepository {
     projectId: string,
     bibleId: string,
   ): Promise<CharacterIdentityModelVersion | null>;
-  saveIdentityModelVersion(model: CharacterIdentityModelVersion): Promise<void>;
+  saveIdentityModelVersion(model: CharacterIdentityModelVersion): Promise<boolean>;
   findGenerationAttempt(
     projectId: string,
     generationAttemptId: string,
@@ -40,7 +41,7 @@ export interface CharacterRigRepository {
     projectId: string,
     bibleId: string,
   ): Promise<CharacterGenerationAttempt[]>;
-  saveGenerationAttempt(attempt: CharacterGenerationAttempt): Promise<void>;
+  saveGenerationAttempt(attempt: CharacterGenerationAttempt): Promise<boolean>;
   commitGenerationReview(
     review: CharacterGenerationReview,
     updatedAttempt: CharacterGenerationAttempt,
@@ -57,7 +58,15 @@ export interface CharacterRigRepository {
     projectId: string,
     bibleId: string,
   ): Promise<CharacterRigVersion | null>;
-  saveRigVersion(rig: CharacterRigVersion): Promise<void>;
+  findRigReviewByOperation(
+    reviewerUserId: string,
+    operationId: string,
+  ): Promise<CharacterRigReview | null>;
+  commitRigReview(
+    review: CharacterRigReview,
+    updatedRig: CharacterRigVersion,
+  ): Promise<boolean>;
+  saveRigVersion(rig: CharacterRigVersion): Promise<boolean>;
 }
 
 export class InMemoryCharacterRigRepository implements CharacterRigRepository {
@@ -67,6 +76,7 @@ export class InMemoryCharacterRigRepository implements CharacterRigRepository {
   readonly #generations = new Map<string, CharacterGenerationAttempt>();
   readonly #reviews = new Map<string, CharacterGenerationReview>();
   readonly #rigs = new Map<string, CharacterRigVersion>();
+  readonly #rigReviews = new Map<string, CharacterRigReview>();
 
   async findBible(
     projectId: string,
@@ -153,11 +163,19 @@ export class InMemoryCharacterRigRepository implements CharacterRigRepository {
 
   async saveIdentityModelVersion(
     model: CharacterIdentityModelVersion,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!this.relatedBibleExists(model.projectId, model.bibleId)) {
       throw new Error("Identity model must reference a bible in the same project.");
     }
+    const conflict = [...this.#models.values()].some(
+      (candidate) =>
+        candidate.id !== model.id &&
+        candidate.bibleId === model.bibleId &&
+        candidate.version === model.version,
+    );
+    if (conflict) return false;
     this.#models.set(model.id, structuredClone(model));
+    return true;
   }
 
   async findGenerationAttempt(
@@ -197,7 +215,7 @@ export class InMemoryCharacterRigRepository implements CharacterRigRepository {
 
   async saveGenerationAttempt(
     attempt: CharacterGenerationAttempt,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const model = this.#models.get(attempt.identityModelVersionId);
     if (
       !this.relatedBibleExists(attempt.projectId, attempt.bibleId) ||
@@ -212,10 +230,9 @@ export class InMemoryCharacterRigRepository implements CharacterRigRepository {
         candidate.projectId === attempt.projectId &&
         candidate.idempotencyKey === attempt.idempotencyKey,
     );
-    if (operationConflict) {
-      throw new Error("Generation idempotency key already exists for the project.");
-    }
+    if (operationConflict) return false;
     this.#generations.set(attempt.id, structuredClone(attempt));
+    return true;
   }
 
   async commitGenerationReview(
@@ -278,11 +295,57 @@ export class InMemoryCharacterRigRepository implements CharacterRigRepository {
     return rig ? structuredClone(rig) : null;
   }
 
-  async saveRigVersion(rig: CharacterRigVersion): Promise<void> {
+  async findRigReviewByOperation(
+    reviewerUserId: string,
+    operationId: string,
+  ): Promise<CharacterRigReview | null> {
+    const review = [...this.#rigReviews.values()].find(
+      (candidate) =>
+        candidate.reviewerUserId === reviewerUserId &&
+        candidate.operationId === operationId,
+    );
+    return review ? structuredClone(review) : null;
+  }
+
+  async commitRigReview(
+    review: CharacterRigReview,
+    updatedRig: CharacterRigVersion,
+  ): Promise<boolean> {
+    const current = this.#rigs.get(review.rigVersionId);
+    const operationConflict = [...this.#rigReviews.values()].some(
+      (candidate) =>
+        candidate.reviewerUserId === review.reviewerUserId &&
+        candidate.operationId === review.operationId,
+    );
+    if (
+      !current ||
+      current.projectId !== review.projectId ||
+      current.status !== "needs-review" ||
+      updatedRig.id !== current.id ||
+      updatedRig.projectId !== current.projectId ||
+      !["approved", "retired"].includes(updatedRig.status) ||
+      operationConflict
+    ) {
+      return false;
+    }
+    this.#rigReviews.set(review.id, structuredClone(review));
+    this.#rigs.set(updatedRig.id, structuredClone(updatedRig));
+    return true;
+  }
+
+  async saveRigVersion(rig: CharacterRigVersion): Promise<boolean> {
     if (!this.relatedBibleExists(rig.projectId, rig.bibleId)) {
       throw new Error("Rig must reference a bible in the same project.");
     }
+    const versionConflict = [...this.#rigs.values()].some(
+      (candidate) =>
+        candidate.id !== rig.id &&
+        candidate.projectId === rig.projectId &&
+        candidate.version === rig.version,
+    );
+    if (versionConflict) return false;
     this.#rigs.set(rig.id, structuredClone(rig));
+    return true;
   }
 
   private relatedBibleExists(projectId: string, bibleId: string): boolean {

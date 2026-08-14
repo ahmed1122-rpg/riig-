@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import {
   CreateBucketCommand,
+  DeleteObjectsCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   GetBucketVersioningCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  ListObjectVersionsCommand,
   PutObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
@@ -217,6 +219,131 @@ describe("S3ObjectStorage", () => {
     expect(loaded?.body).toEqual(source);
     expect(commands[1]).toBeInstanceOf(HeadObjectCommand);
     expect(commands[3]).toBeInstanceOf(DeleteObjectCommand);
+  });
+
+  it("permanently purges every version and delete marker under private prefixes", async () => {
+    const commands: object[] = [];
+    let listed = 0;
+    const storage = storageWith(async (command) => {
+      commands.push(command);
+      if (command instanceof ListObjectVersionsCommand) {
+        listed += 1;
+        return listed === 1
+          ? {
+              Versions: [
+                { Key: "sources/project/current.png", VersionId: "v2" },
+                { Key: "sources/project/current.png", VersionId: "v1" },
+              ],
+              DeleteMarkers: [
+                { Key: "sources/project/old.png", VersionId: "marker" },
+              ],
+              IsTruncated: false,
+            }
+          : { Versions: [], DeleteMarkers: [], IsTruncated: false };
+      }
+      return {};
+    });
+
+    await storage.purge([], ["sources/project/"]);
+
+    expect(commands.filter((command) => command instanceof ListObjectVersionsCommand))
+      .toHaveLength(3);
+    const deletion = commands.find((command) => command instanceof DeleteObjectsCommand);
+    expect((deletion as DeleteObjectsCommand).input.Delete?.Objects).toEqual([
+      { Key: "sources/project/current.png", VersionId: "v2" },
+      { Key: "sources/project/current.png", VersionId: "v1" },
+      { Key: "sources/project/old.png", VersionId: "marker" },
+    ]);
+  });
+
+  it("paginates version deletion and keeps exact keys from matching siblings", async () => {
+    const deleted: Array<Array<{ Key?: string; VersionId?: string }>> = [];
+    const lists: ListObjectVersionsCommand[] = [];
+    let firstPage = true;
+    let verifying = false;
+    const storage = storageWith(async (command) => {
+      if (command instanceof ListObjectVersionsCommand) {
+        lists.push(command);
+        if (verifying) return { Versions: [], DeleteMarkers: [], IsTruncated: false };
+        if (firstPage) {
+          firstPage = false;
+          return {
+            Versions: [{ Key: "private/foo", VersionId: "v1" }],
+            IsTruncated: true,
+            NextKeyMarker: "private/foo",
+            NextVersionIdMarker: "v1",
+          };
+        }
+        verifying = true;
+        return {
+          Versions: [{ Key: "private/foobar", VersionId: "sibling" }],
+          DeleteMarkers: [{ Key: "private/foo", VersionId: "marker" }],
+          IsTruncated: false,
+        };
+      }
+      if (command instanceof DeleteObjectsCommand) {
+        deleted.push((command.input.Delete?.Objects ?? []).map((item) => ({
+          ...(item.Key ? { Key: item.Key } : {}),
+          ...(item.VersionId ? { VersionId: item.VersionId } : {}),
+        })));
+      }
+      return {};
+    });
+
+    await storage.purge(["private/foo"], []);
+
+    expect(lists[1]?.input).toMatchObject({
+      KeyMarker: "private/foo",
+      VersionIdMarker: "v1",
+    });
+    expect(deleted.flat()).toEqual([
+      { Key: "private/foo", VersionId: "v1" },
+      { Key: "private/foo", VersionId: "marker" },
+    ]);
+    expect(JSON.stringify(deleted)).not.toContain("foobar");
+  });
+
+  it("fails closed when permanent version deletion reports provider errors", async () => {
+    const storage = storageWith(async (command) => {
+      if (command instanceof ListObjectVersionsCommand) {
+        return {
+          Versions: [{ Key: "sources/project/private.png", VersionId: "v1" }],
+          IsTruncated: false,
+        };
+      }
+      if (command instanceof DeleteObjectsCommand) {
+        return { Errors: [{ Key: "sources/project/private.png", Code: "AccessDenied" }] };
+      }
+      return {};
+    });
+
+    await expect(storage.purge([], ["sources/project/"]))
+      .rejects.toThrow(/permanent purge failed/u);
+  });
+
+  it("deletes version inventories in S3 batches of at most 1000", async () => {
+    const batchSizes: number[] = [];
+    let listing = 0;
+    const versions = Array.from({ length: 1_001 }, (_, index) => ({
+      Key: `sources/project/object-${index}.png`,
+      VersionId: `v-${index}`,
+    }));
+    const storage = storageWith(async (command) => {
+      if (command instanceof ListObjectVersionsCommand) {
+        listing += 1;
+        return listing === 1
+          ? { Versions: versions, IsTruncated: false }
+          : { Versions: [], DeleteMarkers: [], IsTruncated: false };
+      }
+      if (command instanceof DeleteObjectsCommand) {
+        batchSizes.push((command.input.Delete?.Objects ?? []).length);
+      }
+      return {};
+    });
+
+    await storage.purge([], ["sources/project/"]);
+
+    expect(batchSizes).toEqual([1_000, 1]);
   });
 
   it("distinguishes a missing object from corrupt persisted metadata", async () => {

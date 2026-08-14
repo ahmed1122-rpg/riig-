@@ -118,4 +118,43 @@ describe("useWorkspaceDocumentAdoption", () => {
     expect(setActiveLayerId).toHaveBeenCalledWith("layer-2");
     expect(setSelectedIds).toHaveBeenCalledWith(["layer-2"]);
   });
+
+  it("falls back to PDF content instead of the persisted page group", async () => {
+    const group: Layer = {
+      ...preparedLayers[0]!,
+      id: "page-group",
+      name: "+page_001",
+      kind: "group",
+      parentId: null,
+      pageNumber: 1,
+    };
+    const text: Layer = {
+      ...preparedLayers[1]!,
+      id: "page-text",
+      kind: "text",
+      parentId: group.id,
+      pageNumber: 1,
+    };
+    vi.mocked(toWorkspaceLayers).mockReturnValue([group, text]);
+    const setActiveLayerId = vi.fn();
+    const setSelectedIds = vi.fn();
+    const { result } = renderHook(() =>
+      useWorkspaceDocumentAdoption({
+        mode: "book",
+        activePdfPage: 1,
+        activeLayerId: "missing-layer",
+        replaceLayerAssetUrls: vi.fn(),
+        applyPreparedDocument: vi.fn(),
+        adoptSavedReview: vi.fn(),
+        setGuidanceRevision: vi.fn(),
+        setActiveLayerId,
+        setSelectedIds,
+      }),
+    );
+
+    await act(async () => result.current(document));
+
+    expect(setActiveLayerId).toHaveBeenCalledWith("page-text");
+    expect(setSelectedIds).toHaveBeenCalledWith(["page-text"]);
+  });
 });

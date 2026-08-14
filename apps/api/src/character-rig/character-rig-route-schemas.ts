@@ -9,6 +9,15 @@ export const characterGenerationParamsSchema = z.object({
   generationAttemptId: z.string().uuid(),
 });
 
+export const characterRigParamsSchema = z.object({
+  projectId: z.string().uuid(),
+  rigVersionId: z.string().uuid(),
+});
+
+export const characterRigArtifactParamsSchema = characterRigParamsSchema.extend({
+  artifactType: z.enum(["psd", "manifest"]),
+});
+
 export const characterBibleDraftSchema = z.object({
   bibleId: z.string().uuid().nullable(),
   expectedRevision: z.number().int().positive().nullable(),
@@ -130,6 +139,12 @@ export const characterGenerationSchema = z.object({
   target: characterGenerationTargetSchema,
   controls: z.object({
     seed: z.number().int().min(0).max(2_147_483_647),
+    canvas: z
+      .object({
+        width: z.number().int().positive().max(10_000),
+        height: z.number().int().positive().max(10_000),
+      })
+      .refine((value) => value.width * value.height <= 32_000_000),
     poseReferenceId: z.string().uuid().nullable(),
     depthReferenceId: z.string().uuid().nullable(),
     maskReferenceId: z.string().uuid().nullable(),
@@ -141,6 +156,11 @@ export const characterGenerationSchema = z.object({
 
 export const characterGenerationReviewSchema = z.object({
   decision: z.enum(["approved", "rejected", "changes-requested"]),
+  reason: z.string().trim().min(3).max(2_000),
+});
+
+export const characterRigReviewSchema = z.object({
+  decision: z.enum(["approved", "rejected"]),
   reason: z.string().trim().min(3).max(2_000),
 });
 

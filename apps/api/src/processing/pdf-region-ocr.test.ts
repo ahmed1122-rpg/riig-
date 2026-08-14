@@ -44,6 +44,7 @@ describe("applyPdfRegionOcr", () => {
     });
 
     expect(result.document.revision).toBe(2);
+    expect(result.document.generatedAt).toBe("2026-07-30T18:00:00.000Z");
     expect(result.affectedLayerIds).toEqual(["text-a"]);
     expect(result.removedLayerIds).toEqual(["text-a"]);
     expect(result.createdLayerIds).toHaveLength(1);
@@ -55,6 +56,7 @@ describe("applyPdfRegionOcr", () => {
       fullText: "نص مصحح",
       bounds: { x: 500, y: 100, width: 200, height: 40 },
       pageNumber: 1,
+      parentId: "page-group",
       direction: "rtl",
       confidence: 0.94,
     });
@@ -96,6 +98,47 @@ describe("applyPdfRegionOcr", () => {
     } satisfies Partial<PdfRegionOcrError>);
     expect(called).toBe(false);
   });
+
+  it.each([
+    {
+      name: "engine failure",
+      recognizePage: async () => {
+        throw new Error("private provider detail");
+      },
+      code: "engine-failed",
+    },
+    {
+      name: "empty result",
+      recognizePage: async () => [],
+      code: "empty-result",
+    },
+  ] as const)("returns safe regional OCR diagnostics for $name", async ({
+    recognizePage,
+    code,
+  }) => {
+    await expect(
+      applyPdfRegionOcr({
+        source: await createPdf(),
+        document: createDocument(),
+        operation: {
+          pageNumber: 1,
+          start: { x: 0.4, y: 0.05 },
+          end: { x: 0.95, y: 0.13 },
+          baseRevision: 1,
+          actorUserId,
+          operationId: `regional-ocr-${code}-001`,
+        },
+        ocrEngine: { recognizePage },
+      }),
+    ).rejects.toMatchObject({
+      code: "OCR_FAILED",
+      diagnostic: {
+        pageNumber: 1,
+        stage: "recognize",
+        code,
+      },
+    } satisfies Partial<PdfRegionOcrError>);
+  });
 });
 
 async function createPdf(): Promise<Buffer> {
@@ -117,8 +160,21 @@ function createDocument(): LayerDocument {
     pages: [{ pageNumber: 1, width: 1000, height: 1400 }],
     layers: [
       {
-        id: "background",
+        id: "page-group",
         parentId: null,
+        kind: "group",
+        name: "+page_001",
+        visible: true,
+        locked: true,
+        opacity: 1,
+        fixed: true,
+        zIndex: 0,
+        pageNumber: 1,
+        bounds: { x: 0, y: 0, width: 1000, height: 1400 },
+      },
+      {
+        id: "background",
+        parentId: "page-group",
         kind: "raster",
         name: "+page_001_background",
         visible: true,
@@ -143,7 +199,7 @@ function textLayer(
 ) {
   return {
     id,
-    parentId: null,
+    parentId: "page-group",
     kind: "text" as const,
     name: `+${id}` as `+${string}`,
     visible: true,

@@ -32,6 +32,18 @@ const generationResponseSchema = z.object({
     sizeBytes: z.number().int().positive().max(128 * 1024 * 1024),
     sha256: z.string().regex(/^[a-f0-9]{64}$/u),
   }),
+  geometry: z.object({
+    canvas: z.object({
+      width: z.number().int().positive().max(10_000),
+      height: z.number().int().positive().max(10_000),
+    }),
+    bounds: z.object({
+      x: z.number().int().nonnegative(),
+      y: z.number().int().nonnegative(),
+      width: z.number().int().positive().max(10_000),
+      height: z.number().int().positive().max(10_000),
+    }),
+  }),
   qualityReport: qualityReportSchema,
 });
 
@@ -49,7 +61,7 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
   readonly #fetch: typeof fetch;
 
   constructor(private readonly options: HttpCharacterInferenceProviderOptions) {
-    this.#baseUrl = new URL(options.baseUrl);
+    this.#baseUrl = normalizeBaseUrl(options.baseUrl);
     if (
       this.#baseUrl.protocol !== "https:" &&
       !(
@@ -86,14 +98,18 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
         trainingConfiguration: input.modelVersion.trainingConfiguration,
       },
       references: inferenceReferences(input.references),
-    }, input.modelVersion.id);
-    return trainingResponseSchema.parse(response);
+    }, input.modelVersion.id, input.signal);
+    const parsed = trainingResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
+    }
+    return parsed.data;
   }
 
   async generate(
     input: CharacterGenerationInput,
   ): Promise<CharacterGenerationResult> {
-    const response = generationResponseSchema.parse(
+    const parsed = generationResponseSchema.safeParse(
       await this.post("v1/generations", {
         projectId: input.bible.projectId,
         bible: inferenceBible(input),
@@ -106,17 +122,29 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
           id: input.attempt.id,
           target: input.attempt.target,
           controls: input.attempt.controls,
+          canvas: input.attempt.controls.canvas,
         },
+        outputObjectKey: input.outputObjectKey,
         references: inferenceReferences(input.references),
-      }, input.attempt.id),
+      }, input.attempt.id, input.signal),
     );
+    if (!parsed.success || !validGeometry(parsed.data.geometry, input.attempt.controls.canvas)) {
+      throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
+    }
+    const response = parsed.data;
     return {
       artifact: { kind: "stored-object", ...response.artifact },
+      geometry: response.geometry,
       qualityReport: response.qualityReport,
     };
   }
 
-  private async post(path: string, body: unknown, operationId: string): Promise<unknown> {
+  private async post(
+    path: string,
+    body: unknown,
+    operationId: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     let response: Response;
     try {
       response = await this.#fetch(new URL(path, this.#baseUrl), {
@@ -127,11 +155,18 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
           "x-idempotency-key": operationId,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.options.timeoutMilliseconds),
+        signal: signal
+          ? AbortSignal.any([
+              signal,
+              AbortSignal.timeout(this.options.timeoutMilliseconds),
+            ])
+          : AbortSignal.timeout(this.options.timeoutMilliseconds),
       });
     } catch (error) {
       throw new CharacterProviderError(
-        error instanceof DOMException && error.name === "TimeoutError"
+        signal?.aborted
+          ? "CHARACTER_JOB_ABORTED"
+          : error instanceof DOMException && error.name === "TimeoutError"
           ? "CHARACTER_PROVIDER_TIMEOUT"
           : "CHARACTER_PROVIDER_UNAVAILABLE",
       );
@@ -151,6 +186,29 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
       throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
     }
   }
+}
+
+function validGeometry(
+  geometry: z.infer<typeof generationResponseSchema>["geometry"],
+  requestedCanvas: { width: number; height: number },
+): boolean {
+  return (
+    geometry.canvas.width === requestedCanvas.width &&
+    geometry.canvas.height === requestedCanvas.height &&
+    geometry.bounds.x + geometry.bounds.width <= geometry.canvas.width &&
+    geometry.bounds.y + geometry.bounds.height <= geometry.canvas.height
+  );
+}
+
+function normalizeBaseUrl(value: string): URL {
+  const url = new URL(value);
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error(
+      "Character inference base URL cannot contain credentials, a query, or a fragment.",
+    );
+  }
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
+  return url;
 }
 
 function inferenceBible(input: CharacterIdentityTrainingInput | CharacterGenerationInput) {

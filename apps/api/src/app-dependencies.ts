@@ -28,6 +28,7 @@ import type { UploadCancellationCommand } from "./uploads/upload-cancellation.js
 import type { UploadFinalizationCommand } from "./uploads/upload-finalization.js";
 import type { UploadIntegrityFailureCommand } from "./uploads/upload-integrity-failure.js";
 import type { UploadRepository } from "./uploads/upload-repository.js";
+import type { DerivedAssetRegistry } from "./storage/derived-asset-registry.js";
 
 export interface AppDependencies {
   now?: () => Date;
@@ -62,4 +63,5 @@ export interface AppDependencies {
   operationalStatus?: OperationalStatusProvider;
   rateLimitStore?: RateLimitStoreConstructor;
   accountPrivacy?: AccountPrivacyRepository;
+  derivedAssets?: DerivedAssetRegistry;
 }

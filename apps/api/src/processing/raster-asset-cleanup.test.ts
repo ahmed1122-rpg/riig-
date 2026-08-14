@@ -6,11 +6,14 @@ import {
 import { cleanupRasterAssets } from "./raster-asset-cleanup.js";
 
 class SelectiveDeleteFailureStorage extends InMemoryObjectStorage {
-  override async delete(objectKey: string): Promise<void> {
-    if (objectKey.includes("failure")) {
+  override async purge(
+    objectKeys: readonly string[],
+    prefixes: readonly string[],
+  ): Promise<void> {
+    if (objectKeys.some((objectKey) => objectKey.includes("failure"))) {
       throw new Error("delete unavailable");
     }
-    await super.delete(objectKey);
+    await super.purge(objectKeys, prefixes);
   }
 }
 

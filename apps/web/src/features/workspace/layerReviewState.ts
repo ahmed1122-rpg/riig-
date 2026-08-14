@@ -8,9 +8,19 @@ export interface LayerReviewUpdate {
   opacity: number;
   zIndex: number;
   readingOrder?: number;
+  bounds?: NonNullable<Layer["bounds"]>;
+  direction?: NonNullable<Layer["direction"]>;
+  textAlign?: NonNullable<Layer["textAlign"]>;
+  fontFamily?: string;
+  fontSize?: number;
+  fullText?: string;
 }
 
 export type LayerReviewSnapshot = ReadonlyMap<string, string>;
+
+function isStructural(layer: Layer): boolean {
+  return layer.kind === "page" || layer.kind === "group" || Boolean(layer.fixed);
+}
 
 export function snapshotLayerReview(
   layers: readonly Layer[],
@@ -23,7 +33,7 @@ export function collectLayerReviewUpdates(
   snapshot: LayerReviewSnapshot,
 ): LayerReviewUpdate[] {
   return layers.flatMap((layer) =>
-    snapshot.get(layer.id) === signature(layer)
+    layer.kind === "group" || layer.fixed || snapshot.get(layer.id) === signature(layer)
       ? []
       : [
           {
@@ -36,6 +46,16 @@ export function collectLayerReviewUpdates(
             ...(layer.readingOrder === undefined
               ? {}
               : { readingOrder: layer.readingOrder }),
+            ...(layer.bounds ? { bounds: layer.bounds } : {}),
+            ...(layer.direction ? { direction: layer.direction } : {}),
+            ...(layer.textAlign ? { textAlign: layer.textAlign } : {}),
+            ...(layer.fontFamily ? { fontFamily: layer.fontFamily } : {}),
+            ...(layer.fontSize === undefined
+              ? {}
+              : { fontSize: layer.fontSize }),
+            ...(layer.kind === "text" && layer.fullContent !== undefined
+              ? { fullText: layer.fullContent }
+              : {}),
           },
         ],
   );
@@ -49,22 +69,29 @@ function signature(layer: Layer): string {
     layer.opacity,
     layer.zIndex ?? 0,
     layer.readingOrder ?? null,
+    layer.bounds ?? null,
+    layer.direction ?? null,
+    layer.textAlign ?? null,
+    layer.fontFamily ?? null,
+    layer.fontSize ?? null,
+    layer.fullContent ?? null,
   ]);
 }
 
 export function reindexLayerOrder(layers: readonly Layer[]): Layer[] {
-  const editableCount = layers.filter((layer) => layer.kind !== "page").length;
+  const editableCount = layers.filter((layer) => !isStructural(layer)).length;
   let nextZIndex = editableCount;
-  const readingOrderByPage = new Map<number, number>();
+  const readingOrderByScope = new Map<string, number>();
   return layers.map((layer) => {
-    if (layer.kind === "page") return layer;
+    if (isStructural(layer)) return layer;
     const pageNumber = layer.pageNumber;
+    const scope = `${pageNumber ?? 1}:${layer.parentId ?? "root"}`;
     const readingOrder =
       pageNumber === undefined
         ? layer.readingOrder
-        : readingOrderByPage.get(pageNumber) ?? 0;
+        : readingOrderByScope.get(scope) ?? 0;
     if (pageNumber !== undefined) {
-      readingOrderByPage.set(pageNumber, (readingOrder ?? 0) + 1);
+      readingOrderByScope.set(scope, (readingOrder ?? 0) + 1);
     }
     return {
       ...layer,
@@ -90,8 +117,10 @@ export function moveEditableLayer(
     !source ||
     !target ||
     sourceIndex === boundedTargetIndex ||
-    source.kind === "page" ||
-    target.kind === "page"
+    isStructural(source) ||
+    isStructural(target) ||
+    (source.pageNumber ?? 1) !== (target.pageNumber ?? 1) ||
+    (source.parentId ?? null) !== (target.parentId ?? null)
   ) {
     return null;
   }
@@ -107,7 +136,7 @@ export function arrangeLayersForReading(
   layers: readonly Layer[],
 ): Layer[] {
   const content = layers
-    .filter((layer) => layer.kind !== "page")
+    .filter((layer) => !isStructural(layer))
     .sort(
       (left, right) =>
         (left.pageNumber ?? 1) - (right.pageNumber ?? 1) ||
@@ -116,8 +145,11 @@ export function arrangeLayersForReading(
           ? (right.bounds?.x ?? 0) - (left.bounds?.x ?? 0)
           : (left.bounds?.x ?? 0) - (right.bounds?.x ?? 0)),
     );
-  return reindexLayerOrder([
-    ...content,
-    ...layers.filter((layer) => layer.kind === "page"),
-  ]);
+  const contentIds = new Set(content.map((layer) => layer.id));
+  let contentIndex = 0;
+  return reindexLayerOrder(
+    layers.map((layer) =>
+      contentIds.has(layer.id) ? content[contentIndex++]! : layer,
+    ),
+  );
 }

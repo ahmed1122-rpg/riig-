@@ -357,3 +357,25 @@
 .app-shell .plan-row.is-recommended {
   box-shadow: inset 3px 0 var(--vp-violet);
 }
+.capabilities-health-banner {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(221, 162, 70, .42);
+  background: #3c2d18;
+  color: #ffe0a3;
+  font-size: 12px;
+  text-align: center;
+}
+
+.capabilities-health-banner button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  color: inherit;
+  font-weight: 800;
+}

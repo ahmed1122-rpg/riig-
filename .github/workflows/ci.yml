@@ -27,17 +27,41 @@ jobs:
 
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          node-version-file: .node-version
-          cache: npm
-      - run: npm ci
-      - run: npm run verify:staging-dependencies:test --workspace @motionprep/api
-      - run: npm run quality
-      - run: npm audit --audit-level=high
+          context: .
+          file: Dockerfile.qa
+          push: false
+          load: true
+          tags: motionprep-qa:ci
+          cache-from: type=gha,scope=qa
+          cache-to: type=gha,mode=max,scope=qa
+      - name: Prepare QA evidence directory
+        run: mkdir -p artifacts/qa
+      - name: Verify staging dependency probes in the QA image
+        run: >-
+          docker run --rm motionprep-qa:ci
+          npm run verify:staging-dependencies:test --workspace @motionprep/api
+      - name: Run the complete source quality gate in the QA image
+        run: >-
+          docker run --rm
+          --env GITHUB_SHA
+          --volume "${GITHUB_WORKSPACE}/artifacts/qa:/workspace/artifacts/qa"
+          motionprep-qa:ci
+      - name: Audit the complete dependency tree in the QA image
+        run: docker run --rm motionprep-qa:ci npm audit --audit-level=high
+      - name: Upload QA execution summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qa-source-evidence-${{ github.sha }}
+          path: artifacts/qa/quality-summary.json
+          if-no-files-found: error
+          retention-days: 14
 
   container-build:
     runs-on: ubuntu-latest
@@ -180,6 +204,11 @@ jobs:
       - name: Prove concurrent migration safety and idempotency
         run: node scripts/verify-concurrent-migrations.mjs
       - run: npm run test:integration --workspace @motionprep/api
+      - name: Repeat Character lease and idempotency race tests
+        run: |
+          npm run test:character-rig:race --workspace @motionprep/api
+          npm run test:character-rig:race --workspace @motionprep/api
+          npm run test:character-rig:race --workspace @motionprep/api
       - name: Print MinIO logs after failure
         if: failure()
         run: docker logs motionprep-minio-ci

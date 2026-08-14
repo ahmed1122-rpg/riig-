@@ -1,65 +1,19 @@
-import type { Pool } from "pg";
 import type { ObjectStorage } from "../storage/object-storage.js";
 import type { RetentionConfig } from "./retention-config.js";
 import type {
   AccountDeletionProcessor,
   AccountPrivacyRepository,
 } from "../privacy/account-privacy.js";
-import {
-  pruneRetentionDatabase,
-  type RetentionDatabaseCounts,
-} from "./prune-retention-database.js";
-
 export type { RetentionDatabaseCounts } from "./prune-retention-database.js";
-
-export interface ExpiredUploadObject {
-  uploadId: string;
-  objectKey: string;
-}
-
-export interface ExpiredExportArtifact {
-  exportId: string;
-  objectKey: string;
-}
-
-export interface ExpiredCharacterReference {
-  referenceId: string;
-  objectKey: string;
-}
-
-export interface RetentionStore {
-  listExpiredUploads(
-    now: string,
-    limit: number,
-  ): Promise<ExpiredUploadObject[]>;
-  markUploadPurged(uploadId: string, now: string): Promise<boolean>;
-  listExpiredArtifacts(
-    now: string,
-    limit: number,
-  ): Promise<ExpiredExportArtifact[]>;
-  markArtifactPurged(exportId: string, now: string): Promise<boolean>;
-  listExpiredCharacterReferences(
-    now: string,
-    limit: number,
-  ): Promise<ExpiredCharacterReference[]>;
-  markCharacterReferencePurged(
-    referenceId: string,
-    now: string,
-  ): Promise<boolean>;
-  pruneDatabase(
-    now: string,
-    config: RetentionConfig,
-  ): Promise<RetentionDatabaseCounts>;
-}
-
-export interface RetentionCleanupReport {
-  checkedAt: string;
-  uploadsPurged: number;
-  artifactsPurged: number;
-  characterReferencesPurged: number;
-  database: RetentionDatabaseCounts;
-  failures: Array<{ key: string; message: string }>;
-}
+import type {
+  RetentionCleanupReport,
+  RetentionStore,
+} from "./retention-contract.js";
+export type {
+  RetentionCleanupReport,
+  RetentionStore,
+} from "./retention-contract.js";
+export { exportArtifactKey } from "./retention-contract.js";
 
 export class RetentionCleanup {
   constructor(
@@ -83,6 +37,10 @@ export class RetentionCleanup {
       checkedAt,
       failures,
     );
+    const derivedAssetsPurged = await this.purgeDerivedAssets(
+      checkedAt,
+      failures,
+    );
     const database = await this.store.pruneDatabase(
       checkedAt,
       this.config,
@@ -92,6 +50,7 @@ export class RetentionCleanup {
       uploadsPurged,
       artifactsPurged,
       characterReferencesPurged,
+      derivedAssetsPurged,
       database,
       failures,
     };
@@ -133,6 +92,7 @@ export class RetentionCleanup {
     let purged = 0;
     for (const upload of uploads) {
       try {
+        if (!await this.store.claimUploadPurge(upload, now)) continue;
         await this.storage.delete(upload.objectKey);
         if (await this.store.markUploadPurged(upload.uploadId, now)) purged += 1;
       } catch (error) {
@@ -156,6 +116,7 @@ export class RetentionCleanup {
     let purged = 0;
     for (const artifact of artifacts) {
       try {
+        if (!await this.store.claimArtifactPurge(artifact, now)) continue;
         await this.storage.delete(artifact.objectKey);
         if (await this.store.markArtifactPurged(artifact.exportId, now)) {
           purged += 1;
@@ -181,6 +142,9 @@ export class RetentionCleanup {
     let purged = 0;
     for (const reference of references) {
       try {
+        if (!await this.store.claimCharacterReferencePurge(reference, now)) {
+          continue;
+        }
         await this.storage.delete(reference.objectKey);
         if (
           await this.store.markCharacterReferencePurged(
@@ -199,182 +163,38 @@ export class RetentionCleanup {
     }
     return purged;
   }
-}
 
-interface UploadCleanupRow {
-  upload_id: string;
-  object_key: string;
-}
-
-interface ArtifactCleanupRow {
-  id: string;
-  project_id: string;
-  filename: string;
-  object_key: string | null;
-}
-
-interface CharacterReferenceCleanupRow {
-  id: string;
-  object_key: string;
-}
-
-export class PostgresRetentionStore implements RetentionStore {
-  constructor(private readonly pool: Pool) {}
-
-  async listExpiredUploads(
+  private async purgeDerivedAssets(
     now: string,
-    limit: number,
-  ): Promise<ExpiredUploadObject[]> {
-    const result = await this.pool.query<UploadCleanupRow>(
-      `
-        SELECT upload_id, object_key
-        FROM upload_sessions
-        WHERE expires_at <= $1
-          AND status <> 'ready'
-          AND object_purged_at IS NULL
-        ORDER BY expires_at, upload_id
-        LIMIT $2
-      `,
-      [now, limit],
+    failures: RetentionCleanupReport["failures"],
+  ): Promise<number> {
+    const assets = await this.store.listUnreferencedDerivedAssets(
+      now,
+      this.config.RETENTION_BATCH_SIZE,
     );
-    return result.rows.map((row) => ({
-      uploadId: row.upload_id,
-      objectKey: row.object_key,
-    }));
+    let purged = 0;
+    for (const asset of assets) {
+      try {
+        if (!await this.store.claimDerivedAssetPurge(asset, now)) continue;
+        await this.storage.delete(asset.objectKey);
+        if (
+          await this.store.markDerivedAssetPurged(
+            asset.objectKey,
+            asset.observedUpdatedAt,
+            now,
+          )
+        ) {
+          purged += 1;
+        }
+      } catch (error) {
+        failures.push({
+          key: asset.objectKey,
+          message: errorMessage(error),
+        });
+      }
+    }
+    return purged;
   }
-
-  async markUploadPurged(uploadId: string, now: string): Promise<boolean> {
-    const result = await this.pool.query<{ changed: number }>(
-      `
-        WITH purged AS (
-          UPDATE upload_sessions
-          SET
-            status = CASE
-              WHEN status IN ('validating', 'uploading', 'verifying')
-                THEN 'cancelled'
-              ELSE status
-            END,
-            object_purged_at = $2,
-            updated_at = $2
-          WHERE upload_id = $1
-            AND status <> 'ready'
-            AND object_purged_at IS NULL
-          RETURNING source_version_id
-        ),
-        updated_source AS (
-          UPDATE source_versions AS source
-          SET
-            status = CASE
-              WHEN source.status IN ('validating', 'uploading', 'verifying')
-                THEN 'cancelled'
-              ELSE source.status
-            END,
-            updated_at = $2
-          FROM purged
-          WHERE source.id = purged.source_version_id
-          RETURNING source.id
-        )
-        SELECT count(*)::integer AS changed FROM purged
-      `,
-      [uploadId, now],
-    );
-    return result.rows[0]?.changed === 1;
-  }
-
-  async listExpiredArtifacts(
-    now: string,
-    limit: number,
-  ): Promise<ExpiredExportArtifact[]> {
-    const result = await this.pool.query<ArtifactCleanupRow>(
-      `
-        SELECT id, project_id, artifact->>'filename' AS filename,
-          artifact->>'objectKey' AS object_key
-        FROM export_jobs
-        WHERE status = 'ready'
-          AND artifact IS NOT NULL
-          AND artifact_purged_at IS NULL
-          AND artifact->>'expiresAt' <= $1
-        ORDER BY artifact->>'expiresAt', id
-        LIMIT $2
-      `,
-      [now, limit],
-    );
-    return result.rows.map((row) => ({
-      exportId: row.id,
-      objectKey:
-        row.object_key ?? exportArtifactKey(row.project_id, row.id, row.filename),
-    }));
-  }
-
-  async markArtifactPurged(exportId: string, now: string): Promise<boolean> {
-    const result = await this.pool.query(
-      `
-        UPDATE export_jobs
-        SET artifact_purged_at = $2
-        WHERE id = $1
-          AND status = 'ready'
-          AND artifact_purged_at IS NULL
-      `,
-      [exportId, now],
-    );
-    return result.rowCount === 1;
-  }
-
-  async listExpiredCharacterReferences(
-    now: string,
-    limit: number,
-  ): Promise<ExpiredCharacterReference[]> {
-    const result = await this.pool.query<CharacterReferenceCleanupRow>(
-      `SELECT reference.id, reference.artifact->>'objectKey' AS object_key
-       FROM character_reference_assets reference
-       WHERE reference.retention_expires_at <= $1
-         AND reference.artifact ? 'objectKey'
-         AND NOT EXISTS (
-           SELECT 1 FROM character_identity_model_versions model
-           WHERE model.bible_id = reference.bible_id
-             AND model.status IN ('draft', 'training')
-         )
-       ORDER BY reference.retention_expires_at, reference.id
-       LIMIT $2`,
-      [now, limit],
-    );
-    return result.rows.map((row) => ({
-      referenceId: row.id,
-      objectKey: row.object_key,
-    }));
-  }
-
-  async markCharacterReferencePurged(
-    referenceId: string,
-    now: string,
-  ): Promise<boolean> {
-    const result = await this.pool.query(
-      `DELETE FROM character_reference_assets
-       WHERE id = $1 AND retention_expires_at <= $2
-         AND NOT EXISTS (
-           SELECT 1 FROM character_identity_model_versions model
-           WHERE model.bible_id = character_reference_assets.bible_id
-             AND model.status IN ('draft', 'training')
-         )`,
-      [referenceId, now],
-    );
-    return result.rowCount === 1;
-  }
-
-  async pruneDatabase(
-    now: string,
-    config: RetentionConfig,
-  ): Promise<RetentionDatabaseCounts> {
-    return pruneRetentionDatabase(this.pool, now, config);
-  }
-}
-
-export function exportArtifactKey(
-  projectId: string,
-  exportId: string,
-  filename: string,
-): string {
-  return `artifacts/${projectId}/${exportId}/${filename}`;
 }
 
 function errorMessage(error: unknown): string {

@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import type {
+  EmailVerificationMessage,
   EmailSender,
   PasswordResetMessage,
 } from "../../auth/email-sender.js";
@@ -64,6 +65,42 @@ export class SmtpEmailSender implements EmailSender {
       ...content,
     });
   }
+
+  async sendEmailVerification(message: EmailVerificationMessage): Promise<void> {
+    const content = emailVerificationContent(message);
+    await this.#transport.sendMail({
+      from: this.options.from,
+      to: message.recipient,
+      ...content,
+    });
+  }
+}
+
+function emailVerificationContent(
+  message: EmailVerificationMessage,
+): { subject: string; text: string; html: string } {
+  const verificationUrl = escapeHtml(message.verificationUrl);
+  const subject = "تأكيد البريد الإلكتروني في MotionPrep";
+  const text = [
+    "أكّد بريدك الإلكتروني لإكمال إنشاء حساب MotionPrep.",
+    "",
+    message.verificationUrl,
+    "",
+    "إذا لم تنشئ هذا الحساب فتجاهل الرسالة.",
+  ].join("\n");
+  const html = `<!doctype html>
+<html lang="ar" dir="rtl">
+  <body style="font-family:Arial,sans-serif;line-height:1.7;color:#172033;background:#f5f7fb;padding:24px">
+    <main style="max-width:560px;margin:auto;background:#fff;border-radius:12px;padding:28px">
+      <h1 style="font-size:22px;margin-top:0">تأكيد البريد الإلكتروني</h1>
+      <p>أكّد بريدك الإلكتروني لإكمال إنشاء حساب MotionPrep.</p>
+      <p><a href="${verificationUrl}" style="display:inline-block;background:#2457d6;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px">تأكيد البريد</a></p>
+      <p style="font-size:13px;color:#526079;overflow-wrap:anywhere">${verificationUrl}</p>
+      <p>إذا لم تنشئ هذا الحساب فتجاهل الرسالة.</p>
+    </main>
+  </body>
+</html>`;
+  return { subject, text, html };
 }
 
 export function passwordResetEmailContent(

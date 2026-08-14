@@ -1,6 +1,7 @@
 import { Icon, type IconName } from "../../shared/Icon";
 import {
   MAX_IMAGE_LAYERS,
+  MAX_IMAGE_UPLOAD_MEBIBYTES,
   MAX_UPLOAD_MEBIBYTES,
 } from "@motionprep/contracts";
 
@@ -264,7 +265,7 @@ export default function LandingPage({
                 تبدأ بعلامة <bdi>+</bdi> لتصل إلى Adobe مرتبة.
               </p>
               <ol>
-                <li><Icon name="upload" size={15} /> ارفع صورة واحدة حتى {MAX_UPLOAD_MEBIBYTES} MiB</li>
+                <li><Icon name="upload" size={15} /> ارفع صورة واحدة حتى {MAX_IMAGE_UPLOAD_MEBIBYTES} MiB</li>
                 <li><Icon name="brush" size={15} /> وجّه الفصل أو صححه يدويًا</li>
                 <li><Icon name="packageCheck" size={15} /> افحص الأسماء ثم صدّر</li>
               </ol>

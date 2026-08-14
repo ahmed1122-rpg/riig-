@@ -50,14 +50,44 @@ test("rejects a runtime workspace omitted from the npm ci manifest set", () => {
   ]);
 });
 
+test("rejects an omitted transitive runtime package", () => {
+  const dockerfile = completeDockerfile().replace(
+    /COPY --from=build \/workspace\/packages\/layer-domain\/dist \.\/packages\/layer-domain\/dist\r?\n/u,
+    "",
+  );
+  assert.deepEqual(verifyRuntimeImageContract({ dockerfile, composeDocument: compose }), [
+    "Final runtime image does not copy packages/layer-domain/dist.",
+  ]);
+});
+
 function completeDockerfile() {
+  const packages = [
+    "contracts",
+    "document-processing",
+    "export-adapters",
+    "guidance",
+    "layer-domain",
+    "media-processing",
+    "presets",
+  ];
+  const manifests = packages
+    .map((name) => `COPY packages/${name}/package.json ./packages/${name}/package.json`)
+    .join("\n");
+  const runtimePackages = packages
+    .flatMap((name) => [
+      `COPY --from=build /workspace/packages/${name}/package.json ./packages/${name}/package.json`,
+      `COPY --from=build /workspace/packages/${name}/dist ./packages/${name}/dist`,
+    ])
+    .join("\n");
   return `FROM node AS build
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/worker-character/package.json ./apps/worker-character/package.json
+${manifests}
 RUN npm ci
 FROM node AS runtime
 COPY --from=build /workspace/apps/api/dist ./apps/api/dist
 COPY --from=build /workspace/apps/worker-character/dist ./apps/worker-character/dist
 COPY --from=build /workspace/scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
+${runtimePackages}
 `;
 }

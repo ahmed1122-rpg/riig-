@@ -28,8 +28,16 @@ export interface ProcessingJobRepository {
     projectId: string,
     sourceVersionId: string,
   ): Promise<ProcessingJob | null>;
+  enqueue(
+    job: ProcessingJob,
+    activateProject?: () => Promise<boolean>,
+  ): Promise<boolean>;
   save(job: ProcessingJob): Promise<void>;
-  retryFailed(id: string, retriedAt: string): Promise<ProcessingJob | null>;
+  retryFailed(
+    id: string,
+    retriedAt: string,
+    activateProject?: (job: ProcessingJob) => Promise<boolean>,
+  ): Promise<ProcessingJob | null>;
 }
 
 export interface LayerDocumentRepository {
@@ -110,9 +118,20 @@ export class InMemoryProcessingJobRepository
     this.#jobs.set(job.id, job);
   }
 
+  async enqueue(
+    job: ProcessingJob,
+    activateProject?: () => Promise<boolean>,
+  ): Promise<boolean> {
+    if (this.#jobs.has(job.id)) return false;
+    if (activateProject && !(await activateProject())) return false;
+    this.#jobs.set(job.id, job);
+    return true;
+  }
+
   async retryFailed(
     id: string,
     retriedAt: string,
+    activateProject?: (job: ProcessingJob) => Promise<boolean>,
   ): Promise<ProcessingJob | null> {
     const job = this.#jobs.get(id);
     if (!job || job.status !== "failed") return null;
@@ -127,6 +146,7 @@ export class InMemoryProcessingJobRepository
       errorCode: null,
       updatedAt: retriedAt,
     };
+    if (activateProject && !(await activateProject(job))) return null;
     this.#jobs.set(id, retried);
     return retried;
   }

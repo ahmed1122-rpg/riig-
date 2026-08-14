@@ -42,8 +42,13 @@ export class CharacterJobService {
       createdAt: input.now,
       updatedAt: input.now,
     };
-    await this.jobs.save(job);
-    return job;
+    if (await this.jobs.save(job)) return job;
+    const raced = await this.jobs.findByOperationKey(
+      input.projectId,
+      input.operationKey,
+    );
+    if (raced?.requestHash === input.requestHash) return raced;
+    throw new CharacterJobIdempotencyConflictError();
   }
 }
 

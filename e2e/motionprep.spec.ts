@@ -152,6 +152,35 @@ test("processes a PDF through the real book workflow", async ({ page }, testInfo
   await page.locator('input[type="file"]').setInputFiles(pdfFixture);
   await expect(page.getByText("جاهز للمراجعة")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".workspace")).toBeVisible();
+
+  if (testInfo.project.name.includes("mobile")) {
+    const overlay = page.locator(".pdf-marker-overlay");
+    const bounds = await overlay.boundingBox();
+    expect(bounds).not.toBeNull();
+    await page.mouse.move(bounds!.x + 20, bounds!.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(bounds!.x + 120, bounds!.y + 90);
+    await page.mouse.up();
+  } else {
+    const coordinateForm = page.locator(
+      ".guidance-coordinate-entry--region",
+    );
+    const coordinateInputs = coordinateForm.locator('input[type="number"]');
+    await coordinateInputs.nth(0).fill("99");
+    await coordinateInputs.nth(2).fill("20");
+    await coordinateForm.locator('button[type="submit"]').click();
+    await expect(coordinateForm.getByRole("alert")).toBeVisible();
+    await expect(page.locator('.pdf-marker-overlay [data-region="true"]')).toHaveCount(0);
+
+    await coordinateInputs.nth(0).fill("10");
+    await coordinateForm.locator('button[type="submit"]').click();
+  }
+  await expect(page.locator('.pdf-marker-overlay [data-region="true"]')).toHaveCount(1);
+
+  await page.locator(".workspace-title > button").click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".workspace")).toBeVisible();
   await assertNoSeriousAccessibilityViolations(page);
 });
 
@@ -246,7 +275,10 @@ test("creates an account, processes an image, saves review, and downloads export
       page.getByRole("region", { name: "الطبقات" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "+جزء_05", exact: true }),
+      page.getByRole("button", {
+        name: "+جزء_05، محددة",
+        exact: true,
+      }),
     ).toBeVisible();
   } else {
     await expect(layerCount).toBeVisible();

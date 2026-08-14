@@ -67,10 +67,13 @@ describe("email outbox dispatcher", () => {
       id: crypto.randomUUID(),
       attempt: 8,
       maxAttempts: 8,
-      message: {
-        recipient: "owner@example.com",
-        resetUrl: "https://studio.example.com/reset?token=secret",
-        expiresAt: "2026-08-01T12:30:00.000Z",
+      delivery: {
+        kind: "password-reset" as const,
+        message: {
+          recipient: "owner@example.com",
+          resetUrl: "https://studio.example.com/reset?token=secret",
+          expiresAt: "2026-08-01T12:30:00.000Z",
+        },
       },
     });
     vi.mocked(outbox.retryOrFail).mockResolvedValueOnce("failed");
@@ -203,10 +206,13 @@ function fakeOutbox(): EmailOutboxRepository {
       id: crypto.randomUUID(),
       attempt: 1,
       maxAttempts: 5,
-      message: {
-        recipient: "owner@example.com",
-        resetUrl: "https://studio.example.com/reset?token=secret",
-        expiresAt: "2026-08-01T12:30:00.000Z",
+      delivery: {
+        kind: "password-reset" as const,
+        message: {
+          recipient: "owner@example.com",
+          resetUrl: "https://studio.example.com/reset?token=secret",
+          expiresAt: "2026-08-01T12:30:00.000Z",
+        },
       },
     })),
     markSent: vi.fn(async () => true),

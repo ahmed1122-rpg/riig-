@@ -6,7 +6,11 @@ import type {
   UserStatus,
   UserSummary,
 } from "@motionprep/contracts";
-import { hashPassword, verifyPassword } from "./password.js";
+import {
+  hashPassword,
+  passwordHashNeedsUpgrade,
+  verifyPassword,
+} from "./password.js";
 import type {
   AuthRepository,
   SessionRecord,
@@ -31,6 +35,14 @@ import {
 } from "./totp.js";
 import { AuthPasswordCoordinator } from "./auth-password-coordinator.js";
 import { AuthUserAccessCoordinator } from "./auth-user-access-coordinator.js";
+import {
+  AuthMfaLoginCoordinator,
+  matchSecondFactor,
+} from "./auth-mfa-login-coordinator.js";
+import {
+  AuthRegistrationCoordinator,
+  type RegistrationResult,
+} from "./auth-registration-coordinator.js";
 
 export const SESSION_COOKIE_NAME = "motionprep_session";
 
@@ -52,6 +64,10 @@ export interface AuthSecurityOptions {
   passwordResetUrl?: string;
   totpIssuer?: string;
   registrationRoleForEmail?: (email: string) => UserRole;
+  emailVerificationRequired?: boolean;
+  emailVerificationUrl?: string;
+  adminBootstrapEmail?: string;
+  adminBootstrapTokenHash?: string;
 }
 
 export class AuthDomainError extends Error {
@@ -71,7 +87,9 @@ export class AuthDomainError extends Error {
       | "MFA_NOT_ENABLED"
       | "MFA_SETUP_INVALID"
       | "PASSWORD_RESET_INVALID"
-      | "CURRENT_PASSWORD_INVALID",
+      | "CURRENT_PASSWORD_INVALID"
+      | "EMAIL_VERIFICATION_INVALID"
+      | "ADMIN_BOOTSTRAP_DENIED",
     message: string,
   ) {
     super(message);
@@ -86,6 +104,8 @@ export class AuthService {
   readonly #registrationRoleForEmail: (email: string) => UserRole;
   readonly #passwordCoordinator: AuthPasswordCoordinator;
   readonly #userAccessCoordinator: AuthUserAccessCoordinator;
+  readonly #mfaLoginCoordinator: AuthMfaLoginCoordinator;
+  readonly #registrationCoordinator: AuthRegistrationCoordinator;
 
   constructor(
     readonly repository: AuthRepository,
@@ -119,6 +139,34 @@ export class AuthService {
       publicUser: (user) => this.publicUser(user),
       domainError: (code, message) => new AuthDomainError(code, message),
     });
+    this.#mfaLoginCoordinator = new AuthMfaLoginCoordinator({
+      repository: this.repository,
+      now: this.now,
+      sessionTtlSeconds: this.sessionTtlSeconds,
+      secretProtector: this.#secretProtector,
+      randomToken: () => this.randomToken(),
+      hashToken: (token) => this.hashToken(token),
+      publicUser: (user) => this.publicUser(user),
+      domainError: (code, message) => new AuthDomainError(code, message),
+    });
+    this.#registrationCoordinator = new AuthRegistrationCoordinator({
+      repository: this.repository,
+      emailSender: this.#emailSender,
+      now: this.now,
+      verificationRequired: security.emailVerificationRequired ?? false,
+      verificationUrl:
+        security.emailVerificationUrl ?? "http://localhost:5173/auth",
+      registrationRoleForEmail: this.#registrationRoleForEmail,
+      ...(security.adminBootstrapEmail
+        ? { adminBootstrapEmail: security.adminBootstrapEmail }
+        : {}),
+      ...(security.adminBootstrapTokenHash
+        ? { adminBootstrapTokenHash: security.adminBootstrapTokenHash }
+        : {}),
+      randomToken: () => this.randomToken(),
+      hashToken: (token) => this.hashToken(token),
+      domainError: (code, message) => new AuthDomainError(code, message),
+    });
   }
 
   async register(input: {
@@ -127,34 +175,45 @@ export class AuthService {
     password: string;
     legal: LegalAcceptance;
   }): Promise<{ session: SessionView; token: string }> {
-    const email = input.email.trim().toLowerCase();
-    if (await this.repository.findUserByEmail(email)) {
-      throw new AuthDomainError(
-        "EMAIL_ALREADY_EXISTS",
-        "البريد الإلكتروني مستخدم بالفعل.",
-      );
+    const result = await this.registerWithPolicy(input);
+    if (result.kind !== "session") {
+      throw new Error("This registration path requires email verification.");
     }
+    return { session: result.session, token: result.token };
+  }
 
-    const timestamp = this.now().toISOString();
-    const user: UserRecord = {
-      id: crypto.randomUUID(),
-      name: input.name.trim(),
-      email,
-      role: this.#registrationRoleForEmail(email),
-      status: "active",
-      passwordHash: await hashPassword(input.password),
-      mfaEnabled: false,
-      mfaSecretCiphertext: null,
-      recoveryCodeHashes: [],
-      createdAt: timestamp,
-      lastLoginAt: timestamp,
-      termsVersion: input.legal.termsVersion,
-      privacyVersion: input.legal.privacyVersion,
-      legalAcceptedAt: timestamp,
-      deletionRequestedAt: null,
-      deletedAt: null,
-    };
-    await this.repository.saveUser(user);
+  async registerWithPolicy(input: {
+    name: string;
+    email: string;
+    password: string;
+    legal: LegalAcceptance;
+  }): Promise<
+    | { kind: "session"; session: SessionView; token: string }
+    | Exclude<RegistrationResult, { kind: "active" }>
+  > {
+    const result = await this.#registrationCoordinator.register(input);
+    return result.kind === "active"
+      ? { kind: "session", ...(await this.createSession(result.user)) }
+      : result;
+  }
+
+  async verifyEmail(token: string): Promise<{ session: SessionView; token: string }> {
+    const user = await this.#registrationCoordinator.verifyEmail(token);
+    return this.createSession(user);
+  }
+
+  requestEmailVerification(email: string): Promise<void> {
+    return this.#registrationCoordinator.requestVerification(email);
+  }
+
+  async bootstrapAdmin(input: {
+    name: string;
+    email: string;
+    password: string;
+    token: string;
+    legal: LegalAcceptance;
+  }): Promise<{ session: SessionView; token: string }> {
+    const user = await this.#registrationCoordinator.bootstrapAdmin(input);
     return this.createSession(user);
   }
 
@@ -193,6 +252,13 @@ export class AuthService {
       );
     }
 
+    if (passwordHashNeedsUpgrade(user.passwordHash)) {
+      user.passwordHash = await hashPassword(input.password);
+      await this.repository.updateSecurity(user.id, {
+        passwordHash: user.passwordHash,
+      });
+    }
+
     await this.loginAttempts.clear(input.attemptKey);
     if (user.mfaEnabled) {
       const challengeToken = this.randomToken();
@@ -218,38 +284,7 @@ export class AuthService {
     challengeToken: string;
     code: string;
   }): Promise<Extract<LoginResult, { kind: "session" }>> {
-    const tokenHash = this.hashToken(input.challengeToken);
-    const challenge = await this.repository.findMfaChallenge(
-      tokenHash,
-      this.now().toISOString(),
-    );
-    if (!challenge) {
-      throw new AuthDomainError(
-        "MFA_CHALLENGE_INVALID",
-        "انتهى تحدي التحقق أو لم يعد صالحًا.",
-      );
-    }
-    const user = await this.repository.findUserById(challenge.userId);
-    if (
-      !user ||
-      !user.mfaEnabled ||
-      user.status !== "active" ||
-      user.deletionRequestedAt ||
-      user.deletedAt
-    ) {
-      throw new AuthDomainError(
-        "MFA_CHALLENGE_INVALID",
-        "تحدي التحقق غير صالح.",
-      );
-    }
-    if (!(await this.verifySecondFactor(user, input.code))) {
-      throw new AuthDomainError(
-        "MFA_CODE_INVALID",
-        "رمز التحقق غير صحيح.",
-      );
-    }
-    await this.repository.deleteMfaChallengesByUser(user.id);
-    return this.finishLogin(user);
+    return this.#mfaLoginCoordinator.complete(input);
   }
 
   async beginMfaSetup(userId: string): Promise<{
@@ -351,10 +386,25 @@ export class AuthService {
         "كلمة المرور الحالية غير صحيحة.",
       );
     }
-    if (!(await this.verifySecondFactor(user, input.code))) {
+    const factor = matchSecondFactor(
+      user,
+      input.code,
+      this.#secretProtector,
+      this.now().getTime(),
+    );
+    if (!factor) {
       throw new AuthDomainError(
         "MFA_CODE_INVALID",
         "رمز التحقق غير صحيح.",
+      );
+    }
+    if (
+      factor.kind === "recovery" &&
+      !(await this.repository.consumeRecoveryCode(user.id, factor.codeHash))
+    ) {
+      throw new AuthDomainError(
+        "MFA_CODE_INVALID",
+        "رمز الاسترداد غير صالح أو استُخدم سابقًا.",
       );
     }
     await this.repository.updateSecurity(user.id, {
@@ -373,7 +423,7 @@ export class AuthService {
   async resetPassword(input: {
     token: string;
     newPassword: string;
-  }): Promise<void> {
+  }): Promise<string> {
     return this.#passwordCoordinator.reset(input);
   }
 
@@ -503,28 +553,6 @@ export class AuthService {
       throw new AuthDomainError("USER_NOT_FOUND", "المستخدم غير موجود.");
     }
     return user;
-  }
-
-  private async verifySecondFactor(
-    user: UserRecord,
-    code: string,
-  ): Promise<boolean> {
-    if (!user.mfaSecretCiphertext) return false;
-    const secret = this.#secretProtector.unprotect(
-      user.mfaSecretCiphertext,
-    );
-    if (verifyTotpCode(secret, code, this.now().getTime())) return true;
-
-    const recoveryIndex = user.recoveryCodeHashes.findIndex((hash) =>
-      this.#secretProtector.verifyRecoveryCode(code, hash),
-    );
-    if (recoveryIndex < 0) return false;
-    await this.repository.updateSecurity(user.id, {
-      recoveryCodeHashes: user.recoveryCodeHashes.filter(
-        (_hash, index) => index !== recoveryIndex,
-      ),
-    });
-    return true;
   }
 
   private randomToken(): string {

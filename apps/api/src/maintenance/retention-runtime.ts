@@ -1,24 +1,33 @@
 import type { Pool, PoolClient } from "pg";
-import { loadConfig } from "../config.js";
 import {
   createDatabase,
   type DatabaseHandle,
 } from "../infrastructure/postgres/database.js";
-import { createS3ObjectStorageOptions } from "../storage/object-storage-environment.js";
+import {
+  createS3ObjectStorageOptions,
+  createWorkerEnvironmentSchema,
+} from "../storage/object-storage-environment.js";
 import { S3ObjectStorage } from "../storage/s3-object-storage.js";
 import {
   loadRetentionConfig,
   type RetentionConfig,
 } from "./retention-config.js";
 import {
-  PostgresRetentionStore,
   RetentionCleanup,
   type RetentionCleanupReport,
 } from "./retention-cleanup.js";
+import { PostgresRetentionStore } from "./postgres-retention-store.js";
 import { PostgresAccountPrivacyRepository } from "../infrastructure/postgres/postgres-account-privacy-repository.js";
 import { AccountDeletionProcessor } from "../privacy/account-privacy.js";
 
 const RETENTION_ADVISORY_LOCK_ID = 1_971_041_106;
+const retentionRuntimeEnvironmentSchema = createWorkerEnvironmentSchema({});
+
+export function loadRetentionRuntimeEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  return retentionRuntimeEnvironmentSchema.parse(environment);
+}
 
 export class PostgresRetentionRunner {
   constructor(
@@ -112,13 +121,7 @@ export interface RetentionRuntime {
 }
 
 export function createRetentionRuntime(): RetentionRuntime {
-  const config = loadConfig();
-  if (config.PERSISTENCE_MODE !== "postgres" || !config.DATABASE_URL) {
-    throw new Error("Retention cleanup requires PostgreSQL persistence.");
-  }
-  if (config.OBJECT_STORAGE_MODE !== "s3") {
-    throw new Error("Retention cleanup requires durable S3 object storage.");
-  }
+  const config = loadRetentionRuntimeEnvironment();
 
   const database: DatabaseHandle = createDatabase(
     config.DATABASE_URL,

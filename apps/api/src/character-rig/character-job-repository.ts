@@ -6,7 +6,8 @@ export interface CharacterJobRepository {
     projectId: string,
     operationKey: string,
   ): Promise<CharacterJob | null>;
-  save(job: CharacterJob): Promise<void>;
+  listByProject(projectId: string): Promise<CharacterJob[]>;
+  save(job: CharacterJob): Promise<boolean>;
   claimNext(
     workerId: string,
     claimedAt: string,
@@ -17,6 +18,11 @@ export interface CharacterJobRepository {
     workerId: string,
     renewedAt: string,
     leaseExpiresAt: string,
+  ): Promise<boolean>;
+  releaseClaim(
+    id: string,
+    workerId: string,
+    releasedAt: string,
   ): Promise<boolean>;
   completeClaim(
     id: string,
@@ -29,6 +35,7 @@ export interface CharacterJobRepository {
     errorCode: string,
     nextAttemptAt: string,
     updatedAt: string,
+    retryable?: boolean,
   ): Promise<CharacterJob | null>;
 }
 
@@ -52,15 +59,23 @@ export class InMemoryCharacterJobRepository implements CharacterJobRepository {
     return job ? structuredClone(job) : null;
   }
 
-  async save(job: CharacterJob): Promise<void> {
+  async listByProject(projectId: string): Promise<CharacterJob[]> {
+    return [...this.#jobs.values()]
+      .filter((job) => job.projectId === projectId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map((job) => structuredClone(job));
+  }
+
+  async save(job: CharacterJob): Promise<boolean> {
     const conflict = [...this.#jobs.values()].some(
       (candidate) =>
         candidate.id !== job.id &&
         candidate.projectId === job.projectId &&
         candidate.operationKey === job.operationKey,
     );
-    if (conflict) throw new Error("Character job operation key already exists.");
+    if (conflict) return false;
     this.#jobs.set(job.id, structuredClone(job));
+    return true;
   }
 
   async claimNext(
@@ -113,6 +128,32 @@ export class InMemoryCharacterJobRepository implements CharacterJobRepository {
     return true;
   }
 
+  async releaseClaim(
+    id: string,
+    workerId: string,
+    releasedAt: string,
+  ): Promise<boolean> {
+    const job = this.#jobs.get(id);
+    if (
+      !job ||
+      job.leaseOwner !== workerId ||
+      !["processing", "verifying"].includes(job.status)
+    ) {
+      return false;
+    }
+    this.#jobs.set(id, {
+      ...job,
+      status: "queued",
+      attempt: Math.max(0, job.attempt - 1),
+      nextAttemptAt: releasedAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      errorCode: null,
+      updatedAt: releasedAt,
+    });
+    return true;
+  }
+
   async completeClaim(
     id: string,
     workerId: string,
@@ -146,10 +187,11 @@ export class InMemoryCharacterJobRepository implements CharacterJobRepository {
     errorCode: string,
     nextAttemptAt: string,
     updatedAt: string,
+    retryable = true,
   ): Promise<CharacterJob | null> {
     const job = this.#jobs.get(id);
     if (!job || job.leaseOwner !== workerId) return null;
-    const terminal = job.attempt >= job.maxAttempts;
+    const terminal = !retryable || job.attempt >= job.maxAttempts;
     const updated: CharacterJob = {
       ...job,
       status: terminal ? "failed" : "queued",

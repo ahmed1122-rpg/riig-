@@ -1,30 +1,38 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig } from "../../config.js";
 import { createDatabase } from "./database.js";
 import {
   assertMigrationNames,
   migrationChecksum,
 } from "./migration-integrity.js";
+import {
+  acquireMigrationAdvisoryLock,
+  applyMigrationTimeouts,
+  loadMigrationDatabaseUrl,
+  loadMigrationRuntimePolicy,
+  releaseMigrationAdvisoryLock,
+} from "./migration-runtime-policy.js";
 
-const config = loadConfig();
-if (!config.DATABASE_URL) {
-  throw new Error("DATABASE_URL is required to run migrations.");
-}
-
-const database = createDatabase(config.DATABASE_URL, 2);
+const database = createDatabase(loadMigrationDatabaseUrl(), 2, {
+  applicationName: "motionprep-migrate",
+});
+const migrationPolicy = loadMigrationRuntimePolicy();
 const migrationsDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../../migrations",
 );
 const client = await database.pool.connect();
+let advisoryLockAcquired = false;
 
 try {
   await database.ready();
-  await client.query(
-    "SELECT pg_advisory_lock(hashtext('motionprep_schema_migrations'))",
+  await acquireMigrationAdvisoryLock(
+    client,
+    migrationPolicy.advisoryLockTimeoutMs,
   );
+  advisoryLockAcquired = true;
+  await applyMigrationTimeouts(client, migrationPolicy, false);
   await client.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       filename text PRIMARY KEY,
@@ -100,6 +108,7 @@ try {
     }
     try {
       await client.query("BEGIN");
+      await applyMigrationTimeouts(client, migrationPolicy, true);
       await client.query(migration.sql);
       await client.query(
         `INSERT INTO schema_migrations (filename, checksum_sha256)
@@ -119,16 +128,17 @@ try {
       ALTER COLUMN checksum_sha256 SET NOT NULL
   `);
 } finally {
-  await client
-    .query("SELECT pg_advisory_unlock(hashtext('motionprep_schema_migrations'))")
-    .catch((error: unknown) => {
-      process.stderr.write(
-        `${JSON.stringify({
-          event: "migration_advisory_unlock_failed",
-          message: error instanceof Error ? error.message : String(error),
-        })}\n`,
-      );
-    });
+  if (advisoryLockAcquired) {
+    await releaseMigrationAdvisoryLock(client, advisoryLockAcquired)
+      .catch((error: unknown) => {
+        process.stderr.write(
+          `${JSON.stringify({
+            event: "migration_advisory_unlock_failed",
+            message: error instanceof Error ? error.message : String(error),
+          })}\n`,
+        );
+      });
+  }
   client.release();
   await database.close();
 }

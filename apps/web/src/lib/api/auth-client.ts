@@ -51,8 +51,14 @@ export async function register(
   name: string,
   email: string,
   password: string,
-): Promise<SessionUser> {
-  const session = await request<{ user: SessionUser }>("/v1/auth/register", {
+): Promise<
+  | { kind: "session"; user: SessionUser }
+  | { kind: "verification_required"; email: string; expiresAt: string }
+> {
+  const result = await request<
+    | { user: SessionUser }
+    | { verificationRequired: true; email: string; expiresAt: string }
+  >("/v1/auth/register", {
     method: "POST",
     body: JSON.stringify({
       name,
@@ -65,7 +71,30 @@ export async function register(
       },
     }),
   });
+  return "verificationRequired" in result
+    ? {
+        kind: "verification_required",
+        email: result.email,
+        expiresAt: result.expiresAt,
+      }
+    : { kind: "session", user: result.user };
+}
+
+export async function verifyEmail(token: string): Promise<SessionUser> {
+  const session = await request<{ user: SessionUser }>("/v1/auth/email/verify", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
   return session.user;
+}
+
+export function resendEmailVerification(
+  email: string,
+): Promise<{ accepted: true }> {
+  return request("/v1/auth/email/resend", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
 }
 
 export interface AccountDataExport {

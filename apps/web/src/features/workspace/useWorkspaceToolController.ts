@@ -4,12 +4,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type Dispatch,
-  type SetStateAction,
 } from "react";
 import type { ApplicationCapabilities } from "@motionprep/contracts";
 import type { Layer, ProjectMode } from "../../types";
-import { arrangeLayersForReading } from "./layerReviewState";
+import {
+  canMergeRasterLayers,
+  canMergeTextLayers,
+} from "@motionprep/layer-domain";
+import { toDomainLayer } from "./workspaceLayerDomain";
 import {
   getReadyWorkspaceTools,
   isEditableShortcutTarget,
@@ -28,7 +30,7 @@ interface WorkspaceToolControllerOptions {
   selectedIds: readonly string[];
   imageLayers: readonly Layer[];
   bookLayers: readonly Layer[];
-  setBookLayers: Dispatch<SetStateAction<Layer[]>>;
+  onArrangeReadingOrder: () => void;
   onNotify: (message: string) => void;
 }
 
@@ -79,15 +81,12 @@ export function useWorkspaceToolController(
       options.onNotify("ارفع ملف PDF وجهّزه قبل ترتيب القراءة.");
       return;
     }
-    options.setBookLayers((current) => arrangeLayersForReading(current));
-    options.onNotify(
-      "تم ترتيب القراءة حسب الصفحة والموضع، وسيُحفظ تلقائيًا.",
-    );
+    options.onArrangeReadingOrder();
   }, [
     options.mode,
     options.onNotify,
     options.persistedSource,
-    options.setBookLayers,
+    options.onArrangeReadingOrder,
   ]);
 
   const useTool = useCallback(
@@ -144,16 +143,13 @@ export function useWorkspaceToolController(
         const selected = options.bookLayers.filter((layer) =>
           options.selectedIds.includes(layer.id),
         );
-        if (
-          selected.length < 2 ||
-          selected.length !== options.selectedIds.length ||
-          selected.some(
-            (layer) =>
-              layer.kind !== "text" || layer.locked || !layer.fullContent,
-          )
-        ) {
+        const eligibility = canMergeTextLayers(
+          options.bookLayers.map(toDomainLayer),
+          options.selectedIds,
+        );
+        if (!eligibility.allowed) {
           options.onNotify(
-            "اختر طبقتين نصيتين غير مقفلتين على الأقل قبل الدمج.",
+            "اختر 2–50 طبقة نص شقيقة قابلة للتحرير وموحدة التنسيق.",
           );
           return;
         }
@@ -184,13 +180,13 @@ export function useWorkspaceToolController(
         const selected = options.imageLayers.filter((layer) =>
           options.selectedIds.includes(layer.id),
         );
+        const eligibility = canMergeRasterLayers(
+          options.imageLayers.map(toDomainLayer),
+          options.selectedIds,
+        );
         if (
-          selected.length < 2 ||
-          selected.length !== options.selectedIds.length ||
-          selected.some(
-            (layer) =>
-              layer.kind !== "body" || layer.locked || !layer.visible,
-          )
+          !eligibility.allowed ||
+          selected.some((layer) => !layer.visible || !layer.bounds)
         ) {
           options.onNotify(
             "اختر طبقتين Raster ظاهرتين وغير مقفلتين على الأقل قبل الدمج.",
@@ -204,6 +200,10 @@ export function useWorkspaceToolController(
         return;
       }
       if (dispatch.kind === "character-rig") {
+        if (options.mode !== "image") {
+          options.onNotify("Character Turntable يعالج الصور فقط ولا يقبل ملفات PDF.");
+          return;
+        }
         setCharacterStudioOpen(true);
         return;
       }
@@ -219,6 +219,7 @@ export function useWorkspaceToolController(
       options.activeLayer,
       options.bookLayers,
       options.imageLayers,
+      options.mode,
       options.onNotify,
       options.selectedIds,
     ],
@@ -230,12 +231,23 @@ export function useWorkspaceToolController(
   const resetToolState = useCallback((mode: ProjectMode) => {
     setActiveTool(initialTool(mode));
     setEditorCommand(undefined);
+    setSourceVersionsOpen(false);
+    setPdfTextOperation(undefined);
+    setPdfRegionOcrLayerId(undefined);
+    setImageRasterOperation(undefined);
     setCharacterStudioOpen(false);
   }, []);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if (event.repeat || isEditableShortcutTarget(event.target)) return;
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        isEditableShortcutTarget(event.target) ||
+        document.querySelector('[role="dialog"][aria-modal="true"]')
+      ) {
+        return;
+      }
       const tool = workspaceTools.find(
         (candidate) =>
           candidate.available && isWorkspaceShortcut(candidate, event),

@@ -11,15 +11,15 @@ import { prepareImageSource } from "@motionprep/media-processing";
 import type { Pool, PoolClient } from "pg";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { isObjectStorageIntegrityFailure } from "../storage/object-storage.js";
-import { S3ObjectStorage } from "../storage/s3-object-storage.js";
+import type { ObjectStorage } from "../storage/object-storage.js";
+import type { DerivedAssetRegistry } from "../storage/derived-asset-registry.js";
 import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
 import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
 import { updateProjectStatusForJob } from "../projects/project-job-status.js";
-import { getProcessingRetryPolicy } from "./processing-worker-policy.js";
-import {
-  applyPdfRegionOcr,
-} from "./pdf-region-ocr.js";
+import { retryOrFailProcessingJob } from "./processing-job-settlement.js";
+import { applyPdfRegionOcr } from "./pdf-region-ocr.js";
+import { safeProcessingDiagnostic } from "./processing-failure-diagnostic.js";
 import {
   ProcessingLeaseLostError,
   ProcessingWorkerError,
@@ -31,11 +31,12 @@ import { processingJobOptionsSchema } from "./processing-job-options.js";
 
 export interface ProcessingJobExecutionContext {
   pool: Pool;
-  storage: S3ObjectStorage;
+  storage: ObjectStorage;
   projectKind: ProjectKind;
   workerId: string;
   leaseMilliseconds: number;
   rasterAssetWriteConcurrency: number;
+  derivedAssets?: DerivedAssetRegistry;
   pdfOcrEngine: LocalArabicPdfOcrEngine | null;
   usageMeter: PostgresUsageMeter;
   log: (
@@ -117,6 +118,7 @@ export async function processClaimedJob(
         ...(await writeProcessingRasterAssets(
           context,
           job.id,
+          job.projectId,
           prepared.rasterAssets,
           () => {
             if (heartbeat.leaseLost()) throw new ProcessingLeaseLostError();
@@ -270,7 +272,7 @@ export async function processClaimedJob(
         [job.id, context.workerId],
       );
       if (completed.rowCount !== 1) throw new ProcessingLeaseLostError();
-      await updateProjectStatusForJob(client, {
+      const settled = await updateProjectStatusForJob(client, {
         projectId: job.projectId,
         sourceVersionId: job.sourceVersionId,
         jobType: "processing",
@@ -278,6 +280,7 @@ export async function processClaimedJob(
         status: "needs_review",
         finished: true,
       });
+      if (!settled) throw new ProcessingLeaseLostError();
       await client.query("COMMIT");
       documentPersisted = true;
     } catch (error) {
@@ -343,7 +346,8 @@ export async function processClaimedJob(
       return;
     }
     const errorCode = processingErrorCode(error);
-    const result = await retryOrFail(
+    const diagnostic = safeProcessingDiagnostic(error);
+    const result = await retryOrFailProcessingJob(
       context.pool,
       job,
       context.workerId,
@@ -384,6 +388,7 @@ export async function processClaimedJob(
         attempt: job.attempt,
         max_attempts: job.maxAttempts,
         error_code: errorCode,
+        ...(diagnostic ? { diagnostic } : {}),
       },
     );
   } finally {
@@ -438,59 +443,4 @@ async function assertAndMarkVerifying(
     [jobId, workerId],
   );
   if (result.rowCount !== 1) throw new ProcessingLeaseLostError();
-}
-
-async function retryOrFail(
-  pool: Pool,
-  job: ProcessingJob,
-  workerId: string,
-  errorCode: string,
-): Promise<"queued" | "failed" | "lease_lost"> {
-  const policy = getProcessingRetryPolicy(job.attempt, job.maxAttempts);
-  const retry =
-    policy.retry &&
-    ![
-      "DOCUMENT_REVISION_CONFLICT",
-      "INVALID_DOCUMENT_OPERATION",
-      "INVALID_PROCESSING_OPTIONS",
-    ].includes(errorCode);
-  const result = await pool.query<{ status: "queued" | "failed" }>(
-    `UPDATE processing_jobs
-     SET status = CASE WHEN $5 THEN 'queued' ELSE 'failed' END,
-         progress = CASE WHEN $5 THEN 0 ELSE progress END,
-         next_attempt_at =
-           CASE
-             WHEN $5
-             THEN now() + ($4 * interval '1 millisecond')
-             ELSE next_attempt_at
-           END,
-         lease_owner = NULL,
-         lease_expires_at = NULL,
-         error_code = $3,
-         updated_at = now()
-     WHERE id = $1
-       AND lease_owner = $2
-       AND status IN ('processing', 'verifying')
-     RETURNING status`,
-    [
-      job.id,
-      workerId,
-      errorCode,
-      policy.delayMilliseconds,
-      retry,
-    ],
-  );
-  const status = result.rows[0]?.status;
-  if (!status) return "lease_lost";
-  if (status === "failed") {
-    await updateProjectStatusForJob(pool, {
-      projectId: job.projectId,
-      sourceVersionId: job.sourceVersionId,
-      jobType: "processing",
-      jobId: job.id,
-      status: job.options.pdfRegionOcr ? "needs_review" : "failed",
-      finished: true,
-    });
-  }
-  return status;
 }

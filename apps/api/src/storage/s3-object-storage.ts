@@ -1,10 +1,13 @@
 import {
   CreateBucketCommand,
+  DeleteObjectsCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   GetBucketVersioningCommand,
   HeadObjectCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
+  ListObjectVersionsCommand,
   NoSuchKey,
   NotFound,
   PutObjectCommand,
@@ -153,6 +156,47 @@ export class S3ObjectStorage implements ObjectStorage {
     return metadata;
   }
 
+  async list(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const response = await this.#client.send(
+        new ListObjectsV2Command({
+          Bucket: this.options.bucket,
+          Prefix: prefix,
+          ...(continuationToken ? { ContinuationToken: continuationToken } : {}),
+        }),
+      );
+      for (const entry of response.Contents ?? []) {
+        if (entry.Key) keys.push(entry.Key);
+      }
+      continuationToken = response.IsTruncated
+        ? response.NextContinuationToken
+        : undefined;
+      if (response.IsTruncated && !continuationToken) {
+        throw new Error("S3 object listing was truncated without a continuation token.");
+      }
+    } while (continuationToken);
+    return keys.sort((left, right) => left.localeCompare(right));
+  }
+
+  async purge(
+    keys: readonly string[],
+    prefixes: readonly string[],
+  ): Promise<void> {
+    const exact = new Set(keys);
+    const searchPrefixes = [...new Set([...prefixes, ...keys])];
+    for (const prefix of searchPrefixes) {
+      await this.#purgeVersions(prefix, exact, prefixes);
+    }
+    for (const prefix of searchPrefixes) {
+      const remaining = await this.#listVersions(prefix, exact, prefixes);
+      if (remaining.length > 0) {
+        throw new Error(`S3 retained ${remaining.length} private object versions.`);
+      }
+    }
+  }
+
   async inspect(key: string): Promise<StoredObjectMetadata | null> {
     const head = await this.#head(key);
     if (!head) return null;
@@ -229,6 +273,59 @@ export class S3ObjectStorage implements ObjectStorage {
       if (isMissing(error)) return null;
       throw error;
     }
+  }
+
+  async #purgeVersions(
+    searchPrefix: string,
+    exact: ReadonlySet<string>,
+    prefixes: readonly string[],
+  ): Promise<void> {
+    for (;;) {
+      const versions = await this.#listVersions(searchPrefix, exact, prefixes);
+      if (versions.length === 0) return;
+      for (let offset = 0; offset < versions.length; offset += 1_000) {
+        const batch = versions.slice(offset, offset + 1_000);
+        const response = await this.#client.send(new DeleteObjectsCommand({
+          Bucket: this.options.bucket,
+          Delete: { Objects: batch, Quiet: true },
+        }));
+        if (response.Errors?.length) {
+          throw new Error(
+            `S3 permanent purge failed for ${response.Errors.length} object versions.`,
+          );
+        }
+      }
+    }
+  }
+
+  async #listVersions(
+    searchPrefix: string,
+    exact: ReadonlySet<string>,
+    prefixes: readonly string[],
+  ): Promise<Array<{ Key: string; VersionId?: string }>> {
+    const objects: Array<{ Key: string; VersionId?: string }> = [];
+    let keyMarker: string | undefined;
+    let versionIdMarker: string | undefined;
+    do {
+      const response = await this.#client.send(new ListObjectVersionsCommand({
+        Bucket: this.options.bucket,
+        Prefix: searchPrefix,
+        ...(keyMarker ? { KeyMarker: keyMarker } : {}),
+        ...(versionIdMarker ? { VersionIdMarker: versionIdMarker } : {}),
+      }));
+      for (const item of [...(response.Versions ?? []), ...(response.DeleteMarkers ?? [])]) {
+        if (!item.Key || !matchesPrivateTarget(item.Key, exact, prefixes)) continue;
+        objects.push({ Key: item.Key, ...(item.VersionId ? { VersionId: item.VersionId } : {}) });
+      }
+      keyMarker = response.IsTruncated ? response.NextKeyMarker : undefined;
+      versionIdMarker = response.IsTruncated
+        ? response.NextVersionIdMarker
+        : undefined;
+      if (response.IsTruncated && !keyMarker) {
+        throw new Error("S3 version listing was truncated without a key marker.");
+      }
+    } while (keyMarker);
+    return objects;
   }
 }
 
@@ -314,4 +411,12 @@ function isMissing(error: unknown): boolean {
     ?.httpStatusCode;
   const name = (error as { name?: string }).name;
   return status === 404 || name === "NoSuchBucket" || name === "NotFound";
+}
+
+function matchesPrivateTarget(
+  key: string,
+  exact: ReadonlySet<string>,
+  prefixes: readonly string[],
+): boolean {
+  return exact.has(key) || prefixes.some((prefix) => key.startsWith(prefix));
 }

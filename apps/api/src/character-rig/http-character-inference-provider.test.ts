@@ -57,6 +57,30 @@ describe("HttpCharacterInferenceProvider", () => {
     expect(String(init?.body)).not.toContain("body");
   });
 
+  it("preserves an inference path prefix with or without a trailing slash", async () => {
+    for (const baseUrl of [
+      "https://inference.internal/private-api",
+      "https://inference.internal/private-api/",
+    ]) {
+      const request = vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          providerModelReference: "private:model-1",
+          metrics: {},
+        }),
+      );
+      const provider = new HttpCharacterInferenceProvider({
+        baseUrl,
+        apiKey: "a-secure-test-key",
+        timeoutMilliseconds: 10_000,
+        fetch: request,
+      });
+      await provider.trainIdentity({ bible, modelVersion: model, references });
+      expect(String(request.mock.calls[0]?.[0])).toBe(
+        "https://inference.internal/private-api/v1/identity-models",
+      );
+    }
+  });
+
   it("returns a verified-storage descriptor for generated assets", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
@@ -65,6 +89,10 @@ describe("HttpCharacterInferenceProvider", () => {
           contentType: "image/png",
           sizeBytes: 123,
           sha256: "a".repeat(64),
+        },
+        geometry: {
+          canvas: { width: 1024, height: 1024 },
+          bounds: { x: 0, y: 0, width: 1024, height: 1024 },
         },
         qualityReport: {
           thresholdsSchemaVersion: 1,
@@ -87,6 +115,7 @@ describe("HttpCharacterInferenceProvider", () => {
       target: { kind: "canonical-view", view: "left-profile" },
       status: "processing",
       controls: {
+        canvas: { width: 1024, height: 1024 },
         seed: 1,
         poseReferenceId: null,
         depthReferenceId: null,
@@ -96,6 +125,7 @@ describe("HttpCharacterInferenceProvider", () => {
       requestHash: "b".repeat(64),
       idempotencyKey: "generation-operation",
       outputArtifact: null,
+      outputGeometry: null,
       qualityReport: null,
       failureCode: null,
       createdByUserId: crypto.randomUUID(),
@@ -107,6 +137,8 @@ describe("HttpCharacterInferenceProvider", () => {
       modelVersion: model,
       attempt,
       references,
+      outputObjectKey:
+        `projects/${bible.projectId}/character-rig/generations/${attempt.id}.png`,
     });
     expect(result.artifact).toMatchObject({
       kind: "stored-object",
@@ -123,6 +155,33 @@ describe("HttpCharacterInferenceProvider", () => {
     await expect(
       provider.trainIdentity({ bible, modelVersion: model, references }),
     ).rejects.toMatchObject({ code: "CHARACTER_PROVIDER_UNAVAILABLE" });
+  });
+
+  it("propagates shutdown cancellation into the provider request", async () => {
+    const request = vi.fn<typeof fetch>().mockImplementation(
+      async (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const controller = new AbortController();
+    const training = createProvider(request).trainIdentity({
+      bible,
+      modelVersion: model,
+      references,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(training).rejects.toMatchObject({
+      code: "CHARACTER_JOB_ABORTED",
+    });
+    expect(request.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
   });
 });
 

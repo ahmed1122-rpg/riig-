@@ -7,11 +7,11 @@ import {
 import type { RetentionConfig } from "./retention-config.js";
 import {
   RetentionCleanup,
-  PostgresRetentionStore,
   exportArtifactKey,
   type RetentionDatabaseCounts,
   type RetentionStore,
 } from "./retention-cleanup.js";
+import { PostgresRetentionStore } from "./postgres-retention-store.js";
 
 const config: RetentionConfig = {
   RETENTION_BATCH_SIZE: 100,
@@ -28,8 +28,10 @@ const emptyCounts: RetentionDatabaseCounts = {
   mfaEnrollments: 0,
   mfaChallenges: 0,
   passwordResetTokens: 0,
+  emailVerificationTokens: 0,
   emailOutbox: 0,
   idempotencyKeys: 0,
+  objectWriteLeases: 0,
   checkoutSessionsCancelled: 0,
   workerHeartbeats: 0,
   workerEvents: 0,
@@ -42,6 +44,21 @@ const emptyCounts: RetentionDatabaseCounts = {
   uploadIntegrityEvents: 0,
   characterJobs: 0,
 };
+
+function successfulClaims(): Pick<
+  RetentionStore,
+  | "claimUploadPurge"
+  | "claimArtifactPurge"
+  | "claimCharacterReferencePurge"
+  | "claimDerivedAssetPurge"
+> {
+  return {
+    async claimUploadPurge() { return true; },
+    async claimArtifactPurge() { return true; },
+    async claimCharacterReferencePurge() { return true; },
+    async claimDerivedAssetPurge() { return true; },
+  };
+}
 
 describe("retention cleanup", () => {
   it("purges expired objects and marks them only after storage deletion", async () => {
@@ -64,8 +81,15 @@ describe("retention cleanup", () => {
       sizeBytes: 1,
       body: Buffer.from([3]),
     });
+    await storage.put({
+      key: "derived/project/source/revision-1/orphan.png",
+      contentType: "image/png",
+      sizeBytes: 1,
+      body: Buffer.from([4]),
+    });
     const marked: string[] = [];
     const store: RetentionStore = {
+      ...successfulClaims(),
       async listExpiredUploads() {
         return [
           {
@@ -100,6 +124,18 @@ describe("retention cleanup", () => {
         marked.push(id);
         return true;
       },
+      async listUnreferencedDerivedAssets() {
+        return [
+          {
+            objectKey: "derived/project/source/revision-1/orphan.png",
+            observedUpdatedAt: "2026-07-28T10:00:00.000Z",
+          },
+        ];
+      },
+      async markDerivedAssetPurged(objectKey) {
+        marked.push(objectKey);
+        return true;
+      },
       async pruneDatabase() {
         return emptyCounts;
       },
@@ -117,9 +153,15 @@ describe("retention cleanup", () => {
       uploadsPurged: 1,
       artifactsPurged: 1,
       characterReferencesPurged: 1,
+      derivedAssetsPurged: 1,
       failures: [],
     });
-    expect(marked).toEqual(["upload", "export", "reference"]);
+    expect(marked).toEqual([
+      "upload",
+      "export",
+      "reference",
+      "derived/project/source/revision-1/orphan.png",
+    ]);
     await expect(storage.get("sources/project/upload.png")).resolves.toBeNull();
     await expect(
       storage.get("artifacts/project/export/result.psd"),
@@ -127,11 +169,15 @@ describe("retention cleanup", () => {
     await expect(
       storage.get("projects/project/character-rig/references/reference.png"),
     ).resolves.toBeNull();
+    await expect(
+      storage.get("derived/project/source/revision-1/orphan.png"),
+    ).resolves.toBeNull();
   });
 
   it("keeps database state retryable when an object deletion fails", async () => {
     const marked: string[] = [];
     const store: RetentionStore = {
+      ...successfulClaims(),
       async listExpiredUploads() {
         return [{ uploadId: "upload", objectKey: "sources/failed.png" }];
       },
@@ -149,6 +195,12 @@ describe("retention cleanup", () => {
         return [];
       },
       async markCharacterReferencePurged() {
+        return false;
+      },
+      async listUnreferencedDerivedAssets() {
+        return [];
+      },
+      async markDerivedAssetPurged() {
         return false;
       },
       async pruneDatabase() {
@@ -173,6 +225,10 @@ describe("retention cleanup", () => {
       async getStream() {
         return null;
       },
+      async list() {
+        return [];
+      },
+      async purge() {},
       async delete() {
         throw new Error("storage unavailable");
       },
@@ -198,28 +254,37 @@ describe("retention cleanup", () => {
       id: crypto.randomUUID(),
       userId: crypto.randomUUID(),
       status: "processing" as const,
+      phase: "purging" as const,
       objectKeys: ["sources/private.png"],
+      objectPrefixes: [],
       attempt: 1,
       requestedAt: "2026-08-04T10:00:00.000Z",
       updatedAt: "2026-08-04T10:00:00.000Z",
       completedAt: null,
+      drainedAt: "2026-08-04T10:00:00.000Z",
     };
     const repository: AccountPrivacyRepository = {
       async exportAccount() { throw new Error("not used"); },
       async prepareDeletion() { return { kind: "ready", request }; },
       async listPendingDeletions() { return [request]; },
+      async claimDeletion() { return true; },
+      async reconcileDeletion() { return { kind: "ready", request }; },
+      async recordDeletionInventory() { return request; },
       async markDeletionFailed() {},
       async completeDeletion() {},
     };
     const storage = new InMemoryObjectStorage();
-    storage.delete = () => Promise.reject("temporary outage");
+    storage.purge = () => Promise.reject("temporary outage");
     const store: RetentionStore = {
+      ...successfulClaims(),
       async listExpiredUploads() { return []; },
       async markUploadPurged() { return false; },
       async listExpiredArtifacts() { return []; },
       async markArtifactPurged() { return false; },
       async listExpiredCharacterReferences() { return []; },
       async markCharacterReferencePurged() { return false; },
+      async listUnreferencedDerivedAssets() { return []; },
+      async markDerivedAssetPurged() { return false; },
       async pruneDatabase() { return emptyCounts; },
     };
 
@@ -240,6 +305,52 @@ describe("retention cleanup", () => {
         message: "One or more private objects could not be deleted.",
       },
     ]);
+  });
+
+  it("keeps the object when a reference wins the claim race 50 times", async () => {
+    for (let iteration = 0; iteration < 50; iteration += 1) {
+      const key = `derived/project/source/race-${iteration}.png`;
+      const storage = new InMemoryObjectStorage();
+      await storage.put({
+        key,
+        contentType: "image/png",
+        sizeBytes: 1,
+        body: Buffer.from([1]),
+      });
+      let referenceAdded = false;
+      const store: RetentionStore = {
+        ...successfulClaims(),
+        async listExpiredUploads() { return []; },
+        async markUploadPurged() { return false; },
+        async listExpiredArtifacts() { return []; },
+        async markArtifactPurged() { return false; },
+        async listExpiredCharacterReferences() { return []; },
+        async markCharacterReferencePurged() { return false; },
+        async listUnreferencedDerivedAssets() {
+          return [{
+            objectKey: key,
+            observedUpdatedAt: "2026-08-13T08:00:00.000Z",
+          }];
+        },
+        async claimDerivedAssetPurge() {
+          referenceAdded = true;
+          return false;
+        },
+        async markDerivedAssetPurged() { return false; },
+        async pruneDatabase() { return emptyCounts; },
+      };
+
+      const report = await new RetentionCleanup(
+        store,
+        storage,
+        config,
+        () => new Date("2026-08-13T10:00:00.000Z"),
+      ).run();
+
+      expect(referenceAdded).toBe(true);
+      expect(report.derivedAssetsPurged).toBe(0);
+      await expect(storage.inspect(key)).resolves.not.toBeNull();
+    }
   });
 
   it("derives the same private artifact key used by the export service", () => {
@@ -280,6 +391,69 @@ describe("retention cleanup", () => {
         exportId: "legacy-export",
         objectKey: "artifacts/project/legacy-export/legacy.psd",
       },
+    ]);
+  });
+
+  it("lists only aged unreferenced registry keys and fences their purge", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            object_key: "derived/project/source/orphan.png",
+            updated_at: "2026-07-28T10:00:00.000Z",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({});
+    const client = { query, release: vi.fn() };
+    const store = new PostgresRetentionStore({
+      query,
+      connect: vi.fn().mockResolvedValue(client),
+    } as never);
+
+    await expect(
+      store.listUnreferencedDerivedAssets(
+        "2026-07-28T12:00:00.000Z",
+        100,
+      ),
+    ).resolves.toEqual([
+      {
+        objectKey: "derived/project/source/orphan.png",
+        observedUpdatedAt: "2026-07-28T10:00:00.000Z",
+      },
+    ]);
+    expect(query.mock.calls[0]?.[0]).toContain("layer_document_revisions");
+    expect(query.mock.calls[0]?.[0]).toContain("interval '1 hour'");
+
+    await expect(
+      store.claimDerivedAssetPurge(
+        {
+          objectKey: "derived/project/source/orphan.png",
+          observedUpdatedAt: "2026-07-28T10:00:00.000Z",
+        },
+        "2026-07-28T12:00:00.000Z",
+      ),
+    ).resolves.toBe(true);
+    expect(String(query.mock.calls[3]?.[0])).toContain("purge_claimed_at");
+
+    query.mockResolvedValueOnce({ rowCount: 1 });
+    await expect(
+      store.markDerivedAssetPurged(
+        "derived/project/source/orphan.png",
+        "2026-07-28T10:00:00.000Z",
+        "2026-07-28T12:00:00.000Z",
+      ),
+    ).resolves.toBe(true);
+    expect(String(query.mock.calls.at(-1)?.[0])).toContain(
+      "purge_claimed_at = $2",
+    );
+    expect(query.mock.calls.at(-1)?.[1]).toEqual([
+      "derived/project/source/orphan.png",
+      "2026-07-28T12:00:00.000Z",
     ]);
   });
 });

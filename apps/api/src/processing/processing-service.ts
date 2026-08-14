@@ -3,6 +3,7 @@ import type {
   ImageGuidanceStroke,
   LayerDocumentEditResult,
   LayerDocument,
+  LayerDocumentCommand,
   LayerStateUpdate,
   PdfMarkerRegion,
   ProcessingJob,
@@ -49,6 +50,7 @@ import {
   type SplitPdfTextLayerInput,
 } from "./pdf-layer-operations.js";
 import { LayerStateOperations } from "./layer-state-operations.js";
+import { LayerCommandOperations } from "./layer-command-operations.js";
 import { cleanupRasterAssets } from "./raster-asset-cleanup.js";
 import type { GuidedRefinementInput } from "./guided-refinement-input.js";
 import type { ProcessingServiceRuntimeOptions } from "./processing-service-options.js";
@@ -61,6 +63,7 @@ export class ProcessingService {
   readonly #imageLayers: ImageLayerOperations;
   readonly #pdfLayers: PdfLayerOperations;
   readonly #layerStates: LayerStateOperations;
+  readonly #layerCommands: LayerCommandOperations;
 
   constructor(
     private readonly jobs: ProcessingJobRepository,
@@ -84,9 +87,10 @@ export class ProcessingService {
       runtime.rasterAssetWriteConcurrency ?? 2,
       runtime.onAssetWriteObservation,
       runtime.onAssetWriteObservationError,
+      runtime.derivedAssets,
     );
     this.#edits = new DocumentEditCoordinator(documents, now);
-    this.#rasterAssets = new RasterAssetStore(storage);
+    this.#rasterAssets = new RasterAssetStore(storage, runtime.derivedAssets);
     this.#imageLayers = new ImageLayerOperations(
       this.#edits,
       this.#rasterAssets,
@@ -95,6 +99,7 @@ export class ProcessingService {
     );
     this.#pdfLayers = new PdfLayerOperations(this.#edits, documents);
     this.#layerStates = new LayerStateOperations(this.#edits, documents);
+    this.#layerCommands = new LayerCommandOperations(this.#edits);
   }
 
   async createAndRun(
@@ -192,12 +197,16 @@ export class ProcessingService {
       updatedAt: timestamp,
     };
     let reserved = false;
+    let enqueued: boolean;
     try {
       if (ownerUserId && this.runtime.usageMeter) {
         await this.runtime.usageMeter.reserveJob(ownerUserId, job.id);
         reserved = true;
       }
-      await this.jobs.save(job);
+      enqueued = await this.jobs.enqueue(
+        job,
+        onQueued ? () => onQueued(job) : undefined,
+      );
     } catch (error) {
       if (reserved) await this.runtime.usageMeter?.releaseJob(job.id);
       await this.idempotency.release(
@@ -207,14 +216,13 @@ export class ProcessingService {
       );
       throw error;
     }
-    if (onQueued && !(await onQueued(job))) {
-      await this.jobs.save({
-        ...job,
-        status: "failed",
-        errorCode: "SOURCE_NOT_CURRENT",
-        updatedAt: this.now().toISOString(),
-      });
+    if (!enqueued) {
       if (reserved) await this.runtime.usageMeter?.releaseJob(job.id);
+      await this.idempotency.release(
+        "processing",
+        scopedIdempotencyKey,
+        job.id,
+      );
       throw new ProcessingDomainError(
         "SOURCE_NOT_CURRENT",
         "تغير إصدار المصدر الحالي قبل إدخال المهمة إلى الطابور.",
@@ -301,6 +309,26 @@ export class ProcessingService {
       projectKind,
       baseRevision,
       updates,
+      actorUserId,
+      operationId,
+    });
+  }
+
+  async applyLayerCommand(
+    projectId: string,
+    sourceVersionId: string,
+    projectKind: ProjectKind,
+    baseRevision: number,
+    command: LayerDocumentCommand,
+    actorUserId = "system",
+    operationId: string = crypto.randomUUID(),
+  ): Promise<LayerDocument> {
+    return this.#layerCommands.apply({
+      projectId,
+      sourceVersionId,
+      projectKind,
+      baseRevision,
+      command,
       actorUserId,
       operationId,
     });
@@ -403,6 +431,7 @@ export class ProcessingService {
               document,
               imageStrokes,
               currentRevision + 1,
+              operationId,
             );
       if (applied.storedKeys) storedKeys.push(...applied.storedKeys);
       const {

@@ -1,4 +1,8 @@
 import { useEffect, useRef, type RefObject } from "react";
+import {
+  activateModalEnvironment,
+  trapModalFocus,
+} from "../modal-environment";
 
 interface ModalDrawerOptions {
   active: boolean;
@@ -7,15 +11,6 @@ interface ModalDrawerOptions {
   triggerRef: RefObject<HTMLElement | null>;
   onClose: () => void;
 }
-
-const focusableSelector = [
-  "button:not([disabled])",
-  "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  '[tabindex]:not([tabindex="-1"])',
-].join(", ");
 
 export function useModalDrawer({
   active,
@@ -32,13 +27,10 @@ export function useModalDrawer({
 
     const dialog = dialogRef.current;
     const background = backgroundRef.current;
-    const previousOverflow = document.body.style.overflow;
-    const previousAriaHidden = background?.getAttribute("aria-hidden") ?? null;
-    const backgroundHadInert = background?.hasAttribute("inert") ?? false;
-
-    document.body.style.overflow = "hidden";
-    background?.setAttribute("inert", "");
-    background?.setAttribute("aria-hidden", "true");
+    const restoreEnvironment = activateModalEnvironment({
+      background,
+      lockBodyScroll: true,
+    });
 
     const frame = window.requestAnimationFrame(() => {
       const initialFocus = dialog?.querySelector<HTMLElement>(
@@ -53,26 +45,11 @@ export function useModalDrawer({
         onCloseRef.current();
         return;
       }
-      if (event.key !== "Tab" || !dialog) return;
-
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(focusableSelector),
-      ).filter((element) => !element.hasAttribute("hidden"));
-
-      if (focusable.length === 0) {
-        event.preventDefault();
-        dialog.focus();
-        return;
-      }
-
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
+      if (dialog) {
+        trapModalFocus(event, dialog, {
+          visibility: "not-hidden",
+          focusContainerWhenEmpty: true,
+        });
       }
     };
 
@@ -80,10 +57,7 @@ export function useModalDrawer({
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      if (!backgroundHadInert) background?.removeAttribute("inert");
-      if (previousAriaHidden === null) background?.removeAttribute("aria-hidden");
-      else background?.setAttribute("aria-hidden", previousAriaHidden);
+      restoreEnvironment();
       window.requestAnimationFrame(() => triggerRef.current?.focus());
     };
   }, [active, backgroundRef, dialogRef, triggerRef]);

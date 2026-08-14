@@ -99,6 +99,7 @@ export function createTextArtifact(
       "width",
       "height",
       "direction",
+      "text_align",
     ];
     const rows = layers.map((layer) =>
       [
@@ -111,6 +112,7 @@ export function createTextArtifact(
         layer.bounds?.width ?? "",
         layer.bounds?.height ?? "",
         layer.direction ?? "",
+        layer.textAlign ?? "start",
       ]
         .map(csvCell)
         .join(","),

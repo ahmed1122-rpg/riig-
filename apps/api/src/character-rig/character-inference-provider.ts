@@ -1,6 +1,7 @@
 import type {
   CharacterBible,
   CharacterGenerationAttempt,
+  CharacterGenerationGeometry,
   CharacterIdentityModelVersion,
   CharacterQualityReport,
   CharacterReferenceAsset,
@@ -10,6 +11,7 @@ export interface CharacterIdentityTrainingInput {
   bible: CharacterBible;
   modelVersion: CharacterIdentityModelVersion;
   references: CharacterReferenceAsset[];
+  signal?: AbortSignal;
 }
 
 export interface CharacterIdentityTrainingResult {
@@ -22,6 +24,8 @@ export interface CharacterGenerationInput {
   modelVersion: CharacterIdentityModelVersion;
   attempt: CharacterGenerationAttempt;
   references: CharacterReferenceAsset[];
+  outputObjectKey: string;
+  signal?: AbortSignal;
 }
 
 type CharacterGenerationArtifact =
@@ -40,6 +44,7 @@ type CharacterGenerationArtifact =
 
 export interface CharacterGenerationResult {
   artifact: CharacterGenerationArtifact;
+  geometry: CharacterGenerationGeometry;
   qualityReport: CharacterQualityReport;
 }
 

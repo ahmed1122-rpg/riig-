@@ -1,16 +1,29 @@
 import type { UserRole, UserStatus } from "@motionprep/contracts";
 import type { Pool, PoolClient } from "pg";
-import type { PasswordResetMessage } from "../../auth/email-sender.js";
+import type {
+  EmailVerificationMessage,
+  PasswordResetMessage,
+} from "../../auth/email-sender.js";
 import type {
   AuthRepository,
+  EmailVerificationRecord,
   MfaChallengeRecord,
   MfaEnrollmentRecord,
+  MfaLoginCommit,
+  MfaLoginCommitResult,
   PasswordResetRecord,
   SessionRecord,
   UserSecurityChanges,
   UserRecord,
 } from "../../auth/auth-repository.js";
 import { toIso } from "./database.js";
+import { commitPostgresMfaLogin } from "./postgres-auth-mfa-command.js";
+import {
+  consumePostgresEmailVerification,
+  replacePostgresEmailVerification,
+  saveFirstPostgresAdmin,
+  savePendingPostgresRegistration,
+} from "./postgres-auth-registration.js";
 
 interface UserRow {
   id: string;
@@ -129,6 +142,45 @@ export class PostgresAuthRepository implements AuthRepository {
         user.deletedAt ?? null,
       ],
     );
+  }
+
+  savePendingRegistration(
+    user: UserRecord,
+    verification: EmailVerificationRecord,
+    delivery?: EmailVerificationMessage,
+  ): Promise<"queued" | "stored" | "email_exists"> {
+    return savePendingPostgresRegistration(this.pool, user, verification, delivery);
+  }
+
+  consumeEmailVerification(
+    tokenHash: string,
+    now: string,
+  ): Promise<UserRecord | null> {
+    return consumePostgresEmailVerification(this.pool, tokenHash, now);
+  }
+
+  replaceEmailVerification(
+    userId: string,
+    verification: EmailVerificationRecord,
+    delivery?: EmailVerificationMessage,
+  ): Promise<"queued" | "stored" | "not_pending"> {
+    return replacePostgresEmailVerification(
+      this.pool,
+      userId,
+      verification,
+      delivery,
+    );
+  }
+
+  async deleteEmailVerificationsByUser(userId: string): Promise<void> {
+    await this.pool.query(
+      "DELETE FROM email_verification_tokens WHERE user_id = $1",
+      [userId],
+    );
+  }
+
+  saveFirstAdmin(user: UserRecord): Promise<boolean> {
+    return saveFirstPostgresAdmin(this.pool, user);
   }
 
   async updateUser(
@@ -312,6 +364,33 @@ export class PostgresAuthRepository implements AuthRepository {
     return result.rows[0] ? mapToken(result.rows[0]) : null;
   }
 
+  async commitMfaLogin(
+    input: MfaLoginCommit,
+  ): Promise<MfaLoginCommitResult> {
+    return commitPostgresMfaLogin(this.pool, input);
+  }
+
+  async consumeRecoveryCode(
+    userId: string,
+    codeHash: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `
+        UPDATE users
+        SET recovery_code_hashes = array_remove(recovery_code_hashes, $2)
+        WHERE id = $1
+          AND mfa_enabled = TRUE
+          AND status = 'active'
+          AND deletion_requested_at IS NULL
+          AND deleted_at IS NULL
+          AND $2 = ANY(recovery_code_hashes)
+        RETURNING id
+      `,
+      [userId, codeHash],
+    );
+    return result.rowCount === 1;
+  }
+
   async deleteMfaChallenge(tokenHash: string): Promise<void> {
     await this.pool.query("DELETE FROM mfa_challenges WHERE token_hash = $1", [
       tokenHash,
@@ -347,7 +426,7 @@ export class PostgresAuthRepository implements AuthRepository {
         await client.query(
           `
             INSERT INTO email_outbox (
-              id, kind, recipient, reset_url, expires_at, status,
+              id, kind, recipient, action_url, expires_at, status,
               next_attempt_at, created_at, updated_at
             )
             VALUES ($1, 'password-reset', $2, $3, $4, 'queued', now(), now(), now())

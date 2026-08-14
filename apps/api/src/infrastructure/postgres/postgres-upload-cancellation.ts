@@ -11,6 +11,7 @@ import {
   type UploadRow,
 } from "./postgres-upload-record.js";
 import { rollbackTransaction } from "./database.js";
+import { lockUploadProject } from "./postgres-upload-project-lock.js";
 
 interface CancellationUploadRow extends UploadRow {
   project_status_before_upload: ProjectStatus | null;
@@ -55,7 +56,7 @@ export class PostgresUploadCancellationCommand
 
       const alreadyCancelled = current.status === "cancelled";
       const source = await this.lockSource(client, current);
-      const project = await this.lockProject(client, current.project_id);
+      const project = await lockUploadProject<ProjectRow>(client, current.project_id);
       let cancelled = current;
       if (!alreadyCancelled) {
         const result = await client.query<CancellationUploadRow>(
@@ -152,20 +153,6 @@ export class PostgresUploadCancellationCommand
       throw new Error("Upload source version does not match its session.");
     }
     return source ?? null;
-  }
-
-  private async lockProject(
-    client: PoolClient,
-    projectId: string,
-  ): Promise<ProjectRow> {
-    const result = await client.query<ProjectRow>(
-      `SELECT current_source_version_id, status
-       FROM projects WHERE id = $1 FOR UPDATE`,
-      [projectId],
-    );
-    const project = result.rows[0];
-    if (!project) throw new Error("Upload project no longer exists.");
-    return project;
   }
 
   private async mayRestoreProject(

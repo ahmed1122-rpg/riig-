@@ -1,6 +1,6 @@
 {
   "name": "@motionprep/api",
-  "version": "0.1.3",
+  "version": "0.1.8",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -33,7 +33,7 @@
   },
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch --import tsx src/server.ts",
-    "serve:e2e": "node --env-file-if-exists=../../.env --import tsx src/server.ts",
+    "serve:e2e": "node --import tsx src/server.ts",
     "db:migrate": "node --env-file-if-exists=../../.env --import tsx src/infrastructure/postgres/migrate.ts",
     "maintenance:retention": "node --env-file-if-exists=../../.env --import tsx src/maintenance/run-retention-cleanup.ts",
     "maintenance:retention:scheduler": "node --env-file-if-exists=../../.env --import tsx src/maintenance/run-retention-scheduler.ts",
@@ -46,6 +46,7 @@
     "verify:staging-dependencies": "node scripts/verify-staging-dependencies.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:character-rig:race": "vitest run src/character-rig/character-generation-service.test.ts src/character-rig/character-identity-bootstrap-service.test.ts src/character-rig/character-job-executor.test.ts && vitest run --config vitest.integration.config.ts src/infrastructure/postgres/postgres-character-rig.integration.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "coverage": "vitest run --coverage --coverage.include=src/**/*.ts --coverage.thresholds.statements=65 --coverage.thresholds.branches=58 --coverage.thresholds.functions=68 --coverage.thresholds.lines=67"
   },
@@ -60,6 +61,7 @@
     "@motionprep/document-processing": "*",
     "@motionprep/export-adapters": "*",
     "@motionprep/guidance": "*",
+    "@motionprep/layer-domain": "*",
     "@motionprep/media-processing": "*",
     "@motionprep/presets": "*",
     "@opentelemetry/api": "^1.9.0",

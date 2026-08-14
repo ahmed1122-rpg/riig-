@@ -143,6 +143,7 @@ export class ExportService {
 
     const timestamp = this.now().toISOString();
     let requestedDocument: LayerDocument | null;
+    let enqueued = false;
     try {
       requestedDocument = this.layerDocuments
         ? await this.layerDocuments.findBySource(
@@ -203,14 +204,18 @@ export class ExportService {
       updatedAt: timestamp,
     };
     try {
-      await this.repository.save(job);
-      if (onQueued && !(await onQueued(job))) {
+      const persisted = await this.repository.enqueue(
+        job,
+        onQueued ? () => onQueued(job) : undefined,
+      );
+      if (!persisted) {
         throw new ExportDomainError(
           "EXPORT_SOURCE_NOT_CURRENT",
           "تغير إصدار المصدر الحالي قبل إدخال التصدير إلى الطابور.",
           job.id,
         );
       }
+      enqueued = true;
       if (!this.executeInline) return job;
       return await this.#artifactProcessor.generate(
         job,
@@ -218,7 +223,9 @@ export class ExportService {
         input.namingPresetId,
       );
     } catch (error) {
-      const current = await this.repository.findById(exportId);
+      const current = enqueued
+        ? await this.repository.findById(exportId)
+        : null;
       if (current && !["ready", "cancelled"].includes(current.status)) {
         await this.fail(current, exportErrorCode(error));
       }
@@ -352,7 +359,7 @@ export class ExportService {
       const now = this.now();
       if (error instanceof ExportDomainError) {
         return (
-          (await this.repository.updateClaim(
+          (await this.repository.settleClaim(
             job.id,
             workerId,
             {

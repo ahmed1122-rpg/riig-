@@ -1,181 +1,130 @@
-import {
-  AlertTriangle,
-  Activity,
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  BookOpen,
-  BadgeCheck,
-  Check,
-  ChevronLeft,
-  CircleHelp,
-  Clock3,
-  CreditCard,
-  Crosshair,
-  Database,
-  Download,
-  Eraser,
-  Eye,
-  EyeOff,
-  ExternalLink,
-  FileText,
-  FileSearch,
-  FolderOpen,
-  Gauge,
-  Grid2X2,
-  GripVertical,
-  Hand,
-  History,
-  Highlighter,
-  Home,
-  Image,
-  Info,
-  KeyRound,
-  Layers3,
-  List,
-  Lock,
-  LogIn,
-  LogOut,
-  Mail,
-  Menu,
-  Merge,
-  Moon,
-  MousePointer2,
-  Paintbrush,
-  PackageCheck,
-  PanelRightClose,
-  PanelRightOpen,
-  Plus,
-  RefreshCw,
-  ScanLine,
-  ScanText,
-  Scissors,
-  Search,
-  Server,
-  Settings,
-  Shield,
-  ShieldCheck,
-  Smartphone,
-  SquareDashed,
-  SlidersHorizontal,
-  Sun,
-  Users,
-  Undo2,
-  Unlock,
-  Upload,
-  WalletCards,
-  WandSparkles,
-  X,
-  ZoomIn,
-  ZoomOut,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { createElement } from "react";
+import type { SVGProps } from "react";
 
-export type IconName =
-  | "home" | "folder" | "help" | "settings"
-  | "search" | "menu" | "close" | "chevron" | "plus" | "image"
-  | "book" | "clock" | "layers" | "review" | "spark" | "eye" | "eyeOff"
-  | "lock" | "unlock" | "upload" | "zoomIn" | "zoomOut" | "hand"
-  | "pointer" | "undo" | "check" | "warning"
-  | "info" | "sun" | "moon" | "arrow" | "filter" | "grid" | "list"
-  | "download" | "refresh" | "merge" | "split" | "scan"
-  | "panelClose" | "panelOpen" | "arrowUp" | "arrowDown" | "grip"
-  | "packageCheck" | "brush" | "eraser" | "target" | "highlighter"
-  | "boxSelect" | "scanText" | "badgeCheck"
-  | "activity" | "creditCard"
-  | "database" | "external" | "fileSearch" | "gauge" | "history" | "key"
-  | "login" | "logout" | "mail" | "server" | "shield" | "shieldCheck"
-  | "smartphone" | "users" | "wallet";
+type CompactIconNode = readonly [
+  tag: "p" | "c" | "l" | "r" | "y" | "e",
+  ...values: readonly (string | number)[],
+];
 
-const icons: Record<IconName, LucideIcon> = {
-  home: Home,
-  folder: FolderOpen,
-  help: CircleHelp,
-  settings: Settings,
-  search: Search,
-  menu: Menu,
-  close: X,
-  chevron: ChevronLeft,
-  plus: Plus,
-  image: Image,
-  book: BookOpen,
-  clock: Clock3,
-  layers: Layers3,
-  review: ScanLine,
-  spark: WandSparkles,
-  eye: Eye,
-  eyeOff: EyeOff,
-  lock: Lock,
-  unlock: Unlock,
-  upload: Upload,
-  zoomIn: ZoomIn,
-  zoomOut: ZoomOut,
-  hand: Hand,
-  pointer: MousePointer2,
-  undo: Undo2,
-  check: Check,
-  warning: AlertTriangle,
-  info: Info,
-  sun: Sun,
-  moon: Moon,
-  arrow: ArrowLeft,
-  filter: SlidersHorizontal,
-  grid: Grid2X2,
-  list: List,
-  download: Download,
-  refresh: RefreshCw,
-  merge: Merge,
-  split: Scissors,
-  scan: FileText,
-  panelClose: PanelRightClose,
-  panelOpen: PanelRightOpen,
-  arrowUp: ArrowUp,
-  arrowDown: ArrowDown,
-  grip: GripVertical,
-  packageCheck: PackageCheck,
-  brush: Paintbrush,
-  eraser: Eraser,
-  target: Crosshair,
-  highlighter: Highlighter,
-  boxSelect: SquareDashed,
-  scanText: ScanText,
-  badgeCheck: BadgeCheck,
-  activity: Activity,
-  creditCard: CreditCard,
-  database: Database,
-  external: ExternalLink,
-  fileSearch: FileSearch,
-  gauge: Gauge,
-  history: History,
-  key: KeyRound,
-  login: LogIn,
-  logout: LogOut,
-  mail: Mail,
-  server: Server,
-  shield: Shield,
-  shieldCheck: ShieldCheck,
-  smartphone: Smartphone,
-  users: Users,
-  wallet: WalletCards,
-};
+// Path data mirrors lucide-react. A shared renderer avoids shipping one React
+// component wrapper per icon while retaining the distinct visual semantics.
+const iconNodes = {
+  home: [["p","M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"],["p","M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"]],
+  folder: [["p","m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"]],
+  help: [["c","12","12","10"],["p","M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"],["p","M12 17h.01"]],
+  settings: [["p","M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"],["c","12","12","3"]],
+  search: [["c","11","11","8"],["p","m21 21-4.3-4.3"]],
+  menu: [["l","4","12","20","12"],["l","4","6","20","6"],["l","4","18","20","18"]],
+  close: [["p","M18 6 6 18"],["p","m6 6 12 12"]],
+  chevron: [["p","m15 18-6-6 6-6"]],
+  plus: [["p","M5 12h14"],["p","M12 5v14"]],
+  image: [["r","3","3","18","18","2","2"],["c","9","9","2"],["p","m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"]],
+  book: [["p","M12 7v14"],["p","M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"]],
+  layers: [["p","M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"],["p","M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"],["p","M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"]],
+  review: [["p","M3 7V5a2 2 0 0 1 2-2h2"],["p","M17 3h2a2 2 0 0 1 2 2v2"],["p","M21 17v2a2 2 0 0 1-2 2h-2"],["p","M7 21H5a2 2 0 0 1-2-2v-2"],["p","M7 12h10"]],
+  spark: [["p","m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"],["p","m14 7 3 3"],["p","M5 6v4"],["p","M19 14v4"],["p","M10 2v2"],["p","M7 8H3"],["p","M21 16h-4"],["p","M11 3H9"]],
+  eye: [["p","M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"],["c","12","12","3"]],
+  eyeOff: [["p","M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"],["p","M14.084 14.158a3 3 0 0 1-4.242-4.242"],["p","M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"],["p","m2 2 20 20"]],
+  lock: [["r","3","11","18","11","2","2"],["p","M7 11V7a5 5 0 0 1 10 0v4"]],
+  unlock: [["r","3","11","18","11","2","2"],["p","M7 11V7a5 5 0 0 1 9.9-1"]],
+  upload: [["p","M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"],["y","17 8 12 3 7 8"],["l","12","3","12","15"]],
+  zoomIn: [["c","11","11","8"],["l","21","21","16.65","16.65"],["l","11","8","11","14"],["l","8","11","14","11"]],
+  zoomOut: [["c","11","11","8"],["l","21","21","16.65","16.65"],["l","8","11","14","11"]],
+  pointer: [["p","M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"]],
+  undo: [["p","M9 14 4 9l5-5"],["p","M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"]],
+  check: [["p","M20 6 9 17l-5-5"]],
+  warning: [["p","m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"],["p","M12 9v4"],["p","M12 17h.01"]],
+  info: [["c","12","12","10"],["p","M12 16v-4"],["p","M12 8h.01"]],
+  sun: [["c","12","12","4"],["p","M12 2v2"],["p","M12 20v2"],["p","m4.93 4.93 1.41 1.41"],["p","m17.66 17.66 1.41 1.41"],["p","M2 12h2"],["p","M20 12h2"],["p","m6.34 17.66-1.41 1.41"],["p","m19.07 4.93-1.41 1.41"]],
+  moon: [["p","M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"]],
+  arrow: [["p","m12 19-7-7 7-7"],["p","M19 12H5"]],
+  filter: [["l","21","4","14","4"],["l","10","4","3","4"],["l","21","12","12","12"],["l","8","12","3","12"],["l","21","20","16","20"],["l","12","20","3","20"],["l","14","2","14","6"],["l","8","10","8","14"],["l","16","18","16","22"]],
+  grid: [["p","M12 3v18"],["p","M3 12h18"],["r","3","3","18","18","2",""]],
+  list: [["p","M3 12h.01"],["p","M3 18h.01"],["p","M3 6h.01"],["p","M8 12h13"],["p","M8 18h13"],["p","M8 6h13"]],
+  download: [["p","M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"],["y","7 10 12 15 17 10"],["l","12","15","12","3"]],
+  refresh: [["p","M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"],["p","M21 3v5h-5"],["p","M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"],["p","M8 16H3v5"]],
+  merge: [["p","m8 6 4-4 4 4"],["p","M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22"],["p","m20 22-5-5"]],
+  split: [["c","6","6","3"],["p","M8.12 8.12 12 12"],["p","M20 4 8.12 15.88"],["c","6","18","3"],["p","M14.8 14.8 20 20"]],
+  scan: [["p","M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"],["p","M14 2v4a2 2 0 0 0 2 2h4"],["p","M10 9H8"],["p","M16 13H8"],["p","M16 17H8"]],
+  panelClose: [["r","3","3","18","18","2",""],["p","M15 3v18"],["p","m8 9 3 3-3 3"]],
+  panelOpen: [["r","3","3","18","18","2",""],["p","M15 3v18"],["p","m10 15-3-3 3-3"]],
+  arrowUp: [["p","m5 12 7-7 7 7"],["p","M12 19V5"]],
+  arrowDown: [["p","M12 5v14"],["p","m19 12-7 7-7-7"]],
+  grip: [["c","9","12","1"],["c","9","5","1"],["c","9","19","1"],["c","15","12","1"],["c","15","5","1"],["c","15","19","1"]],
+  packageCheck: [["p","m16 16 2 2 4-4"],["p","M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"],["p","m7.5 4.27 9 5.15"],["y","3.29 7 12 12 20.71 7"],["l","12","22","12","12"]],
+  brush: [["p","m14.622 17.897-10.68-2.913"],["p","M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z"],["p","M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15"]],
+  eraser: [["p","m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"],["p","M22 21H7"],["p","m5 11 9 9"]],
+  target: [["c","12","12","10"],["l","22","12","18","12"],["l","6","12","2","12"],["l","12","6","12","2"],["l","12","22","12","18"]],
+  highlighter: [["p","m9 11-6 6v3h9l3-3"],["p","m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"]],
+  boxSelect: [["p","M5 3a2 2 0 0 0-2 2"],["p","M19 3a2 2 0 0 1 2 2"],["p","M21 19a2 2 0 0 1-2 2"],["p","M5 21a2 2 0 0 1-2-2"],["p","M9 3h1"],["p","M9 21h1"],["p","M14 3h1"],["p","M14 21h1"],["p","M3 9v1"],["p","M21 9v1"],["p","M3 14v1"],["p","M21 14v1"]],
+  scanText: [["p","M3 7V5a2 2 0 0 1 2-2h2"],["p","M17 3h2a2 2 0 0 1 2 2v2"],["p","M21 17v2a2 2 0 0 1-2 2h-2"],["p","M7 21H5a2 2 0 0 1-2-2v-2"],["p","M7 8h8"],["p","M7 12h10"],["p","M7 16h6"]],
+  badgeCheck: [["p","M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"],["p","m9 12 2 2 4-4"]],
+  activity: [["p","M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"]],
+  creditCard: [["r","2","5","20","14","2",""],["l","2","10","22","10"]],
+  database: [["e","12","5","9","3"],["p","M3 5V19A9 3 0 0 0 21 19V5"],["p","M3 12A9 3 0 0 0 21 12"]],
+  external: [["p","M15 3h6v6"],["p","M10 14 21 3"],["p","M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"]],
+  fileSearch: [["p","M14 2v4a2 2 0 0 0 2 2h4"],["p","M4.268 21a2 2 0 0 0 1.727 1H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3"],["p","m9 18-1.5-1.5"],["c","5","14","3"]],
+  gauge: [["p","m12 14 4-4"],["p","M3.34 19a10 10 0 1 1 17.32 0"]],
+  history: [["p","M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"],["p","M3 3v5h5"],["p","M12 7v5l4 2"]],
+  key: [["p","M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"],["c","16.5","7.5",".5","currentColor"]],
+  login: [["p","M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"],["y","10 17 15 12 10 7"],["l","15","12","3","12"]],
+  logout: [["p","M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"],["y","16 17 21 12 16 7"],["l","21","12","9","12"]],
+  mail: [["r","2","4","20","16","2",""],["p","m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"]],
+  server: [["r","2","2","20","8","2","2"],["r","2","14","20","8","2","2"],["l","6","6","6.01","6"],["l","6","18","6.01","18"]],
+  shield: [["p","M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"]],
+  shieldCheck: [["p","M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"],["p","m9 12 2 2 4-4"]],
+  smartphone: [["r","5","2","14","20","2","2"],["p","M12 18h.01"]],
+  users: [["p","M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"],["c","9","7","4"],["p","M22 21v-2a4 4 0 0 0-3-3.87"],["p","M16 3.13a4 4 0 0 1 0 7.75"]],
+  wallet: [["r","3","3","18","18","2",""],["p","M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2"],["p","M3 11h3c.8 0 1.6.3 2.1.9l1.1.9c1.6 1.6 4.1 1.6 5.7 0l1.1-.9c.5-.5 1.3-.9 2.1-.9H21"]],
+} as const satisfies Record<string, readonly CompactIconNode[]>;
 
-interface IconProps {
+export type IconName = keyof typeof iconNodes;
+
+interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   name: IconName;
   size?: number;
-  className?: string;
 }
 
 export function Icon({ name, size = 20, className, ...props }: IconProps) {
-  const Component = icons[name];
   return (
-    <Component
-      className={className ? `app-icon ${className}` : "app-icon"}
-      data-icon={name}
-      size={size}
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
       strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className ? `app-icon ${className}` : "app-icon"}
       aria-hidden="true"
-      focusable="false"
       {...props}
-    />
+    >
+      {iconNodes[name].map(renderIconNode)}
+    </svg>
   );
+}
+
+function renderIconNode([tag, ...values]: CompactIconNode, key: number) {
+  switch (tag) {
+    case "p":
+      return createElement("path", { key, d: values[0] });
+    case "c":
+      return createElement("circle", {
+        key, cx: values[0], cy: values[1], r: values[2],
+        ...(values[3] ? { fill: values[3] } : {}),
+      });
+    case "l":
+      return createElement("line", { key, x1: values[0], y1: values[1], x2: values[2], y2: values[3] });
+    case "r":
+      return createElement("rect", {
+        key, x: values[0], y: values[1], width: values[2], height: values[3],
+        ...(values[4] ? { rx: values[4] } : {}),
+        ...(values[5] ? { ry: values[5] } : {}),
+      });
+    case "y":
+      return createElement("polyline", { key, points: values[0] });
+    case "e":
+      return createElement("ellipse", { key, cx: values[0], cy: values[1], rx: values[2], ry: values[3] });
+  }
 }

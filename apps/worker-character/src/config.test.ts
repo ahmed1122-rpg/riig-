@@ -18,6 +18,7 @@ describe("character worker configuration", () => {
     assert.equal(config.CHARACTER_CONCURRENCY, 1);
     assert.equal(config.CHARACTER_LEASE_MS, 600_000);
     assert.equal(config.CHARACTER_INFERENCE_TIMEOUT_MS, 300_000);
+    assert.equal(config.CHARACTER_DRAIN_TIMEOUT_MS, 30_000);
   });
 
   it("rejects insecure non-local inference endpoints", () => {

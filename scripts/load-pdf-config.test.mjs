@@ -31,11 +31,43 @@ test("accepts a representative sustained-load policy", () => {
   const config = loadPdfConfiguration(protectedPolicy);
 
   assert.equal(config.concurrency, 4);
+  assert.equal(config.accountPoolSize, 4);
   assert.equal(config.iterationsPerUser, 3);
   assert.equal(config.minTotalJourneys, 12);
   assert.equal(config.maxFinalQueueDepth, 0);
   assert.equal(config.requireMetrics, true);
   assert.equal(config.reviewFlow, "approval-required");
+});
+
+test("supports the twenty-client upload capacity gate", () => {
+  const config = loadPdfConfiguration({
+    ...protectedPolicy,
+    LOAD_CONCURRENCY: "20",
+    LOAD_ITERATIONS: "1",
+    LOAD_MIN_CONCURRENCY: "20",
+    LOAD_MIN_TOTAL_JOURNEYS: "20",
+  });
+
+  assert.equal(config.concurrency, 20);
+  assert.equal(config.accountPoolSize, 10);
+  assert.equal(config.minTotalJourneys, 20);
+  assert.throws(
+    () =>
+      loadPdfConfiguration({
+        ...protectedPolicy,
+        LOAD_CONCURRENCY: "33",
+      }),
+    /LOAD_CONCURRENCY/u,
+  );
+  assert.throws(
+    () =>
+      loadPdfConfiguration({
+        ...protectedPolicy,
+        LOAD_CONCURRENCY: "4",
+        LOAD_ACCOUNT_POOL_SIZE: "5",
+      }),
+    /LOAD_ACCOUNT_POOL_SIZE/u,
+  );
 });
 
 test("supports the pre-approval journey only when explicitly selected", () => {

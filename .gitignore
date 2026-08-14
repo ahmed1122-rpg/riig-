@@ -1,4 +1,5 @@
 node_modules/
+.npm-cache/
 dist/
 coverage/
 __pycache__/
@@ -18,6 +19,8 @@ artifacts/playwright/
 artifacts/runtime-qa/
 artifacts/screenshots/
 artifacts/local-qa/
+artifacts/qa/
+artifacts/private-sourcemaps/
 artifacts/adobe-golden/generated/after-effects-*.png
 artifacts/adobe-golden/generated/photoshop-*.png
 dogfood-output/

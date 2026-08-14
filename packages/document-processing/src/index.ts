@@ -1,5 +1,6 @@
 export {
   DocumentProcessingError,
+  type DocumentProcessingDiagnostic,
   type DocumentProcessingErrorCode,
 } from "./document-processing-error.js";
 export {

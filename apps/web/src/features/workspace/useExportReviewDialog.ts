@@ -1,4 +1,8 @@
 import { useEffect, useRef, type RefObject } from "react";
+import {
+  activateModalEnvironment,
+  trapModalFocus,
+} from "../../shared/modal-environment";
 
 interface ExportReviewDialogOptions {
   backdropRef: RefObject<HTMLDivElement | null>;
@@ -26,28 +30,7 @@ export function useExportReviewDialog({
     const restoreFocusTo = returnFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const backdrop = backdropRef.current;
     const dialog = dialogRef.current;
-    const isolatedElements: Array<{
-      element: HTMLElement;
-      hadInert: boolean;
-      ariaHidden: string | null;
-    }> = [];
-
-    let modalBranch: HTMLElement | null = backdrop;
-    while (modalBranch?.parentElement) {
-      const parent = modalBranch.parentElement;
-      Array.from(parent.children).forEach((child) => {
-        if (child === modalBranch || !(child instanceof HTMLElement)) return;
-        isolatedElements.push({
-          element: child,
-          hadInert: child.hasAttribute("inert"),
-          ariaHidden: child.getAttribute("aria-hidden"),
-        });
-        child.setAttribute("inert", "");
-        child.setAttribute("aria-hidden", "true");
-      });
-      if (parent === document.body) break;
-      modalBranch = parent;
-    }
+    const restoreEnvironment = activateModalEnvironment({ modalBranch: backdrop });
 
     closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -56,39 +39,18 @@ export function useExportReviewDialog({
         onCloseRef.current();
         return;
       }
-      if (event.key !== "Tab" || !dialog) return;
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => element.getClientRects().length > 0 && element.getAttribute("aria-hidden") !== "true");
-      if (focusable.length === 0) {
-        event.preventDefault();
-        dialog.focus();
-        return;
-      }
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      const active = document.activeElement;
-      if (!dialog.contains(active)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
+      if (dialog) {
+        trapModalFocus(event, dialog, {
+          visibility: "rendered",
+          recoverOutside: true,
+          focusContainerWhenEmpty: true,
+        });
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      isolatedElements.forEach(({ element, hadInert, ariaHidden }) => {
-        if (!hadInert) element.removeAttribute("inert");
-        if (ariaHidden === null) element.removeAttribute("aria-hidden");
-        else element.setAttribute("aria-hidden", ariaHidden);
-      });
+      restoreEnvironment();
       window.requestAnimationFrame(() => restoreFocusTo?.focus());
     };
   }, [backdropRef, closeButtonRef, dialogRef, returnFocusTo]);

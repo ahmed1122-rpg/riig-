@@ -13,10 +13,12 @@ import {
   type AuthService,
 } from "./auth-service.js";
 import { sendApiError } from "../http/api-response.js";
+import type { AuditService } from "../audit/audit-service.js";
 
 interface SessionCookieOptions {
   secureCookies: boolean;
   sessionTtlSeconds: number;
+  audit?: AuditService;
 }
 
 const strongPasswordSchema = z
@@ -38,6 +40,14 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(128),
+});
+
+const emailVerificationSchema = z.object({
+  token: z.string().min(32).max(256),
+});
+
+const adminBootstrapSchema = registerSchema.extend({
+  token: z.string().min(32).max(256),
 });
 
 const mfaChallengeSchema = z.object({
@@ -82,8 +92,10 @@ function authError(
         ? 409
       : error.code === "SESSION_INVALID"
         ? 401
-        : error.code === "MFA_CHALLENGE_INVALID"
+      : error.code === "MFA_CHALLENGE_INVALID"
           ? 401
+        : error.code === "ADMIN_BOOTSTRAP_DENIED"
+          ? 403
         : error.code === "ACCOUNT_LOCKED"
           ? 429
           : 400;
@@ -123,10 +135,84 @@ export async function registerAuthRoutes(
       );
     }
     try {
-      const result = await auth.register(body.data);
+      const result = await auth.registerWithPolicy(body.data);
+      if (result.kind === "verification_required") {
+        return reply.status(201).send({
+          data: {
+            verificationRequired: true,
+            email: result.email,
+            expiresAt: result.expiresAt,
+          },
+          error: null,
+        });
+      }
       setSessionCookie(reply, result.token, options);
       return reply.status(201).send({ data: result.session, error: null });
     } catch (error) {
+      return authError(error, request, reply);
+    }
+  });
+
+  app.post("/v1/auth/email/verify", {
+    config: { rateLimit: { max: 20, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
+    const body = emailVerificationSchema.safeParse(request.body);
+    if (!body.success) return validationError(request, reply);
+    try {
+      const result = await auth.verifyEmail(body.data.token);
+      await recordAuthAudit(app, options, request, {
+        actorUserId: result.session.user.id,
+        action: "auth.email.verified",
+        targetType: "user",
+        targetId: result.session.user.id,
+        outcome: "success",
+        reason: null,
+      });
+      setSessionCookie(reply, result.token, options);
+      return { data: result.session, error: null };
+    } catch (error) {
+      return authError(error, request, reply);
+    }
+  });
+
+  app.post("/v1/auth/email/resend", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
+    const body = passwordResetRequestSchema.safeParse(request.body);
+    if (!body.success) return validationError(request, reply);
+    await auth.requestEmailVerification(body.data.email);
+    return reply.status(202).send({
+      data: { accepted: true },
+      error: null,
+    });
+  });
+
+  app.post("/v1/auth/admin-bootstrap", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
+    const body = adminBootstrapSchema.safeParse(request.body);
+    if (!body.success) return validationError(request, reply);
+    try {
+      const result = await auth.bootstrapAdmin(body.data);
+      await recordAuthAudit(app, options, request, {
+        actorUserId: result.session.user.id,
+        action: "auth.admin.bootstrap_completed",
+        targetType: "user",
+        targetId: result.session.user.id,
+        outcome: "success",
+        reason: null,
+      });
+      setSessionCookie(reply, result.token, options);
+      return reply.status(201).send({ data: result.session, error: null });
+    } catch (error) {
+      await recordAuthAudit(app, options, request, {
+        actorUserId: "anonymous",
+        action: "auth.admin.bootstrap_denied",
+        targetType: "system",
+        targetId: "initial-admin",
+        outcome: "denied",
+        reason: error instanceof AuthDomainError ? error.code : "UNKNOWN",
+      });
       return authError(error, request, reply);
     }
   });
@@ -160,6 +246,14 @@ export async function registerAuthRoutes(
         });
       }
       setSessionCookie(reply, result.token, options);
+      await recordAuthAudit(app, options, request, {
+        actorUserId: result.session.user.id,
+        action: "auth.login.completed",
+        targetType: "user",
+        targetId: result.session.user.id,
+        outcome: "success",
+        reason: null,
+      });
       return { data: result.session, error: null };
     } catch (error) {
       return authError(error, request, reply);
@@ -173,6 +267,14 @@ export async function registerAuthRoutes(
     if (!body.success) return validationError(request, reply);
     try {
       const result = await auth.completeMfaLogin(body.data);
+      await recordAuthAudit(app, options, request, {
+        actorUserId: result.session.user.id,
+        action: "auth.mfa.login_completed",
+        targetType: "user",
+        targetId: result.session.user.id,
+        outcome: "success",
+        reason: null,
+      });
       setSessionCookie(reply, result.token, options);
       return { data: result.session, error: null };
     } catch (error) {
@@ -180,7 +282,9 @@ export async function registerAuthRoutes(
     }
   });
 
-  app.post("/v1/auth/mfa/setup", async (request, reply) => {
+  app.post("/v1/auth/mfa/setup", {
+    config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
     try {
       const user = await requireUser(request, auth);
       return { data: await auth.beginMfaSetup(user.id), error: null };
@@ -189,7 +293,9 @@ export async function registerAuthRoutes(
     }
   });
 
-  app.post("/v1/auth/mfa/setup/confirm", async (request, reply) => {
+  app.post("/v1/auth/mfa/setup/confirm", {
+    config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
     const body = mfaConfirmSchema.safeParse(request.body);
     if (!body.success) return validationError(request, reply);
     try {
@@ -198,6 +304,14 @@ export async function registerAuthRoutes(
           userId: user.id,
           ...body.data,
         });
+      await recordAuthAudit(app, options, request, {
+        actorUserId: user.id,
+        action: "auth.mfa.enabled",
+        targetType: "user",
+        targetId: user.id,
+        outcome: "success",
+        reason: null,
+      });
       reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
       return {
         data: {
@@ -211,12 +325,22 @@ export async function registerAuthRoutes(
     }
   });
 
-  app.post("/v1/auth/mfa/disable", async (request, reply) => {
+  app.post("/v1/auth/mfa/disable", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
     const body = mfaDisableSchema.safeParse(request.body);
     if (!body.success) return validationError(request, reply);
     try {
       const user = await requireUser(request, auth);
       await auth.disableMfa({ userId: user.id, ...body.data });
+      await recordAuthAudit(app, options, request, {
+        actorUserId: user.id,
+        action: "auth.mfa.disabled",
+        targetType: "user",
+        targetId: user.id,
+        outcome: "success",
+        reason: null,
+      });
       reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
       return { data: { disabled: true, reauthenticationRequired: true }, error: null };
     } catch (error) {
@@ -246,7 +370,15 @@ export async function registerAuthRoutes(
     const body = passwordResetConfirmSchema.safeParse(request.body);
     if (!body.success) return validationError(request, reply);
     try {
-      await auth.resetPassword(body.data);
+      const userId = await auth.resetPassword(body.data);
+      await recordAuthAudit(app, options, request, {
+        actorUserId: userId,
+        action: "auth.password.reset",
+        targetType: "user",
+        targetId: userId,
+        outcome: "success",
+        reason: null,
+      });
       reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
       return {
         data: { passwordReset: true, reauthenticationRequired: true },
@@ -257,12 +389,22 @@ export async function registerAuthRoutes(
     }
   });
 
-  app.post("/v1/auth/password/change", async (request, reply) => {
+  app.post("/v1/auth/password/change", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+  }, async (request, reply) => {
     const body = passwordChangeSchema.safeParse(request.body);
     if (!body.success) return validationError(request, reply);
     try {
       const user = await requireUser(request, auth);
       await auth.changePassword({ userId: user.id, ...body.data });
+      await recordAuthAudit(app, options, request, {
+        actorUserId: user.id,
+        action: "auth.password.changed",
+        targetType: "user",
+        targetId: user.id,
+        outcome: "success",
+        reason: null,
+      });
       reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
       return {
         data: { passwordChanged: true, reauthenticationRequired: true },
@@ -289,6 +431,30 @@ export async function registerAuthRoutes(
     reply.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
     return { data: { loggedOut: true }, error: null };
   });
+}
+
+async function recordAuthAudit(
+  app: FastifyInstance,
+  options: SessionCookieOptions,
+  request: FastifyRequest,
+  event: {
+    actorUserId: string;
+    action: string;
+    targetType: string;
+    targetId: string;
+    outcome: "success" | "denied" | "failed";
+    reason: string | null;
+  },
+): Promise<void> {
+  if (!options.audit) return;
+  try {
+    await options.audit.record({ ...event, requestId: request.id });
+  } catch (error) {
+    app.log.error(
+      { err: error, audit_action: event.action },
+      "auth.audit_record_failed",
+    );
+  }
 }
 
 function validationError(

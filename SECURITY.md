@@ -5,6 +5,12 @@ reproduction steps, impact, release SHA, and request ID through the private
 security contact configured for the deployment. Do not attach real uploaded
 content, credentials, cookies, payment data, or recovery material.
 
+Use GitHub's private vulnerability-reporting channel:
+[Report a vulnerability privately](https://github.com/ahmed1122-rpg/riig-/security/advisories/new).
+The security owner acknowledges valid reports within three business days and
+coordinates disclosure only after a supported release or mitigation exists.
+Never open a public issue containing exploit details.
+
 ## Supported production profile
 
 - Authentication includes opaque secure sessions, password reset through the

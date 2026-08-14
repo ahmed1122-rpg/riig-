@@ -1,4 +1,13 @@
 const runtimeStageMarker = /^FROM\s+\S+\s+AS\s+runtime\s*$/imu;
+const requiredRuntimePackages = [
+  "contracts",
+  "document-processing",
+  "export-adapters",
+  "guidance",
+  "layer-domain",
+  "media-processing",
+  "presets",
+];
 
 export function verifyRuntimeImageContract({ dockerfile, composeDocument }) {
   const violations = [];
@@ -12,6 +21,18 @@ export function verifyRuntimeImageContract({ dockerfile, composeDocument }) {
 
   if (!runtimeImage) {
     return ["Production Compose must define the shared x-runtime image contract."];
+  }
+
+  for (const packageName of requiredRuntimePackages) {
+    const workspace = `packages/${packageName}`;
+    if (!buildStage.includes(`COPY ${workspace}/package.json ./${workspace}/package.json`)) {
+      violations.push(`Runtime package ${workspace} is missing from the npm ci manifest set.`);
+    }
+    for (const path of [`${workspace}/package.json`, `${workspace}/dist`]) {
+      if (!isProvidedByRuntime(path, copiedRuntimePaths)) {
+        violations.push(`Final runtime image does not copy ${path}.`);
+      }
+    }
   }
 
   for (const [serviceName, service] of Object.entries(

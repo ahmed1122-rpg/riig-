@@ -2,12 +2,11 @@ name: motionprep
 
 x-runtime: &runtime
   image: ${RUNTIME_IMAGE_REF:?Set RUNTIME_IMAGE_REF to an immutable registry digest}
-  env_file:
-    - ${MOTIONPREP_ENV_FILE:-.env.production}
   environment:
     # The signed release manifest is authoritative; workers and API expose this
     # revision in health, logs, heartbeats, and metrics.
     RELEASE_VERSION: ${RELEASE_GIT_SHA:?Set RELEASE_GIT_SHA from the signed release manifest}
+    WORKER_HEALTH_INSTANCE_FILE: /tmp/motionprep-worker-instance-id
   networks:
     - application
   init: true
@@ -25,6 +24,8 @@ x-runtime: &runtime
 services:
   migrate:
     <<: *runtime
+    env_file:
+      - ${MOTIONPREP_MIGRATION_ENV_FILE:?Set MOTIONPREP_MIGRATION_ENV_FILE to the dedicated migration secret file}
     command:
       - node
       - --conditions=production
@@ -33,6 +34,8 @@ services:
 
   maintenance:
     <<: *runtime
+    env_file:
+      - ${MOTIONPREP_MAINTENANCE_ENV_FILE:?Set MOTIONPREP_MAINTENANCE_ENV_FILE to the maintenance secret file}
     command:
       - node
       - --conditions=production
@@ -48,6 +51,8 @@ services:
 
   maintenance-scheduler:
     <<: *runtime
+    env_file:
+      - ${MOTIONPREP_MAINTENANCE_ENV_FILE:?Set MOTIONPREP_MAINTENANCE_ENV_FILE to the maintenance secret file}
     command:
       - node
       - --conditions=production
@@ -60,6 +65,11 @@ services:
 
   api:
     <<: *runtime
+    # 10s readiness deregistration + up to 120s for an accepted proxy request,
+    # with a final margin before Compose sends SIGKILL.
+    stop_grace_period: 140s
+    env_file:
+      - ${MOTIONPREP_API_ENV_FILE:?Set MOTIONPREP_API_ENV_FILE to the API secret file}
     command:
       - node
       - --conditions=production
@@ -84,6 +94,8 @@ services:
 
   worker-media:
     <<: *runtime
+    env_file:
+      - ${MOTIONPREP_MEDIA_WORKER_ENV_FILE:?Set MOTIONPREP_MEDIA_WORKER_ENV_FILE to the media-worker secret file}
     command:
       - node
       - --conditions=production
@@ -102,6 +114,8 @@ services:
 
   worker-document:
     <<: *runtime
+    env_file:
+      - ${MOTIONPREP_DOCUMENT_WORKER_ENV_FILE:?Set MOTIONPREP_DOCUMENT_WORKER_ENV_FILE to the document-worker secret file}
     command:
       - node
       - --conditions=production
@@ -120,6 +134,8 @@ services:
 
   worker-export:
     <<: *runtime
+    env_file:
+      - ${MOTIONPREP_EXPORT_WORKER_ENV_FILE:?Set MOTIONPREP_EXPORT_WORKER_ENV_FILE to the export-worker secret file}
     command:
       - node
       - --conditions=production
@@ -138,6 +154,8 @@ services:
 
   worker-character:
     <<: *runtime
+    env_file:
+      - ${MOTIONPREP_CHARACTER_WORKER_ENV_FILE:?Set MOTIONPREP_CHARACTER_WORKER_ENV_FILE to the character-worker secret file}
     profiles:
       - character-rig
     command:

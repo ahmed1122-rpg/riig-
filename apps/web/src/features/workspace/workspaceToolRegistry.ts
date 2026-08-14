@@ -338,6 +338,16 @@ export function getReadyWorkspaceTools(
           "Character Studio is unavailable in the current runtime.",
       };
     }
+    if (
+      tool.id === "image.turntable" &&
+      !features.characterRig.supportedProjectKinds.some((kind) => kind === mode)
+    ) {
+      return {
+        ...tool,
+        available: false,
+        unavailableReason: "Character Turntable متاح لمشاريع الصور فقط، وليس PDF.",
+      };
+    }
     return { ...tool, available: true };
   });
 }

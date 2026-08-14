@@ -1,8 +1,14 @@
-export const MAX_UPLOAD_MEBIBYTES = 30;
-export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MEBIBYTES * 1024 * 1024;
+export const MAX_IMAGE_UPLOAD_MEBIBYTES = 30;
+export const MAX_IMAGE_UPLOAD_BYTES =
+  MAX_IMAGE_UPLOAD_MEBIBYTES * 1024 * 1024;
+export const MAX_PDF_UPLOAD_MEBIBYTES = 30;
+export const MAX_PDF_UPLOAD_BYTES = MAX_PDF_UPLOAD_MEBIBYTES * 1024 * 1024;
+/** Maximum request-body limit. Prefer the media-specific constants in UI copy. */
+export const MAX_UPLOAD_MEBIBYTES = MAX_PDF_UPLOAD_MEBIBYTES;
+export const MAX_UPLOAD_BYTES = MAX_PDF_UPLOAD_BYTES;
 export const MAX_PDF_PAGES = 250;
 export const MAX_PDF_TEXT_ITEMS = 100_000;
-export const APPLICATION_CAPABILITIES_SCHEMA_VERSION = "1.0";
+export const APPLICATION_CAPABILITIES_SCHEMA_VERSION = "1.1";
 export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_LENGTH = 128;
 
@@ -61,15 +67,28 @@ export interface ApplicationCapabilities {
   schemaVersion: typeof APPLICATION_CAPABILITIES_SCHEMA_VERSION;
   limits: {
     maxUploadBytes: number;
+    maxImageUploadBytes: number;
+    maxPdfUploadBytes: number;
     maxPdfPages: number;
     maxPdfTextItems: number;
     maxImageLayers: number;
+  };
+  runtime: {
+    storageProfile: "unknown" | "ephemeral" | "durable";
+    workers: Record<
+      "media" | "document" | "export" | "character",
+      {
+        status: "ready" | "degraded" | "not_required";
+        reason: string | null;
+      }
+    >;
   };
   features: {
     characterRig: {
       enabled: boolean;
       unavailableReason: string | null;
       requiredCanonicalViews: number;
+      supportedProjectKinds: readonly ["image"];
     };
     pdfRegionOcr: {
       enabled: boolean;

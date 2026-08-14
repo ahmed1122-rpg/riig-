@@ -12,8 +12,14 @@ import {
 } from "@motionprep/document-processing";
 import {
   createPdfTextLayerName,
+  isPdfPageRootGroup,
   validateProductionDocument,
 } from "@motionprep/presets";
+import {
+  canonicalLayerName,
+  createUniqueLayerName,
+} from "@motionprep/layer-domain";
+import { applyReadingOrder } from "./reading-order.js";
 
 export type PdfRegionOcrOperation = NonNullable<
   ProcessingJob["options"]["pdfRegionOcr"]
@@ -29,6 +35,11 @@ export class PdfRegionOcrError extends Error {
   constructor(
     readonly code: PdfRegionOcrErrorCode,
     message: string,
+    readonly diagnostic?: {
+      pageNumber: number;
+      stage: "render" | "recognize";
+      code: "render-failed" | "engine-failed" | "empty-result";
+    },
   ) {
     super(message);
   }
@@ -66,7 +77,11 @@ export async function applyPdfRegionOcr(input: {
     });
   } catch (error) {
     if (error instanceof DocumentProcessingError) {
-      throw new PdfRegionOcrError("PDF_DECODE_FAILED", error.message);
+      throw new PdfRegionOcrError("PDF_DECODE_FAILED", error.message, {
+        pageNumber: operation.pageNumber,
+        stage: "render",
+        code: "render-failed",
+      });
     }
     throw error;
   }
@@ -84,6 +99,11 @@ export async function applyPdfRegionOcr(input: {
     throw new PdfRegionOcrError(
       "OCR_FAILED",
       "تعذر التعرف على النص داخل منطقة PDF المحددة.",
+      {
+        pageNumber: operation.pageNumber,
+        stage: "recognize",
+        code: "engine-failed",
+      },
     );
   }
   const usable = recognized.filter(
@@ -100,6 +120,11 @@ export async function applyPdfRegionOcr(input: {
     throw new PdfRegionOcrError(
       "OCR_FAILED",
       "لم يعثر OCR على نص داخل المنطقة المحددة.",
+      {
+        pageNumber: operation.pageNumber,
+        stage: "recognize",
+        code: "empty-result",
+      },
     );
   }
   if (usable.length > 2_000) {
@@ -130,13 +155,31 @@ export async function applyPdfRegionOcr(input: {
       .filter((layer) => layer.pageNumber === operation.pageNumber)
       .map((layer) => layer.zIndex),
   );
+  const pageGroupId = document.layers.find(
+    (layer) =>
+      layer.pageNumber === operation.pageNumber &&
+      isPdfPageRootGroup(layer),
+  )?.id ?? null;
+  const usedNames = new Set(
+    document.layers
+      .filter(
+        (layer) =>
+          !affectedIds.has(layer.id) && layer.parentId === pageGroupId,
+      )
+      .map((layer) => canonicalLayerName(layer.name)),
+  );
   const created = usable.map((item, index): LayerNode => {
     const bounds = translateAndClampBounds(item.bounds, rendered.bounds);
+    const name = createUniqueLayerName(
+      createPdfTextLayerName(item.text, "word"),
+      usedNames,
+    );
+    usedNames.add(canonicalLayerName(name));
     return {
       id: crypto.randomUUID(),
-      parentId: null,
+      parentId: pageGroupId,
       kind: "text",
-      name: createPdfTextLayerName(item.text, "word"),
+      name,
       visible: true,
       locked: false,
       opacity: 1,
@@ -198,6 +241,7 @@ export async function applyPdfRegionOcr(input: {
   const updated: LayerDocument = {
     ...document,
     revision: currentRevision + 1,
+    generatedAt: timestamp,
     layers,
     editTimeline: { entries, cursor: entries.length - 1 },
     ...(reviewPages?.length
@@ -289,27 +333,23 @@ function normalizeRegionalReadingOrder(
   layers: readonly LayerNode[],
   pageNumber: number,
 ): LayerNode[] {
-  const orderedIds = new Map(
-    layers
-      .filter(
-        (layer) =>
-          layer.kind === "text" &&
-          layer.pageNumber === pageNumber &&
-          layer.bounds,
-      )
-      .sort((left, right) => {
-        const vertical = left.bounds!.y - right.bounds!.y;
-        if (Math.abs(vertical) > Math.max(2, Math.min(left.bounds!.height, right.bounds!.height) / 2)) {
-          return vertical;
-        }
-        return left.direction === "rtl"
-          ? right.bounds!.x - left.bounds!.x
-          : left.bounds!.x - right.bounds!.x;
-      })
-      .map((layer, index) => [layer.id, index]),
-  );
-  return layers.map((layer) => {
-    const readingOrder = orderedIds.get(layer.id);
-    return readingOrder === undefined ? layer : { ...layer, readingOrder };
+  return applyReadingOrder(layers, {
+    appliesTo: (layer) =>
+      layer.kind === "text" &&
+      layer.pageNumber === pageNumber &&
+      Boolean(layer.bounds),
+    compare: (left, right) => {
+      const vertical = left.bounds!.y - right.bounds!.y;
+      if (
+        Math.abs(vertical) >
+        Math.max(2, Math.min(left.bounds!.height, right.bounds!.height) / 2)
+      ) {
+        return vertical;
+      }
+      return left.direction === "rtl"
+        ? right.bounds!.x - left.bounds!.x
+        : left.bounds!.x - right.bounds!.x;
+    },
+    startAt: 0,
   });
 }

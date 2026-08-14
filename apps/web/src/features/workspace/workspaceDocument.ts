@@ -7,19 +7,23 @@ import {
 } from "../../lib/api";
 import { layerLayoutMetadata } from "@motionprep/contracts";
 import type { Layer, ProjectMode } from "../../types";
-import type { PreviewQuality } from "./PreviewToolbar";
 
-export function storedPreviewQuality(): PreviewQuality {
-  try {
-    const stored = window.localStorage.getItem(
-      "motionprep.settings.preview-quality",
-    );
-    return stored !== null && JSON.parse(stored) === "full"
-      ? "full"
-      : "fast";
-  } catch {
-    return "fast";
+const LAYER_COLORS = [
+  "#3bb3a9",
+  "#6887d8",
+  "#9c72cb",
+  "#d97745",
+  "#c85372",
+  "#4c9b6e",
+] as const;
+
+export function stableLayerColor(layerId: string): string {
+  let hash = 0x811c9dc5;
+  for (const character of layerId) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193);
   }
+  return LAYER_COLORS[(hash >>> 0) % LAYER_COLORS.length]!;
 }
 
 export function isAcceptedFile(
@@ -50,34 +54,47 @@ export function toWorkspaceLayers(
     mode === "image"
       ? right.zIndex - left.zIndex
       : (left.pageNumber ?? 1) - (right.pageNumber ?? 1) ||
-        Number(left.fixed) - Number(right.fixed) ||
+        pdfLayerRank(left) - pdfLayerRank(right) ||
         (left.readingOrder ?? Number.MAX_SAFE_INTEGER) -
           (right.readingOrder ?? Number.MAX_SAFE_INTEGER) ||
         right.zIndex - left.zIndex,
   );
-  return orderedLayers.map((layer, index) => ({
+  return orderedLayers.map((layer) => ({
     id: layer.id,
+    parentId: layer.parentId,
     name: layer.name,
     kind:
-      layer.kind === "text"
+      layer.kind === "group"
+        ? "group"
+        : layer.kind === "text"
         ? "text"
         : mode === "book" && layer.fixed
           ? "page"
           : "body",
     visible: layer.visible,
     locked: layer.locked,
+    fixed: layer.fixed,
     opacity: Math.round(layer.opacity * 100),
     zIndex: layer.zIndex,
     ...(layer.confidence === undefined
       ? {}
       : { confidence: Math.round(layer.confidence * 100) }),
-    color: ["#3bb3a9", "#6887d8", "#9c72cb"][index % 3]!,
+    color: stableLayerColor(layer.id),
     ...(previewUrlsByLayer.has(layer.id)
       ? { previewUrl: previewUrlsByLayer.get(layer.id)! }
       : {}),
     ...(layer.fullText ? { fullContent: layer.fullText } : {}),
     ...layerLayoutMetadata(layer),
   }));
+}
+
+function pdfLayerRank(
+  layer: LayerDocumentView["layers"][number],
+): number {
+  if (layer.kind === "group" && layer.parentId === null) return 0;
+  if (layer.kind === "raster" && layer.fixed) return 1;
+  if (layer.kind === "group") return 2;
+  return 3;
 }
 
 export async function loadRasterLayerPreviews(
@@ -91,19 +108,28 @@ export async function loadRasterLayerPreviews(
   );
   const previews = new Map<string, string>();
   const urls: string[] = [];
-  await mapWithConcurrency(rasterLayers, 3, async (layer) => {
-    const blob = await getLayerRasterAsset(
-      projectId,
-      sourceVersionId,
-      layer.id,
-      layer.rasterAsset!.sha256,
-      signal,
-    );
-    if (signal?.aborted) return;
-    const url = URL.createObjectURL(blob);
-    previews.set(layer.id, url);
-    urls.push(url);
-  });
+  try {
+    await mapWithConcurrency(rasterLayers, 3, async (layer) => {
+      const blob = await getLayerRasterAsset(
+        projectId,
+        sourceVersionId,
+        layer.id,
+        layer.rasterAsset!.sha256,
+        signal,
+      );
+      if (signal?.aborted) return;
+      const url = URL.createObjectURL(blob);
+      previews.set(layer.id, url);
+      urls.push(url);
+    });
+  } catch (error) {
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    throw error;
+  }
+  if (signal?.aborted) {
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    return { previews: new Map<string, string>(), urls: [] };
+  }
   return { previews, urls };
 }
 

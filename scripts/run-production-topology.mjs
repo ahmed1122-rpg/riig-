@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createDockerWorkspace } from "./docker-workspace.mjs";
-import { integrationEndpoints } from "./integration-endpoints.mjs";
+import {
+  integrationEndpoints,
+  withAvailableIntegrationPorts,
+} from "./integration-endpoints.mjs";
 
 const compose = ["compose", "-f", "compose.integration.yaml"];
 const sourceWorkingDirectory = process.cwd();
@@ -8,10 +11,11 @@ const dockerWorkspace = createDockerWorkspace(sourceWorkingDirectory);
 const releaseVersion =
   process.env.RELEASE_VERSION ??
   process.env.INTEGRATION_RELEASE_VERSION ??
-  "integration";
-const endpoints = integrationEndpoints(process.env);
+  "0".repeat(40);
+const integrationEnvironment = await withAvailableIntegrationPorts(process.env);
+const endpoints = integrationEndpoints(integrationEnvironment);
 const topologyEnvironment = {
-  ...process.env,
+  ...integrationEnvironment,
   RELEASE_VERSION: releaseVersion,
   INTEGRATION_RELEASE_VERSION: releaseVersion,
   MOTIONPREP_API_ORIGIN:
@@ -48,8 +52,8 @@ try {
   run(process.execPath, ["scripts/load-pdf-workflow.mjs"], {
     env: {
       ...topologyEnvironment,
-      LOAD_CONCURRENCY: "2",
-      LOAD_ITERATIONS: "1",
+      LOAD_CONCURRENCY: process.env.LOAD_CONCURRENCY ?? "2",
+      LOAD_ITERATIONS: process.env.LOAD_ITERATIONS ?? "1",
       LOAD_TARGET_ORIGIN:
         process.env.LOAD_TARGET_ORIGIN ?? endpoints.apiOrigins[0],
       LOAD_REQUEST_ORIGIN:
@@ -60,7 +64,8 @@ try {
       LOAD_METRICS_BEARER_TOKEN:
         "metrics-integration-token-at-least-32-characters",
       LOAD_METRICS_SAMPLE_INTERVAL_MS: "1000",
-      LOAD_REPORT_PATH: ".tmp/topology-pdf-load-report.json",
+      LOAD_REPORT_PATH:
+        process.env.LOAD_REPORT_PATH ?? ".tmp/topology-pdf-load-report.json",
     },
     label: "concurrent PDF workflow smoke load",
   });

@@ -5,17 +5,22 @@ import { parse } from "yaml";
 import { verifyObservabilityArtifacts } from "./verify-observability-artifacts.mjs";
 import { requiredDeploymentFiles } from "./deployment-required-files.mjs";
 import { verifyNodeToolchain } from "./verify-node-toolchain.mjs";
-import {
-  verifyNginxDeployment,
-  verifyNginxRuntimeWiring,
-} from "./verify-nginx-deployment.mjs";
+import { verifyNginxDeployment, verifyNginxRuntimeWiring } from "./verify-nginx-deployment.mjs";
 import { verifyProductionEnvironmentTemplate } from "./verify-production-environment-template.mjs";
+import { verifyQaImageContract } from "./verify-qa-image-contract.mjs";
 import { verifyRuntimeImageContract } from "./verify-runtime-image-contract.mjs";
 import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const violations = [];
 const nodeVersion = (await readFile(join(root, ".node-version"), "utf8")).trim();
+const integrationCompose = await readFile(
+  join(root, "compose.integration.yaml"),
+  "utf8",
+);
+if (!integrationCompose.includes("WORKER_HEALTH_INSTANCE_FILE: /tmp/motionprep-worker-instance-id")) {
+  violations.push("Integration workers must publish the per-instance health identity file.");
+}
 
 for (const file of requiredDeploymentFiles) {
   try {
@@ -27,12 +32,19 @@ for (const file of requiredDeploymentFiles) {
 
 const [
   runtimeDockerfile,
+  qaDockerfile,
   webDockerfile,
   compose,
   nginx,
   securityHeaders,
   gitignore,
+  dockerignore,
   exampleEnvironment,
+  apiExampleEnvironment,
+  migrationExampleEnvironment,
+  maintenanceExampleEnvironment,
+  workerExampleEnvironment,
+  characterWorkerExampleEnvironment,
   webApiClient,
   processingRuntime,
   processingJobExecutor,
@@ -60,12 +72,19 @@ const [
   await Promise.all(
     [
       "Dockerfile",
+      "Dockerfile.qa",
       "Dockerfile.web",
       "compose.production.yaml",
       "deploy/nginx.conf",
       "deploy/security-headers.conf",
       ".gitignore",
+      ".dockerignore",
       ".env.production.example",
+      ".env.production.api.example",
+      ".env.production.migrate.example",
+      ".env.production.maintenance.example",
+      ".env.production.worker.example",
+      ".env.production.worker-character.example",
       "apps/web/src/lib/api/transport.ts",
       "apps/api/src/processing/processing-worker-runtime.ts",
       "apps/api/src/processing/processing-job-executor.ts",
@@ -107,8 +126,18 @@ const workflowSources = await Promise.all(
 );
 violations.push(...(await verifyObservabilityArtifacts(root)));
 violations.push(...verifyWorkflowSecurity(workflowSources));
-violations.push(...verifyProductionEnvironmentTemplate(exampleEnvironment));
+violations.push(
+  ...verifyProductionEnvironmentTemplate([
+    exampleEnvironment,
+    apiExampleEnvironment,
+    migrationExampleEnvironment,
+    maintenanceExampleEnvironment,
+    workerExampleEnvironment,
+    characterWorkerExampleEnvironment,
+  ].join("\n")),
+);
 const ciWorkflow = workflowSources[0];
+violations.push(...verifyQaImageContract({ dockerfile: qaDockerfile, ciWorkflow, dockerignore }));
 try {
   const ciDocument = parse(ciWorkflow);
   const containerSteps =
@@ -379,6 +408,7 @@ violations.push(
     packageManifest,
     npmConfig,
     dockerfiles: [runtimeDockerfile, webDockerfile],
+    qaDockerfiles: [qaDockerfile],
   }),
 );
 if (!webApiClient.includes("location.origin")) {

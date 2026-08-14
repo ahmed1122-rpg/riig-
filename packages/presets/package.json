@@ -1,6 +1,6 @@
 {
   "name": "@motionprep/presets",
-  "version": "0.1.3",
+  "version": "0.1.8",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -11,7 +11,7 @@
     }
   },
   "dependencies": {
-    "@motionprep/contracts": "*"
+    "@motionprep/layer-domain": "*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

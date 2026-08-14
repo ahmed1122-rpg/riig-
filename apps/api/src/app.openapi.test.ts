@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { APPLICATION_VERSION, buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 
 describe("OpenAPI discovery", () => {
@@ -13,13 +13,14 @@ describe("OpenAPI discovery", () => {
 
     expect(response.statusCode).toBe(200);
     expect(document.openapi).toBe("3.1.0");
-    expect(document.info.version).toBe("0.1.3");
+    expect(document.info.version).toBe(APPLICATION_VERSION);
     expect(document.paths).toHaveProperty("/v1/health/ready");
     expect(document.paths).toHaveProperty("/v1/capabilities");
     expect(document.paths).toHaveProperty("/v1/auth/login");
     expect(document.paths).toHaveProperty("/v1/account/export");
     expect(document.paths).toHaveProperty("/v1/account");
     expect(document.paths).toHaveProperty("/v1/projects");
+    expect(document.paths).toHaveProperty("/v1/projects/{projectId}");
     expect(document.paths).toHaveProperty("/v1/activity");
     expect(document.paths).not.toHaveProperty("/v1/openapi.json");
     expect(document.paths).not.toHaveProperty("/internal/metrics");
@@ -50,6 +51,9 @@ describe("OpenAPI discovery", () => {
     expect(document.paths["/v1/projects"].get.security).toEqual([
       { sessionCookie: [] },
     ]);
+    expect(
+      document.paths["/v1/projects/{projectId}"].delete.security,
+    ).toEqual([{ sessionCookie: [] }]);
     expect(document.paths["/v1/auth/login"].post.security).toEqual([]);
     expect(
       document.paths["/v1/auth/register"].post.requestBody.content[
@@ -103,6 +107,48 @@ describe("OpenAPI discovery", () => {
         "application/json"
       ].schema.properties.data.required,
     ).toEqual(["items", "summary", "nextCursor", "generatedAt"]);
+
+    const characterOperations = [
+      ["/v1/projects/{projectId}/character-rig", "get"],
+      ["/v1/projects/{projectId}/character-rig/bible", "put"],
+      ["/v1/projects/{projectId}/character-rig/bible/approve", "post"],
+      ["/v1/projects/{projectId}/character-rig/references/current-source", "post"],
+      ["/v1/projects/{projectId}/character-rig/identity-model", "post"],
+      ["/v1/projects/{projectId}/character-rig/generations", "post"],
+      [
+        "/v1/projects/{projectId}/character-rig/generations/{generationAttemptId}/reviews",
+        "post",
+      ],
+      [
+        "/v1/projects/{projectId}/character-rig/generations/{generationAttemptId}/artifact",
+        "get",
+      ],
+      ["/v1/projects/{projectId}/character-rig/compile", "post"],
+    ] as const;
+    for (const [path, method] of characterOperations) {
+      const operation = document.paths[path][method];
+      expect(operation.tags).toEqual(["character-rig"]);
+      expect(operation.summary).not.toBe(`${method.toUpperCase()} ${path}`);
+      expect(
+        Object.keys(operation.responses).some((statusCode) => /^2\d\d$/.test(statusCode)),
+      ).toBe(true);
+    }
+    for (const [path, method] of characterOperations.filter(
+      ([, method]) => method !== "get",
+    )) {
+      expect(document.paths[path][method].requestBody.content).toHaveProperty(
+        "application/json",
+      );
+    }
+    expect(
+      document.paths["/v1/projects/{projectId}/character-rig/generations"].post
+        .requestBody.content["application/json"].schema.required,
+    ).toEqual(["bibleId", "identityModelVersionId", "target", "controls"]);
+    expect(
+      document.paths["/v1/projects/{projectId}/character-rig/identity-model"]
+        .post.responses["202"].content["application/json"].schema.properties
+        .data.required,
+    ).toEqual(["modelVersion", "job"]);
 
     await app.close();
   });

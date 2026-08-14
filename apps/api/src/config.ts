@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { MAX_UPLOAD_BYTES } from "@motionprep/contracts";
+import {
+  MAX_IMAGE_UPLOAD_BYTES,
+  MAX_UPLOAD_BYTES,
+} from "@motionprep/contracts";
 import {
   applicationObjectStorageFields,
   blankToUndefined,
@@ -7,7 +10,11 @@ import {
   optionalUrl,
   validateObjectStorageEnvironment,
 } from "./storage/object-storage-environment.js";
-import { isValidAuthEncryptionKey } from "./auth/secret-protector.js";
+import {
+  decodeAuthEncryptionKeyring,
+  isValidAuthEncryptionKey,
+  isValidAuthEncryptionKeyring,
+} from "./auth/secret-protector.js";
 
 const environmentSchema = z
   .object({
@@ -16,6 +23,18 @@ const environmentSchema = z
       .default("development"),
     RELEASE_VERSION: z.string().trim().min(1).max(128).default("development"),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(4_000),
+    API_DEREGISTRATION_DELAY_MS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(30_000)
+      .default(0),
+    API_SHUTDOWN_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(30_000)
+      .max(180_000)
+      .default(130_000),
     WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
     E2E_ADMIN_EMAIL: z.preprocess(
       blankToUndefined,
@@ -28,6 +47,13 @@ const environmentSchema = z
       .positive()
       .max(MAX_UPLOAD_BYTES)
       .default(MAX_UPLOAD_BYTES),
+    MAX_IMAGE_UPLOAD_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(MAX_IMAGE_UPLOAD_BYTES)
+      .default(MAX_IMAGE_UPLOAD_BYTES),
+    UPLOAD_BODY_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(3),
     SESSION_TTL_SECONDS: z.coerce
       .number()
       .int()
@@ -95,8 +121,32 @@ const environmentSchema = z
         )
         .optional(),
     ),
+    AUTH_ENCRYPTION_KEYRING: z.preprocess(
+      blankToUndefined,
+      z.string().refine(
+        isValidAuthEncryptionKeyring,
+        "AUTH_ENCRYPTION_KEYRING must contain one to five key-id:canonical-base64 entries.",
+      ).optional(),
+    ),
+    AUTH_ENCRYPTION_ACTIVE_KEY_ID: z.preprocess(
+      blankToUndefined,
+      z.string().regex(/^[A-Za-z0-9_-]{1,32}$/u).optional(),
+    ),
     TOTP_ISSUER: z.string().trim().min(2).max(50).default("MotionPrep"),
     PASSWORD_RESET_URL: optionalUrl,
+    EMAIL_VERIFICATION_REQUIRED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    EMAIL_VERIFICATION_URL: optionalUrl,
+    ADMIN_BOOTSTRAP_EMAIL: z.preprocess(
+      blankToUndefined,
+      z.string().trim().email().transform((value) => value.toLowerCase()).optional(),
+    ),
+    ADMIN_BOOTSTRAP_TOKEN_HASH: z.preprocess(
+      blankToUndefined,
+      z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+    ),
     EMAIL_DELIVERY_MODE: z.enum(["memory", "smtp"]).default("memory"),
     SMTP_HOST: z.preprocess(
       blankToUndefined,
@@ -119,6 +169,29 @@ const environmentSchema = z
     ),
   })
   .superRefine((value, context) => {
+    if (
+      value.NODE_ENV === "production" &&
+      value.API_DEREGISTRATION_DELAY_MS < 10_000
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["API_DEREGISTRATION_DELAY_MS"],
+        message:
+          "Production requires at least 10000ms for readiness deregistration.",
+      });
+    }
+    if (
+      value.NODE_ENV === "production" &&
+      value.API_SHUTDOWN_TIMEOUT_MS <
+        value.API_DEREGISTRATION_DELAY_MS + 120_000
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["API_SHUTDOWN_TIMEOUT_MS"],
+        message:
+          "Production shutdown must cover deregistration plus the 120s proxy request deadline.",
+      });
+    }
     if (value.E2E_ADMIN_EMAIL && value.NODE_ENV !== "test") {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -225,12 +298,44 @@ const environmentSchema = z
         message: "Production WEB_ORIGIN must use HTTPS.",
       });
     }
-    if (value.PERSISTENCE_MODE === "postgres" && !value.AUTH_ENCRYPTION_KEY) {
+    if (
+      value.PERSISTENCE_MODE === "postgres" &&
+      !value.AUTH_ENCRYPTION_KEY &&
+      !value.AUTH_ENCRYPTION_KEYRING
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["AUTH_ENCRYPTION_KEY"],
         message:
-          "Persistent authentication requires a stable encryption key.",
+          "Persistent authentication requires a stable encryption key or keyring.",
+      });
+    }
+    if (Boolean(value.AUTH_ENCRYPTION_KEYRING) !== Boolean(value.AUTH_ENCRYPTION_ACTIVE_KEY_ID)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["AUTH_ENCRYPTION_ACTIVE_KEY_ID"],
+        message: "AUTH_ENCRYPTION_KEYRING and AUTH_ENCRYPTION_ACTIVE_KEY_ID are required together.",
+      });
+    }
+    if (
+      value.AUTH_ENCRYPTION_KEYRING &&
+      value.AUTH_ENCRYPTION_ACTIVE_KEY_ID &&
+      isValidAuthEncryptionKeyring(value.AUTH_ENCRYPTION_KEYRING) &&
+      !decodeAuthEncryptionKeyring(value.AUTH_ENCRYPTION_KEYRING).has(
+        value.AUTH_ENCRYPTION_ACTIVE_KEY_ID,
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["AUTH_ENCRYPTION_ACTIVE_KEY_ID"],
+        message: "AUTH_ENCRYPTION_ACTIVE_KEY_ID must identify a keyring entry.",
+      });
+    }
+    if (value.NODE_ENV === "production" && !value.AUTH_ENCRYPTION_KEYRING) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["AUTH_ENCRYPTION_KEYRING"],
+        message: "Production authentication requires a rotatable encryption keyring.",
       });
     }
     if (
@@ -241,6 +346,30 @@ const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["EMAIL_DELIVERY_MODE"],
         message: "Production password reset requires SMTP delivery.",
+      });
+    }
+    if (value.NODE_ENV === "production" && !value.EMAIL_VERIFICATION_REQUIRED) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["EMAIL_VERIFICATION_REQUIRED"],
+        message: "Production registration requires email verification.",
+      });
+    }
+    if (value.EMAIL_VERIFICATION_REQUIRED && !value.EMAIL_VERIFICATION_URL) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["EMAIL_VERIFICATION_URL"],
+        message: "EMAIL_VERIFICATION_URL is required when verification is enabled.",
+      });
+    }
+    if (
+      Boolean(value.ADMIN_BOOTSTRAP_EMAIL) !==
+      Boolean(value.ADMIN_BOOTSTRAP_TOKEN_HASH)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ADMIN_BOOTSTRAP_TOKEN_HASH"],
+        message: "Admin bootstrap email and token hash are required together.",
       });
     }
     if (value.EMAIL_DELIVERY_MODE === "smtp") {

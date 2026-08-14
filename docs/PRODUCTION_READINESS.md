@@ -1,5 +1,16 @@
 # Production readiness
 
+Working-candidate status on 2026-08-13: the sequenced local remediation and
+Character Rig hardening are complete on the `0.1.8` package line. The
+Turntable/Character Studio surface is deliberately image-only: capabilities
+advertise only `image`, the web tool is absent from book/PDF workspaces, and all
+nine Character API operations fail closed for a book project. The working tree
+is not any hosted `v0.1.8` release: only its eventual Git SHA and signed image
+digests can identify the new candidate. Local tests prove source correctness,
+not managed-provider, deployed-staging, recovery, or representative-load
+readiness. Keep `CHARACTER_RIG_ENABLED=false` until the ordered external gates
+in [`EXTERNAL_GATE_INPUTS.md`](EXTERNAL_GATE_INPUTS.md) have passed.
+
 Status through 2026-08-10: releases `v0.1.1`, `v0.1.2`, `v0.1.3`, `v0.1.5`,
 `v0.1.6`, and `v0.1.7` were published
 as signed digest-qualified runtime and web images after their protected
@@ -73,9 +84,10 @@ approvals, request-fingerprint idempotency conflicts, atomic upload-integrity
 failure and cancellation convergence, immutable export-generation identity,
 public/admin job DTO boundaries, bounded job lists and aggregate admin status
 queries. Migrations 031-036 implement the durable state. The local browser
-runner now starts fresh servers by default so a stale process cannot silently
-substitute different API bytes; reuse requires the explicit
-`PLAYWRIGHT_REUSE_SERVER=true` opt-in.
+runner always starts fresh servers on isolated API/Web ports (`45100`/`45101`
+by default) so a stale process cannot silently substitute different bytes.
+`PLAYWRIGHT_API_PORT` and `PLAYWRIGHT_WEB_PORT` may select other distinct,
+non-privileged ports; existing servers are never reused.
 
 The 2026-08-04 account-privacy pass makes policy consent versioned and
 auditable, exposes authenticated metadata export, and adds resumable account
@@ -139,13 +151,18 @@ their hosted results remain evidence gates rather than assumptions.
 - `/v1/capabilities` is the server-authoritative feature contract. Web tools
   fail closed when regional OCR is unavailable, and display the server reason
   instead of exposing a decorative or non-operational action.
-- OpenAPI now documents all 55 registered v1 operations with summaries, tags,
+- OpenAPI now documents all 79 registered v1 operations with summaries, tags,
   security, standard error envelopes, path parameters, and the principal write
-  bodies. Internal metrics remain excluded.
+  bodies. All nine Character Rig operations have explicit bodies and success
+  schemas. Internal metrics remain excluded.
 - The web application has a top-level recovery boundary and explicit revision
   conflict recovery. Large processing and workspace concerns were separated
   into inline-runner, PDF text-operation, raster-renderer, error, layer-bound,
   and autosave modules without increasing the public bundle beyond its budget.
+- Bounded same-origin browser telemetry records sanitized React/runtime errors
+  and LCP histograms without cookies or document content. Production builds
+  generate hidden source maps, move them to restricted release evidence, and
+  fail the bundle gate if any `.map` remains in the public web artifact.
 - Checkout returns are confirmed from a server-owned session rather than URL
   query text. Pending review edits are flushed before internal/back navigation,
   and an unload warning protects edits that still cannot be persisted.
@@ -184,23 +201,41 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 
 ## Local evidence
 
-- `npm run quality`: passed on 2026-08-04 after the account-privacy remediation.
+- The current Windows host reports Node `24.18.1` and npm `11.16.0`; the former
+  Node 26 installation has been removed. Root `devEngines`, `.node-version`,
+  `.npmrc`, every workspace version, and digest-pinned Docker stages agree on
+  the enforced Node/npm policy.
+- The final `motionprep-qa` image ran the complete `npm run quality` chain on
+  2026-08-12 and passed in 226,630 ms. Its retained
+  `artifacts/qa/quality-summary.json` records application `0.1.7`, Node
+  `v24.18.1`, exit code 0, and outcome `passed`. The clean QA install contained
+  554 packages with zero npm audit findings.
+- Contract and maintainability gates report 71 HTTP operations, 39 immutable
+  migrations, 397 production source files, zero oversized files, and zero exact
+  clone blocks. ESLint, Stylelint, Knip, all workspace typechecks, all coverage
+  thresholds, all 12 workspace builds, and the Adobe/Character benchmark gates
+  passed in the same QA execution.
+- Character lease, idempotency, result-fencing, and PostgreSQL convergence were
+  repeated three times against a fresh PostgreSQL 17 database after migrations
+  001-039. Every repetition passed 13 unit race cases and 4 real PostgreSQL
+  integration cases. A deployment-contract test prevents the integration file
+  from being silently excluded by Vitest again.
+- The current web bundle is 178.1 KiB JavaScript and 44.7 KiB CSS, gzip, within
+  the enforced 180 KiB / 50 KiB total budgets. The measured public landing
+  route uses eight initial asset requests, a 207.0 KiB LCP image, and no
+  blocking web-font request; every JavaScript chunk remains below 64 KiB gzip.
+- Historical: `npm run quality` passed on 2026-08-04 after the account-privacy remediation.
 - The 2026-08-10 dependency/toolchain remediation passed every configured
   quality component on Node 24.18.1/npm 11.16.0. The clean-worktree contract
   ran separately on the Windows host because the production-slim test image
   intentionally has no Git; the protected release job re-runs the single
   `npm run quality` command on Node 24 from `.node-version`.
-- Root `devEngines` now requires exact Node 24.18.1 and npm 11.16.0 with
-  `onFail=error`, and `.npmrc` enables `engine-strict=true`. A Windows host on
-  Node 26.2.0 was rejected with `EBADDEVENGINES`, while the pinned Node 24
-  Docker build completed `npm ci` (553 packages, zero vulnerabilities) and
-  built every workspace.
-- API tests: 305/305 across 73 files; web tests: 126/126 across 33 files; the remaining workspaces also passed. All configured coverage gates passed. Complete-source API coverage is 67.18% statements, 58.00% branches, 69.56% functions, and 68.53% lines; complete-source web coverage is 35.68%, 35.49%, 27.35%, and 36.71% respectively.
+- Historical 2026-08-10 evidence used the same exact Node/npm policy and passed
+  the then-current API/web suites and configured coverage thresholds.
 - Playwright E2E: 12/12 passed again locally on 2026-08-10 across desktop and
   mobile Chromium, including Axe checks, a real PDF upload/process journey,
   account-data export, resumable deletion, and the complete review/export
   journey. The protected release gate repeats this on Node 24.
-- Web bundle: 157.5 KiB JavaScript and 42.2 KiB CSS, gzip.
 - `npm audit --audit-level=high`: 0 known vulnerabilities across runtime, build, and test dependencies
   on the 2026-08-10 post-remediation lockfile. The same command now runs daily,
   in addition to push, pull-request, and protected release gates.
@@ -209,6 +244,13 @@ Therefore the strict benchmark exits non-zero and regional OCR is No-Go. The cur
 - `node scripts/verify-concurrent-migrations.mjs`: candidate 0.1.3 passed with two concurrent runners and idempotent replay after migrations 001-037. This is local candidate evidence and is not retroactively attributed to a hosted release.
 - Durable PostgreSQL/S3 suite: 20/20, including project-review approval/invalidation, upload integrity and cancellation convergence, source restoration, lease reclamation, active-job exclusivity, ordered billing events, reference-safe retention, object round trips, a real export worker, and account deletion across PostgreSQL and versioned object storage.
 - `npm run test:topology:full`: passed again on 2026-08-10 from the final strict-install image with migration 037, two API replicas, PostgreSQL, shared Redis rate limits, versioned MinIO, Mailpit/outbox delivery, all three workers, restart recovery, revision-approved export, trace identity, metrics, and a signed Stripe webhook. The run injected and recovered Redis, MinIO, Mailpit, and PostgreSQL outages, then completed 2/2 concurrent PDF smoke journeys with a 0% error rate, 1,347 ms workflow p95, zero final queue depth, a 28,672-byte API RSS peak delta, and a 7,352,320-byte worker RSS peak delta. The 1,278-byte fixture is workflow evidence, not representative capacity evidence.
+- On 2026-08-13 the production-shaped runner also completed 20/20 concurrent
+  end-to-end journeys with a valid 31,416,448-byte (29.961 MiB) PDF. Workflow
+  p95 was 28,124 ms; API and worker RSS peak growth were 384,753,664 and
+  224,464,896 bytes respectively; queue depth peaked at 13 with 5.11 seconds
+  oldest age and drained to zero. The machine-readable local candidate evidence
+  is retained in `artifacts/benchmarks/pdf-capacity/2026-08-13-20x29.96mib.json`.
+  This does not replace the release-bound managed-staging performance gate.
 - Docker runtime and web images build from digest-pinned bases with a strict
   install-script allowlist. Both passed current High/Critical Trivy 0.72.0
   scans. The web image passed a read-only, non-root, `cap-drop ALL`,
@@ -287,11 +329,21 @@ security.
 
 ## Evidence still required
 
+The 2026-08-13 phase-five local gates prove bounded 30 MiB upload ingestion,
+progressive password-hash upgrading, MFA keyring rotation compatibility,
+single-use email verification, one-shot administrator bootstrap under a
+  20-request race, secret redaction, CSP/client-report sanitization, private web
+  source-map extraction, workload env-file
+separation, migration-role separation, and private-source license/security
+policy checks. These are repository and in-memory proofs; they are not a claim
+that PostgreSQL races, provider IAM, SMTP delivery, or recovery work in managed
+staging.
+
 1. Live staging evidence for TLS-protected PostgreSQL, Redis, SMTP, and provider-owned S3, including versioning, encryption, retention, integrity, and least privilege.
-2. Deployment of the signed `v0.1.7` digests above to managed staging and a
-   complete application smoke without rebuilding. The signed-image rollback
-   path has passed for the same exact source, but this does not substitute for
-   the deployed staging smoke.
+2. A clean `v0.1.8` commit/tag, hosted CI, signed digest-qualified images, and
+   deployment of those same digests to managed staging without rebuilding.
+   The historical `v0.1.7` rollback evidence proves the mechanism only; it
+   cannot approve the changed 0.1.8 source.
 3. A signed isolated backup/restore recovery drill against production-shaped
    managed storage proving RPO ≤15 minutes and RTO ≤4 hours. The completed
    application rollback drill does not prove backup restoration.
@@ -314,6 +366,43 @@ OIDC role or explicit temporary credentials, recovery manifest/signing public
 key, staging origin/host/metrics URL, metrics bearer token, representative PDF
 URL/digest/size, and explicit p95/memory/queue thresholds. No paid or
 account-owned staging resource is inferred or created from local evidence.
+
+The production Compose control file points to seven distinct secret files:
+migration, API, maintenance, media worker, document worker, export worker, and
+character worker. Migration uses `MIGRATION_DATABASE_URL`; every other runtime
+must have a distinct database username and workload identity. Reusing a secret
+file or runtime database identity is a deployment-gate failure. The remaining
+provider evidence must additionally prove that the corresponding S3/IAM
+identity is least privilege, not merely that different credential strings were
+configured.
+
+The phase-six local platform changes expose `/readyz` separately from Nginx
+liveness, publish per-worker `ready/degraded/not_required` states in capability
+schema 1.1, and bind each Docker worker healthcheck to its own heartbeat ID and
+the exact release SHA. Readiness workflows now checkout `RELEASE_GIT_SHA`,
+require its matching semantic-version tag, and run repository-bound Cosign
+verification before provider or load probes. `MotionPrepApiDown` and
+`MotionPrepApiMetricsAbsent` cover scrape-target and absent-metric failures.
+The JavaScript/unit deployment checks pass locally; promtool evaluation awaits
+an available Docker daemon or hosted CI and is not recorded as PASS here.
+
+Migration operations also require an explicit bounded-wait policy. The shipped
+defaults are `MIGRATION_ADVISORY_LOCK_TIMEOUT_MS=30000`,
+`MIGRATION_LOCK_TIMEOUT_MS=15000`, and
+`MIGRATION_STATEMENT_TIMEOUT_MS=3600000`. The runner polls the advisory lock to
+a real deadline, bounds DDL lock waits, and allows up to 60 minutes for a
+legitimate long statement. Setting the statement timeout to `0` disables that
+last safety boundary; it is an exceptional operator decision that requires a
+measured migration plan, an external deadline, monitoring, and rollback review.
+
+API shutdown follows an ordered drain contract. On `SIGTERM`/`SIGINT`, the
+instance first makes `/v1/health/ready` return `503 APPLICATION_DRAINING`, waits
+`API_DEREGISTRATION_DELAY_MS=10000` for the load balancer to remove it, and then
+closes Fastify while accepted requests finish. `API_SHUTDOWN_TIMEOUT_MS=130000`
+covers deregistration plus Nginx's 120-second request deadline; the API service
+uses a 140-second Compose grace period as the outer limit. Preserve the ordering
+`proxy request deadline <= shutdown minus deregistration < stop grace` whenever
+one value changes.
 
 The corrected 0.1.3 implementation report is in `artifacts/corrected-remediation-final-report-2026-08-04.md`; the final hosted release and rollback record is in `artifacts/release-v0.1.3-production-evidence-2026-08-04.md`. Historical 0.1.2 evidence is in `artifacts/production-hardening-0.1.2-implementation-report-2026-08-01.md`; current controls and local evidence are documented in this file and the retained topology/fault reports. The earlier remediation report is in `artifacts/final-remediation-implementation-report-2026-08-01.md`. Historical release and OCR evidence remains in `artifacts/production-readiness-implementation-report-2026-07-30.md`, `artifacts/release/release-v0.1.0.md`, `artifacts/release/release-0a2103a.md`, and `artifacts/benchmarks/ocr-arabic-corpus/latest-report.json`.
 

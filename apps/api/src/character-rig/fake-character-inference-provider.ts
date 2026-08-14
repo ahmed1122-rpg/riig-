@@ -32,13 +32,22 @@ export class FakeCharacterInferenceProvider implements CharacterInferenceProvide
   }
 
   async generate(
-    _input: CharacterGenerationInput,
+    input: CharacterGenerationInput,
   ): Promise<CharacterGenerationResult> {
     return {
       artifact: {
         kind: "bytes",
         contentType: "image/png",
         body: Buffer.from(transparentPng),
+      },
+      geometry: {
+        canvas: structuredClone(input.attempt.controls.canvas),
+        bounds: {
+          x: 0,
+          y: 0,
+          width: input.attempt.controls.canvas.width,
+          height: input.attempt.controls.canvas.height,
+        },
       },
       qualityReport: {
         thresholdsSchemaVersion: 1,

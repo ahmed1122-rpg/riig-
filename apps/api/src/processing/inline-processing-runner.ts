@@ -32,6 +32,7 @@ import {
   writeRasterAssets,
   type RasterAssetWriteObservation,
 } from "./raster-asset-writer.js";
+import type { DerivedAssetRegistry } from "../storage/derived-asset-registry.js";
 
 export class InlineProcessingRunner {
   constructor(
@@ -50,6 +51,7 @@ export class InlineProcessingRunner {
       observation: RasterAssetWriteObservation,
     ) => void,
     private readonly onAssetWriteObservationError?: (error: unknown) => void,
+    private readonly derivedAssets?: DerivedAssetRegistry,
   ) {}
 
   async run(job: ProcessingJob): Promise<ProcessingJob> {
@@ -141,11 +143,22 @@ export class InlineProcessingRunner {
           sourceVersionId: job.sourceVersionId,
           source: source.body,
         });
+        const derivedAssets = this.derivedAssets;
         storedRasterAssetKeys = await writeRasterAssets(
           this.storage,
           prepared.rasterAssets,
           {
             concurrency: this.rasterAssetWriteConcurrency,
+            ...(derivedAssets
+              ? {
+                  beforeStore: (objectKey: string) =>
+                    derivedAssets.register(
+                      job.projectId,
+                      objectKey,
+                      "processing",
+                    ),
+                }
+              : {}),
             ...(this.onAssetCleanupError
               ? { onCleanupError: this.onAssetCleanupError }
               : {}),

@@ -7,6 +7,7 @@ import {
 import { DataState } from "../../shared/DataState";
 import { formatDateTime } from "../../shared/formatters";
 import { Icon } from "../../shared/Icon";
+import { useResourcePolling } from "../../shared/hooks/useResourcePolling";
 import { getActivityFailureMessage } from "../../shared/workflowFailurePresentation";
 import {
   activityActionLabels,
@@ -31,11 +32,6 @@ interface CreatorActivityCenterProps {
   onNavigateExports: () => void;
 }
 
-type IncrementalRequest = {
-  controller: AbortController;
-  mode: "append" | "refresh";
-};
-
 export function CreatorActivityCenter({
   authenticated,
   onRequireAuth,
@@ -51,11 +47,11 @@ export function CreatorActivityCenter({
   const [refreshWarning, setRefreshWarning] = useState<string>();
   const [loadingMore, setLoadingMore] = useState(false);
   const [retryVersion, setRetryVersion] = useState(0);
-  const incrementalRequestRef = useRef<IncrementalRequest | null>(null);
+  const incrementalRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!authenticated) {
-      incrementalRequestRef.current?.controller.abort();
+      incrementalRequestRef.current?.abort();
       setFeed(null);
       setViewState("unauthenticated");
       setInitialError(undefined);
@@ -64,42 +60,23 @@ export function CreatorActivityCenter({
       setLoadingMore(false);
       return;
     }
-
-    const controller = new AbortController();
     setViewState("loading");
     setInitialError(undefined);
     setIncrementalError(undefined);
-    void listWorkflowActivity({ signal: controller.signal })
-      .then((nextFeed) => {
-        if (controller.signal.aborted) return;
-        setFeed(nextFeed);
-        setViewState(nextFeed.items.length > 0 ? "ready" : "empty");
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setInitialError(
-          error instanceof Error ? error.message : "تعذر تحميل نشاط الإنتاج.",
-        );
-        setViewState("error");
-      });
-    return () => controller.abort();
+    setRefreshWarning(undefined);
   }, [authenticated, retryVersion]);
 
   const requestIncrementalPage = useCallback(
-    async (mode: "append" | "refresh", cursor?: string) => {
+    async (cursor: string) => {
       if (incrementalRequestRef.current) return;
       const controller = new AbortController();
-      incrementalRequestRef.current = { controller, mode };
-      if (mode === "append") {
-        setLoadingMore(true);
-        setIncrementalError(undefined);
-      } else {
-        setRefreshWarning(undefined);
-      }
+      incrementalRequestRef.current = controller;
+      setLoadingMore(true);
+      setIncrementalError(undefined);
 
       try {
         const nextFeed = await listWorkflowActivity({
-          ...(cursor ? { cursor } : {}),
+          cursor,
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
@@ -108,12 +85,7 @@ export function CreatorActivityCenter({
           return {
             items: mergeActivityItems(current.items, nextFeed.items),
             summary: nextFeed.summary,
-            // Activity cursors are stable updatedAt/id boundaries. A first-page
-            // refresh must not move an already loaded append frontier backwards.
-            nextCursor:
-              mode === "append"
-                ? nextFeed.nextCursor
-                : current.nextCursor,
+            nextCursor: nextFeed.nextCursor,
             generatedAt: nextFeed.generatedAt,
           };
         });
@@ -124,20 +96,12 @@ export function CreatorActivityCenter({
         if (controller.signal.aborted) return;
         const message =
           error instanceof Error ? error.message : "تعذر تحديث النشاط.";
-        if (mode === "append") {
-          setIncrementalError(message);
-        } else {
-          setRefreshWarning(
-            "تعذر تحديث النشاط الآن؛ البيانات المعروضة هي آخر نسخة متاحة.",
-          );
-        }
+        setIncrementalError(message);
       } finally {
-        if (incrementalRequestRef.current?.controller === controller) {
+        if (incrementalRequestRef.current === controller) {
           incrementalRequestRef.current = null;
         }
-        if (!controller.signal.aborted && mode === "append") {
-          setLoadingMore(false);
-        }
+        if (!controller.signal.aborted) setLoadingMore(false);
       }
     },
     [],
@@ -151,52 +115,43 @@ export function CreatorActivityCenter({
     [feed?.items],
   );
 
-  useEffect(() => {
-    if (!authenticated || !containsActiveWork) return;
-    let timer: number | undefined;
-    let stopped = false;
-
-    const clearTimer = () => {
-      if (timer !== undefined) window.clearTimeout(timer);
-      timer = undefined;
-    };
-    const schedule = () => {
-      if (
-        stopped ||
-        timer !== undefined ||
-        document.visibilityState !== "visible"
-      ) {
+  useResourcePolling({
+    enabled: authenticated && (feed === null || containsActiveWork),
+    resourceKey: "workflow-activity:first-page",
+    revision: retryVersion,
+    intervalMs: ACTIVITY_POLL_INTERVAL_MS,
+    maximumRetryIntervalMs: 30_000,
+    load: (signal) => listWorkflowActivity({ signal }),
+    shouldPoll: (nextFeed) => nextFeed.items.some(isActiveActivity),
+    onSuccess: (nextFeed) => {
+      const items = feed
+        ? mergeActivityItems(feed.items, nextFeed.items)
+        : nextFeed.items;
+      setFeed({
+        ...nextFeed,
+        items,
+        nextCursor: feed?.nextCursor ?? nextFeed.nextCursor,
+      });
+      setViewState(items.length > 0 ? "ready" : "empty");
+      setInitialError(undefined);
+      setRefreshWarning(undefined);
+    },
+    onError: (error) => {
+      if (feed) {
+        setRefreshWarning(
+          "تعذر تحديث النشاط الآن؛ البيانات المعروضة هي آخر نسخة متاحة.",
+        );
         return;
       }
-      timer = window.setTimeout(() => {
-        timer = undefined;
-        if (document.visibilityState !== "visible") return;
-        void requestIncrementalPage("refresh").finally(schedule);
-      }, ACTIVITY_POLL_INTERVAL_MS);
-    };
-    const handleVisibilityChange = () => {
-      clearTimer();
-      if (document.visibilityState !== "visible") {
-        const request = incrementalRequestRef.current;
-        if (request?.mode === "refresh") request.controller.abort();
-        return;
-      }
-      schedule();
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    schedule();
-    return () => {
-      stopped = true;
-      clearTimer();
-      const request = incrementalRequestRef.current;
-      if (request?.mode === "refresh") request.controller.abort();
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [authenticated, containsActiveWork, requestIncrementalPage]);
+      setInitialError(
+        error instanceof Error ? error.message : "تعذر تحميل نشاط الإنتاج.",
+      );
+      setViewState("error");
+    },
+  });
 
   useEffect(
-    () => () => incrementalRequestRef.current?.controller.abort(),
+    () => () => incrementalRequestRef.current?.abort(),
     [],
   );
 
@@ -349,7 +304,7 @@ export function CreatorActivityCenter({
             disabled={!feed?.nextCursor || loadingMore}
             onClick={() => {
               if (feed?.nextCursor) {
-                void requestIncrementalPage("append", feed.nextCursor);
+                void requestIncrementalPage(feed.nextCursor);
               }
             }}
           >
@@ -373,7 +328,9 @@ export function CreatorActivityCenter({
             type="button"
             disabled={loadingMore}
             onClick={() =>
-              void requestIncrementalPage("append", feed.nextCursor ?? undefined)
+              feed.nextCursor
+                ? void requestIncrementalPage(feed.nextCursor)
+                : undefined
             }
           >
             <Icon name={loadingMore ? "refresh" : "arrowDown"} size={15} />
@@ -383,6 +340,10 @@ export function CreatorActivityCenter({
       </footer>
     </section>
   );
+}
+
+function isActiveActivity(item: WorkflowActivityItem): boolean {
+  return item.status === "pending" || item.status === "running";
 }
 
 function mergeActivityItems(

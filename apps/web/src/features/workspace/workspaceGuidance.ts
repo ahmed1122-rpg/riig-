@@ -11,7 +11,7 @@ export interface GuidedRefinementContext {
 }
 
 export interface ImageGuideInput {
-  mode: "automatic" | "manual" | "guided";
+  mode: "manual" | "guided";
   strokes: Array<{
     id: string;
     prompt: "keep" | "exclude" | "separate";
@@ -21,7 +21,7 @@ export interface ImageGuideInput {
 }
 
 export interface PdfGuideInput {
-  mode: "automatic" | "manual" | "guided";
+  mode: "manual" | "guided";
   regions: Array<{
     id: string;
     x: number;
@@ -29,7 +29,7 @@ export interface PdfGuideInput {
     width: number;
     height: number;
     label: "heading" | "line" | "topic" | "exclude";
-    order: number;
+    order: number | null;
   }>;
 }
 

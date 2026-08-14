@@ -4,6 +4,8 @@ import { loadConfig } from "./config.js";
 const durableProductionEnvironment = {
   NODE_ENV: "production",
   RELEASE_VERSION: "a".repeat(40),
+  API_DEREGISTRATION_DELAY_MS: "10000",
+  API_SHUTDOWN_TIMEOUT_MS: "130000",
   PERSISTENCE_MODE: "postgres",
   DATABASE_URL:
     "postgresql://motionprep:secret@db:5432/motionprep?sslmode=require",
@@ -22,7 +24,12 @@ const durableProductionEnvironment = {
   PDF_OCR_MODE: "local",
   PAYMENT_MODE: "disabled",
   AUTH_ENCRYPTION_KEY: "bW90aW9ucHJlcC1sb2NhbC1kZXYta2V5LTMyYnl0ZXM=",
+  AUTH_ENCRYPTION_KEYRING:
+    "primary:bW90aW9ucHJlcC1sb2NhbC1kZXYta2V5LTMyYnl0ZXM=",
+  AUTH_ENCRYPTION_ACTIVE_KEY_ID: "primary",
   EMAIL_DELIVERY_MODE: "smtp",
+  EMAIL_VERIFICATION_REQUIRED: "true",
+  EMAIL_VERIFICATION_URL: "https://studio.example.com/auth",
   SMTP_HOST: "smtp.example.com",
   SMTP_USER: "motionprep",
   SMTP_PASSWORD: "smtp-secret",
@@ -44,6 +51,25 @@ describe("production configuration", () => {
     );
   });
 
+  it("keeps production shutdown longer than deregistration and proxy requests", () => {
+    expect(() =>
+      loadConfig({
+        ...durableProductionEnvironment,
+        API_DEREGISTRATION_DELAY_MS: "9999",
+      }),
+    ).toThrow(/readiness deregistration/u);
+    expect(() =>
+      loadConfig({
+        ...durableProductionEnvironment,
+        API_SHUTDOWN_TIMEOUT_MS: "129999",
+      }),
+    ).toThrow(/120s proxy request deadline/u);
+
+    const config = loadConfig(durableProductionEnvironment);
+    expect(config.API_DEREGISTRATION_DELAY_MS).toBe(10_000);
+    expect(config.API_SHUTDOWN_TIMEOUT_MS).toBe(130_000);
+  });
+
   it("rejects volatile storage, insecure cookies, and missing Redis", () => {
     expect(() =>
       loadConfig({
@@ -58,6 +84,8 @@ describe("production configuration", () => {
     const config = loadConfig({
       NODE_ENV: "production",
       RELEASE_VERSION: "a".repeat(40),
+      API_DEREGISTRATION_DELAY_MS: "10000",
+      API_SHUTDOWN_TIMEOUT_MS: "130000",
       PERSISTENCE_MODE: "postgres",
       DATABASE_URL:
         "postgresql://motionprep:secret@db:5432/motionprep?sslmode=require",
@@ -80,7 +108,12 @@ describe("production configuration", () => {
       PAYMENT_MODE: "disabled",
       AUTH_ENCRYPTION_KEY:
         "bW90aW9ucHJlcC1sb2NhbC1kZXYta2V5LTMyYnl0ZXM=",
+      AUTH_ENCRYPTION_KEYRING:
+        "primary:bW90aW9ucHJlcC1sb2NhbC1kZXYta2V5LTMyYnl0ZXM=",
+      AUTH_ENCRYPTION_ACTIVE_KEY_ID: "primary",
       EMAIL_DELIVERY_MODE: "smtp",
+      EMAIL_VERIFICATION_REQUIRED: "true",
+      EMAIL_VERIFICATION_URL: "https://studio.example.com/auth",
       SMTP_HOST: "smtp.example.com",
       SMTP_USER: "motionprep",
       SMTP_PASSWORD: "smtp-secret",
@@ -140,6 +173,12 @@ describe("production configuration", () => {
       loadConfig({
         NODE_ENV: "test",
         MAX_UPLOAD_BYTES: String(30 * 1024 * 1024 + 1),
+      }),
+    ).toThrow();
+    expect(() =>
+      loadConfig({
+        NODE_ENV: "test",
+        MAX_IMAGE_UPLOAD_BYTES: String(30 * 1024 * 1024 + 1),
       }),
     ).toThrow();
   });

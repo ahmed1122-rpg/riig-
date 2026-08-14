@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import { MAX_IMAGE_UPLOAD_BYTES } from "@motionprep/contracts";
 import type { IdempotencyStore } from "../idempotency/idempotency-store.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import type { SourceVersionRepository } from "../sources/source-version-repository.js";
@@ -28,6 +29,7 @@ export function createUploadRuntime(options: {
   idempotency: IdempotencyStore;
   storage: ObjectStorage;
   maxUploadBytes: number;
+  maxImageUploadBytes?: number;
   metrics: UploadReconciliationMetrics;
   logger: FastifyBaseLogger;
   finalization?: UploadFinalizationCommand;
@@ -78,6 +80,7 @@ export function createUploadRuntime(options: {
         "upload.operational_recovery_failed",
       );
     },
+    options.maxImageUploadBytes ?? MAX_IMAGE_UPLOAD_BYTES,
   );
   const reconciler = new UploadReconciler(
     finalization,

@@ -1,5 +1,8 @@
 import type { MutableRefObject } from "react";
-import type { ApplicationCapabilities } from "@motionprep/contracts";
+import type {
+  ApplicationCapabilities,
+  LayerDocumentCommand,
+} from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
 import type { ConfirmationRequest } from "../../shared/useConfirmation";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
@@ -9,7 +12,6 @@ import { LayerDock } from "./LayerDock";
 import {
   PreviewToolbar,
   type PreviewBackground,
-  type PreviewQuality,
 } from "./PreviewToolbar";
 import { SourceUploadStatus, type UploadState } from "./SourceUploadStatus";
 import { WorkspaceToolRail } from "./WorkspaceToolRail";
@@ -29,6 +31,7 @@ import type {
   WorkspaceReviewState,
   WorkspaceSourceState,
 } from "./useWorkspaceStateControllers";
+import type { DocumentChangeSummary } from "./documentChangeSummary";
 
 interface WorkspaceEditorLayoutModel {
   mode: ProjectMode;
@@ -53,14 +56,12 @@ interface WorkspaceEditorLayoutModel {
   onUseTool: (tool: ResolvedWorkspaceTool) => void;
   zoom: number;
   previewBackground: PreviewBackground;
-  previewQuality: PreviewQuality;
   grid: boolean;
   safeBounds: boolean;
   solo: boolean;
   focusMode: boolean;
   onZoomChange: (value: number) => void;
   onPreviewBackgroundChange: (value: PreviewBackground) => void;
-  onPreviewQualityChange: (value: PreviewQuality) => void;
   onGridChange: (value: boolean) => void;
   onSafeBoundsChange: (value: boolean) => void;
   onSoloChange: (value: boolean) => void;
@@ -79,7 +80,8 @@ interface WorkspaceEditorLayoutModel {
   layerLoading: boolean;
   onLayersCollapsedChange: (value: boolean) => void;
   onLayerWidthChange: (value: number) => void;
-  onArrangeReadingOrder: () => void;
+  onLayerCommand: (command: LayerDocumentCommand) => Promise<void>;
+  documentChangeLog: readonly DocumentChangeSummary[];
   guidanceRevision: number;
   imagePreparation: LayerDocumentView["imagePreparation"];
   ocrReview: LayerDocumentView["ocrReview"];
@@ -100,10 +102,6 @@ interface WorkspaceEditorLayoutModel {
   ) => Promise<{ revision: number; warnings: string[] }>;
   onHistoryNavigate: (direction: "undo" | "redo") => Promise<void>;
   onPdfSegmentationChange: (mode: PdfSegmentation) => Promise<void>;
-  onPdfPageChange: (
-    page: number,
-    size: { width: number; height: number } | undefined,
-  ) => void;
   onConfirm: (request: ConfirmationRequest) => Promise<boolean>;
   onToolSelect: (toolId: ReadyWorkspaceToolId) => void;
   onRequireAuth: () => void;
@@ -132,6 +130,11 @@ interface WorkspaceEditorLayoutProps {
     onHistoryNavigate: WorkspaceEditorLayoutModel["onHistoryNavigate"];
     onPdfSegmentationChange: WorkspaceEditorLayoutModel["onPdfSegmentationChange"];
     onConfirm: WorkspaceEditorLayoutModel["onConfirm"];
+    onSelectLayer: (id: string, selectedIds?: string[]) => Promise<void>;
+    onPdfPageChange: (pageNumber: number) => Promise<boolean>;
+    onDraftDirtyChange: (dirty: boolean) => void;
+    onLayerCommand: WorkspaceEditorLayoutModel["onLayerCommand"];
+    documentChangeLog: readonly DocumentChangeSummary[];
   };
 }
 
@@ -167,14 +170,12 @@ export function WorkspaceEditorLayout({
     onUseTool: tools.useTool,
     zoom: editor.zoom,
     previewBackground: editor.previewBackground,
-    previewQuality: editor.previewQuality,
     grid: editor.grid,
     safeBounds: editor.safeBounds,
     solo: editor.solo,
     focusMode: editor.focusMode,
     onZoomChange: editor.setZoom,
     onPreviewBackgroundChange: editor.setPreviewBackground,
-    onPreviewQualityChange: editor.setPreviewQuality,
     onGridChange: editor.setGrid,
     onSafeBoundsChange: editor.setSafeBounds,
     onSoloChange: editor.setSolo,
@@ -185,15 +186,17 @@ export function WorkspaceEditorLayout({
     hiddenLayers: actions.hiddenLayers,
     selectedIds: review.selectedIds,
     activeLayerId: review.activeLayerId,
-    onSelectLayer: review.selectLayer,
-    onLayerSelectionChange: review.changeSelection,
+    onSelectLayer: (id) => void actions.onSelectLayer(id),
+    onLayerSelectionChange: (ids, activeId) =>
+      void actions.onSelectLayer(activeId, ids),
     onLayersChange: review.setLayers,
     layersCollapsed: editor.layersCollapsed,
     layerWidth: editor.layerWidth,
     layerLoading: editor.layerLoading,
     onLayersCollapsedChange: editor.setLayersCollapsed,
     onLayerWidthChange: editor.setLayerWidth,
-    onArrangeReadingOrder: tools.arrangeReadingOrder,
+    onLayerCommand: actions.onLayerCommand,
+    documentChangeLog: actions.documentChangeLog,
     guidanceRevision: source.guidanceRevision,
     imagePreparation: source.imagePreparation,
     ocrReview: source.ocrReview,
@@ -210,10 +213,6 @@ export function WorkspaceEditorLayout({
     onApplyPdfGuide: actions.onApplyPdfGuide,
     onHistoryNavigate: actions.onHistoryNavigate,
     onPdfSegmentationChange: actions.onPdfSegmentationChange,
-    onPdfPageChange: (page, size) => {
-      source.setActivePdfPage(page);
-      source.setPdfPageSize(size);
-    },
     onConfirm: actions.onConfirm,
     onToolSelect: tools.selectEditorTool,
     onRequireAuth: context.onRequireAuth,
@@ -232,15 +231,12 @@ export function WorkspaceEditorLayout({
     `preview-bg--${props.previewBackground}`,
     props.grid ? "preview-grid-on" : "preview-grid-off",
     props.safeBounds ? "preview-safe" : "",
-    props.previewQuality === "full"
-      ? "preview-quality-full"
-      : "preview-quality-fast",
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
-    <main className="pro-workspace-body">
+    <div className="pro-workspace-body">
       <WorkspaceToolRail
         mode={props.mode}
         tools={props.tools}
@@ -316,14 +312,12 @@ export function WorkspaceEditorLayout({
         <PreviewToolbar
           zoom={props.zoom}
           background={props.previewBackground}
-          quality={props.previewQuality}
           grid={props.grid}
           safeBounds={props.safeBounds}
           solo={props.solo}
           focusMode={props.focusMode}
           onZoomChange={props.onZoomChange}
           onBackgroundChange={props.onPreviewBackgroundChange}
-          onQualityChange={props.onPreviewQualityChange}
           onGridChange={props.onGridChange}
           onSafeBoundsChange={props.onSafeBoundsChange}
           onSoloChange={props.onSoloChange}
@@ -339,6 +333,7 @@ export function WorkspaceEditorLayout({
             />
           ) : props.mode === "image" ? (
             <ImageGuidanceEditor
+              key={`image-source-${props.sourceVersion}`}
               layers={props.imageLayers}
               hiddenLayers={props.hiddenLayers}
               selectedLayerId={props.activeLayerId}
@@ -347,6 +342,7 @@ export function WorkspaceEditorLayout({
               guidanceRevision={props.guidanceRevision}
               onApply={props.onApplyImageGuide}
               onHistoryNavigate={props.onHistoryNavigate}
+              onDraftDirtyChange={actions.onDraftDirtyChange}
               {...(props.imagePreparation
                 ? { preparation: props.imagePreparation }
                 : {})}
@@ -363,28 +359,17 @@ export function WorkspaceEditorLayout({
             />
           ) : (
             <PdfGuidanceEditor
-              key={`pdf-page-${props.activePdfPage}`}
+              key={`pdf-source-${props.sourceVersion}-page-${props.activePdfPage}`}
               segmentation={props.pdfMode}
               layers={props.bookLayers}
               pageNumber={props.activePdfPage}
               pageCount={props.pdfPageCount}
+              selectedLayerId={props.activeLayerId}
+              solo={props.solo}
+              onSelectedLayerChange={props.onSelectLayer}
               {...(props.pdfPageSize ? { pageSize: props.pdfPageSize } : {})}
               onPageChange={(nextPage) => {
-                const page =
-                  props.pdfPages.find(
-                    (candidate) => candidate.pageNumber === nextPage,
-                  ) ?? props.pdfPages[0];
-                props.onPdfPageChange(
-                  page?.pageNumber ?? nextPage,
-                  page
-                    ? { width: page.width, height: page.height }
-                    : undefined,
-                );
-                const nextLayer = props.bookLayers.find(
-                  (layer) =>
-                    layer.pageNumber === nextPage && layer.kind !== "page",
-                );
-                if (nextLayer) props.onSelectLayer(nextLayer.id);
+                void actions.onPdfPageChange(nextPage);
               }}
               onSegmentationChange={props.onPdfSegmentationChange}
               segmentationBusy={props.processing}
@@ -400,6 +385,7 @@ export function WorkspaceEditorLayout({
                   tone: "danger",
                 })
               }
+              onDraftDirtyChange={actions.onDraftDirtyChange}
               onToolSelect={props.onToolSelect}
               {...(props.editorCommand
                 ? { toolCommand: props.editorCommand }
@@ -418,17 +404,21 @@ export function WorkspaceEditorLayout({
           collapsed={props.layersCollapsed}
           width={props.layerWidth}
           loading={props.layerLoading}
+          activePdfPage={props.activePdfPage}
+          pdfPages={props.pdfPages}
           canReorder
           onCollapsedChange={props.onLayersCollapsedChange}
           onWidthChange={props.onLayerWidthChange}
           onSelectionChange={props.onLayerSelectionChange}
+          onPdfPageChange={actions.onPdfPageChange}
           onLayersChange={props.onLayersChange}
-          onArrangeReadingOrder={props.onArrangeReadingOrder}
+          onLayerCommand={props.onLayerCommand}
+          documentChangeLog={props.documentChangeLog}
           onNotify={props.onNotify}
         />
       ) : (
         <EmptyLayerDock />
       )}
-    </main>
+    </div>
   );
 }

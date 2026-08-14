@@ -2,6 +2,32 @@ import { describe, expect, it } from "vitest";
 import { InMemoryProjectRepository } from "./project-repository.js";
 
 describe("project job status fencing", () => {
+  it("deletes only an empty draft owned by the requesting user", async () => {
+    const projects = new InMemoryProjectRepository();
+    const ownerId = crypto.randomUUID();
+    const project = await projects.create(ownerId, {
+      name: "مسودة فارغة",
+      kind: "image",
+    });
+
+    await expect(
+      projects.deleteEmptyDraft(crypto.randomUUID(), project.id),
+    ).resolves.toBe(false);
+    await expect(
+      projects.deleteEmptyDraft(ownerId, project.id),
+    ).resolves.toBe(true);
+    await expect(projects.findById(project.id)).resolves.toBeNull();
+
+    const started = await projects.create(ownerId, {
+      name: "بدأ الرفع",
+      kind: "image",
+    });
+    await projects.updateStatus(started.id, "uploading");
+    await expect(
+      projects.deleteEmptyDraft(ownerId, started.id),
+    ).resolves.toBe(false);
+  });
+
   it("accepts only the active job for the current source", async () => {
     const projects = new InMemoryProjectRepository();
     const ownerId = crypto.randomUUID();
@@ -107,5 +133,65 @@ describe("project job status fencing", () => {
 
     expect(competing).toBeNull();
     expect(completed?.status).toBe("needs_review");
+  });
+
+  it("does not let a late upload status transition clear an active job fence", async () => {
+    const projects = new InMemoryProjectRepository();
+    const sourceVersionId = crypto.randomUUID();
+    const jobId = crypto.randomUUID();
+    const project = await projects.create(crypto.randomUUID(), {
+      name: "سباق رفع ومعالجة",
+      kind: "book",
+    });
+    await projects.updateCurrentSourceVersion(project.id, sourceVersionId, 1);
+    await projects.updateStatusForSource(
+      project.id,
+      sourceVersionId,
+      "processing",
+      { type: "processing", id: jobId },
+    );
+
+    await expect(
+      projects.updateStatus(project.id, "uploading"),
+    ).resolves.toBeNull();
+    await expect(projects.findById(project.id)).resolves.toMatchObject({
+      status: "processing",
+    });
+    await expect(projects.hasActiveJob(project.id)).resolves.toBe(true);
+  });
+
+  it("keeps the active source and fence when an idle-only restore races a job", async () => {
+    for (let iteration = 0; iteration < 50; iteration += 1) {
+      const projects = new InMemoryProjectRepository();
+      const ownerId = crypto.randomUUID();
+      const firstSource = crypto.randomUUID();
+      const secondSource = crypto.randomUUID();
+      const jobId = crypto.randomUUID();
+      const project = await projects.create(ownerId, {
+        name: `restore-race-${iteration}`,
+        kind: "image",
+      });
+      await projects.updateCurrentSourceVersion(project.id, firstSource, 1);
+      await projects.updateStatusForSource(
+        project.id,
+        firstSource,
+        "processing",
+        { type: "processing", id: jobId },
+      );
+
+      await expect(
+        projects.updateCurrentSourceVersion(
+          project.id,
+          secondSource,
+          2,
+          true,
+        ),
+      ).resolves.toBeNull();
+      await expect(projects.findById(project.id)).resolves.toMatchObject({
+        currentSourceVersionId: firstSource,
+        status: "processing",
+      });
+      await expect(projects.hasActiveJob(project.id)).resolves.toBe(true);
+    }
   });
 });

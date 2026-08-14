@@ -25,14 +25,19 @@ export class AppErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
+    let adapterReported = false;
     try {
-      this.props.onError?.({
-        error,
-        componentStack: info.componentStack ?? "",
-      });
+      if (this.props.onError) {
+        this.props.onError({
+          error,
+          componentStack: info.componentStack ?? "",
+        });
+        adapterReported = true;
+      }
     } catch {
       // A reporting adapter cannot be allowed to replace the fallback.
     }
+    if (adapterReported) return;
     const reportError = globalThis.reportError;
     if (typeof reportError !== "function") return;
     try {

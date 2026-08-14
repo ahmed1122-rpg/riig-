@@ -6,11 +6,16 @@ import type {
 } from "@motionprep/contracts";
 import {
   createPdfBackgroundLayerName,
+  createPdfPageGroupName,
   createPdfTextLayerName,
 } from "@motionprep/presets";
+import { normalizeDocumentLayerNames } from "@motionprep/layer-domain";
 import type { PDFPageProxy } from "pdfjs-dist";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { DocumentProcessingError } from "./document-processing-error.js";
+import {
+  DocumentProcessingError,
+  type DocumentProcessingDiagnostic,
+} from "./document-processing-error.js";
 import { OCR_REVIEW_POLICY_VERSION } from "./ocr-review.js";
 import type { PdfOcrEngine } from "./pdf-ocr.js";
 import {
@@ -21,6 +26,8 @@ import {
   segmentPositionedText,
   type PositionedText,
 } from "./pdf-layout.js";
+import { deterministicPdfJsOptions } from "./pdfjs-options.js";
+import { assertPdfPageGeometry } from "./pdf-geometry.js";
 
 const MAX_PDF_PAGES = 250;
 const MAX_TEXT_ITEMS = 100_000;
@@ -39,10 +46,7 @@ export async function preparePdfSource(
 ): Promise<LayerDocument> {
   const loadingTask = getDocument({
     data: new Uint8Array(input.source),
-    disableFontFace: true,
-    useSystemFonts: false,
-    useWorkerFetch: false,
-    useWasm: false,
+    ...deterministicPdfJsOptions,
     stopAtErrors: true,
     maxImageSize: 100_000_000,
     verbosity: 0,
@@ -70,7 +74,7 @@ export async function preparePdfSource(
     const layers: LayerNode[] = [];
     const pages: NonNullable<LayerDocument["pages"]> = [];
     const pagesRequiringOcr: number[] = [];
-    const pagesWithOcrFailure: number[] = [];
+    const ocrFailures: DocumentProcessingDiagnostic[] = [];
     const ocrReviewPages: OcrPageReview[] = [];
     let totalTextItems = 0;
     let maxWidth = 0;
@@ -82,10 +86,15 @@ export async function preparePdfSource(
         const viewport = page.getViewport({ scale: 1 });
         const width = round(viewport.width);
         const height = round(viewport.height);
+        assertPdfPageGeometry(width, height, pageNumber);
         maxWidth = Math.max(maxWidth, width);
         maxHeight = Math.max(maxHeight, height);
         pages.push({ pageNumber, width, height });
-        layers.push(createBackgroundLayer(pageNumber, width, height));
+        const pageGroup = createPageGroupLayer(pageNumber, width, height);
+        layers.push(
+          pageGroup,
+          createBackgroundLayer(pageNumber, width, height, pageGroup.id),
+        );
 
         const pageText = await extractPageText(
           page,
@@ -100,7 +109,7 @@ export async function preparePdfSource(
           continue;
         }
         if (pageText.status === "ocr-failed") {
-          pagesWithOcrFailure.push(pageNumber);
+          ocrFailures.push(pageText.diagnostic);
           continue;
         }
         if (pageText.review) ocrReviewPages.push(pageText.review);
@@ -124,6 +133,7 @@ export async function preparePdfSource(
               pageNumber,
               readingOrder,
               input.separationMode,
+              pageGroup.id,
             ),
           );
         });
@@ -132,8 +142,8 @@ export async function preparePdfSource(
       }
     }
 
-    assertOcrCompleted(pagesRequiringOcr, pagesWithOcrFailure);
-    return {
+    assertOcrCompleted(pagesRequiringOcr, ocrFailures);
+    const document: LayerDocument = {
       schemaVersion: "1.0",
       projectId: input.projectId,
       sourceVersionId: input.sourceVersionId,
@@ -154,6 +164,7 @@ export async function preparePdfSource(
           }
         : {}),
     };
+    return normalizeDocumentLayerNames(document).document;
   } finally {
     await loadingTask.destroy();
   }
@@ -161,7 +172,10 @@ export async function preparePdfSource(
 
 type PageTextResult =
   | { status: "ocr-required" }
-  | { status: "ocr-failed" }
+  | {
+      status: "ocr-failed";
+      diagnostic: DocumentProcessingDiagnostic;
+    }
   | {
       status: "ready";
       positioned: PositionedText[];
@@ -189,36 +203,53 @@ async function extractPageText(
   }
   if (!ocrEngine) return { status: "ocr-required" };
 
+  let rendered: Awaited<ReturnType<typeof renderPageForOcr>>;
   try {
-    const rendered = await renderPageForOcr(page, width, height);
-    const recognized = await ocrEngine.recognizePage({
+    rendered = await renderPageForOcr(page, pageNumber, width, height);
+  } catch {
+    return {
+      status: "ocr-failed",
+      diagnostic: { pageNumber, stage: "render", code: "render-failed" },
+    };
+  }
+  let recognized: Awaited<ReturnType<PdfOcrEngine["recognizePage"]>>;
+  try {
+    recognized = await ocrEngine.recognizePage({
       pageNumber,
       image: rendered.image,
       width,
       height,
       renderScale: rendered.scale,
     });
-    if (recognized.length === 0) return { status: "ocr-failed" };
-    const review = ocrEngine.getPageReview?.(pageNumber);
-    return {
-      status: "ready",
-      positioned: recognized.map((item, sourceOrder) => ({
-        text: item.text,
-        bounds: item.bounds,
-        ...(item.fontFamily ? { fontFamily: item.fontFamily } : {}),
-        fontSize: Math.max(1, item.bounds.height),
-        direction: item.direction,
-        sourceOrder,
-        confidence: item.confidence,
-      })),
-      ...(review ? { review } : {}),
-    };
   } catch {
-    return { status: "ocr-failed" };
+    return {
+      status: "ocr-failed",
+      diagnostic: { pageNumber, stage: "recognize", code: "engine-failed" },
+    };
   }
+  if (recognized.length === 0) {
+    return {
+      status: "ocr-failed",
+      diagnostic: { pageNumber, stage: "recognize", code: "empty-result" },
+    };
+  }
+  const review = ocrEngine.getPageReview?.(pageNumber);
+  return {
+    status: "ready",
+    positioned: recognized.map((item, sourceOrder) => ({
+      text: item.text,
+      bounds: item.bounds,
+      ...(item.fontFamily ? { fontFamily: item.fontFamily } : {}),
+      fontSize: Math.max(1, item.bounds.height),
+      direction: item.direction,
+      sourceOrder,
+      confidence: item.confidence,
+    })),
+    ...(review ? { review } : {}),
+  };
 }
 
-function createBackgroundLayer(
+function createPageGroupLayer(
   pageNumber: number,
   width: number,
   height: number,
@@ -226,6 +257,28 @@ function createBackgroundLayer(
   return {
     id: crypto.randomUUID(),
     parentId: null,
+    kind: "group",
+    name: createPdfPageGroupName(pageNumber),
+    visible: true,
+    locked: true,
+    opacity: 1,
+    fixed: true,
+    zIndex: 0,
+    confidence: 1,
+    pageNumber,
+    bounds: { x: 0, y: 0, width, height },
+  };
+}
+
+function createBackgroundLayer(
+  pageNumber: number,
+  width: number,
+  height: number,
+  parentId: string,
+): LayerNode {
+  return {
+    id: crypto.randomUUID(),
+    parentId,
     kind: "raster",
     name: createPdfBackgroundLayerName(pageNumber),
     visible: true,
@@ -245,10 +298,11 @@ function createTextLayer(
   pageNumber: number,
   readingOrder: number,
   separationMode: PdfSeparationMode,
+  parentId: string,
 ): LayerNode {
   return {
     id: crypto.randomUUID(),
-    parentId: null,
+    parentId,
     kind: "text",
     name: createPdfTextLayerName(segment.text, separationMode),
     visible: true,
@@ -269,7 +323,7 @@ function createTextLayer(
 
 function assertOcrCompleted(
   pagesRequiringOcr: number[],
-  pagesWithOcrFailure: number[],
+  ocrFailures: DocumentProcessingDiagnostic[],
 ): void {
   if (pagesRequiringOcr.length > 0) {
     throw new DocumentProcessingError(
@@ -278,11 +332,12 @@ function assertOcrCompleted(
       pagesRequiringOcr,
     );
   }
-  if (pagesWithOcrFailure.length > 0) {
+  if (ocrFailures.length > 0) {
     throw new DocumentProcessingError(
       "OCR_FAILED",
       "تعذر إكمال القراءة الضوئية لبعض الصفحات المصوّرة. أعد المحاولة أو استخدم أداة التحديد اليدوي.",
-      pagesWithOcrFailure,
+      [...new Set(ocrFailures.map((failure) => failure.pageNumber))],
+      ocrFailures,
     );
   }
 }

@@ -20,6 +20,7 @@ export interface RasterAssetWriteOptions {
   onCleanupError?: (error: unknown, objectKey: string) => void;
   onObservation?: (observation: RasterAssetWriteObservation) => void;
   onObservationError?: (error: unknown) => void;
+  beforeStore?: (objectKey: string) => Promise<void>;
 }
 
 export async function writeRasterAssets(
@@ -38,6 +39,7 @@ export async function writeRasterAssets(
       const batch = assets.slice(index, index + concurrency);
       const results = await Promise.allSettled(
         batch.map(async (asset) => {
+          await options.beforeStore?.(asset.objectKey);
           await storage.put({
             key: asset.objectKey,
             body: asset.body,

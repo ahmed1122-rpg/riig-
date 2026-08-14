@@ -59,8 +59,11 @@
       "fieldConfig": { "defaults": { "min": 0, "max": 1 }, "overrides": [] },
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
       "id": 6,
-      "targets": [{ "expr": "motionprep_dependencies_ready", "refId": "A" }],
-      "title": "Dependency readiness",
+      "targets": [
+        { "expr": "motionprep_dependencies_ready", "legendFormat": "dependencies", "refId": "A" },
+        { "expr": "motionprep_operational_snapshot_success", "legendFormat": "operational metrics", "refId": "B" }
+      ],
+      "title": "Dependency and operational readiness",
       "type": "stat"
     },
     {

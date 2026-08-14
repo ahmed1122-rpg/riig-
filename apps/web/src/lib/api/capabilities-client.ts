@@ -4,12 +4,23 @@ import { request } from "./transport";
 export type { ApplicationCapabilities } from "@motionprep/contracts";
 
 export const unavailableApplicationCapabilities: ApplicationCapabilities = {
-  schemaVersion: "1.0",
+  schemaVersion: "1.1",
   limits: {
     maxUploadBytes: 0,
+    maxImageUploadBytes: 0,
+    maxPdfUploadBytes: 0,
     maxPdfPages: 0,
     maxPdfTextItems: 0,
     maxImageLayers: 0,
+  },
+  runtime: {
+    storageProfile: "unknown",
+    workers: {
+      media: { status: "degraded", reason: "تعذر التحقق من عامل الصور." },
+      document: { status: "degraded", reason: "تعذر التحقق من عامل المستندات." },
+      export: { status: "degraded", reason: "تعذر التحقق من عامل التصدير." },
+      character: { status: "degraded", reason: "تعذر التحقق من عامل الشخصيات." },
+    },
   },
   features: {
     characterRig: {
@@ -17,6 +28,7 @@ export const unavailableApplicationCapabilities: ApplicationCapabilities = {
       unavailableReason:
         "تعذر التحقق من جاهزية Character Studio؛ أوقفت الميزة لحماية بيانات الشخصية.",
       requiredCanonicalViews: 5,
+      supportedProjectKinds: ["image"],
     },
     pdfRegionOcr: {
       enabled: false,

@@ -1,0 +1,26 @@
+{
+  "name": "@motionprep/layer-domain",
+  "version": "0.1.8",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": {
+      "production": "./dist/index.js",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@motionprep/contracts": "*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage --coverage.thresholds.statements=90 --coverage.thresholds.branches=80 --coverage.thresholds.functions=90 --coverage.thresholds.lines=90"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}

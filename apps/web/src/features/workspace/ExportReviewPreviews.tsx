@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Layer } from "../../types";
+import { projectPreviewLayers } from "./layerPreviewProjection";
 import { RasterLayerPreview } from "./RasterLayerPreview";
 
 export function ExportCharacterPreview({
@@ -44,7 +45,6 @@ export function ExportCharacterPreview({
           {visible("mouth") && <span className={`character-mouth ${selectedLayerId === "mouth" ? "is-selected" : ""}`} />}
         </div>
       )}
-      {safeBounds && <span className="safe-bound-label">Safe 90%</span>}
     </div>
   );
 }
@@ -67,9 +67,10 @@ export function ExportPdfPreview({
     width: Math.max(1, ...layers.filter((layer) => layer.pageNumber === page).map((layer) => (layer.bounds?.x ?? 0) + (layer.bounds?.width ?? 0))),
     height: Math.max(1, ...layers.filter((layer) => layer.pageNumber === page).map((layer) => (layer.bounds?.y ?? 0) + (layer.bounds?.height ?? 0))),
   };
-  const contentLayers = layers.filter(
-    (layer) => layer.pageNumber === page && layer.kind !== "page" && layer.visible && layer.bounds,
-  );
+  const contentLayers = projectPreviewLayers(layers, {
+    pageNumber: page,
+    kinds: ["text"],
+  }).filter((layer) => layer.bounds);
   return (
     <article
       className={`export-pdf-page ${safeBounds ? "show-safe-bounds" : ""}`}
@@ -90,6 +91,7 @@ export function ExportPdfPreview({
               height: `${(bounds.height / pageSize.height) * 100}%`,
               opacity: layer.opacity / 100,
               fontFamily: layer.fontFamily,
+              textAlign: layer.textAlign ?? "start",
               fontSize: `${Math.max(6, Math.min(18, ((layer.fontSize ?? bounds.height) / pageSize.height) * 520))}px`,
             }}
           >
@@ -98,7 +100,6 @@ export function ExportPdfPreview({
         );
       })}
       {contentLayers.length === 0 && <p className="export-pdf-empty">لا توجد طبقات نص ظاهرة في هذه الصفحة.</p>}
-      {safeBounds && <span className="safe-bound-label">Safe 90%</span>}
     </article>
   );
 }

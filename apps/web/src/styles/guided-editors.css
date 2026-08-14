@@ -125,7 +125,7 @@
 
 .guidance-mode-control {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   padding: 3px;
   border: 1px solid rgba(255, 255, 255, .12);
   border-radius: 5px;
@@ -255,6 +255,51 @@
   flex-wrap: wrap;
   gap: 5px;
 }
+
+.guidance-review > small[role="status"] {
+  max-width: 280px;
+  color: #d7b878;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.guidance-coordinate-entry {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.guidance-coordinate-entry label {
+  display: grid;
+  gap: 3px;
+  color: #98a5a1;
+  font-size: 7px;
+}
+
+.guidance-coordinate-entry input {
+  width: 70px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 4px;
+  background: #222a28;
+  color: #e1e8e6;
+}
+
+.guidance-coordinate-entry button {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(110, 217, 208, .4);
+  border-radius: 4px;
+  color: #76ddd4;
+  font-size: 8px;
+}
+
+.guidance-coordinate-entry--region {
+  grid-column: 1 / -1;
+}
 .refine-button,
 .accept-refinement {
   display: flex;
@@ -379,6 +424,11 @@
   line-height: 1.15;
   white-space: pre-wrap;
   text-align: start;
+}
+.pdf-extracted-text.is-selected {
+  outline: 2px solid #078c82;
+  outline-offset: 2px;
+  background: rgba(7, 140, 130, .08);
 }
 .pdf-marker-overlay { z-index: 8; cursor: crosshair; }
 .pdf-marker-overlay rect {
@@ -557,7 +607,8 @@
   .guidance-workflow,
   .brush-size,
   .guidance-tools .quiet-action,
-  .pdf-region-editor { display: none; }
+  .pdf-region-editor,
+  .guidance-coordinate-entry { display: none; }
   .guidance-tools,
   .pdf-marker-tools {
     flex-wrap: nowrap;

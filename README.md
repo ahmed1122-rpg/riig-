@@ -1,5 +1,13 @@
 # MotionPrep Studio
 
+## Durable local development
+
+Use `npm run dev:durable` for QA or work that must survive API restarts. It
+starts PostgreSQL, Redis, MinIO, and Mailpit through Docker Compose, applies
+database migrations, then starts the web app, API, and workers. The ordinary
+`npm run dev` remains the lightweight option and the UI identifies an
+ephemeral runtime explicitly.
+
 اسم المستودع على GitHub: `riig-`.
 
 Production-readiness gates and remaining external evidence are tracked in
@@ -20,7 +28,7 @@ Production-readiness gates and remaining external evidence are tracked in
 
 قواعد الإنتاج الحالية:
 
-- ملف واحد لكل عملية رفع، بحد أقصى 30MB للصور أو PDF.
+- ملف واحد لكل عملية رفع: سقف 30 MiB للصور وملفات PDF.
 - الصور والشخصيات والأشكال والحيوانات: 15 طبقة كحد أقصى.
 - PDF: لا يوجد حد ثابت لعدد الطبقات؛ حواجز الأمان هي 30 MiB للرفع، و250
   صفحة، و100,000 عنصر نصي مستخرج.
@@ -50,6 +58,13 @@ npm install
 npm run dev:stack
 npm run dev
 ```
+
+يشغّل `npm run dev:stack` واجهة الويب وAPI وعمال الصور والوثائق والتصدير فقط.
+عامل Character اختياري ومغلق افتراضيًا؛ بعد إعداد المزود الخاص شغّله في طرفية
+منفصلة عبر `npm run dev:worker-character`. لا تعتبر ميزة Character جاهزة لمجرد
+تشغيل العامل: يجب أيضًا تفعيل `CHARACTER_RIG_ENABLED` واجتياز بواباتها الموثقة.
+`Character Turntable` مخصص لمشاريع الصور فقط ولا يظهر لمشاريع PDF؛ يفرض API
+القيد نفسه على جميع مسارات Character حتى عند استدعائها مباشرة.
 
 تقرأ أوامر API والترحيل والعمال ملف `.env` من جذر المستودع تلقائياً.
 ابدأ الاعتماديات أولاً عبر `docker compose up -d` وانتظر نجاح خدمة
@@ -198,3 +213,5 @@ npm run dev:stack
 `/internal/metrics`؛ لا يمر هذا المسار عبر Nginx العام.
 
 راجع [خريطة البناء الحالية](docs/BUILD_MAP.md) و[قرارات العمارة](docs/adr/0001-modular-monolith-with-workers.md).
+سياسة ربط إصدار التطبيق بوسم Git وSHA وصور OCI موثقة في
+[docs/VERSIONING.md](docs/VERSIONING.md).

@@ -26,6 +26,7 @@ export {
   mergePdfTextLayers,
   navigateLayerDocumentHistory,
   refineImageLayerEdges,
+  runLayerDocumentCommand,
   splitPdfTextLayer,
   updateLayerDocument,
 } from "./layer-document-client";
@@ -35,8 +36,31 @@ export {
   restoreSourceVersion,
 } from "./source-versions-client";
 
-export function listProjects(): Promise<ProjectSummary[]> {
-  return request<ProjectSummary[]>("/v1/projects");
+export function listProjects(signal?: AbortSignal): Promise<ProjectSummary[]> {
+  return request<ProjectSummary[]>("/v1/projects", { signal });
+}
+
+export function getProject(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<ProjectSummary> {
+  return request<ProjectSummary>(
+    `/v1/projects/${encodeURIComponent(projectId)}`,
+    { signal },
+  );
+}
+
+export function deleteEmptyProject(projectId: string): Promise<void> {
+  return request<void>(`/v1/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+  });
+}
+
+export interface UploadLifecycleUpdate {
+  projectId: string;
+  uploadId?: string;
+  sourceVersionId?: string;
+  processingJobId?: string;
 }
 
 export function approveProjectReview(
@@ -78,6 +102,7 @@ export async function createAndUploadSource(
     projectId?: string;
     onUploadProgress?: (progress: number) => void;
     onProcessingProgress?: (progress: number) => void;
+    onLifecycleUpdate?: (update: UploadLifecycleUpdate) => void;
     pdfSeparationMode?:
       | "heading"
       | "topic"
@@ -98,6 +123,7 @@ export async function createAndUploadSource(
           kind: mode,
         }),
       });
+  options.onLifecycleUpdate?.({ projectId: project.id });
   const contentType = sourceContentType(file);
   const intent = await request<{
     uploadId: string;
@@ -114,6 +140,10 @@ export async function createAndUploadSource(
       replaceSourceVersion: Boolean(options.projectId),
     }),
   });
+  options.onLifecycleUpdate?.({
+    projectId: project.id,
+    uploadId: intent.uploadId,
+  });
   try {
     const uploaded = await uploadSourceFile(
       intent.uploadUrl,
@@ -122,6 +152,11 @@ export async function createAndUploadSource(
       signal,
       options.onUploadProgress,
     );
+  options.onLifecycleUpdate?.({
+    projectId: project.id,
+    uploadId: intent.uploadId,
+    sourceVersionId: uploaded.sourceVersionId,
+  });
   const processing = await request<ProcessingProgress>("/v1/processing/jobs", {
     method: "POST",
     signal,
@@ -133,6 +168,12 @@ export async function createAndUploadSource(
         ? { pdfSeparationMode: options.pdfSeparationMode ?? "sentence" }
         : {}),
     }),
+  });
+  options.onLifecycleUpdate?.({
+    projectId: project.id,
+    uploadId: intent.uploadId,
+    sourceVersionId: uploaded.sourceVersionId,
+    processingJobId: processing.id,
   });
   await waitForJob({
     initial: processing,

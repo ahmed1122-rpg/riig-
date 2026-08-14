@@ -9,6 +9,7 @@ import {
   type UploadRow,
 } from "./postgres-upload-record.js";
 import { rollbackTransaction } from "./database.js";
+import { lockUploadProject } from "./postgres-upload-project-lock.js";
 
 interface SourceRow {
   id: string;
@@ -52,7 +53,10 @@ export class PostgresUploadIntegrityFailureCommand
       }
 
       const source = await this.lockSource(client, current.source_version_id);
-      const project = await this.lockProject(client, current.project_id);
+      const project = await lockUploadProject<ProjectStateRow>(
+        client,
+        current.project_id,
+      );
       const failedAt = new Date().toISOString();
       const changed = await client.query(
         `
@@ -197,19 +201,6 @@ export class PostgresUploadIntegrityFailureCommand
     return result.rows[0] ?? null;
   }
 
-  private async lockProject(
-    client: PoolClient,
-    projectId: string,
-  ): Promise<ProjectStateRow> {
-    const result = await client.query<ProjectStateRow>(
-      `SELECT current_source_version_id, status
-       FROM projects WHERE id = $1 FOR UPDATE`,
-      [projectId],
-    );
-    const project = result.rows[0];
-    if (!project) throw new Error("Upload project no longer exists.");
-    return project;
-  }
 }
 
 function matchesIdentity(

@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 export function validateWorkerHealthDatabaseUrl(value, nodeEnvironment) {
@@ -24,6 +25,30 @@ export function validateWorkerHealthDatabaseUrl(value, nodeEnvironment) {
   return violations;
 }
 
+export function validateWorkerHealthIdentity(instanceId, releaseVersion) {
+  const violations = [];
+  if (!instanceId?.trim()) violations.push("Worker instance identity is missing.");
+  if (!/^[0-9a-f]{40}$/u.test(releaseVersion ?? "")) {
+    violations.push("RELEASE_VERSION must be the exact lowercase release Git SHA.");
+  }
+  return violations;
+}
+
+export async function isWorkerInstanceHealthy(pool, input) {
+  const result = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM worker_heartbeats
+       WHERE worker_type = $1
+         AND instance_id = $2
+         AND release_version = $3
+         AND last_seen_at > now() - interval '45 seconds'
+     ) AS healthy`,
+    [input.workerType, input.instanceId, input.releaseVersion],
+  );
+  return result.rows[0]?.healthy === true;
+}
+
 async function main() {
   const workerType = process.argv[2];
   if (!["media", "document", "export", "character"].includes(workerType)) {
@@ -34,6 +59,14 @@ async function main() {
     databaseUrl,
     process.env.NODE_ENV,
   );
+  const instanceFile =
+    process.env.WORKER_HEALTH_INSTANCE_FILE ??
+    "/tmp/motionprep-worker-instance-id";
+  const instanceId = (await readFile(instanceFile, "utf8")).trim();
+  const releaseVersion = process.env.RELEASE_VERSION ?? "";
+  violations.push(
+    ...validateWorkerHealthIdentity(instanceId, releaseVersion),
+  );
   if (violations.length > 0) throw new Error(violations.join(" "));
 
   const pool = new Pool({
@@ -42,16 +75,15 @@ async function main() {
     connectionTimeoutMillis: 3_000,
   });
   try {
-    const result = await pool.query(
-      `SELECT EXISTS (
-         SELECT 1
-         FROM worker_heartbeats
-         WHERE worker_type = $1
-           AND last_seen_at > now() - interval '45 seconds'
-       ) AS healthy`,
-      [workerType],
-    );
-    if (result.rows[0]?.healthy !== true) process.exitCode = 1;
+    if (
+      !(await isWorkerInstanceHealthy(pool, {
+        workerType,
+        instanceId,
+        releaseVersion,
+      }))
+    ) {
+      process.exitCode = 1;
+    }
   } finally {
     await pool.end();
   }

@@ -10,7 +10,7 @@ export interface PdfRegion {
   width: number;
   height: number;
   label: MarkerLabel;
-  order: number;
+  order: number | null;
 }
 
 const markerColors: Record<MarkerLabel, string> = {
@@ -42,12 +42,14 @@ export function PdfMarkerOverlay({
   activeLabel,
   onCreate,
   onSelect,
+  onCanvasClick,
 }: {
   regions: PdfRegion[];
   selectedId: string;
   activeLabel: MarkerLabel;
   onCreate: (region: Omit<PdfRegion, "id" | "order">) => void;
   onSelect: (id: string) => void;
+  onCanvasClick?: (point: Point) => void;
 }) {
   const startRef = useRef<Point | null>(null);
   const currentRef = useRef<Point | null>(null);
@@ -95,6 +97,8 @@ export function PdfMarkerOverlay({
     forceRender((value) => value + 1);
     if (rect.width > 0.025 && rect.height > 0.018) {
       onCreate({ ...rect, label: activeLabel });
+    } else {
+      onCanvasClick?.(normalizedPoint(event));
     }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -111,8 +115,7 @@ export function PdfMarkerOverlay({
       className="pdf-marker-overlay"
       viewBox="0 0 1000 1000"
       preserveAspectRatio="none"
-      role="application"
-      tabIndex={0}
+      role="region"
       aria-label="صفحة PDF قابلة للتحديد. اسحب مستطيلًا فوق عنوان أو سطر أو فقرة."
       aria-describedby="pdf-guidance-instruction"
       onPointerDown={pointerDown}

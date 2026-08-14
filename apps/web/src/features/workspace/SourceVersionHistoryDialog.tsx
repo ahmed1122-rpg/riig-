@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  ApiError,
   listSourceVersionRestores,
   listSourceVersions,
   restoreSourceVersion,
@@ -18,6 +17,7 @@ interface SourceVersionHistoryDialogProps {
     result: SourceVersionRestoreResult,
     version: SourceVersionSummary,
   ) => Promise<void>;
+  onExecuteRestore: (restore: () => Promise<void>) => Promise<void>;
   onNotify: (message: string) => void;
 }
 
@@ -26,6 +26,7 @@ export function SourceVersionHistoryDialog({
   currentSourceVersionId,
   onClose,
   onRestored,
+  onExecuteRestore,
   onNotify,
 }: SourceVersionHistoryDialogProps) {
   const [versions, setVersions] = useState<SourceVersionSummary[]>([]);
@@ -35,6 +36,10 @@ export function SourceVersionHistoryDialog({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
+  const [pendingHydration, setPendingHydration] = useState<{
+    result: SourceVersionRestoreResult;
+    version: SourceVersionSummary;
+  }>();
   const selected = useMemo(
     () => versions.find((version) => version.id === selectedId),
     [selectedId, versions],
@@ -72,25 +77,35 @@ export function SourceVersionHistoryDialog({
   }, [currentSourceVersionId, projectId]);
 
   const restore = async () => {
-    if (!selected || selected.status !== "ready" || reason.trim().length < 3) {
+    if (
+      !pendingHydration &&
+      (!selected || selected.status !== "ready" || reason.trim().length < 3)
+    ) {
       setError("اختر إصدارًا جاهزًا واكتب سببًا واضحًا للاستعادة.");
       return;
     }
     setSubmitting(true);
     setError(undefined);
     try {
-      const result = await restoreSourceVersion(projectId, selected.id, {
-        expectedCurrentSourceVersionId: currentSourceVersionId,
-        reason: reason.trim(),
+      await onExecuteRestore(async () => {
+        const attempt = pendingHydration ?? {
+          result: await restoreSourceVersion(projectId, selected!.id, {
+            expectedCurrentSourceVersionId: currentSourceVersionId,
+            reason: reason.trim(),
+          }),
+          version: selected!,
+        };
+        setPendingHydration(attempt);
+        await onRestored(attempt.result, attempt.version);
+        setPendingHydration(undefined);
+        onNotify(
+          `تمت استعادة المصدر v${attempt.version.versionNumber} وحفظ قرار الاستعادة في السجل.`,
+        );
+        onClose();
       });
-      await onRestored(result, selected);
-      onNotify(
-        `تمت استعادة المصدر v${selected.versionNumber} وحفظ قرار الاستعادة في السجل.`,
-      );
-      onClose();
     } catch (caught) {
       setError(
-        caught instanceof ApiError
+        caught instanceof Error
           ? caught.message
           : "تعذر استعادة إصدار المصدر.",
       );
@@ -104,10 +119,15 @@ export function SourceVersionHistoryDialog({
       title="إصدارات المصدر"
       description="الاستعادة تغيّر مؤشر المصدر الحالي فقط؛ لا تحذف الإصدارات أو التصديرات السابقة."
       className="source-version-dialog"
-      onClose={onClose}
+      onClose={pendingHydration ? () => undefined : onClose}
       footer={
         <>
-          <button type="button" className="button button--ghost" onClick={onClose}>
+          <button
+            type="button"
+            className="button button--ghost"
+            disabled={Boolean(pendingHydration)}
+            onClick={onClose}
+          >
             إلغاء
           </button>
           <button
@@ -115,14 +135,19 @@ export function SourceVersionHistoryDialog({
             className="button button--primary"
             disabled={
               submitting ||
-              !selected ||
-              selected.status !== "ready" ||
-              reason.trim().length < 3
+              (!pendingHydration &&
+                (!selected ||
+                  selected.status !== "ready" ||
+                  reason.trim().length < 3))
             }
             onClick={() => void restore()}
           >
             <Icon name="refresh" size={15} />
-            {submitting ? "جارٍ الاستعادة…" : "استعادة الإصدار المحدد"}
+            {submitting
+              ? "جارٍ الاستعادة…"
+              : pendingHydration
+                ? "إعادة مزامنة الطبقات"
+                : "استعادة الإصدار المحدد"}
           </button>
         </>
       }
@@ -148,7 +173,7 @@ export function SourceVersionHistoryDialog({
                   name="source-version"
                   value={version.id}
                   checked={selectedId === version.id}
-                  disabled={unavailable}
+                  disabled={unavailable || Boolean(pendingHydration)}
                   onChange={() => setSelectedId(version.id)}
                 />
                 <span>
@@ -167,6 +192,7 @@ export function SourceVersionHistoryDialog({
         <span>سبب الاستعادة</span>
         <textarea
           value={reason}
+          disabled={Boolean(pendingHydration)}
           maxLength={500}
           rows={3}
           placeholder="مثال: العودة إلى النسخة التي اعتمدها فريق المراجعة"

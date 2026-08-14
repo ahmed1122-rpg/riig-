@@ -91,6 +91,9 @@ export function App() {
     sessionUser,
     sessionPhase,
     capabilities,
+    capabilitiesPhase,
+    capabilitiesErrorRequestId,
+    refreshCapabilities,
     refreshSessionAfterAuthentication,
     clearSession,
   } = useApplicationLifecycle(setNotice);
@@ -225,6 +228,36 @@ export function App() {
       showDemoStateControls={showDemoStateControls}
       onOpenAuth={openAuth}
     >
+      {capabilitiesPhase === "loading" && (
+        <div className="capabilities-health-banner" role="status">
+          <span>جاري التحقق من قدرات الخادم وحدود الرفع…</span>
+        </div>
+      )}
+      {capabilitiesPhase === "error" && (
+        <div className="capabilities-health-banner" role="alert">
+          <span>
+            تعذر التحقق من حدود الخادم؛ أوقفت الأدوات والرفع مؤقتًا لحماية
+            البيانات.
+          </span>
+          {capabilitiesErrorRequestId && (
+            <code dir="ltr">Request ID: {capabilitiesErrorRequestId}</code>
+          )}
+          <button
+            type="button"
+            onClick={() => void refreshCapabilities()}
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+      {capabilitiesPhase === "ready" &&
+        capabilities.runtime.storageProfile === "ephemeral" && (
+          <div className="capabilities-health-banner" role="status">
+            <span>
+              بيئة تطوير بذاكرة مؤقتة: قد تُفقد الجلسات والمشاريع عند إعادة تشغيل API. استخدم <code dir="ltr">npm run dev:durable</code> للعمل المستمر.
+            </span>
+          </div>
+        )}
       <Suspense fallback={<FeatureLoading />}>
       {view === "dashboard" && (
         <Dashboard
@@ -258,7 +291,7 @@ export function App() {
           authenticated={authenticated}
           onRequireAuth={openAuth}
           onModeChange={(nextMode) => {
-            navigateView(
+            return navigateView(
               "workspace",
               { mode: nextMode, project: null },
               true,

@@ -47,18 +47,32 @@ export async function claimNextProcessingJob(
 
     const result = await client.query<ProcessingRow>(
       `WITH candidate AS (
-         SELECT id
-         FROM processing_jobs
-         WHERE project_kind = $1
-           AND attempt < max_attempts
+         SELECT queued_job.id
+         FROM processing_jobs AS queued_job
+         WHERE queued_job.project_kind = $1
+           AND queued_job.attempt < queued_job.max_attempts
            AND (
-             (status = 'queued' AND next_attempt_at <= now())
+             (
+               queued_job.status = 'queued'
+               AND queued_job.next_attempt_at <= now()
+             )
              OR (
-               status IN ('processing', 'verifying')
-               AND lease_expires_at <= now()
+               queued_job.status IN ('processing', 'verifying')
+               AND queued_job.lease_expires_at <= now()
              )
            )
-         ORDER BY next_attempt_at, created_at
+           AND EXISTS (
+             SELECT 1
+             FROM projects AS project
+             JOIN users AS owner ON owner.id = project.owner_user_id
+             WHERE project.id = queued_job.project_id
+               AND project.current_source_version_id = queued_job.source_version_id
+               AND project.active_job_type = 'processing'
+               AND project.active_job_id = queued_job.id
+               AND owner.deletion_requested_at IS NULL
+               AND owner.deleted_at IS NULL
+           )
+         ORDER BY queued_job.next_attempt_at, queued_job.created_at
          FOR UPDATE SKIP LOCKED
          LIMIT 1
        )
@@ -81,14 +95,19 @@ export async function claimNextProcessingJob(
       [projectKind, workerId, leaseMilliseconds],
     );
     if (result.rows[0]) {
-      await updateProjectStatusForJob(client, {
+      const activated = await updateProjectStatusForJob(client, {
         projectId: result.rows[0].project_id,
         sourceVersionId: result.rows[0].source_version_id,
         jobType: "processing",
         jobId: result.rows[0].id,
         status: "processing",
         finished: false,
+        requireActiveOwner: true,
       });
+      if (!activated) {
+        await client.query("ROLLBACK");
+        return null;
+      }
     }
     await client.query("COMMIT");
     return result.rows[0] ? mapProcessingRow(result.rows[0]) : null;

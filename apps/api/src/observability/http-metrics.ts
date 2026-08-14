@@ -26,6 +26,7 @@ export async function registerHttpMetrics(
     buildInfo?: { version: string; release: string };
     probeTimeoutMs?: number;
     uploadReconciliationMetrics?: { render(): string[] };
+    clientTelemetryMetrics?: { render(): string[] };
   } = {},
 ): Promise<void> {
   const startedAt = new WeakMap<FastifyRequest, bigint>();
@@ -101,6 +102,9 @@ export async function registerHttpMetrics(
     if (options.uploadReconciliationMetrics) {
       lines.push(...options.uploadReconciliationMetrics.render());
     }
+    if (options.clientTelemetryMetrics) {
+      lines.push(...options.clientTelemetryMetrics.render());
+    }
     if (operationalSnapshotProbe) {
       try {
         const snapshotOutcome = await operationalSnapshotProbe;
@@ -169,7 +173,14 @@ export async function registerHttpMetrics(
             `motionprep_job_duration_seconds_count{queue="${escapeLabel(queue.queue)}"} ${queue.duration.count}`,
           );
         }
-        const missingWorkerTypes = new Set(["media", "document", "export"]);
+        const missingWorkerTypes = new Set([
+          "media",
+          "document",
+          "export",
+          ...(snapshot.queues.some((queue) => queue.queue === "character")
+            ? ["character"]
+            : []),
+        ]);
         for (const worker of snapshot.workers) {
           missingWorkerTypes.delete(worker.workerType);
           lines.push(

@@ -1,21 +1,25 @@
 import { Icon } from "../../shared/Icon";
 import {
   MAX_IMAGE_LAYERS,
-  MAX_UPLOAD_BYTES,
+  MAX_IMAGE_UPLOAD_BYTES,
+  MAX_PDF_UPLOAD_BYTES,
 } from "@motionprep/contracts";
 import type { ProjectMode } from "../../types";
 import { uploadLimitLabel } from "./uploadLimit";
 
 export function EmptySourcePreview({
   mode,
-  maxUploadBytes = MAX_UPLOAD_BYTES,
+  maxUploadBytes,
   onChoose,
 }: {
   mode: ProjectMode;
   maxUploadBytes?: number;
   onChoose: () => void;
 }) {
-  const limit = uploadLimitLabel(maxUploadBytes);
+  const limit = uploadLimitLabel(
+    maxUploadBytes ??
+      (mode === "image" ? MAX_IMAGE_UPLOAD_BYTES : MAX_PDF_UPLOAD_BYTES),
+  );
   return (
     <section
       className="pro-empty-source"

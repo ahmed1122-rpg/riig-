@@ -1,5 +1,7 @@
 import type { ImageGuidanceKind, PdfMarkerKind, ProcessingMode } from "./core-contracts.js";
 
+export const MAX_LAYER_TEXT_CHARACTERS = 20_000;
+
 export interface NormalizedPoint {
   x: number;
   y: number;
@@ -80,6 +82,7 @@ export interface LayerNode {
   fontFamily?: string;
   fontSize?: number;
   direction?: "ltr" | "rtl";
+  textAlign?: "start" | "center" | "end" | "justify";
   fillColor?: "#ffffff";
   rasterAsset?: RasterAssetReference;
 }
@@ -94,6 +97,7 @@ export function layerLayoutMetadata(layer: LayerNode) {
       ? {}
       : { readingOrder: layer.readingOrder }),
     ...(layer.direction ? { direction: layer.direction } : {}),
+    ...(layer.textAlign ? { textAlign: layer.textAlign } : {}),
     ...(layer.fontFamily
       ? { fontFamily: layer.fontFamily }
       : {}),
@@ -125,6 +129,7 @@ export interface OcrPageReview {
 export type LayerEditKind =
   | "baseline"
   | "layer-state"
+  | "layer-command"
   | "guided-refinement"
   | "pdf-region-ocr"
   | "pdf-split"
@@ -206,12 +211,48 @@ export interface ProductionIssue {
     | "IMAGE_RASTER_ASSET_DUPLICATE"
     | "IMAGE_RASTER_BOUNDS_INVALID"
     | "INVALID_LAYER_PREFIX"
+    | "INVALID_LAYER_NAME"
+    | "DUPLICATE_LAYER_ID"
+    | "DUPLICATE_LAYER_NAME"
+    | "MISSING_LAYER_PARENT"
+    | "LAYER_PARENT_NOT_GROUP"
+    | "LAYER_PARENT_CYCLE"
+    | "CROSS_PAGE_PARENT"
+    | "EMPTY_LAYER_GROUP"
+    | "PDF_PAGE_GROUP_MISSING"
+    | "PDF_PAGE_GROUP_INVALID"
     | "PDF_BACKGROUND_MISSING"
     | "PDF_BACKGROUND_NOT_FIXED";
   message: string;
   layerId?: string;
   pageNumber?: number;
 }
+
+export type LayerCommandScope =
+  | { kind: "document" }
+  | { kind: "page"; pageNumber: number }
+  | { kind: "parent"; parentId: string | null }
+  | { kind: "layers"; layerIds: string[] };
+
+export type LayerDocumentCommand =
+  | { kind: "normalize-names"; scope: LayerCommandScope }
+  | {
+      kind: "arrange-reading-order";
+      scope: LayerCommandScope;
+      order: "reading" | "reverse";
+    }
+  | {
+      kind: "update-state";
+      scope: LayerCommandScope;
+      visible?: boolean;
+      locked?: boolean;
+    }
+  | {
+      kind: "move-layer";
+      layerId: string;
+      targetLayerId: string;
+      position: "before" | "after";
+    };
 
 export interface LayerStateUpdate {
   id: string;
@@ -221,6 +262,12 @@ export interface LayerStateUpdate {
   opacity: number;
   zIndex: number;
   readingOrder?: number;
+  bounds?: LayerBounds;
+  direction?: "ltr" | "rtl";
+  textAlign?: "start" | "center" | "end" | "justify";
+  fontFamily?: string;
+  fontSize?: number;
+  fullText?: string;
 }
 
 export interface ApiError {

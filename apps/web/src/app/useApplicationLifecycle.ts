@@ -5,6 +5,7 @@ import {
   unavailableApplicationCapabilities,
   type ApplicationCapabilities,
   type SessionUser,
+  ApiError,
 } from "../lib/api";
 import type { SessionPhase } from "../features/marketing/entryState";
 
@@ -17,6 +18,11 @@ export function useApplicationLifecycle(
   const [capabilities, setCapabilities] = useState<ApplicationCapabilities>(
     unavailableApplicationCapabilities,
   );
+  const [capabilitiesPhase, setCapabilitiesPhase] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [capabilitiesErrorRequestId, setCapabilitiesErrorRequestId] =
+    useState<string>();
 
   useEffect(() => {
     let active = true;
@@ -36,19 +42,27 @@ export function useApplicationLifecycle(
     };
   }, [onNotify]);
 
-  useEffect(() => {
-    let active = true;
-    void getApplicationCapabilities()
-      .then((value) => {
-        if (active) setCapabilities(value);
-      })
-      .catch(() => {
-        if (active) setCapabilities(unavailableApplicationCapabilities);
-      });
-    return () => {
-      active = false;
-    };
+  const refreshCapabilities = useCallback(async () => {
+    setCapabilitiesPhase("loading");
+    setCapabilitiesErrorRequestId(undefined);
+    try {
+      const value = await getApplicationCapabilities();
+      setCapabilities(value);
+      setCapabilitiesPhase("ready");
+      return true;
+    } catch (error) {
+      setCapabilities(unavailableApplicationCapabilities);
+      setCapabilitiesErrorRequestId(
+        error instanceof ApiError ? error.requestId : undefined,
+      );
+      setCapabilitiesPhase("error");
+      return false;
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshCapabilities();
+  }, [refreshCapabilities]);
 
   const refreshSessionAfterAuthentication = useCallback(async () => {
     try {
@@ -68,6 +82,9 @@ export function useApplicationLifecycle(
     sessionUser,
     sessionPhase,
     capabilities,
+    capabilitiesPhase,
+    capabilitiesErrorRequestId,
+    refreshCapabilities,
     refreshSessionAfterAuthentication,
     clearSession,
   };

@@ -58,6 +58,49 @@ describe("ExportCharacterPreview", () => {
 });
 
 describe("ExportReview production editing policy", () => {
+  it("fits the real preview geometry and leaves fit mode on manual zoom", () => {
+    const view = render(
+      <ExportReview
+        mode="image"
+        layers={[sourceLayer]}
+        selectedLayerId="source"
+        onSelectedLayerChange={() => undefined}
+        onLayersChange={() => undefined}
+        onClose={() => undefined}
+        onNotify={() => undefined}
+        returnFocusTo={null}
+        canExport
+        sourcePreviewUrl="blob:http://localhost/source"
+        onCreateExport={() => Promise.resolve()}
+      />,
+    );
+    const stage = view.container.querySelector<HTMLElement>(
+      ".export-preview-stage",
+    )!;
+    const board = view.container.querySelector<HTMLElement>(
+      ".export-image-board",
+    )!;
+    Object.defineProperties(stage, {
+      clientWidth: { configurable: true, value: 430 },
+      clientHeight: { configurable: true, value: 330 },
+    });
+    Object.defineProperties(board, {
+      offsetWidth: { configurable: true, value: 500 },
+      offsetHeight: { configurable: true, value: 400 },
+    });
+
+    const fitButton = view.getByRole("button", { name: "ملاءمة" });
+    fireEvent.click(fitButton);
+    expect(view.getByRole("button", { name: "عرض مئة بالمئة" }).textContent)
+      .toBe("75%");
+    expect(fitButton.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(view.getByRole("button", { name: "تكبير" }));
+    expect(view.getByRole("button", { name: "عرض مئة بالمئة" }).textContent)
+      .toBe("85%");
+    expect(fitButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("shows every server-side preflight blocker", async () => {
     const onCreateExport = vi.fn().mockRejectedValue(
       new ApiError(
@@ -169,7 +212,7 @@ describe("ExportReview production editing policy", () => {
         onClose={() => undefined}
         onNotify={() => undefined}
         returnFocusTo={null}
-        canExport
+        canExport={false}
         sourcePreviewUrl="blob:http://localhost/source"
         onCreateExport={() => Promise.resolve()}
       />,
@@ -182,6 +225,16 @@ describe("ExportReview production editing policy", () => {
   });
 
   it("reports the real PDF layer count without a synthetic estimate", () => {
+    const pageGroup: Layer = {
+      ...sourceLayer,
+      id: "page-group-1",
+      name: "+page_001",
+      kind: "group",
+      locked: true,
+      pageNumber: 1,
+      parentId: null,
+      bounds: { x: 0, y: 0, width: 612, height: 792 },
+    };
     const pageLayer: Layer = {
       ...sourceLayer,
       id: "page-1",
@@ -193,8 +246,8 @@ describe("ExportReview production editing policy", () => {
     const markup = renderToStaticMarkup(
       <ExportReview
         mode="book"
-        layers={[pageLayer, { ...sourceLayer, kind: "text", pageNumber: 1 }]}
-        selectedLayerId="source"
+        layers={[pageGroup, pageLayer, { ...sourceLayer, kind: "text", pageNumber: 1 }]}
+        selectedLayerId="page-group-1"
         onSelectedLayerChange={() => undefined}
         onLayersChange={() => undefined}
         onClose={() => undefined}
@@ -207,7 +260,57 @@ describe("ExportReview production editing policy", () => {
     );
 
     expect(markup).toContain("2 طبقات فعلية في 1 صفحة");
+    expect(markup).not.toContain("3 طبقات فعلية");
+    expect(markup).not.toContain("+page_001</strong>");
     expect(markup).not.toContain("4,860");
+  });
+
+  it("never exposes or edits a structural page group", () => {
+    const pageGroup: Layer = {
+      ...sourceLayer,
+      id: "page-group-1",
+      name: "+page_001",
+      kind: "group",
+      locked: true,
+      pageNumber: 1,
+      parentId: null,
+    };
+    const textLayer: Layer = {
+      ...sourceLayer,
+      id: "page-text",
+      name: "+النص",
+      kind: "text",
+      pageNumber: 1,
+      parentId: pageGroup.id,
+    };
+    const onLayersChange = vi.fn();
+    const view = render(
+      <ExportReview
+        mode="book"
+        layers={[pageGroup, textLayer]}
+        selectedLayerId={pageGroup.id}
+        onSelectedLayerChange={() => undefined}
+        onLayersChange={onLayersChange}
+        onClose={() => undefined}
+        onNotify={() => undefined}
+        returnFocusTo={null}
+        canExport
+        onCreateExport={() => Promise.resolve()}
+      />,
+    );
+
+    expect(view.container.querySelector('[value="+page_001"]')).toBeNull();
+    const input = view.container.querySelector<HTMLInputElement>(
+      ".rename-field input",
+    )!;
+    expect(input.value).toBe("+النص");
+    fireEvent.change(input, { target: { value: "+معدل" } });
+    expect(onLayersChange).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    expect(onLayersChange).toHaveBeenCalledWith([
+      pageGroup,
+      expect.objectContaining({ id: "page-text", name: "+معدل" }),
+    ]);
   });
 });
 
@@ -222,6 +325,7 @@ describe("ExportPdfPreview", () => {
       fullContent: "النص المستخرج فعليًا",
       bounds: { x: 61.2, y: 79.2, width: 306, height: 79.2 },
       direction: "rtl",
+      textAlign: "center",
     };
     const markup = renderToStaticMarkup(
       <ExportPdfPreview
@@ -237,7 +341,32 @@ describe("ExportPdfPreview", () => {
     expect(markup).toContain("inset-inline-start:10%");
     expect(markup).toContain("top:10%");
     expect(markup).toContain("width:50%");
+    expect(markup).toContain("text-align:center");
     expect(markup).not.toContain("مدن من الذاكرة");
     expect(markup).not.toContain("MotionPrep · معاينة التصدير");
+  });
+
+  it("does not render structural groups as PDF text boxes", () => {
+    const markup = renderToStaticMarkup(
+      <ExportPdfPreview
+        layers={[
+          {
+            ...sourceLayer,
+            id: "page-group",
+            name: "+page_001",
+            kind: "group",
+            pageNumber: 1,
+            bounds: { x: 0, y: 0, width: 612, height: 792 },
+          },
+        ]}
+        selectedLayerId="page-group"
+        safeBounds={false}
+        page={1}
+        pages={[{ pageNumber: 1, width: 612, height: 792 }]}
+      />,
+    );
+
+    expect(markup).not.toContain("export-pdf-layer");
+    expect(markup).toContain("لا توجد طبقات نص ظاهرة");
   });
 });

@@ -1,8 +1,8 @@
 import type {
   Dispatch,
-  MutableRefObject,
   SetStateAction,
 } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConfirmationRequest } from "../../shared/useConfirmation";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
 import type { LayerDocumentView } from "../../lib/api";
@@ -16,6 +16,11 @@ import type {
   ImageRasterOperation,
   PdfTextOperation,
 } from "./useWorkspaceToolController";
+import type { DocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
+import {
+  summarizeDocumentChange,
+  type RecordDocumentChange,
+} from "./documentChangeSummary";
 
 type SetState<Value> = Dispatch<SetStateAction<Value>>;
 
@@ -28,12 +33,12 @@ interface WorkspaceCommandOptions {
   activePdfPage: number;
   guidanceRevision: number;
   layerDocumentRevision?: number;
+  layers: readonly Layer[];
   pdfTextOperation: PdfTextOperation | undefined;
   imageRasterOperation: ImageRasterOperation | undefined;
   pdfRegionOcrLayer: Layer | undefined;
   pdfRegionOcrPageSize: { width: number; height: number } | undefined;
-  saveInFlightRef: MutableRefObject<boolean>;
-  flushLayerReview: () => Promise<number>;
+  commandCoordinator: DocumentCommandCoordinator;
   replaceLayerAssetUrls: (urls: string[]) => void;
   applyPreparedDocument: (
     document: LayerDocumentView,
@@ -64,6 +69,27 @@ interface WorkspaceCommandOptions {
 }
 
 export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
+  const [documentChangeLog, setDocumentChangeLog] = useState<
+    ReturnType<typeof summarizeDocumentChange>[]
+  >([]);
+  const nextDocumentChangeId = useRef(1);
+  const recordDocumentChange: RecordDocumentChange = useCallback(
+    (label, before, after) => {
+      const summary = summarizeDocumentChange(
+        nextDocumentChangeId.current++,
+        label,
+        before,
+        after,
+      );
+      setDocumentChangeLog((current) => [summary, ...current].slice(0, 8));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    setDocumentChangeLog([]);
+  }, [options.projectId, options.sourceVersionId]);
+
   const adoptDocument = useWorkspaceDocumentAdoption({
     mode: options.mode,
     ...(options.projectId ? { projectId: options.projectId } : {}),
@@ -89,8 +115,9 @@ export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
       ? {}
       : { layerDocumentRevision: options.layerDocumentRevision }),
     pdfMode: options.pdfMode,
-    saveInFlightRef: options.saveInFlightRef,
-    flushLayerReview: options.flushLayerReview,
+    layers: options.layers,
+    onDocumentChanged: recordDocumentChange,
+    commandCoordinator: options.commandCoordinator,
     adoptDocument,
     requestConfirmation: options.requestConfirmation,
     setProcessing: options.setProcessing,
@@ -110,7 +137,9 @@ export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
     imageRasterOperation: options.imageRasterOperation,
     pdfRegionOcrLayer: options.pdfRegionOcrLayer,
     pdfRegionOcrPageSize: options.pdfRegionOcrPageSize,
-    flushLayerReview: options.flushLayerReview,
+    layers: options.layers,
+    onDocumentChanged: recordDocumentChange,
+    commandCoordinator: options.commandCoordinator,
     adoptDocument,
     setProcessing: options.setProcessing,
     setUploadState: options.setUploadState,
@@ -141,6 +170,7 @@ export function useWorkspaceCommands(options: WorkspaceCommandOptions) {
   });
 
   return {
+    documentChangeLog,
     ...mutations,
     ...operations,
     restoreSourceVersion,

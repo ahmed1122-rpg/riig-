@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 import { createAppTestHarness } from "./app-test-helpers.js";
+import { APPLICATION_VERSION } from "./app.js";
 import type { RateLimitStoreConstructor } from "./infrastructure/redis/redis-rate-limit-store.js";
+import { ApplicationDrainingError } from "./observability/operational-readiness.js";
 
 const harness = createAppTestHarness();
 
@@ -18,7 +20,7 @@ describe("API — البنية التحتية", () => {
     expect(response.json().data).toMatchObject({
       status: "ok",
       service: "motionprep-api",
-      version: "0.1.3",
+      version: APPLICATION_VERSION,
       release,
     });
   });
@@ -63,6 +65,51 @@ describe("API — البنية التحتية", () => {
     });
     expect(metrics.statusCode).toBe(200);
     expect(metrics.body).toContain("motionprep_dependencies_ready 0");
+  });
+
+  it("returns the public 429 contract when a route rate limit is exceeded", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }));
+
+    for (let requestIndex = 0; requestIndex < 10; requestIndex += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/auth/register",
+        payload: {},
+      });
+      expect(response.statusCode).toBe(400);
+    }
+    const limited = await app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: {},
+    });
+
+    expect(limited.statusCode, limited.body).toBe(429);
+    expect(limited.headers["retry-after"]).toBeTruthy();
+    expect(limited.json()).toEqual({
+      data: null,
+      error: {
+        code: "RATE_LIMITED",
+        message: "تجاوزت حد الطلبات المسموح به.",
+        requestId: limited.headers["x-request-id"],
+      },
+    });
+  });
+
+  it("reports an intentional drain separately from a dependency outage", async () => {
+    const app = await harness.build(loadConfig({ NODE_ENV: "test" }), {
+      readiness: async () => {
+        throw new ApplicationDrainingError();
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/ready",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("APPLICATION_DRAINING");
   });
 
   it("exposes bounded internal HTTP metrics without raw request paths", async () => {
@@ -150,6 +197,22 @@ describe("API — البنية التحتية", () => {
                   buckets: [1, 2, 4, 5, 5, 5, 5, 5],
                 },
               },
+              {
+                queue: "character" as const,
+                queued: 2,
+                active: 0,
+                failed: 0,
+                oldestQueuedSeconds: 45,
+                retriesLastHour: 1,
+                failuresLastHour: 0,
+                completionsLastHour: 3,
+                leaseLossesLastHour: 0,
+                duration: {
+                  count: 3,
+                  sumSeconds: 9,
+                  buckets: [1, 2, 3, 3, 3, 3, 3, 3],
+                },
+              },
             ],
             emailOutbox: {
               queued: 2,
@@ -211,6 +274,12 @@ describe("API — البنية التحتية", () => {
     expect(response.body).toContain(
       'motionprep_worker_up{worker_type="export",instance="missing",release="unknown"} 0',
     );
+    expect(response.body).toContain(
+      'motionprep_worker_up{worker_type="character",instance="missing",release="unknown"} 0',
+    );
+    expect(response.body).toContain(
+      'motionprep_queue_jobs{queue="character",state="queued"} 2',
+    );
     expect(response.body).toContain("motionprep_dependencies_ready 1");
     expect(response.body).toContain(
       'motionprep_maintenance_stale{task="retention"} 0',
@@ -224,7 +293,7 @@ describe("API — البنية التحتية", () => {
     expect(response.body).toContain("motionprep_process_resident_memory_bytes");
     expect(response.body).toContain("motionprep_process_cpu_seconds_total");
     expect(response.body).toContain(
-      'motionprep_build_info{version="0.1.3",release="development"} 1',
+      `motionprep_build_info{version="${APPLICATION_VERSION}",release="development"} 1`,
     );
   });
 

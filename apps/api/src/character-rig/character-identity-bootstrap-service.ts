@@ -4,6 +4,10 @@ import type { CharacterJob } from "@motionprep/contracts";
 import type { CharacterJobRepository } from "./character-job-repository.js";
 import { CharacterJobService } from "./character-job-service.js";
 import type { CharacterRigRepository } from "./character-rig-repository.js";
+import {
+  canonicalRequestJson,
+  requestFingerprint,
+} from "../idempotency/request-fingerprint.js";
 
 export interface BootstrapCharacterIdentityInput {
   projectId: string;
@@ -56,13 +60,13 @@ export class CharacterIdentityBootstrapService {
           .join("|"),
       )
       .digest("hex");
-    const requestHash = createHash("sha256")
-      .update(input.bibleId)
-      .update(datasetFingerprint)
-      .update(input.providerKey)
-      .update(input.baseModelReference)
-      .update(canonicalJson(input.trainingConfiguration))
-      .digest("hex");
+    const requestHash = requestFingerprint("character-identity-training", {
+      bibleId: input.bibleId,
+      datasetFingerprint,
+      providerKey: input.providerKey,
+      baseModelReference: input.baseModelReference,
+      trainingConfiguration: input.trainingConfiguration,
+    });
     const operationKey = `identity-train:${input.bibleId}:${requestHash}`;
     const latest = await this.characterRigs.findLatestIdentityModelVersion(
       input.projectId,
@@ -72,6 +76,8 @@ export class CharacterIdentityBootstrapService {
       latest?.datasetFingerprint === datasetFingerprint &&
       latest.providerKey === input.providerKey &&
       latest.baseModelReference === input.baseModelReference &&
+      canonicalRequestJson(requestTrainingConfiguration(latest.trainingConfiguration)) ===
+        canonicalRequestJson(input.trainingConfiguration) &&
       ["draft", "training", "ready"].includes(latest.status)
     ) {
       const job = await this.#jobService.enqueue({
@@ -99,16 +105,28 @@ export class CharacterIdentityBootstrapService {
       createdAt: input.requestedAt,
       updatedAt: input.requestedAt,
     };
-    await this.characterRigs.saveIdentityModelVersion(modelVersion);
+    let persistedModel = modelVersion;
+    if (!(await this.characterRigs.saveIdentityModelVersion(modelVersion))) {
+      const raced = await this.characterRigs.findLatestIdentityModelVersion(
+        input.projectId,
+        input.bibleId,
+      );
+      if (!raced || !matchesIdentityRequest(raced, input, datasetFingerprint)) {
+        throw new CharacterIdentityBootstrapError(
+          "CHARACTER_IDENTITY_VERSION_CONFLICT",
+        );
+      }
+      persistedModel = raced;
+    }
     const job = await this.#jobService.enqueue({
       projectId: input.projectId,
       type: "train-identity",
       operationKey,
       requestHash,
-      payload: { modelVersionId: modelVersion.id },
+      payload: { modelVersionId: persistedModel.id },
       now: input.requestedAt,
     });
-    return { modelVersion, job };
+    return { modelVersion: persistedModel, job };
   }
 }
 
@@ -118,8 +136,24 @@ export class CharacterIdentityBootstrapError extends Error {
   }
 }
 
-function canonicalJson(value: Record<string, string | number | boolean>): string {
-  return JSON.stringify(
-    Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))),
+function requestTrainingConfiguration(
+  value: Record<string, string | number | boolean>,
+) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([key]) => !key.startsWith("metric.")),
+  );
+}
+
+function matchesIdentityRequest(
+  model: CharacterIdentityModelVersion,
+  input: BootstrapCharacterIdentityInput,
+  datasetFingerprint: string,
+): boolean {
+  return (
+    model.datasetFingerprint === datasetFingerprint &&
+    model.providerKey === input.providerKey &&
+    model.baseModelReference === input.baseModelReference &&
+    canonicalRequestJson(requestTrainingConfiguration(model.trainingConfiguration)) ===
+      canonicalRequestJson(input.trainingConfiguration)
   );
 }

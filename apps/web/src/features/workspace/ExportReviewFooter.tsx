@@ -1,4 +1,3 @@
-import type { ProductionIssue } from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
 import type { ExportGenerationState } from "./exportFormatState";
 
@@ -13,7 +12,7 @@ export function ExportReviewFooter({
   disabled: boolean;
   onCreate: () => void;
   message: string | undefined;
-  issues: readonly ProductionIssue[];
+  issues: readonly { key: string; message: string }[];
 }) {
   return (
     <footer className="export-action-footer">
@@ -41,8 +40,8 @@ export function ExportReviewFooter({
       )}
       {issues.length > 0 && (
         <ul className="export-preflight-issues" aria-label="موانع التصدير">
-          {issues.map((issue, index) => (
-            <li key={`${issue.code}:${issue.layerId ?? issue.pageNumber ?? index}`}>
+          {issues.map((issue) => (
+            <li key={issue.key}>
               <Icon name="warning" size={14} />
               <span>{issue.message}</span>
             </li>

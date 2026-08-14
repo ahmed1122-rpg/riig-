@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useDebounce } from "../../shared/hooks/useDebounce";
 import { useMediaQuery } from "../../shared/hooks/useMediaQuery";
 import { useModalDrawer } from "../../shared/hooks/useModalDrawer";
+import { downloadBlob } from "../../shared/browserDownload";
 import {
   ApiError,
   getAdminAudit,
@@ -409,12 +410,10 @@ function Audit({ rows, query, onQuery, onNotify, loading, error, onRetry }: { ro
   const download = () => {
     const cells = [["created_at", "actor_user_id", "action", "target_type", "target_id", "outcome", "reason", "request_id"], ...visible.map((row) => [row.createdAt, row.actorUserId, row.action, row.targetType, row.targetId, row.outcome, row.reason ?? "", row.requestId])];
     const csv = cells.map((line) => line.map((cell) => `"${cell.replace(/"/g, "\"\"")}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `motionprep-audit-${new Date().toISOString().slice(0, 10)}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadBlob([`\uFEFF${csv}`], {
+      filename: `motionprep-audit-${new Date().toISOString().slice(0, 10)}.csv`,
+      type: "text/csv;charset=utf-8",
+    });
     onNotify("تم تنزيل السجلات المعروضة بصيغة CSV.");
   };
   return (

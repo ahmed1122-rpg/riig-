@@ -3,9 +3,14 @@ import { createCanvas } from "@napi-rs/canvas";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { DocumentProcessingError } from "./document-processing-error.js";
 import { clamp } from "./pdf-layout.js";
+import { deterministicPdfJsOptions } from "./pdfjs-options.js";
+import {
+  assertPdfPageGeometry,
+  assertRenderSurface,
+  boundedOcrRenderScale,
+} from "./pdf-geometry.js";
 
 const OCR_TARGET_LONG_EDGE = 1_600;
-const OCR_MAX_RENDER_PIXELS = 24_000_000;
 
 export interface RenderPdfRegionInput {
   source: Buffer;
@@ -45,8 +50,7 @@ export async function renderPdfRegion(
 
   const loadingTask = getDocument({
     data: new Uint8Array(input.source),
-    disableFontFace: true,
-    useSystemFonts: false,
+    ...deterministicPdfJsOptions,
   });
   let pdf: Awaited<typeof loadingTask.promise>;
   try {
@@ -72,31 +76,30 @@ export async function renderPdfRegion(
       const pageViewport = page.getViewport({ scale: 1 });
       const pageWidth = pageViewport.width;
       const pageHeight = pageViewport.height;
+      assertPdfPageGeometry(pageWidth, pageHeight, input.pageNumber);
       const bounds: LayerBounds = {
         x: left * pageWidth,
         y: top * pageHeight,
         width: (right - left) * pageWidth,
         height: (bottom - top) * pageHeight,
       };
-      const safePixelScale = Math.sqrt(
-        OCR_MAX_RENDER_PIXELS / Math.max(1, bounds.width * bounds.height),
-      );
-      const targetLongEdgeScale =
-        OCR_TARGET_LONG_EDGE / Math.max(1, bounds.width, bounds.height);
-      const renderScale = clamp(
-        Math.min(4, targetLongEdgeScale, safePixelScale),
-        0.25,
-        4,
-      );
+      const renderScale = boundedOcrRenderScale({
+        width: bounds.width,
+        height: bounds.height,
+        pageNumber: input.pageNumber,
+        targetScale: 4,
+        targetLongEdge: OCR_TARGET_LONG_EDGE,
+        maxScale: 4,
+      });
       const viewport = page.getViewport({ scale: renderScale });
       const cropLeft = Math.floor(left * viewport.width);
       const cropTop = Math.floor(top * viewport.height);
       const cropRight = Math.ceil(right * viewport.width);
       const cropBottom = Math.ceil(bottom * viewport.height);
-      const canvas = createCanvas(
-        Math.max(1, cropRight - cropLeft),
-        Math.max(1, cropBottom - cropTop),
-      );
+      const canvasWidth = cropRight - cropLeft;
+      const canvasHeight = cropBottom - cropTop;
+      assertRenderSurface(canvasWidth, canvasHeight, input.pageNumber);
+      const canvas = createCanvas(canvasWidth, canvasHeight);
       await page.render({
         canvas: canvas as unknown as HTMLCanvasElement,
         viewport,

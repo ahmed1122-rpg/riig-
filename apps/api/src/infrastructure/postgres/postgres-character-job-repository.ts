@@ -1,6 +1,7 @@
 import type { CharacterJob } from "@motionprep/contracts";
 import type { Pool } from "pg";
 import type { CharacterJobRepository } from "../../character-rig/character-job-repository.js";
+import { toIso } from "./database.js";
 
 interface CharacterJobRow {
   id: string;
@@ -42,8 +43,17 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
     return result.rows[0] ? mapCharacterJobRow(result.rows[0]) : null;
   }
 
-  async save(job: CharacterJob): Promise<void> {
-    await this.pool.query(
+  async listByProject(projectId: string): Promise<CharacterJob[]> {
+    const result = await this.pool.query<CharacterJobRow>(
+      `${characterJobSelect}
+       WHERE project_id = $1 ORDER BY created_at DESC LIMIT 100`,
+      [projectId],
+    );
+    return result.rows.map(mapCharacterJobRow);
+  }
+
+  async save(job: CharacterJob): Promise<boolean> {
+    const inserted = await this.pool.query<{ id: string }>(
       `INSERT INTO character_jobs (
          id, project_id, type, status, operation_key, request_hash, document,
          attempt, max_attempts, next_attempt_at, lease_owner, lease_expires_at,
@@ -51,38 +61,33 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15
        )
-       ON CONFLICT (id) DO UPDATE SET
-         status = EXCLUDED.status,
-         document = EXCLUDED.document,
-         attempt = EXCLUDED.attempt,
-         max_attempts = EXCLUDED.max_attempts,
-         next_attempt_at = EXCLUDED.next_attempt_at,
-         lease_owner = EXCLUDED.lease_owner,
-         lease_expires_at = EXCLUDED.lease_expires_at,
-         error_code = EXCLUDED.error_code,
-         updated_at = EXCLUDED.updated_at
-       WHERE character_jobs.project_id = EXCLUDED.project_id
-         AND character_jobs.type = EXCLUDED.type
-         AND character_jobs.operation_key = EXCLUDED.operation_key
-         AND character_jobs.request_hash = EXCLUDED.request_hash`,
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      jobValues(job),
+    );
+    if (inserted.rowCount === 1) return true;
+    const updated = await this.pool.query<{ id: string }>(
+      `UPDATE character_jobs SET
+         status = $6,
+         document = $7::jsonb,
+         attempt = $8,
+         max_attempts = $9,
+         next_attempt_at = $10,
+         lease_owner = $11,
+         lease_expires_at = $12,
+         error_code = $13,
+         updated_at = $14
+       WHERE id = $1 AND project_id = $2 AND type = $3
+         AND operation_key = $4 AND request_hash = $5
+       RETURNING id`,
       [
-        job.id,
-        job.projectId,
-        job.type,
-        job.status,
-        job.operationKey,
-        job.requestHash,
-        JSON.stringify(job),
-        job.attempt,
-        job.maxAttempts,
-        job.nextAttemptAt,
-        job.leaseOwner,
-        job.leaseExpiresAt,
-        job.errorCode,
-        job.createdAt,
+        job.id, job.projectId, job.type, job.operationKey, job.requestHash,
+        job.status, JSON.stringify(job), job.attempt, job.maxAttempts,
+        job.nextAttemptAt, job.leaseOwner, job.leaseExpiresAt, job.errorCode,
         job.updatedAt,
       ],
     );
+    return updated.rowCount === 1;
   }
 
   async claimNext(
@@ -94,9 +99,15 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
       `WITH candidate AS (
          SELECT id FROM character_jobs
          WHERE attempt < max_attempts
+           AND EXISTS (
+             SELECT 1 FROM projects project
+             JOIN users owner ON owner.id = project.owner_user_id
+             WHERE project.id = character_jobs.project_id
+               AND owner.deletion_requested_at IS NULL
+           )
            AND (
-             (status = 'queued' AND next_attempt_at <= $2)
-             OR (status IN ('processing', 'verifying') AND lease_expires_at <= $2)
+             (status = 'queued' AND next_attempt_at <= $2::timestamptz)
+             OR (status IN ('processing', 'verifying') AND lease_expires_at <= $2::timestamptz)
            )
          ORDER BY next_attempt_at, created_at
          FOR UPDATE SKIP LOCKED
@@ -106,16 +117,16 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
        SET status = 'processing',
            attempt = job.attempt + 1,
            lease_owner = $1,
-           lease_expires_at = $3,
+           lease_expires_at = $3::timestamptz,
            error_code = NULL,
-           updated_at = $2,
+           updated_at = $2::timestamptz,
            document = job.document || jsonb_build_object(
              'status', 'processing',
              'attempt', job.attempt + 1,
              'leaseOwner', $1::text,
-             'leaseExpiresAt', $3::text,
+             'leaseExpiresAt', $3::timestamptz::text,
              'errorCode', NULL,
-             'updatedAt', $2::text
+             'updatedAt', $2::timestamptz::text
            )
        FROM candidate
        WHERE job.id = candidate.id
@@ -133,17 +144,48 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
   ): Promise<boolean> {
     const result = await this.pool.query(
       `UPDATE character_jobs
-       SET lease_expires_at = $4,
-           updated_at = $3,
+       SET lease_expires_at = $4::timestamptz,
+           updated_at = $3::timestamptz,
            document = document || jsonb_build_object(
-             'leaseExpiresAt', $4::text,
-             'updatedAt', $3::text
+             'leaseExpiresAt', $4::timestamptz::text,
+             'updatedAt', $3::timestamptz::text
            )
        WHERE id = $1
          AND lease_owner = $2
          AND status IN ('processing', 'verifying')
-         AND lease_expires_at > $3`,
+         AND lease_expires_at > $3::timestamptz`,
       [id, workerId, renewedAt, leaseExpiresAt],
+    );
+    return result.rowCount === 1;
+  }
+
+  async releaseClaim(
+    id: string,
+    workerId: string,
+    releasedAt: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE character_jobs AS job
+       SET status = 'queued',
+           attempt = GREATEST(0, job.attempt - 1),
+           next_attempt_at = $3::timestamptz,
+           lease_owner = NULL,
+           lease_expires_at = NULL,
+           error_code = NULL,
+           updated_at = $3::timestamptz,
+           document = job.document || jsonb_build_object(
+             'status', 'queued',
+             'attempt', GREATEST(0, job.attempt - 1),
+             'nextAttemptAt', $3::timestamptz::text,
+             'leaseOwner', NULL,
+             'leaseExpiresAt', NULL,
+             'errorCode', NULL,
+             'updatedAt', $3::timestamptz::text
+           )
+       WHERE job.id = $1
+         AND job.lease_owner = $2
+         AND job.status IN ('processing', 'verifying')`,
+      [id, workerId, releasedAt],
     );
     return result.rowCount === 1;
   }
@@ -159,18 +201,18 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
            lease_owner = NULL,
            lease_expires_at = NULL,
            error_code = NULL,
-           updated_at = $3,
+           updated_at = $3::timestamptz,
            document = document || jsonb_build_object(
              'status', 'succeeded',
              'leaseOwner', NULL,
              'leaseExpiresAt', NULL,
              'errorCode', NULL,
-             'updatedAt', $3::text
+             'updatedAt', $3::timestamptz::text
            )
        WHERE id = $1
          AND lease_owner = $2
          AND status IN ('processing', 'verifying')
-         AND lease_expires_at > $3
+         AND lease_expires_at > $3::timestamptz
        RETURNING ${characterJobReturning}`,
       [id, workerId, completedAt],
     );
@@ -183,29 +225,39 @@ export class PostgresCharacterJobRepository implements CharacterJobRepository {
     errorCode: string,
     nextAttemptAt: string,
     updatedAt: string,
+    retryable = true,
   ): Promise<CharacterJob | null> {
     const result = await this.pool.query<CharacterJobRow>(
       `UPDATE character_jobs AS job
-       SET status = CASE WHEN job.attempt >= job.max_attempts THEN 'failed' ELSE 'queued' END,
-           next_attempt_at = $4,
+       SET status = CASE WHEN NOT $6::boolean OR job.attempt >= job.max_attempts THEN 'failed' ELSE 'queued' END,
+           next_attempt_at = $4::timestamptz,
            lease_owner = NULL,
            lease_expires_at = NULL,
            error_code = $3,
-           updated_at = $5,
+           updated_at = $5::timestamptz,
            document = job.document || jsonb_build_object(
-             'status', CASE WHEN job.attempt >= job.max_attempts THEN 'failed' ELSE 'queued' END,
-             'nextAttemptAt', $4::text,
+             'status', CASE WHEN NOT $6::boolean OR job.attempt >= job.max_attempts THEN 'failed' ELSE 'queued' END,
+             'nextAttemptAt', $4::timestamptz::text,
              'leaseOwner', NULL,
              'leaseExpiresAt', NULL,
              'errorCode', $3::text,
-             'updatedAt', $5::text
+             'updatedAt', $5::timestamptz::text
            )
        WHERE job.id = $1 AND job.lease_owner = $2
        RETURNING ${characterJobReturning}`,
-      [id, workerId, errorCode, nextAttemptAt, updatedAt],
+      [id, workerId, errorCode, nextAttemptAt, updatedAt, retryable],
     );
     return result.rows[0] ? mapCharacterJobRow(result.rows[0]) : null;
   }
+}
+
+function jobValues(job: CharacterJob) {
+  return [
+    job.id, job.projectId, job.type, job.status, job.operationKey,
+    job.requestHash, JSON.stringify(job), job.attempt, job.maxAttempts,
+    job.nextAttemptAt, job.leaseOwner, job.leaseExpiresAt, job.errorCode,
+    job.createdAt, job.updatedAt,
+  ];
 }
 
 function mapCharacterJobRow(row: CharacterJobRow): CharacterJob {
@@ -226,10 +278,6 @@ function mapCharacterJobRow(row: CharacterJobRow): CharacterJob {
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
-}
-
-function toIso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : value;
 }
 
 const characterJobReturning = `

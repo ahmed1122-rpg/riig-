@@ -5,6 +5,7 @@ import type {
   CharacterCanonicalView,
 } from "@motionprep/contracts";
 import type { ObjectStorage } from "../storage/object-storage.js";
+import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
 import type { CharacterRigRepository } from "./character-rig-repository.js";
 import sharp from "sharp";
@@ -79,6 +80,15 @@ export class CharacterReferenceService {
     if (!source) {
       throw new CharacterReferenceError("CHARACTER_REFERENCE_SOURCE_NOT_READY");
     }
+    if (
+      !hasExpectedObjectIntegrity(source, {
+        contentType: upload.contentType,
+        sizeBytes: upload.expectedSizeBytes,
+        sha256: upload.sha256,
+      })
+    ) {
+      throw new CharacterReferenceError("CHARACTER_REFERENCE_SOURCE_INTEGRITY_FAILED");
+    }
     const id = crypto.randomUUID();
     const objectKey = `projects/${input.projectId}/character-rig/references/${id}.${extension}`;
     let metadata: { width?: number; height?: number };
@@ -129,7 +139,7 @@ export class CharacterReferenceService {
       }
       return reference;
     } catch (error) {
-      await this.storage.delete(objectKey);
+      await this.storage.purge([objectKey], []);
       throw error;
     }
   }

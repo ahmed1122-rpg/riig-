@@ -107,12 +107,24 @@ describe("preparePdfSource", () => {
     expect(document.pages).toEqual([
       { pageNumber: 1, width: 400, height: 300 },
     ]);
-    expect(document.layers[0]).toMatchObject({
+    const pageGroup = document.layers.find((layer) => layer.kind === "group");
+    expect(pageGroup).toMatchObject({
+      name: "+page_001",
+      parentId: null,
+      locked: true,
+      fixed: true,
+      pageNumber: 1,
+    });
+    const background = document.layers.find(
+      (layer) => layer.name === "+page_001_background",
+    );
+    expect(background).toMatchObject({
       name: "+page_001_background",
       locked: true,
       fixed: true,
       fillColor: "#ffffff",
       pageNumber: 1,
+      parentId: pageGroup?.id,
     });
     const textLayers = document.layers.filter((layer) => layer.kind === "text");
     expect(textLayers.map((layer) => layer.fullText)).toEqual([
@@ -121,6 +133,9 @@ describe("preparePdfSource", () => {
       "Second sentence!",
     ]);
     expect(textLayers.every((layer) => layer.bounds)).toBe(true);
+    expect(textLayers.every((layer) => layer.parentId === pageGroup?.id)).toBe(
+      true,
+    );
     expect(textLayers.map((layer) => layer.readingOrder)).toEqual([0, 1, 2]);
   });
 
@@ -183,7 +198,9 @@ describe("preparePdfSource", () => {
       { text: "عنوان", confidence: 0.89, direction: "rtl" },
       { text: "الكتاب", confidence: 0.89, direction: "rtl" },
     ]);
-    expect(document.layers[0]).toMatchObject({
+    expect(
+      document.layers.find((layer) => layer.kind === "raster"),
+    ).toMatchObject({
       locked: true,
       fixed: true,
       fillColor: "#ffffff",
@@ -244,14 +261,19 @@ describe("preparePdfSource", () => {
     {
       name: "returns no words",
       recognizePage: async () => [],
+      diagnosticCode: "empty-result",
     },
     {
       name: "throws",
       recognizePage: async () => {
         throw new Error("ocr unavailable");
       },
+      diagnosticCode: "engine-failed",
     },
-  ])("reports OCR_FAILED when the OCR engine $name", async ({ recognizePage }) => {
+  ] as const)("reports OCR_FAILED when the OCR engine $name", async ({
+    recognizePage,
+    diagnosticCode,
+  }) => {
     await expect(
       preparePdfSource({
         projectId: "project-1",
@@ -263,6 +285,11 @@ describe("preparePdfSource", () => {
     ).rejects.toMatchObject({
       code: "OCR_FAILED",
       pageNumbers: [1],
+      diagnostics: [{
+        pageNumber: 1,
+        stage: "recognize",
+        code: diagnosticCode,
+      }],
     } satisfies Partial<DocumentProcessingError>);
   });
 
@@ -609,11 +636,17 @@ describe("preparePdfSource", () => {
       separationMode: "line",
     });
 
-    expect(document.layers).toHaveLength(1);
-    expect(document.layers[0]).toMatchObject({
+    expect(document.layers).toHaveLength(2);
+    const pageGroup = document.layers.find((layer) => layer.kind === "group");
+    expect(pageGroup).toMatchObject({
+      name: "+page_001",
+      parentId: null,
+    });
+    expect(document.layers.find((layer) => layer.kind === "raster")).toMatchObject({
       name: "+page_001_background",
       locked: true,
       fixed: true,
+      parentId: pageGroup?.id,
     });
   });
 
@@ -627,6 +660,35 @@ describe("preparePdfSource", () => {
       }),
     ).rejects.toMatchObject({
       code: "PDF_DECODE_FAILED",
+    } satisfies Partial<DocumentProcessingError>);
+  });
+
+  it("rejects an extreme MediaBox before allocating page or OCR canvases", async () => {
+    const pdf = await PDFDocument.create();
+    pdf.addPage([30_001, 10]);
+    const source = Buffer.from(await pdf.save());
+
+    await expect(
+      preparePdfSource({
+        projectId: "project-1",
+        sourceVersionId: "source-extreme-media-box",
+        source,
+        separationMode: "line",
+      }),
+    ).rejects.toMatchObject({
+      code: "PDF_DECODE_FAILED",
+      pageNumbers: [1],
+    } satisfies Partial<DocumentProcessingError>);
+    await expect(
+      renderPdfRegion({
+        source,
+        pageNumber: 1,
+        start: { x: 0.1, y: 0.1 },
+        end: { x: 0.9, y: 0.9 },
+      }),
+    ).rejects.toMatchObject({
+      code: "PDF_DECODE_FAILED",
+      pageNumbers: [1],
     } satisfies Partial<DocumentProcessingError>);
   });
 
