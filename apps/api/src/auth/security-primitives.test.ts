@@ -49,6 +49,20 @@ describe("authentication security primitives", () => {
     expect(passwordHashNeedsUpgrade(legacy)).toBe(true);
   });
 
+  it("accepts a v3 work factor without downgrading it during compatibility rollout", async () => {
+    const salt = Buffer.alloc(16, 5);
+    const key = scryptSync("StrongPass123", salt, 64, {
+      N: 32_768,
+      r: 8,
+      p: 3,
+      maxmem: 64 * 1024 * 1024,
+    });
+    const v3 = `scrypt$v3$32768$8$3$${salt.toString("hex")}$${key.toString("hex")}`;
+
+    await expect(verifyPassword("StrongPass123", v3)).resolves.toBe(true);
+    expect(passwordHashNeedsUpgrade(v3)).toBe(false);
+  });
+
   it("rotates MFA encryption and recovery hashing without losing old data", () => {
     const oldKey = Buffer.alloc(32, 7);
     const newKey = Buffer.alloc(32, 8);
