@@ -74,8 +74,9 @@ export default defineConfig({
             "/src/shared/useConfirmation.tsx",
             "/src/shared/workflowFailurePresentation.ts",
             "/src/features/auth/PasswordRequirements.tsx",
-            "/src/features/exports/exportPresentation.ts",
-            "/src/features/workspace/pdfSegmentation.ts",
+            "/src/shared/exportPresentation.ts",
+            "/src/shared/pdfSegmentation.ts",
+            "/src/shared/useStoredPreference.ts",
           ];
           return sharedPrimitives.some((modulePath) =>
             normalizedId.includes(modulePath),

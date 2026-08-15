@@ -113,7 +113,7 @@ export default defineConfig({
         CHARACTER_RIG_ENABLED: "false",
         EMAIL_DELIVERY_MODE: "memory",
         AUTH_ENCRYPTION_KEY: "",
-        E2E_ADMIN_EMAIL: "",
+        E2E_ADMIN_EMAIL: "playwright-admin@example.test",
       },
       reuseExistingServer: false,
       timeout: 30_000,

@@ -14,7 +14,7 @@ import type { WorkspaceSaveState } from "./WorkspaceChrome";
 import {
   pdfApiModes,
   pdfSegmentationLabels,
-} from "./pdfSegmentation";
+} from "../../shared/pdfSegmentation";
 import {
   createImageGuidedRefinementInput,
   createPdfGuidedRefinementInput,

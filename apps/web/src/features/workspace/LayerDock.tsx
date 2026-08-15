@@ -37,7 +37,7 @@ import {
   matchesLayerFilter,
   type LayerFilter,
 } from "./layerDockSelectors";
-import { useWorkspacePreference } from "./useWorkspacePreference";
+import { useStoredPreference } from "../../shared/useStoredPreference";
 import { useLayerCommandWorkflow } from "./useLayerCommandWorkflow";
 import { VirtualLayerList } from "./VirtualLayerList";
 import { layerReorderIssue } from "./layerReorderGuard";
@@ -100,12 +100,12 @@ export function LayerDock({
   const [tab, setTab] = useState<LayerDockTab>("layers");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
-  const [filter, setFilter] = useWorkspacePreference<LayerFilter>(
+  const [filter, setFilter] = useStoredPreference<LayerFilter>(
     "motionprep.layer-view-filter",
     "all",
     isLayerFilter,
   );
-  const [density, setDensity] = useWorkspacePreference<LayerDensity>(
+  const [density, setDensity] = useStoredPreference<LayerDensity>(
     "motionprep.layer-view-density",
     "dense",
     (value): value is LayerDensity =>

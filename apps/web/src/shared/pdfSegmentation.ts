@@ -1,4 +1,4 @@
-import type { PdfSegmentation } from "../../types";
+import type { PdfSegmentation } from "../types";
 
 export const PDF_SEGMENTATION_STORAGE_KEY =
   "motionprep.settings.pdf-segmentation";
@@ -34,9 +34,7 @@ export const pdfApiModes: Record<
 
 export function storedPdfSegmentation(): PdfSegmentation {
   try {
-    const stored = window.localStorage.getItem(
-      PDF_SEGMENTATION_STORAGE_KEY,
-    );
+    const stored = window.localStorage.getItem(PDF_SEGMENTATION_STORAGE_KEY);
     const value = stored === null ? null : JSON.parse(stored) as unknown;
     return isPdfSegmentation(value) ? value : "sentences";
   } catch {

@@ -84,7 +84,6 @@
 
 .app-shell :where(
   .creation-path,
-  .processing-card,
   .data-state,
   .settings-card,
   .help-steps li,
@@ -140,8 +139,6 @@
   .path-copy > p,
   .section-heading > p,
   .recent-copy small,
-  .processing-card > p,
-  .processing-head small,
   .project-info small,
   .project-updated,
   .data-state p,
@@ -280,7 +277,6 @@
   .workspace-progress small,
   .pro-layer-copy small,
   .pro-status-bar,
-  .pro-window-note,
   .pro-upload-popover p,
   .pro-source-file small
 ) {
@@ -337,15 +333,13 @@
   box-shadow: var(--vp-shadow-1);
 }
 
-.app-shell .usage-bar,
-.app-shell .job-progress {
+.app-shell .usage-bar {
   height: 7px;
   overflow: hidden;
   border-radius: 6px;
 }
 
-.app-shell .usage-bar i,
-.app-shell .job-progress span {
+.app-shell .usage-bar i {
   border-radius: inherit;
   background: linear-gradient(90deg, var(--primary), var(--vp-violet));
 }

@@ -48,7 +48,7 @@
     "test": "vitest run",
     "test:character-rig:race": "vitest run src/character-rig/character-generation-service.test.ts src/character-rig/character-identity-bootstrap-service.test.ts src/character-rig/character-job-executor.test.ts && vitest run --config vitest.integration.config.ts src/infrastructure/postgres/postgres-character-rig.integration.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "coverage": "vitest run --coverage --coverage.include=src/**/*.ts --coverage.thresholds.statements=65 --coverage.thresholds.branches=58 --coverage.thresholds.functions=68 --coverage.thresholds.lines=67"
+    "coverage": "vitest run --coverage --coverage.include=src/**/*.ts --coverage.thresholds.statements=69 --coverage.thresholds.branches=62 --coverage.thresholds.functions=71 --coverage.thresholds.lines=70"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1096.0",

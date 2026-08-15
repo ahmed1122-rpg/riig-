@@ -52,8 +52,7 @@ textarea {
   .help-button, .demo-select, .demo-select select, .eyebrow,
   .hero-copy > p, .time-saved > span:nth-child(2), .time-saved p,
   .section-heading > p, .path-copy > small, .path-copy > p, .path-meta,
-  .recent-copy strong, .recent-copy small, .status, .processing-head span,
-  .processing-head small, .processing-card > p, .processing-foot,
+  .recent-copy strong, .recent-copy small, .status,
   .page-title-row p, .filter-tabs button, .project-search input,
   .project-info strong, .project-info small, .project-updated,
   .data-state strong, .data-state p, .auth-helper, .auth-switch,
@@ -62,7 +61,7 @@ textarea {
   font-size: max(12px, 0.75rem);
 }
 
-:where(.technical-meta, code, bdi, .trace-cell, .path-output-preview b, .path-output-preview i) {
+:where(code, bdi, .trace-cell, .path-output-preview b, .path-output-preview i) {
   font-size: max(10px, .625rem);
 }
 
@@ -231,11 +230,8 @@ textarea {
 
 .time-saved,
 .creation-path,
-.processing-card,
 .data-state,
-.billing-card,
-.settings-card,
-.security-card {
+.settings-card {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--surface), var(--surface)) padding-box,
@@ -516,25 +512,10 @@ textarea {
 }
 
 /* Auth */
-.auth-shell {
-  background:
-    radial-gradient(circle at 12% 20%, rgba(32, 217, 238, .16), transparent 22rem),
-    radial-gradient(circle at 92% 75%, rgba(181, 108, 255, .14), transparent 25rem),
-    var(--atelier-porcelain);
-}
-
-.auth-card,
-.auth-context {
-  border-color: color-mix(in srgb, var(--atelier-indigo) 20%, var(--line));
-}
-
-.auth-card {
-  box-shadow: var(--atelier-shadow);
-}
-
 .auth-context {
   position: relative;
   overflow: hidden;
+  border-color: color-mix(in srgb, var(--atelier-indigo) 20%, var(--line));
   background:
     linear-gradient(145deg, rgba(32, 217, 238, .08), transparent 38%),
     linear-gradient(160deg, var(--atelier-navy), var(--atelier-midnight));
@@ -644,8 +625,7 @@ textarea {
 }
 
 /* Admin — operational density with product identity */
-.admin-shell,
-.admin-layout {
+.admin-shell {
   background:
     radial-gradient(circle at 90% 0, rgba(32, 217, 238, .07), transparent 28rem),
     var(--atelier-midnight);
@@ -736,20 +716,6 @@ textarea {
   font-size: 12px;
 }
 
-.admin-nav-item.is-active,
-.admin-view-tab.is-active {
-  background: linear-gradient(90deg, rgba(32, 217, 238, .14), rgba(113, 103, 255, .12));
-  color: var(--atelier-cyan);
-}
-
-.admin-kpi-card,
-.admin-panel,
-.admin-table-wrap {
-  border: 1px solid rgba(113, 103, 255, .18);
-  background: linear-gradient(145deg, rgba(17, 29, 55, .96), rgba(10, 20, 40, .96));
-  box-shadow: 0 18px 45px rgba(0, 0, 0, .2);
-}
-
 .admin-data-row {
   min-height: 52px;
   color: #37443f;
@@ -815,36 +781,21 @@ textarea {
 }
 
 /* Workspace remains immersive */
-.app-shell--workspace .topbar,
-.workspace-shell,
-.workspace-stage {
+.app-shell--workspace .topbar {
   background-color: var(--atelier-midnight);
 }
 
-.workspace-shell {
-  --workspace-accent: var(--atelier-cyan);
-  --workspace-accent-2: var(--atelier-indigo);
-  background:
-    radial-gradient(circle at 50% -18%, rgba(113, 103, 255, .16), transparent 36rem),
-    var(--atelier-midnight);
-}
-
-.workspace-toolbar button,
-.workspace-tool-button,
 .layer-action,
 .preview-toolbar button {
   min-width: 40px;
   min-height: 40px;
 }
 
-.workspace-tool-button.is-active,
 .layer-row.is-selected {
   border-color: rgba(32, 217, 238, .42);
   background: linear-gradient(90deg, rgba(32, 217, 238, .14), rgba(113, 103, 255, .12));
 }
 
-.workspace-panel,
-.workspace-tools,
 .layer-dock,
 .export-review {
   border-color: rgba(113, 103, 255, .2);
@@ -967,12 +918,12 @@ textarea {
   --text-muted: #a9b6c9;
 }
 
-:where(.hero-copy > p, .path-copy > p, .data-state p, .feature-page-header p, .page-title-row p, .settings-card p, .security-card p, .billing-page p, .help-limits span) {
+:where(.hero-copy > p, .path-copy > p, .data-state p, .feature-page-header p, .page-title-row p, .settings-card p, .billing-page p, .help-limits span) {
   font-size: max(14px, .875rem);
   line-height: 1.8;
 }
 
-:where(.recent-copy small, .project-info small, .project-updated, .processing-card > p, .processing-head small, .processing-foot, .status, .sidebar-note span, .billing-page small, .security-page small) {
+:where(.recent-copy small, .project-info small, .project-updated, .status, .sidebar-note span, .billing-page small, .security-page small) {
   font-size: max(13px, .8125rem);
 }
 
@@ -1382,11 +1333,8 @@ body,
 
 .time-saved,
 .creation-path,
-.processing-card,
 .data-state,
-.billing-card,
-.settings-card,
-.security-card {
+.settings-card {
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: none;
@@ -1403,10 +1351,6 @@ body,
 .project-row:hover,
 .export-row:hover {
   background: var(--surface-hover);
-}
-
-.job-progress span {
-  background: var(--primary);
 }
 
 .marketing-page {

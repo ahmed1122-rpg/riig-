@@ -38,8 +38,9 @@ The current page folder is therefore outside the visible dock.
 
 **Repro Steps**
 
-1. Open the persisted 12-page PDF project on desktop.
-   ![Project opened](screenshots/issue-001-step-2.png)
+1. Open the persisted 12-page PDF project on desktop. The original setup
+   screenshot is no longer retained; the following screenshots preserve the
+   reproduced state and the final verification.
 
 2. Select page 12 in the desktop layer dock.
    ![Page 12 selected](screenshots/issue-001-step-3.png)

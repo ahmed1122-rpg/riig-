@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
-    "coverage": "vitest run --coverage --coverage.include=src/**/*.{ts,tsx} --coverage.thresholds.statements=26 --coverage.thresholds.branches=28 --coverage.thresholds.functions=19 --coverage.thresholds.lines=26"
+    "coverage": "vitest run --coverage --coverage.include=src/**/*.{ts,tsx} --coverage.thresholds.statements=56 --coverage.thresholds.branches=53 --coverage.thresholds.functions=49 --coverage.thresholds.lines=58"
   },
   "dependencies": {
     "@motionprep/contracts": "*",

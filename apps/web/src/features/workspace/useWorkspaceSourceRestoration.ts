@@ -9,7 +9,7 @@ import {
 } from "../../lib/api";
 import type { UploadState } from "./SourceUploadStatus";
 import { loadWorkspaceProjectDocument } from "./workspaceDocument";
-import { pdfApiModes } from "./pdfSegmentation";
+import { pdfApiModes } from "../../shared/pdfSegmentation";
 import type { WorkspaceSetState as SetState } from "./Workspace.types";
 
 interface WorkspaceSourceRestorationOptions {

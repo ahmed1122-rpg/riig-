@@ -6,7 +6,7 @@ import type { IconName } from "./Icon";
 
 const ICON_NAMES = [
   "home", "folder", "help", "settings", "search", "menu", "close",
-  "chevron", "plus", "image", "book", "layers", "review", "spark",
+  "chevron", "plus", "image", "layers", "review", "spark",
   "eye", "eyeOff", "lock", "unlock", "upload", "zoomIn", "zoomOut",
   "pointer", "undo", "check", "warning", "info", "sun", "moon",
   "arrow", "filter", "grid", "list", "download", "refresh", "turntable", "fitCanvas", "merge",
@@ -60,12 +60,12 @@ describe("Icon", () => {
       renderToStaticMarkup(<Icon name={name} />),
     );
 
-    expect(ICON_NAMES).toHaveLength(70);
+    expect(ICON_NAMES).toHaveLength(69);
     expect(ALL_ICONS_COVERED).toBe(true);
     expect(new Set(catalog)).toHaveLength(ICON_NAMES.length);
     expect(catalog.every((markup) => !markup.includes("undefined"))).toBe(true);
     expect(createHash("sha256").update(catalog.join("\n")).digest("hex")).toBe(
-      "7c3206f0c1dc8020ee8fffce6fc25f76d3b16d677c8187bc4c32a8e9bd2bcc44",
+      "9cfe353d840c54e77c4bbec546cffd13e93fba878d2bdf31a9723761875f996b",
     );
   });
 });

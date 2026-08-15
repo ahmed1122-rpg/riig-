@@ -419,19 +419,36 @@ export function resolveWorkspaceToolDispatch(
       reason: tool.unavailableReason ?? "هذه الأداة غير متاحة للمصدر الحالي.",
     };
   }
-  if (tool.action === "reading-order") return { kind: "reading-order" };
-  if (tool.action === "source-versions") return { kind: "source-versions" };
-  if (tool.action === "pdf-split") return { kind: "pdf-split" };
-  if (tool.action === "pdf-merge") return { kind: "pdf-merge" };
-  if (tool.action === "pdf-region-ocr") return { kind: "pdf-region-ocr" };
-  if (tool.action === "image-edge-refine") {
-    return { kind: "image-edge-refine" };
+  switch (tool.action) {
+    case "reading-order":
+      return { kind: "reading-order" };
+    case "source-versions":
+      return { kind: "source-versions" };
+    case "pdf-split":
+      return { kind: "pdf-split" };
+    case "pdf-merge":
+      return { kind: "pdf-merge" };
+    case "pdf-region-ocr":
+      return { kind: "pdf-region-ocr" };
+    case "image-edge-refine":
+      return { kind: "image-edge-refine" };
+    case "image-merge":
+      return { kind: "image-merge" };
+    case "character-rig":
+      return { kind: "character-rig" };
+    case "editor-prompt":
+    case "editor-undo":
+    case "history-redo":
+      return {
+        kind: "editor",
+        id: tool.id,
+        selectPrompt: tool.action === "editor-prompt",
+      };
+    default:
+      return assertNever(tool.action);
   }
-  if (tool.action === "image-merge") return { kind: "image-merge" };
-  if (tool.action === "character-rig") return { kind: "character-rig" };
-  return {
-    kind: "editor",
-    id: tool.id,
-    selectPrompt: tool.action === "editor-prompt",
-  };
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unsupported workspace tool action: ${String(value)}`);
 }

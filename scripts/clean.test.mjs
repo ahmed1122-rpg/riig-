@@ -43,12 +43,20 @@ test("clean removes Playwright output without touching benchmark evidence", asyn
     mkdir(join(root, "artifacts/playwright/run-1"), { recursive: true }),
     mkdir(join(root, "artifacts/playwright-report"), { recursive: true }),
     mkdir(join(root, "artifacts/benchmarks"), { recursive: true }),
+    mkdir(join(root, "artifacts/private-sourcemaps"), { recursive: true }),
+    mkdir(join(root, "artifacts/qa"), { recursive: true }),
+    mkdir(join(root, "dogfood-output"), { recursive: true }),
+    mkdir(join(root, "test-results"), { recursive: true }),
   ]);
   await cp(new URL("./clean.mjs", import.meta.url), join(root, "scripts/clean.mjs"));
   await Promise.all([
     writeFile(join(root, "artifacts/playwright/run-1/trace.zip"), "trace"),
     writeFile(join(root, "artifacts/playwright-report/index.html"), "report"),
     writeFile(join(root, "artifacts/benchmarks/evidence.json"), "{}"),
+    writeFile(join(root, "artifacts/private-sourcemaps/web.js.map"), "map"),
+    writeFile(join(root, "artifacts/qa/trace.zip"), "trace"),
+    writeFile(join(root, "dogfood-output/video.webm"), "video"),
+    writeFile(join(root, "test-results/result.json"), "{}"),
   ]);
   await execFileAsync("git", ["init", "--quiet"], { cwd: root });
   await execFileAsync(
@@ -67,5 +75,13 @@ test("clean removes Playwright output without touching benchmark evidence", asyn
     access(join(root, "artifacts/playwright-report/index.html")),
     { code: "ENOENT" },
   );
+  for (const filename of [
+    "artifacts/private-sourcemaps/web.js.map",
+    "artifacts/qa/trace.zip",
+    "dogfood-output/video.webm",
+    "test-results/result.json",
+  ]) {
+    await assert.rejects(access(join(root, filename)), { code: "ENOENT" });
+  }
   await access(join(root, "artifacts/benchmarks/evidence.json"));
 });

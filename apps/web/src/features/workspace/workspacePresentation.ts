@@ -1,6 +1,6 @@
 import type { PdfSegmentation, ProjectMode } from "../../types";
 import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
-import { pdfSegmentationLabels } from "./pdfSegmentation";
+import { pdfSegmentationLabels } from "../../shared/pdfSegmentation";
 
 export function getWorkspacePipeline(
   mode: ProjectMode,

@@ -3,12 +3,12 @@ import { Icon } from "../../shared/Icon";
 import { downloadBlob } from "../../shared/browserDownload";
 import { deleteAccount, exportAccountData } from "../../lib/api";
 import type { PdfSegmentation } from "../../types";
-import { useWorkspacePreference } from "../workspace/useWorkspacePreference";
+import { useStoredPreference } from "../../shared/useStoredPreference";
 import {
   PDF_SEGMENTATION_STORAGE_KEY,
   isPdfSegmentation,
   pdfSegmentationOptions,
-} from "../workspace/pdfSegmentation";
+} from "../../shared/pdfSegmentation";
 
 interface SettingsViewProps {
   authenticated: boolean;
@@ -31,12 +31,12 @@ export function SettingsView({
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
   const [pdfSegmentation, setPdfSegmentation] =
-    useWorkspacePreference<PdfSegmentation>(
+    useStoredPreference<PdfSegmentation>(
       PDF_SEGMENTATION_STORAGE_KEY,
       "sentences",
       isPdfSegmentation,
     );
-  const [reducedMotion, setReducedMotion] = useWorkspacePreference(
+  const [reducedMotion, setReducedMotion] = useStoredPreference(
     "motionprep.settings.reduced-motion",
     false,
   );

@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
 
-export type WorkspacePreferenceValidator<T> = (
-  value: unknown,
-) => value is T;
+export type StoredPreferenceValidator<T> = (value: unknown) => value is T;
 
-export function useWorkspacePreference<T>(
+export function useStoredPreference<T>(
   key: string,
   fallback: T,
-  validate: WorkspacePreferenceValidator<T> = (value): value is T =>
+  validate: StoredPreferenceValidator<T> = (value): value is T =>
     samePrimitiveType(value, fallback),
 ) {
   const [value, setValue] = useState<T>(() => {
@@ -25,7 +23,7 @@ export function useWorkspacePreference<T>(
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
     } catch {
-      // The workspace remains functional when storage is unavailable.
+      // The application remains functional when browser storage is unavailable.
     }
   }, [key, value]);
 

@@ -16,7 +16,7 @@ import {
   matchesLayerFilter,
   type LayerFilter,
 } from "./layerDockSelectors";
-import { useWorkspacePreference } from "./useWorkspacePreference";
+import { useStoredPreference } from "../../shared/useStoredPreference";
 import { isPageLayer } from "./workspaceLayerKinds";
 import type {
   ReadyWorkspaceToolId,
@@ -78,7 +78,7 @@ export function WorkspaceMobileSheet({
   const [search, setSearch] = useState("");
   const [multiSelect, setMultiSelect] = useState(false);
   const deferredSearch = useDeferredValue(search);
-  const [filter, setFilter] = useWorkspacePreference<LayerFilter>(
+  const [filter, setFilter] = useStoredPreference<LayerFilter>(
     "motionprep.mobile-layer-filter",
     "all",
     isLayerFilter,

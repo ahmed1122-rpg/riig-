@@ -124,7 +124,6 @@
   .time-saved > p { grid-column: 2; }
   .time-line { grid-column: 1 / -1; }
   .dashboard-lower { grid-template-columns: 1fr; }
-  .processing-card { width: 100%; }
   .workspace-header { grid-template-columns: 1fr auto; }
   .workspace-mode { display: none; }
 }

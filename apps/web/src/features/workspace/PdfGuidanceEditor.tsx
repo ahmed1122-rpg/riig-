@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../shared/Icon";
 import type { Layer, PdfSegmentation } from "../../types";
 import { isPageLayer } from "./workspaceLayerKinds";
-import { pdfSegmentationLabels } from "./pdfSegmentation";
+import { pdfSegmentationLabels } from "../../shared/pdfSegmentation";
 import {
   createGuidancePromptTools,
   GuidanceHistoryActions,

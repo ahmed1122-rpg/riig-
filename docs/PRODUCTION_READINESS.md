@@ -1,5 +1,23 @@
 # Production readiness
 
+Working-candidate update on 2026-08-16: the repository-cleanup pass repairs
+tracked evidence links and removes developer-machine paths, adds automated
+path, CSS-usage, icon-usage, and worker-build contracts, and prevents test
+files from entering the media/document worker builds. Shared web preferences,
+PDF segmentation, and export presentation now sit outside feature boundaries;
+processing execution depends on the `UsageMeter` port, while PostgreSQL job
+claiming lives in the infrastructure adapter. Coverage ratchets now match the
+measured source baseline instead of allowing a large silent regression. The
+desktop Chromium production-preview suite passed 8/8, including authenticated
+Security and real administrator navigation. A separate live Chromium audit of
+the public entry, Security, and the administrator overview reported zero
+WCAG A/AA violations and no browser errors.
+
+This remains a local candidate rather than production approval. Regional OCR,
+Character Rig, and real payment collection remain fail-closed until their
+documented provider, quality, rights, webhook, managed-staging, recovery, and
+release-identity gates pass for the same immutable Git SHA and image digests.
+
 Working-candidate update on 2026-08-15: the report-guided implementation
 restores all 14 tracked public visual assets and verifies browser image decode,
 implements canvas fit and Space-drag pan, exposes USD/EGP catalog prices through

@@ -433,26 +433,6 @@
 .status--review { background: var(--amber-soft); color: var(--amber); }
 .status--ready { background: var(--success-soft); color: var(--success); }
 
-.processing-card {
-  align-self: end;
-  min-height: 177px;
-  padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.processing-head { display: flex; justify-content: space-between; margin-bottom: 22px; }
-.processing-head span { display: flex; align-items: center; gap: 7px; color: var(--primary-strong); font-size: 9px; font-weight: 800; }
-.processing-head i { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); animation: pulse 1.8s infinite; }
-.processing-head small { color: var(--text-muted); font-size: 8px; }
-@keyframes pulse { 50% { opacity: 0.35; } }
-.processing-card > strong { font-size: 12px; }
-.processing-card > p { margin-top: 6px; color: var(--text-muted); font-size: 9px; }
-.job-progress { height: 4px; margin-top: 21px; background: var(--surface-muted); }
-.job-progress span { display: block; height: 100%; background: var(--primary); }
-.processing-foot { display: flex; justify-content: space-between; margin-top: 8px; color: var(--text-muted); font-size: 8px; direction: ltr; }
-
 .modal-layer {
   position: fixed;
   z-index: 100;

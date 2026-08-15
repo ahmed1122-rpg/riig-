@@ -1,7 +1,7 @@
 import type { ProcessingJob } from "@motionprep/contracts";
 import type { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { claimNextProcessingJob } from "../../processing/processing-job-claim.js";
+import { claimNextProcessingJob } from "./postgres-processing-job-claim.js";
 import { PostgresProcessingJobRepository } from "./postgres-processing-repository.js";
 import { PostgresExportRepository } from "./postgres-export-repository.js";
 import { PostgresProjectRepository } from "./postgres-project-repository.js";

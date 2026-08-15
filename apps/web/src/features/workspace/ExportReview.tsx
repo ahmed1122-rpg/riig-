@@ -7,7 +7,7 @@ import {
 import { ApiError } from "../../lib/api/transport";
 import { Icon } from "../../shared/Icon";
 import type { Layer } from "../../types";
-import { getExportFormatPresentation } from "../exports/exportPresentation";
+import { getExportFormatPresentation } from "../../shared/exportPresentation";
 import {
   moveExportLayer,
   reviewableExportLayers,

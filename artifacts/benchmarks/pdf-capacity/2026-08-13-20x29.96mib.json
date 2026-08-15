@@ -6,7 +6,7 @@
   "targetOrigin": "http://127.0.0.1:56663",
   "requestOrigin": "http://127.0.0.1:5173",
   "source": {
-    "path": "C:\\Users\\M\\Desktop\\rigooo$\\.tmp\\representative-30mib.pdf",
+    "path": ".tmp/representative-30mib.pdf",
     "bytes": 31416448,
     "sha256": "001c519e80e5132a6eda8048fab0fafd1a5c6744d90eae8bade6639ed501321a"
   },

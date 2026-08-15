@@ -212,6 +212,7 @@ test("authenticated pages render without serious accessibility regressions", asy
     "exports",
     "billing",
     "settings",
+    "security",
     "help",
   ]) {
     const response = await page.goto(`/?view=${view}`, {
@@ -224,6 +225,38 @@ test("authenticated pages render without serious accessibility regressions", asy
   }
   await assertCreatorAdminBoundary(page);
   await completeSandboxCheckoutFlow(page);
+});
+
+test("administrator can open every control-room section", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "desktop-chromium",
+    "The privileged mutation surface is exercised once against the shared E2E server.",
+  );
+  await openApplication(page);
+  await page
+    .getByRole("button", { name: "استكشف الاستوديو كضيف" })
+    .first()
+    .click();
+  await openRegistration(page);
+  await registerCreatorAccount(page, "playwright-admin@example.test");
+
+  const response = await page.goto("/?view=admin", { waitUntil: "networkidle" });
+  expect(response?.ok()).toBe(true);
+  await expect(page.locator(".admin-shell")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "نظرة عامة" })).toBeVisible();
+
+  for (const section of [
+    ["المستخدمون", "المستخدمون"],
+    ["الفوترة", "الفوترة"],
+    ["سجل التدقيق", "سجل التدقيق"],
+    ["التشغيل", "التشغيل"],
+  ] as const) {
+    await page.getByRole("button", { name: section[0], exact: true }).click();
+    await expect(page.getByRole("heading", { name: section[1] })).toBeVisible();
+  }
+  await assertNoSeriousAccessibilityViolations(page);
 });
 
 test("processes a PDF through the real book workflow", async ({ page }, testInfo) => {

@@ -12,7 +12,7 @@ import { formatBytes, formatDateTime } from "../../shared/formatters";
 import { useResourcePolling } from "../../shared/hooks/useResourcePolling";
 import { Icon } from "../../shared/Icon";
 import type { DemoState } from "../../types";
-import { getExportFormatPresentation } from "./exportPresentation";
+import { getExportFormatPresentation } from "../../shared/exportPresentation";
 import { getExportFailureMessage } from "../../shared/workflowFailurePresentation";
 
 export type ExportProjectTarget = Pick<

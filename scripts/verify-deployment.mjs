@@ -88,7 +88,7 @@ const [
       "apps/web/src/lib/api/transport.ts",
       "apps/api/src/processing/processing-worker-runtime.ts",
       "apps/api/src/processing/processing-job-executor.ts",
-      "apps/api/src/processing/processing-job-claim.ts",
+      "apps/api/src/infrastructure/postgres/postgres-processing-job-claim.ts",
       "apps/api/src/processing/processing-worker-config.ts",
       "apps/worker-media/src/index.ts",
       "apps/worker-document/src/index.ts",

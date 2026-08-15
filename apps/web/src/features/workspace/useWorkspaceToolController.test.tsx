@@ -132,4 +132,97 @@ describe("useWorkspaceToolController", () => {
     );
     expect(result.current.pdfTextOperation).toBeUndefined();
   });
+
+  it("routes every dialog and document command to an observable controller state", () => {
+    const onArrangeReadingOrder = vi.fn();
+    const textLayer = layer({ kind: "text", fullText: "نص صالح", pageNumber: 1 });
+    const { result } = renderHook(() =>
+      useWorkspaceToolController({
+        mode: "book",
+        persistedSource: true,
+        features,
+        activeLayer: textLayer,
+        selectedIds: [textLayer.id],
+        imageLayers: [],
+        bookLayers: [textLayer],
+        onArrangeReadingOrder,
+        onNotify: vi.fn(),
+      }),
+    );
+
+    useRegisteredTool(result, "pdf.reading-order");
+    expect(onArrangeReadingOrder).toHaveBeenCalledOnce();
+    useRegisteredTool(result, "source.versions");
+    expect(result.current.sourceVersionsOpen).toBe(true);
+    useRegisteredTool(result, "pdf.region-ocr");
+    expect(result.current.pdfRegionOcrLayerId).toBe(textLayer.id);
+    useRegisteredTool(result, "pdf.split");
+    expect(result.current.pdfTextOperation).toEqual({
+      operation: "split",
+      layerIds: [textLayer.id],
+    });
+  });
+
+  it("routes image refinement, merging, character studio, and editor commands", () => {
+    const first = layer({ id: "raster-1" });
+    const second = layer({ id: "raster-2", name: "+عنصر_02" });
+    const { result } = renderHook(() =>
+      useWorkspaceToolController({
+        mode: "image",
+        persistedSource: true,
+        features,
+        activeLayer: first,
+        selectedIds: [first.id, second.id],
+        imageLayers: [first, second],
+        bookLayers: [],
+        onArrangeReadingOrder: vi.fn(),
+        onNotify: vi.fn(),
+      }),
+    );
+
+    useRegisteredTool(result, "image.edge-refine");
+    expect(result.current.imageRasterOperation).toEqual({
+      operation: "edge-refine",
+      layerIds: [first.id],
+    });
+    useRegisteredTool(result, "image.merge");
+    expect(result.current.imageRasterOperation).toEqual({
+      operation: "merge",
+      layerIds: [first.id, second.id],
+    });
+    useRegisteredTool(result, "image.turntable");
+    expect(result.current.characterStudioOpen).toBe(true);
+    useRegisteredTool(result, "image.exclude");
+    expect(result.current.activeTool).toBe("image.exclude");
+    expect(result.current.editorCommand).toMatchObject({
+      id: "image.exclude",
+      sequence: 1,
+    });
+  });
 });
+
+function layer(overrides: Partial<Layer> = {}): Layer {
+  return {
+    id: "raster-1",
+    name: "+عنصر_01",
+    kind: "raster",
+    visible: true,
+    locked: false,
+    fixed: false,
+    opacity: 1,
+    color: "#2563eb",
+    bounds: { x: 0, y: 0, width: 100, height: 20 },
+    ...overrides,
+  };
+}
+
+function useRegisteredTool(
+  result: ReturnType<typeof renderHook<ReturnType<typeof useWorkspaceToolController>, unknown>>["result"],
+  id: string,
+) {
+  const tool = result.current.workspaceTools.find((candidate) => candidate.id === id);
+  expect(tool).toBeDefined();
+  act(() => {
+    if (tool) result.current.useTool(tool);
+  });
+}

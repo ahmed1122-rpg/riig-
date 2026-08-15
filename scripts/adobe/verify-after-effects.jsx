@@ -106,7 +106,13 @@
       } finally {
         composition.resolutionFactor = originalResolutionFactor;
       }
-      lines.push("PREVIEW|" + testCase.filename + "|" + previewFile.fsName);
+      lines.push(
+        "PREVIEW|" +
+          testCase.filename +
+          "|artifacts/adobe-golden/generated/after-effects-" +
+          caseIndex +
+          ".png",
+      );
     } else {
       failures.push("After Effects cannot render a PNG preview for " + testCase.filename + ".");
     }

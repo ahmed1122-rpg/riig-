@@ -62,13 +62,15 @@
     "verify:architecture": "node --test scripts/import-cycle-detector.test.mjs && node scripts/verify-architecture.mjs",
     "verify:contracts": "node --import tsx --test scripts/verify-contract-baseline.test.mjs && node --import tsx scripts/verify-contract-baseline.mjs",
     "verify:maintainability": "node --test scripts/verify-maintainability.test.mjs && node scripts/verify-maintainability.mjs",
-    "verify:deployment": "node --test scripts/check-worker-health.test.mjs scripts/verify-browser-matrix.test.mjs scripts/verify-character-race-script.test.mjs scripts/verify-nginx-deployment.test.mjs scripts/verify-node-toolchain.test.mjs scripts/verify-qa-image-contract.test.mjs scripts/verify-runtime-image-contract.test.mjs scripts/verify-workflow-security.test.mjs && node --import tsx scripts/verify-browser-matrix.mjs && node scripts/verify-deployment.mjs",
+    "verify:deployment": "node --test scripts/check-worker-health.test.mjs scripts/run-webkit-e2e.test.mjs scripts/verify-browser-matrix.test.mjs scripts/verify-character-race-script.test.mjs scripts/verify-nginx-deployment.test.mjs scripts/verify-node-toolchain.test.mjs scripts/verify-qa-image-contract.test.mjs scripts/verify-runtime-image-contract.test.mjs scripts/verify-worker-build-contract.test.mjs scripts/verify-workflow-security.test.mjs && node --import tsx scripts/verify-browser-matrix.mjs && node scripts/verify-worker-build-contract.mjs && node scripts/verify-deployment.mjs",
     "verify:alerts": "node scripts/verify-prometheus-rules.mjs",
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
     "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
     "verify:incident": "node --test scripts/verify-incident-manifest.test.mjs && node scripts/verify-incident-manifest.mjs docs/runbooks/incident-manifest.example.json",
     "verify:security-license": "node --test scripts/verify-security-license.test.mjs && node scripts/verify-security-license.mjs",
-    "verify:css": "node scripts/verify-css-architecture.mjs",
+    "verify:paths": "node --test scripts/verify-repository-paths.test.mjs && node scripts/verify-repository-paths.mjs",
+    "verify:css": "node scripts/verify-css-architecture.mjs && node --test scripts/verify-css-usage.test.mjs && node scripts/verify-css-usage.mjs",
+    "verify:icons": "node --test scripts/verify-icon-usage.test.mjs && node scripts/verify-icon-usage.mjs",
     "verify:fixtures": "node --test scripts/ocr-corpus-wikitext.test.mjs scripts/ocr-holdout-policy.test.mjs scripts/ocr-selector-policy.test.mjs && node scripts/verify-fixture-corpus.mjs && node scripts/verify-ocr-corpus.mjs --allow-stale-implementation-when-disabled",
     "verify:ocr-corpus": "node scripts/verify-ocr-corpus.mjs",
     "verify:visuals": "node scripts/verify-visual-assets.mjs",
@@ -85,7 +87,7 @@
     "test:topology": "node scripts/verify-production-topology.mjs",
     "test:faults:topology": "node scripts/verify-runtime-fault-recovery.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:contracts && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:security-license && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:fixtures && npm run verify:visuals && npm run verify:adobe-golden && npm run test:character-rig:benchmark && npm run verify:character-rig:benchmark && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:contracts && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:security-license && npm run verify:paths && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:icons && npm run verify:fixtures && npm run verify:visuals && npm run verify:adobe-golden && npm run test:character-rig:benchmark && npm run verify:character-rig:benchmark && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=24.18.1 <25",
