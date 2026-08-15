@@ -29,7 +29,7 @@ describe("authentication security primitives", () => {
 
   it("rejects malformed stored password encodings before deriving a key", async () => {
     const encoded = await hashPassword("StrongPass123");
-    expect(encoded).toMatch(/^scrypt\$v2\$16384\$8\$1\$/u);
+    expect(encoded).toMatch(/^scrypt\$v3\$32768\$8\$3\$/u);
     expect(passwordHashNeedsUpgrade(encoded)).toBe(false);
     await expect(verifyPassword("StrongPass123", encoded)).resolves.toBe(true);
     await expect(
@@ -49,18 +49,18 @@ describe("authentication security primitives", () => {
     expect(passwordHashNeedsUpgrade(legacy)).toBe(true);
   });
 
-  it("accepts a v3 work factor without downgrading it during compatibility rollout", async () => {
+  it("accepts the previous v2 work factor and marks it for progressive rehash", async () => {
     const salt = Buffer.alloc(16, 5);
     const key = scryptSync("StrongPass123", salt, 64, {
-      N: 32_768,
+      N: 16_384,
       r: 8,
-      p: 3,
+      p: 1,
       maxmem: 64 * 1024 * 1024,
     });
-    const v3 = `scrypt$v3$32768$8$3$${salt.toString("hex")}$${key.toString("hex")}`;
+    const v2 = `scrypt$v2$16384$8$1$${salt.toString("hex")}$${key.toString("hex")}`;
 
-    await expect(verifyPassword("StrongPass123", v3)).resolves.toBe(true);
-    expect(passwordHashNeedsUpgrade(v3)).toBe(false);
+    await expect(verifyPassword("StrongPass123", v2)).resolves.toBe(true);
+    expect(passwordHashNeedsUpgrade(v2)).toBe(true);
   });
 
   it("rotates MFA encryption and recovery hashing without losing old data", () => {

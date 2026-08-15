@@ -13,7 +13,7 @@ const LEGACY_V2_SCRYPT = {
   blockSize: 8,
   parallelization: 1,
 } as const;
-const WRITE_SCRYPT = LEGACY_V2_SCRYPT;
+const WRITE_SCRYPT = CURRENT_SCRYPT;
 const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 const SALT_HEX_PATTERN = /^[a-f0-9]{32}$/u;
 const KEY_HEX_PATTERN = new RegExp(`^[a-f0-9]{${KEY_LENGTH * 2}}$`, "u");

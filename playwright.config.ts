@@ -67,7 +67,7 @@ export default defineConfig({
     },
     {
       name: "desktop-webkit",
-      retries: process.env.CI ? 2 : 0,
+      retries: 2,
       use: {
         ...devices["Desktop Safari"],
         ...webkitDiagnostics,
@@ -77,7 +77,7 @@ export default defineConfig({
     },
     {
       name: "mobile-webkit",
-      retries: process.env.CI ? 2 : 0,
+      retries: 2,
       use: {
         ...devices["Desktop Safari"],
         ...webkitDiagnostics,

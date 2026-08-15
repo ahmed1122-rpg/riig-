@@ -275,3 +275,13 @@ groups:
         annotations:
           summary: Sanitized browser error reports are elevated
           runbook: docs/runbooks/client-experience.md
+
+      - alert: MotionPrepCspViolationDetected
+        expr: |
+          sum(increase(motionprep_csp_violations_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A browser reported a Content Security Policy violation
+          runbook: docs/runbooks/client-experience.md

@@ -380,8 +380,10 @@ restore history.
   HSTS and the remaining security headers on HTML, assets, health, and proxied
   API paths.
   Mirror HSTS at the TLS load balancer so edge-generated error responses carry
-  it as well. The CSP deliberately retains `style-src 'unsafe-inline'` for the
-  current React dynamic-style surface; do not describe it as a strict CSP.
+  it as well. The CSP enforces `style-src 'self'` without `unsafe-inline`.
+  Production CSP reports are sanitized, counted by bounded directive,
+  disposition, browser-family, and release labels, and exposed through the
+  private metrics endpoint for release monitoring.
 - PostgreSQL, Redis, S3, SMTP, and authentication secrets are injected at
   runtime and are not baked into images.
 - Browser object transfers pass through the authenticated API. The bucket has

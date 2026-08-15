@@ -22,6 +22,7 @@ function validConfig() {
     ],
     projects: Object.entries(requiredBrowserProjects).map(([name, browserName]) => ({
       name,
+      ...(name.endsWith("-webkit") ? { retries: 2 } : {}),
       use: {
         browserName,
         ...(name.startsWith("mobile-") ? { hasTouch: true } : {}),

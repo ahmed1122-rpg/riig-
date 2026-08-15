@@ -23,6 +23,7 @@ const requiredAlerts = [
   "MotionPrepHttpErrorRateHigh",
   "MotionPrepAuthenticationRejectionsHigh",
   "MotionPrepApiLatencyHigh",
+  "MotionPrepCspViolationDetected",
 ];
 
 const requiredDashboardMetrics = [
@@ -41,6 +42,7 @@ const requiredDashboardMetrics = [
   "motionprep_email_outbox_events_last_hour",
   "motionprep_build_info",
   "motionprep_process_resident_memory_bytes",
+  "motionprep_csp_violations_total",
 ];
 
 export async function verifyObservabilityArtifacts(root) {

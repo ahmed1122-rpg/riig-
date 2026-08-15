@@ -4,6 +4,18 @@ import react from "@vitejs/plugin-react";
 const previewApiOrigin = resolvePlaywrightPreviewApiOrigin(
   process.env.PLAYWRIGHT_PREVIEW_API_ORIGIN,
 );
+export const strictContentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "connect-src 'self'",
+].join("; ");
 
 export default defineConfig({
   envDir: "../../",
@@ -17,6 +29,9 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
+    headers: {
+      "Content-Security-Policy": strictContentSecurityPolicy,
+    },
     ...(previewApiOrigin
       ? {
           proxy: {

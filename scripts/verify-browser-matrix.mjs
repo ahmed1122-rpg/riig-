@@ -49,6 +49,11 @@ export function validateBrowserMatrix(config, packageManifest) {
         `${name} must use low-overhead crash diagnostics on Linux.`,
       );
     }
+    if (name.endsWith("-webkit") && project.retries !== 2) {
+      violations.push(
+        `${name} must retain two retries for the isolated Linux WebKit gate.`,
+      );
+    }
     if (name === "mobile-webkit" && project.use?.deviceScaleFactor !== 1) {
       violations.push(
         "mobile-webkit must use DPR 1 in the Linux qualification gate.",

@@ -135,8 +135,13 @@ export async function buildApp(
       : {}),
     nameSpace: "motionprep:rate-limit:",
   });
-  const clientTelemetryMetrics = new ClientTelemetryMetrics();
-  await registerCspReportRoutes(app, { clientTelemetry: clientTelemetryMetrics });
+  const clientTelemetryMetrics = new ClientTelemetryMetrics(
+    config.RELEASE_VERSION,
+  );
+  await registerCspReportRoutes(app, {
+    clientTelemetry: clientTelemetryMetrics,
+    release: config.RELEASE_VERSION,
+  });
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("x-request-id", request.id);
     if (

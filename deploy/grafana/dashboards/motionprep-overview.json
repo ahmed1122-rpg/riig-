@@ -161,6 +161,17 @@
       ],
       "title": "Worker memory and CPU",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 48 },
+      "id": 16,
+      "targets": [
+        { "expr": "sum by (directive, disposition, browser, release) (increase(motionprep_csp_violations_total[15m]))", "legendFormat": "{{directive}} {{disposition}} {{browser}} {{release}}", "refId": "A" }
+      ],
+      "title": "Content Security Policy violations",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -182,5 +193,5 @@
   "timezone": "browser",
   "title": "MotionPrep production overview",
   "uid": "motionprep-production-overview",
-  "version": 3
+  "version": 4
 }

@@ -11,6 +11,61 @@ const diagnostics = new Map<string, string[]>();
 test.beforeEach(async ({ page }, testInfo) => {
   const events: string[] = [];
   diagnostics.set(testInfo.testId, events);
+  await page.exposeFunction(
+    "__recordMotionprepCspViolation",
+    (violation: string) => events.push(`csp: ${violation}`),
+  );
+  await page.addInitScript(() => {
+    const instrumentedWindow = window as typeof window & {
+      __motionprepPlaywrightScreenshotStyle?: boolean;
+    };
+    const styleObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          const styles = node instanceof HTMLStyleElement
+            ? [node]
+            : node instanceof Element
+              ? [...node.querySelectorAll("style")]
+              : [];
+          for (const style of styles) {
+            if (style.textContent?.trim() === "body {}") {
+              instrumentedWindow.__motionprepPlaywrightScreenshotStyle = true;
+            }
+          }
+        }
+      }
+    });
+    styleObserver.observe(document, { childList: true, subtree: true });
+    document.addEventListener("securitypolicyviolation", (event) => {
+      const browserWindow = window as typeof window & {
+        __motionprepA11yAuditActive?: boolean;
+        __motionprepPlaywrightScreenshotStyle?: boolean;
+        __recordMotionprepCspViolation?: (value: string) => Promise<void>;
+      };
+      // axe-core injects a temporary <style> element in WebKit. Keep that
+      // test-only operation out of the application CSP signal while every
+      // navigation and product interaction remains covered.
+      if (browserWindow.__motionprepA11yAuditActive) return;
+      // Playwright's failure screenshot synchronizer inserts exactly
+      // `body {}` and WebKit reports it as unknown-source:5. This happens only
+      // after a test has already failed and is not application behavior.
+      if (
+        browserWindow.__motionprepPlaywrightScreenshotStyle &&
+        event.effectiveDirective === "style-src-elem" &&
+        !event.sourceFile &&
+        event.lineNumber === 5
+      ) return;
+      const violation = [
+        event.effectiveDirective,
+        event.blockedURI || "inline",
+        event.sourceFile || "unknown-source",
+        event.lineNumber || 0,
+        event.sample || "no-sample",
+      ].join(":");
+      const recorder = browserWindow.__recordMotionprepCspViolation;
+      void recorder?.(violation);
+    });
+  });
   page.on("pageerror", (error) => {
     events.push(`pageerror: ${error.message}`);
   });
@@ -29,11 +84,16 @@ test.beforeEach(async ({ page }, testInfo) => {
 test.afterEach(async ({ page: _page }, testInfo) => {
   const events = diagnostics.get(testInfo.testId) ?? [];
   diagnostics.delete(testInfo.testId);
-  if (events.length === 0) return;
-  await testInfo.attach("browser-diagnostics", {
-    body: Buffer.from(events.join("\n"), "utf8"),
-    contentType: "text/plain",
-  });
+  if (events.length > 0) {
+    await testInfo.attach("browser-diagnostics", {
+      body: Buffer.from(events.join("\n"), "utf8"),
+      contentType: "text/plain",
+    });
+  }
+  expect(
+    events.filter((event) => event.startsWith("csp: ")),
+    "strict CSP violations",
+  ).toEqual([]);
 });
 
 test("public entry and guest authentication boundary are accessible", async ({
@@ -59,6 +119,18 @@ test("public entry and guest authentication boundary are accessible", async ({
     page.getByRole("heading", { name: "مرحبًا بعودتك" }),
   ).toBeVisible();
   await assertNoSeriousAccessibilityViolations(page);
+});
+
+test("legal documents render under the enforced CSP", async ({ page }) => {
+  for (const path of ["/legal/terms.html", "/legal/privacy.html"]) {
+    const response = await page.goto(path, { waitUntil: "networkidle" });
+    expect(response?.ok()).toBe(true);
+    expect(response?.headers()["content-security-policy"]).toContain(
+      "style-src 'self'",
+    );
+    await expect(page.locator("h1")).toBeVisible();
+    await expect(page.locator('link[href="/legal/legal.css"]')).toHaveCount(1);
+  }
 });
 
 async function assertMarketingImagesDecode(page: Page) {
@@ -361,9 +433,21 @@ test("creates an account, processes an image, saves review, and downloads export
 async function assertNoSeriousAccessibilityViolations(
   page: Page,
 ): Promise<void> {
-  const result = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa"])
-    .analyze();
+  await page.evaluate(() => {
+    (window as typeof window & { __motionprepA11yAuditActive?: boolean })
+      .__motionprepA11yAuditActive = true;
+  });
+  let result: Awaited<ReturnType<AxeBuilder["analyze"]>>;
+  try {
+    result = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa"])
+      .analyze();
+  } finally {
+    await page.evaluate(() => {
+      (window as typeof window & { __motionprepA11yAuditActive?: boolean })
+        .__motionprepA11yAuditActive = false;
+    });
+  }
   expect(
     result.violations.filter(({ impact }) =>
       ["critical", "serious"].includes(impact ?? ""),
@@ -374,6 +458,9 @@ async function assertNoSeriousAccessibilityViolations(
 async function openApplication(page: Page): Promise<void> {
   const response = await page.goto("/", { waitUntil: "networkidle" });
   expect(response?.ok()).toBe(true);
+  const policy = response?.headers()["content-security-policy"] ?? "";
+  expect(policy).toContain("style-src 'self'");
+  expect(policy).not.toContain("unsafe-inline");
   await expect(page.locator("#root")).not.toBeEmpty({ timeout: 15_000 });
 }
 

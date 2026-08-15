@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
 import {
+  classifyBrowserFamily,
   registerCspReportRoutes,
   sanitizeCspReport,
+  sanitizeCspReports,
   sanitizeClientReport,
 } from "./csp-report-routes.js";
 
@@ -27,6 +29,33 @@ describe("CSP report sanitization", () => {
 
   it("rejects non-object noise", () => {
     expect(sanitizeCspReport("secret-token")).toBeNull();
+  });
+
+  it("accepts bounded Reporting API batches", () => {
+    expect(sanitizeCspReports([
+      { body: { effectiveDirective: "style-src-attr", disposition: "report" } },
+      { body: { effectiveDirective: "img-src", disposition: "enforce" } },
+    ])).toEqual([
+      expect.objectContaining({
+        effective_directive: "style-src-attr",
+        disposition: "report",
+      }),
+      expect.objectContaining({
+        effective_directive: "img-src",
+        disposition: "enforce",
+      }),
+    ]);
+  });
+
+  it("classifies browser engines into bounded metric labels", () => {
+    expect(classifyBrowserFamily("Mozilla/5.0 Firefox/141.0")).toBe("firefox");
+    expect(
+      classifyBrowserFamily("Mozilla/5.0 Chrome/140.0 Safari/537.36"),
+    ).toBe("chromium");
+    expect(
+      classifyBrowserFamily("Mozilla/5.0 AppleWebKit/605.1 Safari/605.1"),
+    ).toBe("webkit");
+    expect(classifyBrowserFamily("private-client/1.0")).toBe("unknown");
   });
 
   it("accepts the browser CSP media type without echoing the report", async () => {
@@ -82,6 +111,7 @@ describe("CSP report sanitization", () => {
     const clientTelemetry = {
       observeError: vi.fn(),
       observeLcp: vi.fn(),
+      observeCspViolation: vi.fn(),
     };
     await registerCspReportRoutes(app, { clientTelemetry });
     const errorResponse = await app.inject({
@@ -113,6 +143,35 @@ describe("CSP report sanitization", () => {
     expect(performanceResponse.statusCode).toBe(204);
     expect(clientTelemetry.observeError).toHaveBeenCalledWith("error");
     expect(clientTelemetry.observeLcp).toHaveBeenCalledWith(2_500);
+    await app.close();
+  });
+
+  it("records CSP violations using bounded metric labels", async () => {
+    const app = Fastify({ logger: false });
+    const clientTelemetry = {
+      observeError: vi.fn(),
+      observeLcp: vi.fn(),
+      observeCspViolation: vi.fn(),
+    };
+    await registerCspReportRoutes(app, { clientTelemetry });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/security/csp-report",
+      headers: {
+        "content-type": "application/reports+json",
+        "user-agent": "Mozilla/5.0 Firefox/141.0",
+      },
+      payload: JSON.stringify([
+        { body: { effectiveDirective: "style-src-attr", disposition: "report" } },
+      ]),
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(clientTelemetry.observeCspViolation).toHaveBeenCalledWith(
+      "style-src-attr",
+      "report",
+      "firefox",
+    );
     await app.close();
   });
 });

@@ -22,12 +22,23 @@ include /etc/nginx/snippets/security-headers.conf;
 test("accepts the trusted proxy and all-path security header contract", () => {
   const securityHeaders = `
 add_header Strict-Transport-Security;
-add_header Content-Security-Policy-Report-Only "style-src 'self'; report-uri /v1/security/csp-report";
+add_header Reporting-Endpoints 'csp-endpoint="/v1/security/csp-report"';
+add_header Content-Security-Policy "style-src 'self'; report-uri /v1/security/csp-report; report-to csp-endpoint";
 `;
   assert.deepEqual(
     verifyNginxDeployment(validNginx, securityHeaders),
     [],
   );
+});
+
+test("rejects an enforced CSP that retains unsafe-inline", () => {
+  const violations = verifyNginxDeployment(
+    validNginx,
+    `add_header Strict-Transport-Security;
+add_header Reporting-Endpoints 'csp-endpoint="/v1/security/csp-report"';
+add_header Content-Security-Policy "style-src 'self' 'unsafe-inline'; report-uri /v1/security/csp-report; report-to csp-endpoint";`,
+  );
+  assert.match(violations.join("\n"), /must not allow unsafe inline/u);
 });
 
 test("rejects spoofable forwarding and missing location headers", () => {
