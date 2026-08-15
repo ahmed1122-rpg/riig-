@@ -154,7 +154,7 @@ export function useCharacterStudioController({
     ),
   );
   const handleInitialError = useCallback((caught: unknown) => {
-    setError(errorMessage(caught, "تعذر فتح Character Studio."));
+    setError(errorMessage(caught, "تعذر فتح استوديو تدوير الشخصية."));
   }, []);
   const handleLoadingChange = useCallback((nextLoading: boolean) => {
     setLoading(nextLoading);
@@ -250,8 +250,8 @@ export function useCharacterStudioController({
   async function saveBible() {
     await submit(async () => {
       await persistBibleDraft();
-      onNotify("تم حفظ Character Bible بإصدار قابل للتدقيق.");
-    }, "تعذر حفظ Character Bible.");
+      onNotify("تم حفظ دليل هوية الشخصية بإصدار قابل للتدقيق.");
+    }, "تعذر حفظ دليل هوية الشخصية.");
   }
 
   async function approveBible() {
@@ -266,9 +266,9 @@ export function useCharacterStudioController({
       );
       setBible(approved);
       hydratedBibleIdRef.current = approved.id;
-      onNotify("تم قفل Character Bible واعتماد الهوية.");
+      onNotify("تم قفل دليل هوية الشخصية واعتماد الهوية.");
       setStage("references");
-    }, "تعذر اعتماد Character Bible.");
+    }, "تعذر اعتماد دليل هوية الشخصية.");
   }
 
   async function addReference() {

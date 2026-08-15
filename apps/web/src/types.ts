@@ -1,3 +1,8 @@
+import type {
+  LayerKind as DomainLayerKind,
+  ProjectKind,
+} from "@motionprep/contracts";
+
 export type ViewId =
   | "dashboard"
   | "projects"
@@ -22,10 +27,14 @@ export type AdminView =
   | "system";
 export type PdfSegmentation = "headings" | "topics" | "sentences" | "lines" | "words" | "characters";
 
+type CharacterPartKind = "head" | "body" | "hand" | "face";
+type LayerPresentationKind = CharacterPartKind | "page";
+
 export interface Layer {
   id: string;
   name: string;
-  kind: "head" | "body" | "hand" | "face" | "text" | "page" | "group";
+  kind: DomainLayerKind;
+  presentationKind?: LayerPresentationKind;
   parentId?: string | null;
   visible: boolean;
   locked: boolean;
@@ -36,7 +45,7 @@ export interface Layer {
   color: string;
   previewUrl?: string;
   hasRasterAsset?: boolean;
-  fullContent?: string;
+  fullText?: string;
   pageNumber?: number;
   bounds?: {
     x: number;
@@ -50,4 +59,3 @@ export interface Layer {
   fontFamily?: string;
   fontSize?: number;
 }
-import type { ProjectKind } from "@motionprep/contracts";

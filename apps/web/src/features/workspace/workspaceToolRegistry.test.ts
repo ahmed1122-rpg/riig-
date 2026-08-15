@@ -31,6 +31,10 @@ describe("workspace tool registry", () => {
       "source.versions",
     ]);
     expect(tools.every((tool) => tool.available)).toBe(true);
+    expect(tools.find((tool) => tool.id === "image.turntable")).toMatchObject({
+      label: "استوديو تدوير الشخصية",
+      icon: "turntable",
+    });
   });
 
   it("never exposes Character Turntable for PDF projects", () => {
@@ -137,6 +141,15 @@ describe("workspace tool registry", () => {
         }),
       ).map((tool) => tool.id),
     ).toEqual(["pdf.redo"]);
+    expect(
+      tools.filter((tool) =>
+        isWorkspaceShortcut(tool, { ...event, key: "o" }),
+      ).map((tool) => tool.id),
+    ).toEqual(["pdf.region-ocr"]);
+    expect(tools.find((tool) => tool.id === "pdf.region-ocr")).toMatchObject({
+      icon: "ocrZone",
+      shortcut: { key: "o", label: "O" },
+    });
   });
 
   it("disables regional OCR when the runtime capability is unavailable", () => {
@@ -151,6 +164,7 @@ describe("workspace tool registry", () => {
 
     expect(regionalOcr).toMatchObject({
       available: false,
+      statusBadge: "غير مفعّل",
       unavailableReason: "الدليل الإنتاجي غير صالح بعد.",
     });
     expect(resolveWorkspaceToolDispatch(regionalOcr!)).toEqual({

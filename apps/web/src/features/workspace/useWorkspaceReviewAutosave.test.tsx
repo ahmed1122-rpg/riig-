@@ -25,7 +25,8 @@ vi.mock("../../lib/api", async () => {
 const baseline: Layer = {
   id: "layer-1",
   name: "+layer",
-  kind: "body",
+  kind: "raster",
+  presentationKind: "body",
   visible: true,
   locked: false,
   opacity: 100,

@@ -1,6 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const previewApiOrigin = resolvePlaywrightPreviewApiOrigin(
+  process.env.PLAYWRIGHT_PREVIEW_API_ORIGIN,
+);
+
 export default defineConfig({
   envDir: "../../",
   plugins: [react()],
@@ -13,6 +17,15 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
+    ...(previewApiOrigin
+      ? {
+          proxy: {
+            "/v1": {
+              target: previewApiOrigin,
+            },
+          },
+        }
+      : {}),
   },
   build: {
     manifest: true,
@@ -59,3 +72,17 @@ export default defineConfig({
     },
   },
 });
+
+export function resolvePlaywrightPreviewApiOrigin(
+  configuredOrigin: string | undefined,
+): string | undefined {
+  const value = configuredOrigin?.trim();
+  if (!value) return undefined;
+  const origin = new URL(value);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1") {
+    throw new Error(
+      "PLAYWRIGHT_PREVIEW_API_ORIGIN must be an HTTP loopback origin.",
+    );
+  }
+  return origin.origin;
+}

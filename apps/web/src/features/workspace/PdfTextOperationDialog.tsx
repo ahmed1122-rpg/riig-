@@ -22,8 +22,9 @@ export function PdfTextOperationDialog({
   onClose,
   onApply,
 }: PdfTextOperationDialogProps) {
-  const text = layers[0]?.fullContent ?? "";
+  const text = layers[0]?.fullText ?? "";
   const characters = useMemo(() => Array.from(text), [text]);
+  const wordTargets = useMemo(() => pdfSplitWordTargets(text), [text]);
   const [offset, setOffset] = useState(() => suggestedOffset(characters));
   const [separator, setSeparator] = useState<"space" | "newline">("space");
   const [submitting, setSubmitting] = useState(false);
@@ -94,8 +95,23 @@ export function PdfTextOperationDialog({
     >
       {operation === "split" ? (
         <div className="pdf-text-split-control">
+          <fieldset className="pdf-word-picker">
+            <legend>انقر على الكلمة التي يبدأ عندها الجزء الثاني</legend>
+            <div dir={layers[0]?.direction ?? "rtl"}>
+              {wordTargets.map((word) => (
+                <button
+                  type="button"
+                  key={`${word.offset}-${word.text}`}
+                  aria-pressed={offset === word.offset}
+                  onClick={() => setOffset(word.offset)}
+                >
+                  {word.text}
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <label>
-            <span>موضع الفصل بعد الحرف</span>
+            <span>موضع دقيق بعد الحرف (اختياري)</span>
             <input
               type="number"
               min={1}
@@ -128,7 +144,7 @@ export function PdfTextOperationDialog({
           <p>{layers.length} وحدات محددة بالترتيب الحالي للقراءة:</p>
           <ol>
             {layers.map((layer) => (
-              <li key={layer.id}>{layer.fullContent ?? layer.name}</li>
+              <li key={layer.id}>{layer.fullText ?? layer.name}</li>
             ))}
           </ol>
           <label>
@@ -148,6 +164,21 @@ export function PdfTextOperationDialog({
       {error && <p className="form-error" role="alert">{error}</p>}
     </Dialog>
   );
+}
+
+export function pdfSplitWordTargets(text: string): Array<{ text: string; offset: number }> {
+  const characters = Array.from(text);
+  const words: Array<{ text: string; offset: number }> = [];
+  let index = 0;
+  while (index < characters.length) {
+    while (index < characters.length && /\s/u.test(characters[index]!)) index += 1;
+    const start = index;
+    while (index < characters.length && !/\s/u.test(characters[index]!)) index += 1;
+    if (start > 0 && start < characters.length) {
+      words.push({ text: characters.slice(start, index).join(""), offset: start });
+    }
+  }
+  return words;
 }
 
 function suggestedOffset(characters: string[]): number {

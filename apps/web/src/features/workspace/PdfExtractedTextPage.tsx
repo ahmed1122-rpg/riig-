@@ -101,7 +101,7 @@ export function PdfExtractedTextPage({
             }}
             title={`${layer.name} · انقر مرتين للتحرير`}
           >
-            {layer.fullContent}
+            {layer.fullText}
           </span>
         ),
       )}

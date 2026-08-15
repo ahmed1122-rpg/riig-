@@ -32,6 +32,9 @@ import type {
   WorkspaceSourceState,
 } from "./useWorkspaceStateControllers";
 import type { DocumentChangeSummary } from "./documentChangeSummary";
+import type { LayerCheckSummary } from "./layerChecks";
+import { useWorkspaceCanvasNavigation } from "./useWorkspaceCanvasNavigation";
+import { useWorkspaceFileDrop } from "./useWorkspaceFileDrop";
 
 interface WorkspaceEditorLayoutModel {
   mode: ProjectMode;
@@ -82,6 +85,7 @@ interface WorkspaceEditorLayoutModel {
   onLayerWidthChange: (value: number) => void;
   onLayerCommand: (command: LayerDocumentCommand) => Promise<void>;
   documentChangeLog: readonly DocumentChangeSummary[];
+  layerCheckSummary: LayerCheckSummary;
   guidanceRevision: number;
   imagePreparation: LayerDocumentView["imagePreparation"];
   ocrReview: LayerDocumentView["ocrReview"];
@@ -135,6 +139,7 @@ interface WorkspaceEditorLayoutProps {
     onDraftDirtyChange: (dirty: boolean) => void;
     onLayerCommand: WorkspaceEditorLayoutModel["onLayerCommand"];
     documentChangeLog: readonly DocumentChangeSummary[];
+    layerCheckSummary: LayerCheckSummary;
   };
 }
 
@@ -197,6 +202,7 @@ export function WorkspaceEditorLayout({
     onLayerWidthChange: editor.setLayerWidth,
     onLayerCommand: actions.onLayerCommand,
     documentChangeLog: actions.documentChangeLog,
+    layerCheckSummary: actions.layerCheckSummary,
     guidanceRevision: source.guidanceRevision,
     imagePreparation: source.imagePreparation,
     ocrReview: source.ocrReview,
@@ -226,17 +232,35 @@ export function WorkspaceEditorLayout({
     props.onNotify("سجّل الدخول قبل اختيار الملف؛ يمكنك استكشاف الأدوات كضيف دون رفع بيانات.");
     props.onRequireAuth();
   };
+  const canvasNavigation = useWorkspaceCanvasNavigation(
+    props.onZoomChange,
+    `${props.mode}:${props.sourceVersion}:${props.activePdfPage}`,
+  );
+  const fileDrop = useWorkspaceFileDrop(props.chooseSource, props.onNotify);
   const previewClassName = [
     "pro-editor-frame",
     `preview-bg--${props.previewBackground}`,
     props.grid ? "preview-grid-on" : "preview-grid-off",
     props.safeBounds ? "preview-safe" : "",
+    canvasNavigation.navigationClassName,
   ]
     .filter(Boolean)
     .join(" ");
-
   return (
-    <div className="pro-workspace-body">
+    <div
+      className={`pro-workspace-body ${fileDrop.dragActive ? "is-file-drag-active" : ""}`}
+      onDragEnter={fileDrop.onDragEnter}
+      onDragLeave={fileDrop.onDragLeave}
+      onDragOver={fileDrop.onDragOver}
+      onDrop={fileDrop.onDrop}
+    >
+      {fileDrop.dragActive && (
+        <div className="pro-workspace-dropzone" role="status">
+          <Icon name="upload" size={32} />
+          <strong>أفلت ملف المصدر هنا</strong>
+          <span>{props.mode === "image" ? "PNG أو JPG أو WebP أو AVIF أو TIFF أو BMP" : "ملف PDF واحد"}</span>
+        </div>
+      )}
       <WorkspaceToolRail
         mode={props.mode}
         tools={props.tools}
@@ -322,9 +346,18 @@ export function WorkspaceEditorLayout({
           onSafeBoundsChange={props.onSafeBoundsChange}
           onSoloChange={props.onSoloChange}
           onFocusModeChange={props.onFocusModeChange}
+          onFit={canvasNavigation.fitPreview}
         />
 
-        <div className={previewClassName}>
+        <div
+          ref={canvasNavigation.containerRef}
+          className={previewClassName}
+          style={canvasNavigation.navigationStyle}
+          onPointerDown={canvasNavigation.onPointerDown}
+          onPointerMove={canvasNavigation.onPointerMove}
+          onPointerUp={canvasNavigation.onPointerUp}
+          onPointerCancel={canvasNavigation.onPointerUp}
+        >
           {!props.persistedSource ? (
             <EmptySourcePreview
               mode={props.mode}
@@ -367,10 +400,10 @@ export function WorkspaceEditorLayout({
               selectedLayerId={props.activeLayerId}
               solo={props.solo}
               onSelectedLayerChange={props.onSelectLayer}
-              onTextLayerChange={(layerId, fullContent) =>
+              onTextLayerChange={(layerId, fullText) =>
                 props.onLayersChange(
                   props.layers.map((layer) =>
-                    layer.id === layerId ? { ...layer, fullContent } : layer,
+                    layer.id === layerId ? { ...layer, fullText } : layer,
                   ),
                 )
               }
@@ -421,6 +454,7 @@ export function WorkspaceEditorLayout({
           onLayersChange={props.onLayersChange}
           onLayerCommand={props.onLayerCommand}
           documentChangeLog={props.documentChangeLog}
+          checkSummary={props.layerCheckSummary}
           onNotify={props.onNotify}
         />
       ) : (

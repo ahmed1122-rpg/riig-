@@ -9,10 +9,10 @@ const ICON_NAMES = [
   "chevron", "plus", "image", "book", "layers", "review", "spark",
   "eye", "eyeOff", "lock", "unlock", "upload", "zoomIn", "zoomOut",
   "pointer", "undo", "check", "warning", "info", "sun", "moon",
-  "arrow", "filter", "grid", "list", "download", "refresh", "merge",
+  "arrow", "filter", "grid", "list", "download", "refresh", "turntable", "fitCanvas", "merge",
   "split", "scan", "panelClose", "panelOpen", "arrowUp", "arrowDown",
   "grip", "packageCheck", "brush", "eraser", "target", "highlighter",
-  "boxSelect", "scanText", "badgeCheck", "activity", "creditCard",
+  "boxSelect", "scanText", "ocrZone", "badgeCheck", "activity", "creditCard",
   "database", "external", "fileSearch", "gauge", "history", "key",
   "login", "logout", "mail", "server", "shield", "shieldCheck",
   "smartphone", "users", "wallet",
@@ -60,12 +60,12 @@ describe("Icon", () => {
       renderToStaticMarkup(<Icon name={name} />),
     );
 
-    expect(ICON_NAMES).toHaveLength(67);
+    expect(ICON_NAMES).toHaveLength(70);
     expect(ALL_ICONS_COVERED).toBe(true);
     expect(new Set(catalog)).toHaveLength(ICON_NAMES.length);
     expect(catalog.every((markup) => !markup.includes("undefined"))).toBe(true);
     expect(createHash("sha256").update(catalog.join("\n")).digest("hex")).toBe(
-      "b2b753412158f0a1143f439ec35cc41e67bdf8ff7b386d2dadf377b2ff7f61b2",
+      "7c3206f0c1dc8020ee8fffce6fc25f76d3b16d677c8187bc4c32a8e9bd2bcc44",
     );
   });
 });

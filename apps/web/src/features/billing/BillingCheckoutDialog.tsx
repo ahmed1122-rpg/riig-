@@ -11,6 +11,18 @@ export type CheckoutState =
   | "failure";
 
 export type PlanId = "starter" | "creator" | "studio";
+export type BillingCurrency = "USD" | "EGP";
+
+export function formatBillingPrice(
+  price: number,
+  currency: BillingCurrency,
+): string {
+  return new Intl.NumberFormat("ar-EG", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(price);
+}
 
 interface BillingPlanView {
   id: PlanId;
@@ -20,7 +32,9 @@ interface BillingPlanView {
 
 interface BillingCheckoutDialogProps {
   checkoutState: CheckoutState;
+  currency: BillingCurrency;
   onClose: () => void;
+  onCurrencyChange: (currency: BillingCurrency) => void;
   onPlanChange: (planId: PlanId) => void;
   onProviderChange: (providerId: PaymentProviderAdapter["id"]) => void;
   onRetry: () => void;
@@ -37,7 +51,9 @@ interface BillingCheckoutDialogProps {
 
 export function BillingCheckoutDialog({
   checkoutState,
+  currency,
   onClose,
+  onCurrencyChange,
   onPlanChange,
   onProviderChange,
   onRetry,
@@ -83,13 +99,23 @@ export function BillingCheckoutDialog({
             الخطة
             <select value={selectedPlan} onChange={(event) => onPlanChange(event.target.value as PlanId)}>
               {plans.filter((item) => item.id !== "starter").map((item) => (
-                <option value={item.id} key={item.id}>{item.name} — ${item.price}</option>
+                <option value={item.id} key={item.id}>{item.name} — {formatBillingPrice(item.price, currency)}</option>
               ))}
             </select>
           </label>
+          <label className="checkout-plan-select">
+            عملة الدفع
+            <select
+              value={currency}
+              onChange={(event) => onCurrencyChange(event.target.value as BillingCurrency)}
+            >
+              <option value="USD">دولار أمريكي (USD)</option>
+              <option value="EGP">جنيه مصري (EGP)</option>
+            </select>
+          </label>
           <dl className="checkout-costs">
-            <div><dt>الخطة الشهرية</dt><dd>${plan.price.toFixed(2)}</dd></div>
-            <div className="checkout-total"><dt>المبلغ الأساسي</dt><dd>${plan.price.toFixed(2)}</dd></div>
+            <div><dt>الخطة الشهرية</dt><dd>{formatBillingPrice(plan.price, currency)}</dd></div>
+            <div className="checkout-total"><dt>المبلغ الأساسي</dt><dd>{formatBillingPrice(plan.price, currency)}</dd></div>
           </dl>
           <fieldset className="provider-choice">
             <legend>طريقة الدفع المتاحة</legend>

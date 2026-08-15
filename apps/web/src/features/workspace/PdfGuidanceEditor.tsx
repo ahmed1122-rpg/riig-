@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../shared/Icon";
 import type { Layer, PdfSegmentation } from "../../types";
+import { isPageLayer } from "./workspaceLayerKinds";
 import { pdfSegmentationLabels } from "./pdfSegmentation";
 import {
   createGuidancePromptTools,
@@ -46,7 +47,7 @@ interface PdfGuidanceEditorProps extends SharedEditorProps {
   selectedLayerId?: string;
   solo?: boolean;
   onSelectedLayerChange?: (id: string) => void;
-  onTextLayerChange?: (id: string, fullContent: string) => void;
+  onTextLayerChange?: (id: string, fullText: string) => void;
   onPageChange?: (pageNumber: number) => void;
   onSegmentationChange: (
     value: PdfSegmentation,
@@ -138,7 +139,7 @@ export function PdfGuidanceEditor({
         pageNumber,
         kinds: ["text"],
         ...(solo && selectedLayerId ? { soloLayerId: selectedLayerId } : {}),
-      }).filter((layer) => layer.bounds && layer.fullContent),
+      }).filter((layer) => layer.bounds && layer.fullText),
     [layers, pageNumber, selectedLayerId, solo],
   );
   const names = useMemo(
@@ -147,7 +148,7 @@ export function PdfGuidanceEditor({
   );
   const backgroundName =
     layers.find(
-      (layer) => layer.kind === "page" && layer.pageNumber === pageNumber,
+      (layer) => isPageLayer(layer) && layer.pageNumber === pageNumber,
     )?.name ??
     `+page_${String(pageNumber).padStart(3, "0")}_background`;
   const selectedRegion = regions.find((region) => region.id === selectedId);
@@ -158,7 +159,7 @@ export function PdfGuidanceEditor({
       onNotify("افتح قفل طبقة النص قبل تحرير محتواها على الصفحة.");
       return;
     }
-    setTextEdit({ layerId: layer.id, draft: layer.fullContent ?? "" });
+    setTextEdit({ layerId: layer.id, draft: layer.fullText ?? "" });
   };
   const finishTextEdit = (save: boolean) => {
     if (!textEdit) return;

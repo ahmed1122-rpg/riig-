@@ -1,7 +1,8 @@
 import { memo, useRef } from "react";
 import { Icon } from "../../shared/Icon";
-import type { Layer, ProjectMode } from "../../types";
-import { getLayerCheckSummary } from "./layerChecks";
+import type { Layer } from "../../types";
+import type { LayerCheckSummary } from "./layerChecks";
+import { isPageLayer } from "./workspaceLayerKinds";
 
 export interface LayerRowProps {
   layer: Layer;
@@ -64,7 +65,7 @@ export const LayerRow = memo(function LayerRow({
 
   return (
     <div
-      className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${layer.kind === "page" ? "is-fixed" : ""} ${dragging ? "is-dragging" : ""} ${dragOverPosition ? `is-drag-over-${dragOverPosition}` : ""}`}
+      className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${isPageLayer(layer) ? "is-fixed" : ""} ${dragging ? "is-dragging" : ""} ${dragOverPosition ? `is-drag-over-${dragOverPosition}` : ""}`}
       data-layer-id={layer.id}
       role="group"
       aria-label={`${layer.name}، ${selected ? "محددة" : "غير محددة"}`}
@@ -112,14 +113,14 @@ export const LayerRow = memo(function LayerRow({
       <button
         className="pro-layer-grip"
         type="button"
-        draggable={canReorder && layer.kind !== "page"}
+        draggable={canReorder && !isPageLayer(layer)}
         aria-label={`سحب ${layer.name}`}
         title={
           canReorder
             ? "اسحب أو استخدم Alt + الأسهم"
             : "إعادة الترتيب غير مدعومة لهذا المصدر"
         }
-        disabled={!canReorder || layer.kind === "page"}
+        disabled={!canReorder || isPageLayer(layer)}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >
@@ -131,7 +132,7 @@ export const LayerRow = memo(function LayerRow({
       >
         {layer.kind === "text" ? (
           "ن"
-        ) : layer.kind === "page" ? (
+        ) : isPageLayer(layer) ? (
           <Icon name="scan" size={13} />
         ) : (
           <i />
@@ -187,7 +188,7 @@ export const LayerRow = memo(function LayerRow({
               {layer.name}
             </strong>
             <span>
-              {layer.kind === "page"
+              {isPageLayer(layer)
                 ? "خلفية ثابتة"
                 : layer.kind === "text"
                   ? "نص · قابل للتحريك"
@@ -220,7 +221,7 @@ export const LayerRow = memo(function LayerRow({
           <button
             type="button"
             onClick={() => runAction(() => onMove(-1))}
-            disabled={layer.kind === "page" || !canReorder}
+            disabled={isPageLayer(layer) || !canReorder}
           >
             <Icon name="arrowUp" size={15} />
             نقل لأعلى
@@ -228,19 +229,19 @@ export const LayerRow = memo(function LayerRow({
           <button
             type="button"
             onClick={() => runAction(() => onMove(1))}
-            disabled={layer.kind === "page" || !canReorder}
+            disabled={isPageLayer(layer) || !canReorder}
           >
             <Icon name="arrowDown" size={15} />
             نقل لأسفل
           </button>
-          <button type="button" onClick={() => runAction(onToggleVisible)} disabled={layer.kind === "page"}>
+          <button type="button" onClick={() => runAction(onToggleVisible)} disabled={isPageLayer(layer)}>
             <Icon name={layer.visible ? "eyeOff" : "eye"} size={15} />
             {layer.visible ? "إخفاء الطبقة" : "إظهار الطبقة"}
           </button>
           <button
             type="button"
             onClick={() => runAction(onToggleLock)}
-            disabled={layer.kind === "page"}
+            disabled={isPageLayer(layer)}
           >
             <Icon name={layer.locked ? "unlock" : "lock"} size={15} />
             {layer.locked ? "فتح القفل" : "قفل الطبقة"}
@@ -262,15 +263,12 @@ export function LayerSkeleton() {
 }
 
 export function ChecksPanel({
-  mode,
-  layers,
+  summary,
   onSelectLayer,
 }: {
-  mode: ProjectMode;
-  layers: Layer[];
+  summary: LayerCheckSummary;
   onSelectLayer?: (layerId: string) => void;
 }) {
-  const summary = getLayerCheckSummary(mode, layers);
   return (
     <div className="checks-panel pro-checks-panel">
       <div className="check-summary">

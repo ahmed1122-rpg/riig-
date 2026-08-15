@@ -35,8 +35,7 @@ import type {
 } from "./exportReviewTypes";
 import { useExportReviewDialog } from "./useExportReviewDialog";
 import { useExportPreviewZoom } from "./useExportPreviewZoom";
-
-export { ExportCharacterPreview, ExportPdfPreview } from "./ExportReviewPreviews";
+import { isPageLayer } from "./workspaceLayerKinds";
 
 export function ExportReview({
   mode,
@@ -108,7 +107,7 @@ export function ExportReview({
       ? getExportFormatPresentation(format, mode).successMessage
       : undefined);
   const fixedBackground = Boolean(
-    selected?.fixed || (mode === "book" && selected?.kind === "page"),
+    selected?.fixed || (mode === "book" && selected && isPageLayer(selected)),
   );
   const orderingUnavailable = false;
   const pageCount = Math.max(

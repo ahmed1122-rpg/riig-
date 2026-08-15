@@ -15,6 +15,7 @@ interface PreviewToolbarProps {
   onSafeBoundsChange: (value: boolean) => void;
   onSoloChange: (value: boolean) => void;
   onFocusModeChange: (value: boolean) => void;
+  onFit: () => void;
 }
 
 export function PreviewToolbar({
@@ -30,6 +31,7 @@ export function PreviewToolbar({
   onSafeBoundsChange,
   onSoloChange,
   onFocusModeChange,
+  onFit,
 }: PreviewToolbarProps) {
   const setZoom = (value: number) => onZoomChange(Math.max(25, Math.min(200, value)));
 
@@ -43,6 +45,7 @@ export function PreviewToolbar({
           <button type="button" aria-label="تصغير المعاينة" onClick={() => setZoom(zoom - 10)}><Icon name="zoomOut" size={15} /></button>
           <input aria-label="تكبير المعاينة" type="range" min="25" max="200" step="5" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />
           <button type="button" aria-label="تكبير المعاينة" onClick={() => setZoom(zoom + 10)}><Icon name="zoomIn" size={15} /></button>
+          <button type="button" aria-label="توسيط واحتواء اللوحة" onClick={onFit}><Icon name="fitCanvas" size={15} /></button>
           <output dir="ltr">{zoom}%</output>
         </div>
       </div>

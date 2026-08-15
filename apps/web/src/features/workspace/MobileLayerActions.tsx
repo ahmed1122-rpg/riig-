@@ -6,6 +6,7 @@ import {
 } from "@motionprep/layer-domain";
 import { Icon } from "../../shared/Icon";
 import type { Layer } from "../../types";
+import { isPageLayer } from "./workspaceLayerKinds";
 
 interface MobileLayerActionsProps {
   layer: Layer;
@@ -24,7 +25,7 @@ export function MobileLayerActions({
 }: MobileLayerActionsProps) {
   const [renameDraft, setRenameDraft] = useState(layer.name);
   const [renameError, setRenameError] = useState("");
-  const structural = layer.kind === "page" || layer.kind === "group" || layer.fixed;
+  const structural = isPageLayer(layer) || layer.kind === "group" || layer.fixed;
   const contentLocked = structural || layer.locked;
 
   useEffect(() => {
@@ -64,7 +65,7 @@ export function MobileLayerActions({
     if (contentLocked) return;
     const siblings = layers.filter(
       (candidate) =>
-        candidate.kind !== "page" &&
+        !isPageLayer(candidate) &&
         candidate.kind !== "group" &&
         (candidate.pageNumber ?? 1) === (layer.pageNumber ?? 1) &&
         (candidate.parentId ?? null) === (layer.parentId ?? null),

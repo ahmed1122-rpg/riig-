@@ -95,7 +95,7 @@ export function ExportPdfPreview({
               fontSize: `${Math.max(6, Math.min(18, ((layer.fontSize ?? bounds.height) / pageSize.height) * 520))}px`,
             }}
           >
-            {layer.fullContent ?? layer.name.replace(/^\+/, "").replace(/_/gu, " ")}
+            {layer.fullText ?? layer.name.replace(/^\+/, "").replace(/_/gu, " ")}
           </div>
         );
       })}

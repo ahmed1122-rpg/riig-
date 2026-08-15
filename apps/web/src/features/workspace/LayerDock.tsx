@@ -14,7 +14,7 @@ import {
 } from "@motionprep/layer-domain";
 import { Icon } from "../../shared/Icon";
 import type { Layer, ProjectMode } from "../../types";
-import { getLayerCheckSummary } from "./layerChecks";
+import type { LayerCheckSummary } from "./layerChecks";
 import { ChecksPanel, LayerSkeleton } from "./LayerDockPanels";
 import {
   LayerDockInteractiveRow,
@@ -50,6 +50,7 @@ import {
   navigateLayerSelection,
   openLayerDiagnostic,
 } from "./layerDockNavigation";
+import { isPageLayer } from "./workspaceLayerKinds";
 
 type LayerDensity = "dense" | "comfortable";
 
@@ -65,6 +66,7 @@ interface LayerDockProps {
   pdfPages?: Array<{ pageNumber: number }>;
   canReorder?: boolean;
   documentChangeLog?: readonly DocumentChangeSummary[];
+  checkSummary: LayerCheckSummary;
   onCollapsedChange: (value: boolean) => void;
   onWidthChange: (value: number) => void;
   onSelectionChange: (ids: string[], activeId: string) => void;
@@ -86,6 +88,7 @@ export function LayerDock({
   pdfPages = [],
   canReorder = true,
   documentChangeLog = [],
+  checkSummary,
   onCollapsedChange,
   onWidthChange,
   onSelectionChange,
@@ -153,9 +156,9 @@ export function LayerDock({
     () => workspaceLayerCounts(mode, layers, activePdfPage, pdfPages),
     [activePdfPage, layers, mode, pdfPages],
   );
-  const unpinnedLayers = useMemo(() => filteredLayers.filter((layer) => layer.kind !== "page"), [filteredLayers]);
+  const unpinnedLayers = useMemo(() => filteredLayers.filter((layer) => !isPageLayer(layer)), [filteredLayers]);
   const pinnedBackgrounds = useMemo(
-    () => filteredLayers.filter((layer) => layer.kind === "page"),
+    () => filteredLayers.filter(isPageLayer),
     [filteredLayers],
   );
   const renderedLayers = useMemo(
@@ -164,10 +167,6 @@ export function LayerDock({
   );
   const duplicateIds = useMemo(
     () => duplicateLayerIds(layers, mode === "book"),
-    [layers, mode],
-  );
-  const checkSummary = useMemo(
-    () => getLayerCheckSummary(mode, layers),
     [layers, mode],
   );
   const activeLayer = layers.find((layer) => layer.id === activeId);
@@ -239,7 +238,7 @@ export function LayerDock({
     const layer = layers.find((candidate) => candidate.id === id);
     if (!layer || !isLayerContentEditable(layer)) return;
     const siblings = layers.filter((candidate) =>
-      candidate.kind !== "page" &&
+      !isPageLayer(candidate) &&
       candidate.kind !== "group" &&
       (candidate.pageNumber ?? 1) === (layer.pageNumber ?? 1) &&
       (candidate.parentId ?? null) === (layer.parentId ?? null),
@@ -353,14 +352,14 @@ export function LayerDock({
       onSaveRename={() => saveRename(layer.id)}
       onCancelRename={() => { setRenamingId(null); setRenameError(""); }}
       onToggleVisible={() => {
-        if (layer.kind === "page" || layer.fixed) {
+        if (isPageLayer(layer) || layer.fixed) {
           onNotify("خلفية PDF ثابتة وتبقى ظاهرة في التصدير.");
           return;
         }
         onLayersChange(layers.map((item) => item.id === layer.id ? { ...item, visible: !item.visible } : item));
       }}
       onToggleLock={() => {
-        if (layer.kind === "page" || layer.fixed) {
+        if (isPageLayer(layer) || layer.fixed) {
           onNotify("خلفية PDF ثابتة وغير قابلة للتحرير.");
           return;
         }
@@ -431,8 +430,7 @@ export function LayerDock({
       {tab === "checks" ? (
         <div id={checksPanelId} className="pro-layer-tabpanel pro-layer-tabpanel--checks" role="tabpanel" aria-labelledby={checksTabId} tabIndex={0}>
           <ChecksPanel
-            mode={mode}
-            layers={layers}
+            summary={checkSummary}
             onSelectLayer={(layerId) => void openDiagnosticLayer(layerId)}
           />
         </div>
@@ -542,5 +540,5 @@ export function LayerDock({
 }
 
 function isLayerContentEditable(layer: Layer): boolean {
-  return layer.kind !== "page" && layer.kind !== "group" && !layer.fixed && !layer.locked;
+  return !isPageLayer(layer) && layer.kind !== "group" && !layer.fixed && !layer.locked;
 }

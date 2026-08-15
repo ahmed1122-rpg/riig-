@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback } from "react";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
 import {
   ApiError,
@@ -10,8 +10,7 @@ import {
 import type { UploadState } from "./SourceUploadStatus";
 import { loadWorkspaceProjectDocument } from "./workspaceDocument";
 import { pdfApiModes } from "./pdfSegmentation";
-
-type SetState<Value> = Dispatch<SetStateAction<Value>>;
+import type { WorkspaceSetState as SetState } from "./Workspace.types";
 
 interface WorkspaceSourceRestorationOptions {
   mode: ProjectMode;

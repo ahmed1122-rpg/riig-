@@ -1,4 +1,5 @@
 import type { Layer } from "../../types";
+import { isPageLayer } from "./workspaceLayerKinds";
 
 export interface LayerReviewUpdate {
   id: string;
@@ -19,7 +20,7 @@ export interface LayerReviewUpdate {
 export type LayerReviewSnapshot = ReadonlyMap<string, string>;
 
 function isStructural(layer: Layer): boolean {
-  return layer.kind === "page" || layer.kind === "group" || Boolean(layer.fixed);
+  return isPageLayer(layer) || layer.kind === "group" || Boolean(layer.fixed);
 }
 
 export function snapshotLayerReview(
@@ -53,8 +54,8 @@ export function collectLayerReviewUpdates(
             ...(layer.fontSize === undefined
               ? {}
               : { fontSize: layer.fontSize }),
-            ...(layer.kind === "text" && layer.fullContent !== undefined
-              ? { fullText: layer.fullContent }
+            ...(layer.kind === "text" && layer.fullText !== undefined
+              ? { fullText: layer.fullText }
               : {}),
           },
         ],
@@ -74,7 +75,7 @@ function signature(layer: Layer): string {
     layer.textAlign ?? null,
     layer.fontFamily ?? null,
     layer.fontSize ?? null,
-    layer.fullContent ?? null,
+    layer.fullText ?? null,
   ]);
 }
 

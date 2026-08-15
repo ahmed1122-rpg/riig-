@@ -17,6 +17,7 @@ import {
   type LayerFilter,
 } from "./layerDockSelectors";
 import { useWorkspacePreference } from "./useWorkspacePreference";
+import { isPageLayer } from "./workspaceLayerKinds";
 import type {
   ReadyWorkspaceToolId,
   ResolvedWorkspaceTool,
@@ -103,14 +104,14 @@ export function WorkspaceMobileSheet({
   const layerCounts = workspaceLayerCounts(mode, layers, activePdfPage, pdfPages);
   const activeLayer = layers.find((layer) => layer.id === activeLayerId);
   const selectMobileLayer = (layer: Layer) => {
-    if (!multiSelect || layer.kind === "group" || layer.kind === "page") {
+    if (!multiSelect || layer.kind === "group" || isPageLayer(layer)) {
       onSelectLayer(layer.id, [layer.id]);
       return;
     }
     const selected = layers.filter((candidate) =>
       selectedIds.includes(candidate.id) &&
       candidate.kind !== "group" &&
-      candidate.kind !== "page" &&
+      !isPageLayer(candidate) &&
       (candidate.pageNumber ?? 1) === (layer.pageNumber ?? 1) &&
       (candidate.parentId ?? null) === (layer.parentId ?? null));
     const sameScope = selected.length === selectedIds.length;
@@ -148,7 +149,7 @@ export function WorkspaceMobileSheet({
                   onClick={() => { if (tool.available) onUseTool(tool); }}
                   className={activeTool === tool.id ? "is-active" : ""}
                 >
-                  <Icon name={tool.icon} /><span>{tool.label}</span>
+                  <Icon name={tool.icon} /><span>{tool.label}{tool.statusBadge && <em className="pro-tool-status">{tool.statusBadge}</em>}</span>
                   {tool.shortcut && <kbd>{tool.shortcut.label}</kbd>}
                 </button>
                 {!tool.available && tool.unavailableReason && <small id={`mobile-tool-reason-${tool.id}`}>{tool.unavailableReason}</small>}

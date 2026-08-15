@@ -202,7 +202,7 @@ describe("CharacterStudioDialog", () => {
     const onNotify = vi.fn();
     const view = renderStudio({ onNotify });
 
-    await view.findByText("Character Bible");
+    await view.findByText("دليل هوية الشخصية");
     const form = view.container.querySelector(".character-bible-form")!;
     const name = form.querySelector<HTMLInputElement>('input:not([type="color"]):not([type="number"])')!;
     const textareas = form.querySelectorAll<HTMLTextAreaElement>("textarea");
@@ -217,7 +217,7 @@ describe("CharacterStudioDialog", () => {
       target: { value: " keep eye color \n keep silhouette " },
     });
     const saveButton = Array.from(form.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Draft"),
+      button.textContent?.includes("المسودة"),
     )!;
     fireEvent.click(saveButton);
 
@@ -304,11 +304,11 @@ describe("CharacterStudioDialog", () => {
       });
     const view = renderStudio();
 
-    await view.findByText(/training/u);
+    await view.findByText(/قيد التدريب/u);
     await waitFor(
       () => {
         expect(getCharacterRigStudio).toHaveBeenCalledTimes(2);
-        expect(view.getByText(/ready/u)).toBeTruthy();
+        expect(view.getByText(/جاهز/u)).toBeTruthy();
       },
       { timeout: 3_500 },
     );
@@ -335,7 +335,7 @@ describe("CharacterStudioDialog", () => {
     });
     const view = renderStudio();
 
-    await view.findByText("Character Bible");
+    await view.findByText("دليل هوية الشخصية");
     fireEvent.click(view.container.querySelectorAll(".character-studio-steps button")[2]!);
     const stage = view.container.querySelector(".character-turntable-stage")!;
     fireEvent.change(stage.querySelector('input[type="range"]')!, {
@@ -385,7 +385,7 @@ describe("CharacterStudioDialog", () => {
     });
     const view = renderStudio();
 
-    await view.findByText("Character Bible");
+    await view.findByText("دليل هوية الشخصية");
     fireEvent.click(view.container.querySelectorAll(".character-studio-steps button")[3]!);
     const stage = view.container.querySelector(".character-comparison-stage")!;
     const reason = stage.querySelector("textarea")!;
@@ -443,7 +443,7 @@ describe("CharacterStudioDialog", () => {
     });
     const view = renderStudio();
 
-    await view.findByText("Character Bible");
+    await view.findByText("دليل هوية الشخصية");
     fireEvent.click(view.container.querySelectorAll(".character-studio-steps button")[4]!);
     const compileButton = view.container.querySelector<HTMLButtonElement>(
       ".character-rig-stage .button--primary",

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ProjectsView } from "../projects/ProjectsView";
 import { LayerDock } from "./LayerDock";
+import { getLayerCheckSummary } from "./layerChecks";
 import { WorkspaceHeader, WorkspaceStatusBar } from "./WorkspaceChrome";
 import { WorkspaceToolRail } from "./WorkspaceToolRail";
 
@@ -131,22 +132,23 @@ describe("truthful selection semantics", () => {
   });
 
   it("links dock tabs to a panel and exposes interactive layers as named groups", () => {
+    const layers = [{
+      id: "head",
+      name: "+رأس",
+      kind: "raster" as const,
+      presentationKind: "head" as const,
+      visible: true,
+      locked: false,
+      opacity: 100,
+      color: "#0f9fbb",
+    }];
     const markup = renderToStaticMarkup(
       <LayerDock
         mode="image"
-        layers={[
-          {
-            id: "head",
-            name: "+رأس",
-            kind: "head",
-            visible: true,
-            locked: false,
-            opacity: 100,
-            color: "#0f9fbb",
-          },
-        ]}
+        layers={layers}
         selectedIds={["head"]}
         activeId="head"
+        checkSummary={getLayerCheckSummary("image", layers)}
         collapsed={false}
         width={320}
         loading={false}

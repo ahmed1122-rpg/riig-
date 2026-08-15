@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback } from "react";
 import type { ExportFormat } from "@motionprep/contracts";
 import type { Layer, PdfSegmentation } from "../../types";
 import type { ConfirmationRequest } from "../../shared/useConfirmation";
@@ -29,8 +29,7 @@ import {
   workspaceCommandError,
   type WorkspaceCommandStatus,
 } from "./workspaceCommandStatus";
-
-type SetState<Value> = Dispatch<SetStateAction<Value>>;
+import type { WorkspaceSetState as SetState } from "./Workspace.types";
 
 export interface WorkspaceExportOptions {
   scope?: "full-document" | "per-page" | "selected-page";

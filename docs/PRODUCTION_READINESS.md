@@ -1,5 +1,28 @@
 # Production readiness
 
+Working-candidate update on 2026-08-15: the report-guided implementation
+restores all 14 tracked public visual assets and verifies browser image decode,
+implements canvas fit and Space-drag pan, exposes USD/EGP catalog prices through
+the hosted-checkout contract, localizes Character Studio, gives turntable/OCR/
+fit distinct icons and OCR a keyboard shortcut, adds a truthful disabled-state
+badge, previews raster merges, selects PDF split points by clicking a word, and
+accepts a single source file through a full-workspace drop target. Workspace
+page navigation and processing layer-operation route registration were split
+from their previous high-risk files; the maintainability ratchet remains at
+zero exact clone blocks. The intentional feature increment measures 184.0 KiB
+gzip JavaScript under a 185 KiB ratchet, while landing startup remains eight
+requests, a 207.0 KiB hero, and zero blocking font requests.
+
+This is still a local source candidate, not production approval. Keep regional
+OCR and Character Rig fail-closed unless their current capability evidence is
+valid. The exact commit created from this work still requires immutable-image
+publication and deployment to managed staging, managed PostgreSQL and S3
+integration evidence, signed recovery and rollback drills, representative
+concurrent PDF load with queue/memory/latency thresholds, live Stripe webhook
+evidence if billing is enabled, and owner/legal approval of the Arabic policy
+documents. Every external result must bind the same full Git SHA and image
+digests; prior release evidence cannot be reused for this candidate.
+
 Latest working-candidate verification on 2026-08-14 supersedes the local
 counts below. The ordered remediation separates document-command feedback from
 source upload state, adds storage-key-safe Raster diagnostics with layer

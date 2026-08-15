@@ -40,7 +40,8 @@ const preparedLayers: Layer[] = [
   {
     id: "layer-1",
     name: "+first",
-    kind: "body",
+    kind: "raster",
+    presentationKind: "body",
     visible: true,
     locked: false,
     opacity: 100,
@@ -49,7 +50,8 @@ const preparedLayers: Layer[] = [
   {
     id: "layer-2",
     name: "+second",
-    kind: "body",
+    kind: "raster",
+    presentationKind: "body",
     visible: true,
     locked: false,
     opacity: 100,

@@ -21,6 +21,7 @@ import { useWorkspaceNavigationGuard } from "./useWorkspaceNavigationGuard";
 import { useWorkspaceShortcutHelp } from "./useWorkspaceShortcutHelp";
 import type { WorkspaceProps } from "./Workspace.types";
 import { commitWorkspaceModeChange } from "./workspaceModeChange";
+import { useWorkspaceLayerNavigation } from "./useWorkspaceLayerNavigation";
 import {
   useWorkspaceEditorState,
   useWorkspaceReviewState,
@@ -121,78 +122,20 @@ export function Workspace({
   const [editorDraftDirty, setEditorDraftDirty] = useState(false);
   const { shortcutsOpen, closeShortcuts } = useWorkspaceShortcutHelp();
 
-  const navigateWorkspacePdfPage = useCallback(
-    async (pageNumber: number): Promise<boolean> => {
-      if (mode !== "book" || pageNumber === activePdfPage) return true;
-      if (
-        editorDraftDirty &&
-        !(await requestConfirmation({
-          title: "تجاهل المناطق غير المحفوظة؟",
-          description:
-            "الانتقال إلى صفحة أخرى سيتجاهل مناطق PDF الحالية غير المطبقة.",
-          confirmLabel: "تجاهل والانتقال",
-          tone: "danger",
-        }))
-      ) {
-        return false;
-      }
-      const page = pdfPages.find(
-        (candidate) => candidate.pageNumber === pageNumber,
-      );
-      setActivePdfPage(pageNumber);
-      setPdfPageSize(
-        page ? { width: page.width, height: page.height } : undefined,
-      );
-      setEditorDraftDirty(false);
-      const preferredLayer = layers.find(
-        (layer) =>
-          (layer.pageNumber ?? 1) === pageNumber &&
-          layer.kind !== "group" &&
-          layer.kind !== "page",
-      ) ?? layers.find(
-        (layer) =>
-          (layer.pageNumber ?? 1) === pageNumber && layer.kind !== "group",
-      );
-      if (preferredLayer) {
-        setSelectedIds([preferredLayer.id]);
-        setActiveLayerId(preferredLayer.id);
-      }
-      return true;
-    },
-    [
+  const { navigateWorkspacePdfPage, selectWorkspaceLayer } =
+    useWorkspaceLayerNavigation({
+      mode,
+      layers,
+      pdfPages,
       activePdfPage,
       editorDraftDirty,
-      layers,
-      mode,
-      pdfPages,
       requestConfirmation,
-      setActiveLayerId,
       setActivePdfPage,
       setPdfPageSize,
+      setEditorDraftDirty,
       setSelectedIds,
-    ],
-  );
-  const selectWorkspaceLayer = useCallback(
-    async (id: string, nextSelectedIds: string[] = [id]) => {
-      const layer = layers.find((candidate) => candidate.id === id); if (layer?.kind === "group") return;
-      if (
-        mode === "book" &&
-        layer?.pageNumber &&
-        !(await navigateWorkspacePdfPage(layer.pageNumber))
-      ) {
-        return;
-      }
-      setSelectedIds(nextSelectedIds);
-      setActiveLayerId(id);
-    },
-    [
-      layers,
-      mode,
-      navigateWorkspacePdfPage,
       setActiveLayerId,
-      setSelectedIds,
-    ],
-  );
+    });
 
   const toolController = useWorkspaceToolController({
     mode,
@@ -484,6 +427,7 @@ export function Workspace({
           onPdfPageChange: navigateWorkspacePdfPage,
           onLayerCommand: applyLayerCommand,
           documentChangeLog,
+          layerCheckSummary,
           onDraftDirtyChange: setEditorDraftDirty,
         }}
       />

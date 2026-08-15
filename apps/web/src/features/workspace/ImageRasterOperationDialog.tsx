@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Dialog } from "../../shared/Dialog";
 import { Icon } from "../../shared/Icon";
 import type { Layer } from "../../types";
+import { RasterLayerPreview } from "./RasterLayerPreview";
 
 interface ImageRasterOperationDialogProps {
   operation: "edge-refine" | "merge";
@@ -24,6 +25,7 @@ export function ImageRasterOperationDialog({
   const [strength, setStrength] = useState(0.65);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
+  const previewSize = mergePreviewSize(layers);
 
   const submit = async () => {
     setSubmitting(true);
@@ -111,12 +113,38 @@ export function ImageRasterOperationDialog({
           </div>
         )}
         {operation === "merge" && (
-          <p className="operation-caution">
-            ستُستبدل الطبقات المحددة في المراجعة الحالية بطبقة مركبة واحدة، ويمكن استعادتها بزر التراجع.
-          </p>
+          <>
+            <section className="image-merge-preview">
+              <strong>معاينة التركيب قبل الدمج</strong>
+              {layers.some((layer) => layer.previewUrl) ? (
+                <RasterLayerPreview
+                  layers={layers}
+                  canvasWidth={previewSize.width}
+                  canvasHeight={previewSize.height}
+                  selectedLayerId=""
+                  label="معاينة الطبقات بعد تركيبها"
+                />
+              ) : (
+                <p>لا تتوفر صور معاينة محلية لهذه الطبقات؛ ستبقى عملية الدمج قابلة للتراجع.</p>
+              )}
+            </section>
+            <p className="operation-caution">
+              ستُستبدل الطبقات المحددة في المراجعة الحالية بطبقة مركبة واحدة، ويمكن استعادتها بزر التراجع.
+            </p>
+          </>
         )}
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
     </Dialog>
+  );
+}
+
+function mergePreviewSize(layers: readonly Layer[]) {
+  return layers.reduce(
+    (size, layer) => ({
+      width: Math.max(size.width, (layer.bounds?.x ?? 0) + (layer.bounds?.width ?? 1)),
+      height: Math.max(size.height, (layer.bounds?.y ?? 0) + (layer.bounds?.height ?? 1)),
+    }),
+    { width: 1, height: 1 },
   );
 }

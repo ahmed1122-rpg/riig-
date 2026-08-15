@@ -21,7 +21,7 @@ const textLayer: Layer = {
   textAlign: "start",
   fontFamily: "Noto Sans Arabic",
   fontSize: 18,
-  fullContent: "النص الأصلي",
+  fullText: "النص الأصلي",
 };
 
 afterEach(cleanup);
@@ -54,7 +54,7 @@ describe("LayerMetadataInspector", () => {
         textAlign: "center",
         fontFamily: "Inter",
         fontSize: 22,
-        fullContent: "نص مصحح",
+        fullText: "نص مصحح",
       }),
     ]);
   });

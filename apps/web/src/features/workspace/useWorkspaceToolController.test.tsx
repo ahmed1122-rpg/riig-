@@ -93,7 +93,7 @@ describe("useWorkspaceToolController", () => {
       opacity: 1,
       color: "#2563eb",
       pageNumber: 1,
-      fullContent: "السطر الأول",
+      fullText: "السطر الأول",
       bounds: { x: 0, y: 0, width: 100, height: 20 },
     };
     const bookLayers = [

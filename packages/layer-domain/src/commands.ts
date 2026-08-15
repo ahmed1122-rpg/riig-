@@ -4,7 +4,10 @@ import type {
   LayerCommandScope,
   LayerNode,
 } from "@motionprep/contracts";
-import { normalizeDocumentLayerNames } from "./naming.js";
+import {
+  layerNameScopeKey,
+  normalizeDocumentLayerNames,
+} from "./naming.js";
 
 export interface AppliedLayerCommand {
   document: LayerDocument;
@@ -110,7 +113,7 @@ function arrangeLayerOrder(
       layer.locked ||
       !selectedIds.has(layer.id)
     ) continue;
-    const key = `${layer.pageNumber ?? "document"}:${layer.parentId ?? "root"}`;
+    const key = layerNameScopeKey(layer);
     const siblings = byScope.get(key) ?? [];
     siblings.push(layer);
     byScope.set(key, siblings);
@@ -131,7 +134,7 @@ function arrangeLayerOrder(
       layer.locked ||
       !selectedIds.has(layer.id)
     ) return layer;
-    const key = `${layer.pageNumber ?? "document"}:${layer.parentId ?? "root"}`;
+    const key = layerNameScopeKey(layer);
     return replacements.get(key)?.shift() ?? layer;
   });
   return {
@@ -156,7 +159,7 @@ function reindex(layers: readonly LayerNode[]): LayerNode[] {
   const readingByScope = new Map<string, number>();
   return layers.map((layer) => {
     if (layer.kind === "group" || layer.fixed) return layer;
-    const scope = `${layer.pageNumber ?? "document"}:${layer.parentId ?? "root"}`;
+    const scope = layerNameScopeKey(layer);
     const readingOrder = layer.pageNumber === undefined ? layer.readingOrder : readingByScope.get(scope) ?? 0;
     if (layer.pageNumber !== undefined) readingByScope.set(scope, (readingOrder ?? 0) + 1);
     const nextZIndex = zIndex--;

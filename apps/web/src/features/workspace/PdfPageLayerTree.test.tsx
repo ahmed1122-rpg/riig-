@@ -6,6 +6,7 @@ import { LayerDock } from "./LayerDock";
 import { PdfPageLayerTree } from "./PdfPageLayerTree";
 import { WorkspaceMobileSheet } from "./WorkspaceMobileSheet";
 import { createPdfPageFolders } from "./layerPageScope";
+import { getLayerCheckSummary } from "./layerChecks";
 
 afterEach(cleanup);
 
@@ -109,6 +110,7 @@ describe("PDF page layer tree", () => {
         activePdfPage={1}
         selectedIds={["bulk-0"]}
         activeId="bulk-0"
+        checkSummary={getLayerCheckSummary("book", manyLayers)}
         collapsed={false}
         width={320}
         loading={false}
@@ -223,6 +225,7 @@ function renderDock(overrides: {
       activePdfPage={1}
       selectedIds={["intro"]}
       activeId="intro"
+      checkSummary={getLayerCheckSummary("book", pageLayers)}
       collapsed={false}
       width={320}
       loading={false}
@@ -256,7 +259,8 @@ function background(pageNumber: number): Layer {
     id: `background-${pageNumber}`,
     parentId: `group-${pageNumber}`,
     name: `+page_${String(pageNumber).padStart(3, "0")}_background`,
-    kind: "page",
+    kind: "raster",
+    presentationKind: "page",
     visible: true,
     locked: true,
     opacity: 100,
@@ -269,7 +273,7 @@ function textLayer(
   id: string,
   pageNumber: number,
   name: string,
-  fullContent: string,
+  fullText: string,
 ): Layer {
   return {
     id,
@@ -281,6 +285,6 @@ function textLayer(
     opacity: 100,
     color: "#3bb3a9",
     pageNumber,
-    fullContent,
+    fullText,
   };
 }

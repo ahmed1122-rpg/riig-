@@ -67,7 +67,7 @@ function layerChanged(
     before.textAlign !== after.textAlign ||
     before.fontFamily !== after.fontFamily ||
     before.fontSize !== after.fontSize ||
-    before.fullContent !== after.fullText ||
+    before.fullText !== after.fullText ||
     JSON.stringify(before.bounds) !== JSON.stringify(after.bounds)
   );
 }

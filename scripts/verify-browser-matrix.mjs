@@ -84,6 +84,35 @@ export function validateBrowserMatrix(config, packageManifest) {
     violations.push("test:e2e must isolate each browser engine through the matrix runner.");
   }
 
+  const webServers = Array.isArray(config.webServer)
+    ? config.webServer
+    : [config.webServer].filter(Boolean);
+  const webServer = webServers.find((server) =>
+    server?.command?.includes("@motionprep/web"),
+  );
+  const webCommand = webServer?.command ?? "";
+  if (
+    !webCommand.includes("npm run build --workspace @motionprep/web") ||
+    !webCommand.includes("npm run preview --workspace @motionprep/web")
+  ) {
+    violations.push(
+      "The release browser gate must build and serve the production web bundle.",
+    );
+  }
+  if (webCommand.includes("npm run dev --workspace @motionprep/web")) {
+    violations.push("The release browser gate must not qualify the Vite development server.");
+  }
+  if (webServer?.env?.VITE_API_ORIGIN !== "") {
+    violations.push(
+      "The production browser bundle must use its same-origin API fallback.",
+    );
+  }
+  if (!webServer?.env?.PLAYWRIGHT_PREVIEW_API_ORIGIN) {
+    violations.push(
+      "The production preview must proxy same-origin API requests to the isolated E2E API.",
+    );
+  }
+
   return violations;
 }
 

@@ -121,11 +121,14 @@ export default defineConfig({
       stderr: "pipe",
     },
     {
-      command:
-        `npm run dev --workspace @motionprep/web -- --host 127.0.0.1 --port ${webPort} --strictPort`,
+      command: [
+        "npm run build --workspace @motionprep/web",
+        `npm run preview --workspace @motionprep/web -- --host 127.0.0.1 --port ${webPort} --strictPort`,
+      ].join(" && "),
       url: webOrigin,
       env: {
-        VITE_API_ORIGIN: apiOrigin,
+        VITE_API_ORIGIN: "",
+        PLAYWRIGHT_PREVIEW_API_ORIGIN: apiOrigin,
       },
       reuseExistingServer: false,
       timeout: 30_000,

@@ -20,6 +20,8 @@ import { BILLING_PLAN_CATALOG } from "@motionprep/contracts";
 import { waitForCheckoutResolution } from "./checkoutReturn";
 import {
   BillingCheckoutDialog,
+  formatBillingPrice,
+  type BillingCurrency,
   type CheckoutState,
   type PlanId,
 } from "./BillingCheckoutDialog";
@@ -61,6 +63,7 @@ export default function BillingPortal({
   const [checkoutState, setCheckoutState] =
     useState<CheckoutState>("summary");
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("creator");
+  const [currency, setCurrency] = useState<BillingCurrency>("USD");
   const [providerId, setProviderId] =
     useState<PaymentProviderAdapter["id"] | "">("");
   const [configuration, setConfiguration] =
@@ -88,12 +91,12 @@ export default function BillingPortal({
       )!;
       return {
         ...presentation,
-        price: item.prices.USD / 100,
+        price: item.prices[currency] / 100,
         credits: `${new Intl.NumberFormat("ar-EG").format(item.processingMinuteLimit)} دقيقة معالجة`,
         recommended: item.recommended,
       };
     });
-  }, [configuration]);
+  }, [configuration, currency]);
   const plan =
     plans.find((item) => item.id === selectedPlan) ?? plans[1]!;
   const currentPlan =
@@ -251,7 +254,7 @@ export default function BillingPortal({
       const checkout = await createHostedCheckout({
         providerId,
         planId: selectedPlan,
-        currency: "USD",
+        currency,
         returnUrl: returnUrl.toString(),
       });
       if (!checkout.checkoutUrl) throw new Error("لم يُرجع المزود رابط دفع.");
@@ -445,7 +448,19 @@ export default function BillingPortal({
       <section className="plans-section" aria-labelledby="plans-title">
         <header className="section-heading section-heading--compact">
           <div><span className="section-index">02</span><h2 id="plans-title">قارن الخطط</h2></div>
-          <p>الأسعار الشهرية قبل الضرائب التي يحددها المزود عند الحاجة</p>
+          <div className="billing-plan-controls">
+            <p>الأسعار الشهرية قبل الضرائب التي يحددها المزود عند الحاجة</p>
+            <label>
+              عملة العرض والدفع
+              <select
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value as BillingCurrency)}
+              >
+                <option value="USD">USD</option>
+                <option value="EGP">EGP</option>
+              </select>
+            </label>
+          </div>
         </header>
         <div className="plan-rows">
           {plans.map((item) => (
@@ -462,7 +477,7 @@ export default function BillingPortal({
                 <span><strong>{item.credits}</strong><small>شهريًا</small></span>
               </div>
               <div className="plan-price">
-                <strong>${item.price}</strong><small>/ شهر</small>
+                <strong>{formatBillingPrice(item.price, currency)}</strong><small>/ شهر</small>
               </div>
               <button
                 type="button"
@@ -508,7 +523,9 @@ export default function BillingPortal({
 
       <BillingCheckoutDialog
         checkoutState={checkoutState}
+        currency={currency}
         onClose={() => setCheckoutOpen(false)}
+        onCurrencyChange={setCurrency}
         onPlanChange={setSelectedPlan}
         onProviderChange={setProviderId}
         onRetry={() => void retryCheckoutVerification()}

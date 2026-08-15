@@ -67,6 +67,7 @@ export interface ReadyWorkspaceTool extends WorkspaceToolBase {
 export interface ResolvedWorkspaceTool extends ReadyWorkspaceTool {
   available: boolean;
   unavailableReason?: string;
+  statusBadge?: string;
 }
 
 const tools: readonly ReadyWorkspaceTool[] = [
@@ -254,8 +255,8 @@ const tools: readonly ReadyWorkspaceTool[] = [
   {
     id: "image.turntable",
     mode: "image",
-    label: "Character Turntable",
-    icon: "refresh",
+    label: "استوديو تدوير الشخصية",
+    icon: "turntable",
     group: "document",
     availability: "ready",
     action: "character-rig",
@@ -264,9 +265,10 @@ const tools: readonly ReadyWorkspaceTool[] = [
   {
     id: "pdf.region-ocr",
     mode: "book",
-    label: "إعادة OCR للمنطقة",
-    icon: "scanText",
+    label: "إعادة التعرّف لمنطقة",
+    icon: "ocrZone",
     group: "document",
+    shortcut: { key: "o", label: "O" },
     availability: "ready",
     action: "pdf-region-ocr",
     requiresSource: true,
@@ -324,18 +326,20 @@ export function getReadyWorkspaceTools(
       return {
         ...tool,
         available: false,
+        statusBadge: "غير مفعّل",
         unavailableReason:
           features.pdfRegionOcr.unavailableReason ??
-          "إعادة OCR لمنطقة محددة غير متاحة في بيئة التشغيل الحالية.",
+          "OCR غير متاح.",
       };
     }
     if (tool.id === "image.turntable" && !features.characterRig.enabled) {
       return {
         ...tool,
         available: false,
+        statusBadge: "غير مفعّل",
         unavailableReason:
           features.characterRig.unavailableReason ??
-          "Character Studio is unavailable in the current runtime.",
+          "الأداة غير متاحة.",
       };
     }
     if (
@@ -345,7 +349,7 @@ export function getReadyWorkspaceTools(
       return {
         ...tool,
         available: false,
-        unavailableReason: "Character Turntable متاح لمشاريع الصور فقط، وليس PDF.",
+        unavailableReason: "تدوير الشخصية متاح للصور فقط.",
       };
     }
     return { ...tool, available: true };

@@ -1,7 +1,3 @@
-import type {
-  Dispatch,
-  SetStateAction,
-} from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConfirmationRequest } from "../../shared/useConfirmation";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
@@ -22,8 +18,7 @@ import {
   type RecordDocumentChange,
 } from "./documentChangeSummary";
 import type { WorkspaceCommandStatus } from "./workspaceCommandStatus";
-
-type SetState<Value> = Dispatch<SetStateAction<Value>>;
+import type { WorkspaceSetState as SetState } from "./Workspace.types";
 
 interface WorkspaceCommandOptions {
   mode: ProjectMode;

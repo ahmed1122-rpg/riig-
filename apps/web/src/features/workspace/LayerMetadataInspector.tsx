@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { MAX_LAYER_TEXT_CHARACTERS } from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
 import type { Layer } from "../../types";
+import { isPageLayer } from "./workspaceLayerKinds";
 
 interface LayerMetadataInspectorProps {
   layer: Layer;
@@ -35,7 +36,7 @@ export function LayerMetadataInspector({
   const [error, setError] = useState("");
   const breadcrumb = createLayerBreadcrumb(layer, layers);
   const structural =
-    layer.kind === "page" || layer.kind === "group" || Boolean(layer.fixed);
+    isPageLayer(layer) || layer.kind === "group" || Boolean(layer.fixed);
 
   useEffect(() => {
     setDraft(createDraft(layer));
@@ -103,7 +104,7 @@ export function LayerMetadataInspector({
                     textAlign: draft.textAlign,
                     fontFamily,
                     fontSize,
-                    fullContent: fullText,
+                    fullText,
                   }
                 : {}),
             }
@@ -234,7 +235,7 @@ function createDraft(layer: Layer): MetadataDraft {
     textAlign: layer.textAlign ?? "start",
     fontFamily: layer.fontFamily ?? "Noto Sans Arabic",
     fontSize: String(layer.fontSize ?? 16),
-    fullText: layer.fullContent ?? "",
+    fullText: layer.fullText ?? "",
   };
 }
 

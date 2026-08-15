@@ -33,7 +33,7 @@ export function matchesLayerFilter(
   const matchesSearch =
     !normalizedSearch ||
     layer.name.toLocaleLowerCase("ar").includes(normalizedSearch) ||
-    layer.fullContent?.toLocaleLowerCase("ar").includes(normalizedSearch);
+    layer.fullText?.toLocaleLowerCase("ar").includes(normalizedSearch);
   const matchesFilter =
     filter === "all" ||
     (filter === "visible" && layer.visible) ||
@@ -50,7 +50,11 @@ export function duplicateLayerIds(
   pageScoped: boolean,
 ): ReadonlySet<string> {
   const key = (layer: Layer) =>
-    `${pageScoped ? `${layer.pageNumber ?? 1}:` : ""}${layer.name}`;
+    JSON.stringify([
+      pageScoped ? (layer.pageNumber ?? 1) : null,
+      layer.parentId ?? null,
+      layer.name,
+    ]);
   const counts = new Map<string, number>();
   contentLayers(layers).forEach((layer) =>
     counts.set(key(layer), (counts.get(key(layer)) ?? 0) + 1),

@@ -5,7 +5,8 @@ import { getLayerCheckSummary } from "./layerChecks";
 const layer: Layer = {
   id: "layer-1",
   name: "+طبقة",
-  kind: "body",
+  kind: "raster",
+  presentationKind: "body",
   visible: true,
   locked: false,
   opacity: 100,

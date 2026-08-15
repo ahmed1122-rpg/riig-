@@ -45,6 +45,7 @@ test("public entry and guest authentication boundary are accessible", async ({
       name: "حوّل صورة واحدة أو ملف PDF إلى طبقات جاهزة للتحريك.",
     }),
   ).toBeVisible();
+  await assertMarketingImagesDecode(page);
   await assertNoSeriousAccessibilityViolations(page);
 
   await page
@@ -59,6 +60,22 @@ test("public entry and guest authentication boundary are accessible", async ({
   ).toBeVisible();
   await assertNoSeriousAccessibilityViolations(page);
 });
+
+async function assertMarketingImagesDecode(page: Page) {
+  const images = page.locator('img[src^="/visuals/"]');
+  const count = await images.count();
+  expect(count).toBeGreaterThan(0);
+  for (let index = 0; index < count; index += 1) {
+    const image = images.nth(index);
+    await image.scrollIntoViewIfNeeded();
+    await expect
+      .poll(() => image.evaluate((element) => {
+        const candidate = element as HTMLImageElement;
+        return candidate.complete && candidate.naturalWidth > 0;
+      }))
+      .toBe(true);
+  }
+}
 
 test("keyboard dismisses the project dialog and mobile drawer", async ({
   page,

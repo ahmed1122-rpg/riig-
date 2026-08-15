@@ -11,7 +11,8 @@ import {
 const layer: Layer = {
   id: "source",
   name: "+source",
-  kind: "body",
+  kind: "raster",
+  presentationKind: "body",
   visible: true,
   locked: false,
   opacity: 100,
@@ -71,7 +72,7 @@ describe("layer review persistence", () => {
       textAlign: "start",
       fontFamily: "Noto Sans Arabic",
       fontSize: 16,
-      fullContent: "النص الأصلي",
+      fullText: "النص الأصلي",
     };
     const changed: Layer = {
       ...initial,
@@ -80,7 +81,7 @@ describe("layer review persistence", () => {
       textAlign: "justify",
       fontFamily: "Inter",
       fontSize: 18,
-      fullContent: "النص المصحح",
+      fullText: "النص المصحح",
     };
 
     expect(
@@ -136,7 +137,8 @@ describe("layer review persistence", () => {
       ...layer,
       id: "page",
       name: "+page_001_background",
-      kind: "page",
+      kind: "raster",
+      presentationKind: "page",
       locked: true,
       zIndex: 0,
       pageNumber: 1,
@@ -185,7 +187,8 @@ describe("layer review persistence", () => {
     const page = {
       ...layer,
       id: "page",
-      kind: "page" as const,
+      kind: "raster" as const,
+      presentationKind: "page" as const,
     };
 
     expect(moveEditableLayer([layer, page], "source", 1)).toBeNull();

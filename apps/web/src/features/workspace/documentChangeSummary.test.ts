@@ -56,7 +56,7 @@ function workspaceLayer(id: string, name: string): Layer {
     textAlign: "start",
     fontFamily: "Noto Sans Arabic",
     fontSize: 16,
-    fullContent: "نص",
+    fullText: "نص",
     bounds: { x: 1, y: 2, width: 3, height: 4 },
     color: "#000",
   };

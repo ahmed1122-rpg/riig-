@@ -23,7 +23,7 @@ interface OwnedLayerMutationOptions<TResult> {
   }) => Promise<TResult>;
 }
 
-export async function runOwnedLayerMutation<TResult>(
+async function runOwnedLayerMutation<TResult>(
   options: OwnedLayerMutationOptions<TResult>,
 ) {
   const {
@@ -67,4 +67,28 @@ export async function runOwnedLayerMutation<TResult>(
   } catch (error) {
     return sendProcessingError(error, request, reply);
   }
+}
+
+export function createOwnedLayerMutationRunner(
+  projects: ProjectRepository,
+  auth: AuthService,
+  projectReviewSettledAtomically: boolean,
+) {
+  return async <TResult>(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    projectId: string,
+    sourceVersionId: string,
+    mutate: OwnedLayerMutationOptions<TResult>["mutate"],
+  ) =>
+    runOwnedLayerMutation({
+      request,
+      reply,
+      projects,
+      auth,
+      projectId,
+      sourceVersionId,
+      projectReviewSettledAtomically,
+      mutate,
+    });
 }

@@ -34,7 +34,8 @@ describe("evaluateExportPreflight", () => {
         layer({
           id: "background",
           name: "+page_001_background",
-          kind: "page",
+          kind: "raster",
+          presentationKind: "page",
           parentId: root.id,
           pageNumber: 1,
           fixed: true,
@@ -62,7 +63,7 @@ describe("evaluateExportPreflight", () => {
       mode: "image",
       canExport: true,
       saveState: "dirty",
-      layers: [layer({ kind: "body" })],
+      layers: [layer({ kind: "raster", presentationKind: "body" })],
     }).status).toBe("warning");
   });
 });

@@ -56,7 +56,7 @@ describe("toWorkspaceLayers", () => {
         id: "text",
         kind: "text",
         parentId: "page-root",
-        fullContent: "Intro",
+        fullText: "Intro",
         textAlign: "end",
       }),
     ]);
@@ -76,6 +76,46 @@ describe("toWorkspaceLayers", () => {
     expect(stableLayerColor("layer-first")).toBe(first);
     expect(stableLayerColor("layer-second")).toBe(second);
     expect([first, second].every((color) => /^#[0-9a-f]{6}$/u.test(color))).toBe(true);
+  });
+
+  it("keeps the domain kind canonical while deriving the PDF page presentation", () => {
+    const document: LayerDocumentView = {
+      schemaVersion: "1.0",
+      projectId: "project",
+      sourceVersionId: "source",
+      revision: 1,
+      generatedAt: "2026-08-15T00:00:00.000Z",
+      width: 400,
+      height: 300,
+      colorSpace: "sRGB",
+      layers: [
+        {
+          id: "background",
+          parentId: "page-root",
+          kind: "raster",
+          name: "+page_001_background",
+          visible: true,
+          locked: true,
+          opacity: 1,
+          fixed: true,
+          zIndex: 0,
+          pageNumber: 1,
+        },
+      ],
+    };
+
+    const [background] = toWorkspaceLayers(document, "book");
+
+    expect(background).toMatchObject({
+      kind: "raster",
+      presentationKind: "page",
+      fixed: true,
+    });
+    expect(toDomainLayer(background!)).toMatchObject({
+      kind: "raster",
+      fixed: true,
+      pageNumber: 1,
+    });
   });
 
   it("exposes raster availability without leaking storage object keys", () => {

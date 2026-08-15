@@ -1,4 +1,5 @@
 import type { Layer } from "../../types";
+import { isPageLayer } from "./workspaceLayerKinds";
 
 interface LayerPreviewProjectionOptions {
   pageNumber?: number;
@@ -15,7 +16,7 @@ export function projectPreviewLayers(
   const kinds = options.kinds ? new Set(options.kinds) : undefined;
   return layers
     .filter((layer) => {
-      if (layer.kind === "group" || layer.kind === "page") return false;
+      if (layer.kind === "group" || isPageLayer(layer)) return false;
       if (!layer.visible || layer.opacity <= 0 || hidden.has(layer.id)) {
         return false;
       }
