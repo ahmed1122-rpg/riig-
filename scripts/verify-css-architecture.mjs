@@ -15,6 +15,7 @@ const workspaceFoundation = await readFile(
   join(styles, "features/workspace-foundation.css"),
   "utf8",
 );
+const visualSystem = await readFile(join(styles, "visual-polish.css"), "utf8");
 const violations = [];
 
 for (const token of [
@@ -25,6 +26,24 @@ for (const token of [
   "layer(overrides)",
 ]) {
   if (!main.includes(token)) violations.push(`main.css is missing ${token}`);
+}
+for (const [token, value] of [
+  ["--vp-space-1", "4px"],
+  ["--vp-space-2", "8px"],
+  ["--vp-space-3", "12px"],
+  ["--vp-space-4", "16px"],
+  ["--vp-space-5", "20px"],
+  ["--vp-space-6", "24px"],
+  ["--vp-space-8", "32px"],
+]) {
+  if (!visualSystem.includes(`${token}: ${value};`)) {
+    violations.push(`Visual spacing contract is missing ${token}: ${value}.`);
+  }
+}
+if (!workspaceFoundation.includes("gap: var(--vp-space-1)")) {
+  violations.push(
+    "Workspace foundation must consume the compact spacing token before broader migration.",
+  );
 }
 if (
   main.lastIndexOf("./overrides/accessibility-responsive.css") <

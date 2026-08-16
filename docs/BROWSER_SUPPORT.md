@@ -58,6 +58,9 @@ Before making a branded Safari/iOS support claim:
    release evidence;
 3. assign an owner and regression test to every engine-specific defect.
 
+Record the release-bound result with
+[`runbooks/branded-browser-validation.md`](runbooks/branded-browser-validation.md).
+
 This policy is an evidence boundary, not a user-agent policy. Unsupported means
 that no production compatibility promise is made; it does not authorize silent
 feature degradation or browser sniffing.

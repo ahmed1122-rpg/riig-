@@ -13,6 +13,8 @@ is production-ready.
 - [Ownership](OWNERSHIP.md)
 - [Versioning](VERSIONING.md)
 - [Browser support](BROWSER_SUPPORT.md)
+- [Verification traceability](VERIFICATION_TRACEABILITY.md)
+- [Design token adoption](DESIGN_TOKENS.md)
 - [Upload policy](UPLOAD_POLICY.md)
 - [Contract baseline](CONTRACT_BASELINE.md)
 - [Engineering constitution](ENGINEERING_CONSTITUTION.md)
