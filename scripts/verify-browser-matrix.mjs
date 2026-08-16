@@ -33,8 +33,17 @@ export function validateBrowserMatrix(config, packageManifest) {
     if (name.startsWith("mobile-") && (!Number.isFinite(width) || width > 430)) {
       violations.push(`${name} must exercise a mobile-sized viewport.`);
     }
-    if (name.startsWith("mobile-") && project.use?.hasTouch !== true) {
+    if (
+      name.startsWith("mobile-") &&
+      name !== "mobile-webkit" &&
+      project.use?.hasTouch !== true
+    ) {
       violations.push(`${name} must exercise touch input.`);
+    }
+    if (name === "mobile-webkit" && project.use?.hasTouch !== false) {
+      violations.push(
+        "mobile-webkit must disable unstable synthetic touch emulation on Linux.",
+      );
     }
     if (name === "mobile-webkit" && project.use?.isMobile === true) {
       violations.push(

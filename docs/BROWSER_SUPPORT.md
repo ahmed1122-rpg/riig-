@@ -10,9 +10,10 @@ Playwright Chromium, Firefox, and WebKit engines in six profiles:
 - desktop Firefox at 1440 × 900;
 - Firefox at a 412 × 915 mobile-sized viewport with touch input;
 - desktop WebKit at 1440 × 900;
-- WebKit at a 390 × 844 mobile-sized viewport with touch input. The Linux gate
-  deliberately avoids Playwright's iOS-only `isMobile` emulation; real iOS
-  remains a hardware gate below.
+- WebKit at a 390 × 844 mobile-sized viewport without synthetic touch. The
+  Linux gate deliberately avoids Playwright's unstable iOS-only `isMobile` and
+  touch emulation; Chromium and Firefox retain automated phone interaction
+  coverage, while real iOS remains a hardware gate below.
 
 The release gate covers authentication, upload, PDF page/layer navigation,
 review and export journeys, keyboard/focus behavior, RTL layout, and automated
@@ -28,7 +29,7 @@ projects and an engine run is not branded-browser evidence.
 
 On Linux, every WebKit test runs in its own Playwright process and shard. Video
 capture is disabled, traces begin on the first retry, and the phone-sized gate
-uses DPR 1 with touch input; failure screenshots and retry traces remain
+uses DPR 1 without synthetic touch; failure screenshots and retry traces remain
 available. If a shard still exhausts its two Playwright retries, the WebKit
 runner repeats that shard once in a new Playwright process; a second failed
 process fails the release gate. This recovery changes no assertion and prevents
