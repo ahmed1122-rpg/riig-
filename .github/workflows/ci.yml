@@ -217,6 +217,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
       options: --user 1001 --init --ipc=host
@@ -231,12 +235,12 @@ jobs:
         run: |
           test -d /ms-playwright
           npx playwright --version
-      - run: npm run test:e2e
+      - run: npm run test:e2e:${{ matrix.engine }}
       - name: Upload browser failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: playwright-evidence
+          name: playwright-evidence-${{ matrix.engine }}
           path: |
             artifacts/playwright
             artifacts/playwright-report

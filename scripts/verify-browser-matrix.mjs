@@ -138,6 +138,21 @@ export function validateBrowserWorkflow(workflowSource) {
       "browser-e2e must use the browsers preinstalled in the pinned Playwright image.",
     );
   }
+  if (!workflowSource.includes("engine: [chromium, firefox, webkit]")) {
+    violations.push(
+      "browser-e2e must isolate Chromium, Firefox, and WebKit in separate matrix jobs.",
+    );
+  }
+  if (!workflowSource.includes("npm run test:e2e:${{ matrix.engine }}")) {
+    violations.push(
+      "browser-e2e matrix jobs must invoke only their selected engine.",
+    );
+  }
+  if (!workflowSource.includes("name: playwright-evidence-${{ matrix.engine }}")) {
+    violations.push(
+      "browser-e2e failure evidence must be unique to each engine job.",
+    );
+  }
   return violations;
 }
 

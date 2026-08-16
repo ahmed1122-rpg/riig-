@@ -17,9 +17,11 @@ Playwright Chromium, Firefox, and WebKit engines in six profiles:
 The release gate covers authentication, upload, PDF page/layer navigation,
 review and export journeys, keyboard/focus behavior, RTL layout, and automated
 accessibility checks. It builds and serves the production web bundle rather than
-the Vite development module graph. CI supplies all three engines from the pinned
-Playwright image, and a repository contract fails if any engine, mobile-sized
-profile, or production-preview boundary is removed. Current stable
+the Vite development module graph. CI runs Chromium, Firefox, and WebKit in
+separate parallel jobs created from the same pinned Playwright image, so a prior
+engine cannot leave renderer state or resource pressure for the next one. A
+repository contract fails if any engine job, mobile-sized profile, or
+production-preview boundary is removed. Current stable
 Chrome, Edge, and Chrome on Android remain compatibility targets because they
 share the Chromium engine family, but they are not installed as separate release
 projects and an engine run is not branded-browser evidence.

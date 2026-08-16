@@ -137,6 +137,12 @@ test("accepts the pinned release browser container contract", () => {
     "  container:",
     `    image: ${releasePlaywrightImage}`,
     "    options: --user 1001 --init --ipc=host",
+    "  strategy:",
+    "    matrix:",
+    "      engine: [chromium, firefox, webkit]",
+    "  steps:",
+    "    - run: npm run test:e2e:${{ matrix.engine }}",
+    "      name: playwright-evidence-${{ matrix.engine }}",
   ].join("\n");
 
   assert.deepEqual(validateBrowserWorkflow(workflow), []);
@@ -156,6 +162,9 @@ test("rejects a mutable or self-installed release browser runtime", () => {
     "browser-e2e must use the repository-approved Playwright image and digest.",
     "browser-e2e must run the Playwright container with the approved non-root, init, and IPC options.",
     "browser-e2e must use the browsers preinstalled in the pinned Playwright image.",
+    "browser-e2e must isolate Chromium, Firefox, and WebKit in separate matrix jobs.",
+    "browser-e2e matrix jobs must invoke only their selected engine.",
+    "browser-e2e failure evidence must be unique to each engine job.",
   ]);
 });
 
