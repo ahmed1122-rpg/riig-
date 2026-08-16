@@ -21,7 +21,6 @@ import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
-import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import type {
   ObjectStorage,
   StoredObject,
@@ -54,6 +53,7 @@ import { LayerCommandOperations } from "./layer-command-operations.js";
 import { cleanupRasterAssets } from "./raster-asset-cleanup.js";
 import type { GuidedRefinementInput } from "./guided-refinement-input.js";
 import type { ProcessingServiceRuntimeOptions } from "./processing-service-options.js";
+import { createAndRunProcessingJob } from "./processing-job-creation.js";
 export { ProcessingDomainError } from "./processing-errors.js";
 
 export class ProcessingService {
@@ -117,133 +117,26 @@ export class ProcessingService {
     correlationId?: string,
     traceContext?: TraceContext,
   ): Promise<ProcessingJob> {
-    const source = await this.uploads.findReadyBySourceVersion(
-      projectId,
-      sourceVersionId,
-    );
-    if (!source) {
-      throw new ProcessingDomainError(
-        "SOURCE_NOT_READY",
-        "نسخة المصدر لا تتبع المشروع أو لم تكتمل جاهزيتها.",
-      );
-    }
-    const id = crypto.randomUUID();
-    const scopedIdempotencyKey =
-      `${projectId}:${sourceVersionId}:${idempotencyKey}`;
-    const claim = await this.idempotency.claimRequest(
-      "processing",
-      scopedIdempotencyKey,
-      id,
-      requestFingerprint("processing", {
-        projectId,
-        sourceVersionId,
-        projectKind,
-        options,
-      }),
-      24 * 60 * 60,
-    );
-    if (claim.outcome === "conflict") {
-      throw new ProcessingDomainError(
-        "IDEMPOTENCY_CONFLICT",
-        "استُخدم مفتاح منع التكرار نفسه لطلب معالجة مختلف.",
-      );
-    }
-    if (claim.outcome === "replayed") {
-      const repeated = await this.jobs.findById(claim.resourceId);
-      if (repeated) return repeated;
-      throw new ProcessingDomainError(
-        "PROCESSING_IN_PROGRESS",
-        "طلب المعالجة المطابق ما زال قيد الإنشاء. أعد المحاولة بعد لحظات.",
-      );
-    }
-
-    let existing: ProcessingJob | null;
-    try {
-      existing = await this.jobs.findBySource(projectId, sourceVersionId);
-    } catch (error) {
-      await this.idempotency.release(
-        "processing",
-        scopedIdempotencyKey,
-        id,
-      );
-      throw error;
-    }
-    if (existing) {
-      await this.idempotency.release(
-        "processing",
-        scopedIdempotencyKey,
-        id,
-      );
-      throw new ProcessingDomainError(
-        "PROCESSING_IN_PROGRESS",
-        "توجد مهمة معالجة نشطة لهذا المصدر. انتظر اكتمالها ثم أعد المحاولة.",
-      );
-    }
-
-    const timestamp = this.now().toISOString();
-    const job: ProcessingJob = {
-      id,
-      ...(correlationId ? { correlationId } : {}),
-      ...(traceContext ? { traceContext } : {}),
+    return createAndRunProcessingJob(
+      {
+        jobs: this.jobs,
+        uploads: this.uploads,
+        idempotency: this.idempotency,
+        inlineRunner: this.#inlineRunner,
+        now: this.now,
+        executeInline: this.executeInline,
+        runtime: this.runtime,
+      },
       projectId,
       sourceVersionId,
       projectKind,
       options,
-      status: "queued",
-      progress: 0,
-      attempt: 0,
-      maxAttempts: 3,
-      nextAttemptAt: timestamp,
-      leaseOwner: null,
-      leaseExpiresAt: null,
-      errorCode: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    let reserved = false;
-    let enqueued: boolean;
-    try {
-      if (ownerUserId && this.runtime.usageMeter) {
-        await this.runtime.usageMeter.reserveJob(ownerUserId, job.id);
-        reserved = true;
-      }
-      enqueued = await this.jobs.enqueue(
-        job,
-        onQueued ? () => onQueued(job) : undefined,
-      );
-    } catch (error) {
-      if (reserved) await this.runtime.usageMeter?.releaseJob(job.id);
-      await this.idempotency.release(
-        "processing",
-        scopedIdempotencyKey,
-        job.id,
-      );
-      throw error;
-    }
-    if (!enqueued) {
-      if (reserved) await this.runtime.usageMeter?.releaseJob(job.id);
-      await this.idempotency.release(
-        "processing",
-        scopedIdempotencyKey,
-        job.id,
-      );
-      throw new ProcessingDomainError(
-        "SOURCE_NOT_CURRENT",
-        "تغير إصدار المصدر الحالي قبل إدخال المهمة إلى الطابور.",
-        job.id,
-      );
-    }
-    if (!this.executeInline) return job;
-    const startedAt = Date.now();
-    try {
-      return await this.#inlineRunner.run(job);
-    } finally {
-      await this.runtime.usageMeter?.recordProcessingSeconds(
-        job.id,
-        1,
-        Math.max(1, Math.ceil((Date.now() - startedAt) / 1_000)),
-      );
-    }
+      idempotencyKey,
+      ownerUserId,
+      onQueued,
+      correlationId,
+      traceContext,
+    );
   }
 
   async findJob(id: string): Promise<ProcessingJob> {

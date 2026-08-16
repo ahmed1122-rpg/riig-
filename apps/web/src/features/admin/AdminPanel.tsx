@@ -24,8 +24,7 @@ import {
   type AdminUser,
 } from "../../lib/api";
 import { Dialog } from "../../shared/Dialog";
-import { formatDateTime } from "../../shared/formatters";
-import { Icon, type IconName } from "../../shared/Icon";
+import { Icon } from "../../shared/Icon";
 import type { AdminView, UserRole } from "../../types";
 import { Exports, Processing } from "./AdminJobViews";
 import {
@@ -34,6 +33,12 @@ import {
   Search,
   Status,
 } from "./AdminPrimitives";
+import {
+  accountStatusLabels,
+  adminNavigation,
+  formatAdminDate,
+  roleLabels,
+} from "./adminPresentation";
 
 export { Exports, Processing } from "./AdminJobViews";
 export { DataFeedback, outcomeTone, Status } from "./AdminPrimitives";
@@ -44,43 +49,9 @@ interface AdminPanelProps {
   onNotify: (message: string) => void;
 }
 
-interface AdminNavItem {
-  id: AdminView;
-  label: string;
-  icon: IconName;
-  roles: UserRole[];
-}
-
 type RetryTarget =
   | { kind: "processing"; job: AdminProcessingJob }
   | { kind: "export"; job: AdminExportJob };
-
-const roleLabels: Record<UserRole, string> = {
-  creator: "صانع محتوى",
-  support: "دعم",
-  finance: "مالية",
-  admin: "مدير",
-};
-
-const accountStatusLabels: Record<AdminUser["status"], string> = {
-  active: "نشط",
-  pending_verification: "بانتظار التحقق",
-  suspended: "موقوف",
-};
-
-const navigation: AdminNavItem[] = [
-  { id: "overview", label: "نظرة عامة", icon: "gauge", roles: ["support", "finance", "admin"] },
-  { id: "processing", label: "المعالجة", icon: "activity", roles: ["support", "admin"] },
-  { id: "exports", label: "التصديرات", icon: "download", roles: ["support", "admin"] },
-  { id: "users", label: "المستخدمون", icon: "users", roles: ["support", "admin"] },
-  { id: "billing", label: "الفوترة", icon: "creditCard", roles: ["finance", "admin"] },
-  { id: "audit", label: "سجل التدقيق", icon: "history", roles: ["support", "finance", "admin"] },
-  { id: "system", label: "التشغيل", icon: "settings", roles: ["admin"] },
-];
-
-function formatDate(value: string | null): string {
-  return formatDateTime(value, "لم يسجّل دخوله");
-}
 
 export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) {
   const drawerId = useId();
@@ -88,7 +59,7 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
   const mainRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileNavigation = useMediaQuery("(max-width: 800px)");
-  const allowedNavigation = navigation.filter((item) => item.roles.includes(role));
+  const allowedNavigation = adminNavigation.filter((item) => item.roles.includes(role));
   const [activeView, setActiveView] = useState<AdminView>(allowedNavigation[0]?.id ?? "overview");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -351,7 +322,7 @@ function Overview({ data, loading, error, onRetry }: { data: AdminOverviewData |
         </section>
         <section className="admin-insight-panel" aria-labelledby="recent-audit-title">
           <header><div><span className="eyebrow">قابلية التتبع</span><h2 id="recent-audit-title">أحدث النشاط الإداري</h2></div><span className="bounded-note">{data.audit.length} إجراء</span></header>
-          {data.audit.length > 0 ? <div className="admin-recent-audit">{data.audit.slice(0, 4).map((event) => <article key={event.id}><span><strong>{event.action}</strong><small>{formatDate(event.createdAt)}</small></span><Status tone={outcomeTone(event.outcome)}>{event.outcome}</Status></article>)}</div> : <div className="admin-empty admin-empty--compact"><Icon name="history" size={24} /><strong>لا توجد إجراءات إدارية مسجلة</strong><span>سيظهر هنا أحدث نشاط موثق مع بدء التشغيل.</span></div>}
+          {data.audit.length > 0 ? <div className="admin-recent-audit">{data.audit.slice(0, 4).map((event) => <article key={event.id}><span><strong>{event.action}</strong><small>{formatAdminDate(event.createdAt)}</small></span><Status tone={outcomeTone(event.outcome)}>{event.outcome}</Status></article>)}</div> : <div className="admin-empty admin-empty--compact"><Icon name="history" size={24} /><strong>لا توجد إجراءات إدارية مسجلة</strong><span>سيظهر هنا أحدث نشاط موثق مع بدء التشغيل.</span></div>}
         </section>
       </div>
     </section>
@@ -381,7 +352,7 @@ function Users({ users, query, onQuery, canEdit, onOpen, loading, error, onRetry
               <span className="user-cell" role="cell"><i>{user.name.slice(0, 1)}</i><span><strong>{user.name}</strong><small title={user.email}>{user.email}</small></span></span>
               <span role="cell" data-label="الدور">{roleLabels[user.role]}</span>
               <span role="cell" data-label="المصادقة">{user.mfaEnabled ? "مفعّلة" : "غير مفعّلة"}</span>
-              <span role="cell" data-label="آخر دخول">{formatDate(user.lastLoginAt)}</span>
+              <span role="cell" data-label="آخر دخول">{formatAdminDate(user.lastLoginAt)}</span>
               <span role="cell" data-label="الحالة"><Status tone={user.status === "active" ? "ready" : user.status === "suspended" ? "danger" : "review"}>{accountStatusLabels[user.status]}</Status></span>
               <span role="cell"><Icon name={canEdit ? "chevron" : "lock"} size={15} /></span>
             </button>
@@ -399,7 +370,7 @@ function Billing({ data, loading, error, onRetry }: { data: AdminBillingData | n
       <header className="admin-page-heading"><div><span className="eyebrow">سجل فوترة للقراءة</span><h1>الفوترة</h1><p>الحالة والمبلغ كما سجلهما الخادم؛ لا توجد أزرار استرداد أو إيرادات محسوبة دون عقد مزود مكتمل.</p></div></header>
       <div className="admin-overview-grid"><article className="admin-stat"><span><Icon name="creditCard" size={19} /></span><div><small>الاشتراكات</small><strong>{data.subscriptions.length}</strong></div></article><article className="admin-stat"><span><Icon name="history" size={19} /></span><div><small>جلسات الدفع</small><strong>{data.checkouts.length}</strong></div></article></div>
       <DataFeedback loading={false} error={null} empty={data.checkouts.length === 0} onRetry={onRetry} />
-      {data.checkouts.length > 0 && <section className="billing-admin-list"><header><div><strong>أحدث جلسات الدفع</strong><small>رابط الدفع السري لا يُعرض في لوحة الإدارة</small></div></header>{data.checkouts.map((checkout) => <div className="billing-admin-row" key={checkout.id}><bdi>{checkout.id.slice(0, 12)}</bdi><strong>{checkout.provider}</strong><span>{checkout.planId}</span><Status tone={checkout.status === "paid" ? "ready" : checkout.status === "failed" ? "danger" : "review"}>{checkout.status}</Status><small>{(checkout.amountMinor / 100).toFixed(2)} {checkout.currency}</small><span>{formatDate(checkout.createdAt)}</span></div>)}</section>}
+      {data.checkouts.length > 0 && <section className="billing-admin-list"><header><div><strong>أحدث جلسات الدفع</strong><small>رابط الدفع السري لا يُعرض في لوحة الإدارة</small></div></header>{data.checkouts.map((checkout) => <div className="billing-admin-row" key={checkout.id}><bdi>{checkout.id.slice(0, 12)}</bdi><strong>{checkout.provider}</strong><span>{checkout.planId}</span><Status tone={checkout.status === "paid" ? "ready" : checkout.status === "failed" ? "danger" : "review"}>{checkout.status}</Status><small>{(checkout.amountMinor / 100).toFixed(2)} {checkout.currency}</small><span>{formatAdminDate(checkout.createdAt)}</span></div>)}</section>}
     </section>
   );
 }
@@ -440,7 +411,7 @@ function AuditTable({ rows }: { rows: AdminAuditEvent[] }) {
       </div>
       {rows.map((row) => (
         <div className="admin-data-row" role="row" key={row.id}>
-          <span role="cell">{formatDate(row.createdAt)}</span>
+          <span role="cell">{formatAdminDate(row.createdAt)}</span>
           <span role="cell"><bdi>{row.actorUserId.slice(0, 12)}</bdi></span>
           <span role="cell"><code>{row.action}</code></span>
           <span role="cell"><bdi>{row.targetId.slice(0, 12)}</bdi></span>
@@ -473,10 +444,10 @@ export function System({
       <DataFeedback loading={loading} error={error} empty={!loading && !error && !data} onRetry={onRetry} />
       {!loading && !error && data && (
       <div className="system-settings-list">
-        <article><span><Icon name="activity" size={19} /></span><div><strong>حالة المنظومة</strong><small>آخر فحص {formatDate(data.checkedAt)}</small></div><Status tone={data.status === "ready" ? "ready" : "danger"}>{data.status === "ready" ? "جاهزة" : "متدهورة"}</Status><span /></article>
+        <article><span><Icon name="activity" size={19} /></span><div><strong>حالة المنظومة</strong><small>آخر فحص {formatAdminDate(data.checkedAt)}</small></div><Status tone={data.status === "ready" ? "ready" : "danger"}>{data.status === "ready" ? "جاهزة" : "متدهورة"}</Status><span /></article>
         <article><span><Icon name="settings" size={19} /></span><div><strong>العمال النشطون</strong><small>{healthyWorkers} من {data.workers.length} heartbeat حديث</small></div><Status tone={healthyWorkers >= 3 ? "ready" : "review"}>{healthyWorkers}</Status><span /></article>
         <article><span><Icon name="warning" size={19} /></span><div><strong>وظائف فاشلة</strong><small>إجمالي الحالات الفاشلة في الطوابير المرصودة</small></div><Status tone={queueFailures > 0 ? "danger" : "ready"}>{queueFailures}</Status><span /></article>
-        <article><span><Icon name="history" size={19} /></span><div><strong>تنظيف الاحتفاظ</strong><small>{data.maintenance?.lastSucceededAt ? `آخر نجاح ${formatDate(data.maintenance.lastSucceededAt)}` : "لم يُسجل تشغيل ناجح بعد"}{data.maintenance?.lastError ? ` · ${data.maintenance.lastError}` : ""}</small></div><Status tone={!data.maintenance || data.maintenance.stale ? "danger" : "ready"}>{!data.maintenance ? "مفقود" : data.maintenance.stale ? "متأخر" : "منتظم"}</Status><span /></article>
+        <article><span><Icon name="history" size={19} /></span><div><strong>تنظيف الاحتفاظ</strong><small>{data.maintenance?.lastSucceededAt ? `آخر نجاح ${formatAdminDate(data.maintenance.lastSucceededAt)}` : "لم يُسجل تشغيل ناجح بعد"}{data.maintenance?.lastError ? ` · ${data.maintenance.lastError}` : ""}</small></div><Status tone={!data.maintenance || data.maintenance.stale ? "danger" : "ready"}>{!data.maintenance ? "مفقود" : data.maintenance.stale ? "متأخر" : "منتظم"}</Status><span /></article>
         {data.queues.map((queue) => (
           <article key={queue.queue}><span><Icon name="database" size={19} /></span><div><strong>{queue.queue}</strong><small>انتظار {queue.queued} · نشط {queue.active} · أقدم انتظار {Math.round(queue.oldestQueuedSeconds)}ث</small></div><Status tone={queue.oldestQueuedSeconds > 120 || queue.failed > 0 ? "review" : "ready"}>{queue.failed > 0 ? `${queue.failed} فشل` : "مستقرة"}</Status><span /></article>
         ))}

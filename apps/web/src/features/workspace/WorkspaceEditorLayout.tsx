@@ -25,12 +25,6 @@ import type {
   ImageGuideInput,
   PdfGuideInput,
 } from "./workspaceGuidance";
-import type { WorkspaceToolController } from "./useWorkspaceToolController";
-import type {
-  WorkspaceEditorState,
-  WorkspaceReviewState,
-  WorkspaceSourceState,
-} from "./useWorkspaceStateControllers";
 import type { DocumentChangeSummary } from "./documentChangeSummary";
 import type { LayerCheckSummary } from "./layerChecks";
 import { useWorkspaceCanvasNavigation } from "./useWorkspaceCanvasNavigation";
@@ -112,36 +106,7 @@ interface WorkspaceEditorLayoutModel {
   onNotify: (message: string) => void;
 }
 
-interface WorkspaceEditorLayoutProps {
-  context: {
-    mode: ProjectMode;
-    authenticated: boolean;
-    maxUploadBytes: ApplicationCapabilities["limits"]["maxUploadBytes"];
-    onRequireAuth: () => void;
-    onNotify: (message: string) => void;
-  };
-  source: WorkspaceSourceState;
-  review: WorkspaceReviewState;
-  editor: WorkspaceEditorState;
-  tools: WorkspaceToolController;
-  actions: {
-    fileRef: MutableRefObject<HTMLInputElement | null>;
-    chooseSource: (file?: File) => Promise<void>;
-    cancelUpload: () => void;
-    hiddenLayers: string[];
-    onApplyImageGuide: WorkspaceEditorLayoutModel["onApplyImageGuide"];
-    onApplyPdfGuide: WorkspaceEditorLayoutModel["onApplyPdfGuide"];
-    onHistoryNavigate: WorkspaceEditorLayoutModel["onHistoryNavigate"];
-    onPdfSegmentationChange: WorkspaceEditorLayoutModel["onPdfSegmentationChange"];
-    onConfirm: WorkspaceEditorLayoutModel["onConfirm"];
-    onSelectLayer: (id: string, selectedIds?: string[]) => Promise<void>;
-    onPdfPageChange: (pageNumber: number) => Promise<boolean>;
-    onDraftDirtyChange: (dirty: boolean) => void;
-    onLayerCommand: WorkspaceEditorLayoutModel["onLayerCommand"];
-    documentChangeLog: readonly DocumentChangeSummary[];
-    layerCheckSummary: LayerCheckSummary;
-  };
-}
+import type { WorkspaceEditorLayoutProps } from "./WorkspaceEditorLayoutProps";
 
 export function WorkspaceEditorLayout({
   context,

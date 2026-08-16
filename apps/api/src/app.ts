@@ -1,14 +1,10 @@
-import cors from "@fastify/cors";
-import cookie from "@fastify/cookie";
-import helmet from "@fastify/helmet";
-import rateLimit from "@fastify/rate-limit";
 import { createRequire } from "node:module";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
 import type { AppDependencies } from "./app-dependencies.js";
 export type { AppDependencies } from "./app-dependencies.js";
-import { isCookieMutationOriginAllowed } from "./http/cookie-mutation-origin.js";
+import { registerHttpSecurity } from "./http/register-http-security.js";
 import { registerHealthRoutes } from "./http/health-routes.js";
 import { InMemoryProjectRepository } from "./projects/project-repository.js";
 import { registerProjectRoutes } from "./projects/project-routes.js";
@@ -80,61 +76,7 @@ export async function buildApp(
   registerHttpTracing(app);
   registerHttpErrorHandler(app);
 
-  await app.register(helmet, {
-    hsts:
-      config.NODE_ENV === "production"
-        ? { maxAge: 31_536_000, includeSubDomains: true }
-        : false,
-  });
-  const allowedWebOrigins = new Set([new URL(config.WEB_ORIGIN).origin]);
-  if (config.NODE_ENV !== "production") {
-    const configured = new URL(config.WEB_ORIGIN);
-    for (const hostname of ["localhost", "127.0.0.1"]) {
-      configured.hostname = hostname;
-      allowedWebOrigins.add(configured.origin);
-    }
-  }
-  await app.register(cors, {
-    origin: [...allowedWebOrigins],
-    credentials: true,
-    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  });
-  await app.register(cookie);
-  app.addHook("onRequest", async (request, reply) => {
-    if (
-      !isCookieMutationOriginAllowed({
-        method: request.method,
-        hasSessionCookie: Boolean(request.cookies.motionprep_session),
-        ...(request.headers.origin
-          ? { origin: request.headers.origin }
-          : {}),
-        ...(request.headers.referer
-          ? { referer: request.headers.referer }
-          : {}),
-        allowedOrigins: allowedWebOrigins,
-        requireOrigin: config.NODE_ENV === "production",
-      })
-    ) {
-      return reply.status(403).send({
-        data: null,
-        error: {
-          code: "CROSS_ORIGIN_MUTATION_BLOCKED",
-          message: "رُفض الطلب لأن مصدره لا يطابق واجهة التطبيق الموثوقة.",
-          requestId: request.id,
-        },
-      });
-    }
-  });
-  await app.register(rateLimit, {
-    global: true,
-    max: 300,
-    timeWindow: "1 minute",
-    skipOnError: false,
-    ...(dependencies.rateLimitStore
-      ? { store: dependencies.rateLimitStore }
-      : {}),
-    nameSpace: "motionprep:rate-limit:",
-  });
+  await registerHttpSecurity(app, config, dependencies.rateLimitStore);
   const clientTelemetryMetrics = new ClientTelemetryMetrics(
     config.RELEASE_VERSION,
   );

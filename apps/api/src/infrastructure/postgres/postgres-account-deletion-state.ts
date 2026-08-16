@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
+import { normalizePostgresTextArray } from "./postgres-text-array.js";
 import type {
   AccountDeletionRequest,
   PrepareAccountDeletionResult,
@@ -62,7 +63,7 @@ export class PostgresAccountDeletionState {
         await client.query("COMMIT");
         return { kind: "ready", request: mapDeletion(existing.rows[0]) };
       }
-      const existingPrefixes = normalizeTextArray(existing.rows[0]?.object_prefixes);
+      const existingPrefixes = normalizePostgresTextArray(existing.rows[0]?.object_prefixes);
       const objectPrefixes = existingPrefixes.length
         ? existingPrefixes
         : await collectAccountObjectPrefixes(client, userId);
@@ -182,7 +183,7 @@ export class PostgresAccountDeletionState {
         return { kind: "draining", request };
       }
       const currentKeys = await collectAccountObjectKeys(client, userId);
-      const currentPrefixes = normalizeTextArray(current.object_prefixes);
+      const currentPrefixes = normalizePostgresTextArray(current.object_prefixes);
       const objectPrefixes = currentPrefixes.length
         ? currentPrefixes
         : await collectAccountObjectPrefixes(client, userId);
@@ -448,19 +449,12 @@ function mapDeletion(row: DeletionRow): AccountDeletionRequest {
         : row.phase === "purging"
           ? "purging"
           : "draining",
-    objectKeys: normalizeTextArray(row.object_keys),
-    objectPrefixes: normalizeTextArray(row.object_prefixes),
+    objectKeys: normalizePostgresTextArray(row.object_keys),
+    objectPrefixes: normalizePostgresTextArray(row.object_prefixes),
     attempt: row.attempt,
     requestedAt: toIso(row.requested_at),
     updatedAt: toIso(row.updated_at),
     completedAt: row.completed_at ? toIso(row.completed_at) : null,
     drainedAt: row.drained_at ? toIso(row.drained_at) : null,
   };
-}
-
-function normalizeTextArray(value: readonly string[] | null | undefined): string[] {
-  return Array.isArray(value)
-    ? [...new Set(value.filter((entry) => typeof entry === "string" && entry.length > 0))]
-        .sort((left, right) => left.localeCompare(right))
-    : [];
 }

@@ -10,7 +10,6 @@ import {
   InMemoryIdempotencyStore,
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
-import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import type { UploadRepository } from "./upload-repository.js";
 import {
   ObjectStorageIntegrityError,
@@ -34,6 +33,7 @@ import {
 } from "./upload-limits.js";
 import type { UploadCancellationCommand } from "./upload-cancellation.js";
 import type { PreparedUploadContent } from "./upload-content.js";
+import { createUploadIntent } from "./upload-intent-coordinator.js";
 
 export class UploadDomainError extends Error {
   constructor(
@@ -52,18 +52,6 @@ export class UploadDomainError extends Error {
   ) {
     super(message);
   }
-}
-
-function safeExtension(contentType: SourceType): string {
-  return {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/webp": "webp",
-    "image/avif": "avif",
-    "image/tiff": "tiff",
-    "image/bmp": "bmp",
-    "application/pdf": "pdf",
-  }[contentType];
 }
 
 export class UploadService {
@@ -246,127 +234,20 @@ export class UploadService {
     idempotencyKey: string,
     projectStatusBeforeUpload?: ProjectStatus,
   ): Promise<UploadSession> {
-    const uploadLimit = this.limitFor(input.contentType);
-    if (input.sizeBytes > uploadLimit) {
-      throw new UploadDomainError(
-        "UPLOAD_SIZE_MISMATCH",
-        `يتجاوز الملف حد الرفع الحالي ${formatUploadMebibytes(uploadLimit)} MiB.`,
-      );
-    }
-    if (!this.sourceVersions) {
-      throw new Error("Source version persistence is required for uploads.");
-    }
-    const scopedIdempotencyKey = `${input.projectId}:${idempotencyKey}`;
-    const uploadId = crypto.randomUUID();
-    const claim = await this.idempotency.claimRequest(
-      "upload",
-      scopedIdempotencyKey,
-      uploadId,
-      requestFingerprint("upload", input),
-      24 * 60 * 60,
+    return createUploadIntent(
+      {
+        repository: this.repository,
+        sourceVersions: this.sourceVersions,
+        idempotency: this.idempotency,
+        now: this.now,
+        limitFor: (contentType) => this.limitFor(contentType),
+        cancelSession: (session) => this.cancelSession(session),
+        domainError: (code, message) => new UploadDomainError(code, message),
+      },
+      input,
+      idempotencyKey,
+      projectStatusBeforeUpload,
     );
-    if (claim.outcome === "conflict") {
-      throw new UploadDomainError(
-        "IDEMPOTENCY_CONFLICT",
-        "استُخدم مفتاح منع التكرار نفسه لطلب رفع مختلف.",
-      );
-    }
-    if (claim.outcome === "replayed") {
-      const existing = await this.repository.findById(claim.resourceId);
-      if (existing) return existing;
-      throw new UploadDomainError(
-        "UPLOAD_REQUEST_IN_PROGRESS",
-        "طلب الرفع المطابق ما زال قيد الإنشاء. أعد المحاولة بعد لحظات.",
-      );
-    }
-
-    const expiredAt = this.now().toISOString();
-    const expired = await this.repository.findExpiredActiveByProject(
-      input.projectId,
-      expiredAt,
-    );
-    const expiredBaseline = expired[0]
-      ? await this.repository.findProjectStatusBeforeUpload(expired[0].uploadId)
-      : null;
-    await Promise.all(expired.map((session) => this.cancelSession(session)));
-
-    const active = await this.repository.findActiveByProject(input.projectId);
-    if (active) {
-      await this.idempotency.release(
-        "upload",
-        scopedIdempotencyKey,
-        uploadId,
-      );
-      throw new UploadDomainError(
-        "ACTIVE_UPLOAD_EXISTS",
-        "يوجد رفع نشط لهذا المشروع. استأنفه أو ألغِه قبل بدء رفع جديد.",
-      );
-    }
-
-    const timestamp = this.now();
-    const expiresAt = new Date(timestamp.getTime() + 10 * 60_000).toISOString();
-    let sourceVersion;
-    try {
-      sourceVersion = await this.sourceVersions.create({
-        projectId: input.projectId,
-        uploadId,
-        filename: input.filename,
-        contentType: input.contentType,
-        sizeBytes: input.sizeBytes,
-      });
-    } catch (error) {
-      await this.idempotency.release(
-        "upload",
-        scopedIdempotencyKey,
-        uploadId,
-      );
-      throw error;
-    }
-    const session: UploadSession = {
-      uploadId,
-      projectId: input.projectId,
-      filename: input.filename,
-      contentType: input.contentType,
-      expectedSizeBytes: input.sizeBytes,
-      status: "uploading",
-      sourceVersionId: sourceVersion.id,
-      sha256: null,
-      objectKey: `sources/${input.projectId}/${uploadId}.${safeExtension(input.contentType)}`,
-      expiresAt,
-      maxBytes: uploadLimit,
-      uploadUrl: `/v1/uploads/${uploadId}/content`,
-      createdAt: timestamp.toISOString(),
-      updatedAt: timestamp.toISOString(),
-    };
-
-    try {
-      const effectiveProjectStatusBeforeUpload =
-        expiredBaseline ??
-        (projectStatusBeforeUpload === "uploading"
-          ? input.replaceSourceVersion === true
-            ? "needs_review"
-            : "draft"
-          : projectStatusBeforeUpload);
-      await this.repository.save(session, {
-        ...(effectiveProjectStatusBeforeUpload === undefined
-          ? {}
-          : {
-              projectStatusBeforeUpload:
-                effectiveProjectStatusBeforeUpload,
-            }),
-      });
-      return session;
-    } catch (error) {
-      await this.sourceVersions.update(sourceVersion.id, {
-        status: "failed",
-      });
-      await this.idempotency.release(
-        "upload",
-        scopedIdempotencyKey,
-        uploadId,
-      );
-      throw error;
-    }
   }
 
   private async completeVerified(

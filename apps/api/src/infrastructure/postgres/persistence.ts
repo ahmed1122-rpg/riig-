@@ -13,9 +13,9 @@ import { PostgresUploadIntegrityFailureCommand } from "./postgres-upload-integri
 import { PostgresUploadCancellationCommand } from "./postgres-upload-cancellation.js";
 import { PostgresSourceVersionRepository } from "./postgres-source-version-repository.js";
 import {
-  PostgresLayerDocumentRepository,
   PostgresProcessingJobRepository,
 } from "./postgres-processing-repository.js";
+import { PostgresLayerDocumentRepository } from "./postgres-layer-document-repository.js";
 import { PostgresAdminAccessCommand } from "./postgres-admin-access-command.js";
 import { PostgresUsageMeter } from "./postgres-usage-meter.js";
 import { PostgresOperationalStatusProvider } from "./postgres-operational-status.js";

@@ -13,8 +13,6 @@ import {
   WorkflowStrip,
   type CorrectionMode,
   type ReadyWorkspaceToolId,
-  type SharedEditorProps,
-  type WorkspaceEditorCommand,
 } from "./GuidanceEditorShared";
 import {
   PdfMarkerOverlay,
@@ -22,7 +20,6 @@ import {
   type PdfRegion,
 } from "./PdfMarkerOverlay";
 import {
-  createPdfRegionFromPercent,
   hasValidPdfRegionGeometry,
   normalizePdfRegionOrders,
 } from "./pdfRegionGeometry";
@@ -34,36 +31,8 @@ import {
   PdfExtractedTextPage,
   type PdfTextEdit,
 } from "./PdfExtractedTextPage";
-
-interface PdfGuidanceEditorProps extends SharedEditorProps {
-  segmentation: PdfSegmentation;
-  layers: Layer[];
-  pageNumber?: number;
-  pageCount?: number;
-  pageSize?: {
-    width: number;
-    height: number;
-  };
-  selectedLayerId?: string;
-  solo?: boolean;
-  onSelectedLayerChange?: (id: string) => void;
-  onTextLayerChange?: (id: string, fullText: string) => void;
-  onPageChange?: (pageNumber: number) => void;
-  onSegmentationChange: (
-    value: PdfSegmentation,
-  ) => void | Promise<void>;
-  segmentationBusy?: boolean;
-  guidanceRevision?: number;
-  onApply: (input: {
-    mode: CorrectionMode;
-    regions: PdfRegion[];
-  }) => Promise<{ revision: number; warnings: string[] }>;
-  toolCommand?: WorkspaceEditorCommand;
-  onToolSelect?: (toolId: ReadyWorkspaceToolId) => void;
-  onHistoryNavigate: (direction: "undo" | "redo") => Promise<void>;
-  onConfirmDiscardRegions?: (message: string) => Promise<boolean>;
-  onDraftDirtyChange?: (dirty: boolean) => void;
-}
+import { PdfRegionCoordinateForm } from "./PdfRegionCoordinateForm";
+import type { PdfGuidanceEditorProps } from "./PdfGuidanceEditor.types";
 
 const pdfPromptTools = [
   ["pdf.heading", "heading"],
@@ -109,7 +78,6 @@ export function PdfGuidanceEditor({
     height: 10,
   });
   const [keyboardRegionError, setKeyboardRegionError] = useState("");
-  const keyboardRegionErrorId = "pdf-coordinate-error";
   const regionsRef = useRef(regions);
   regionsRef.current = regions;
   useEffect(() => {
@@ -427,56 +395,14 @@ export function PdfGuidanceEditor({
           )}
         </div>
 
-        <form
-          className="guidance-coordinate-entry guidance-coordinate-entry--region"
-          aria-label="إضافة منطقة PDF بالإحداثيات"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const result = createPdfRegionFromPercent(
-              keyboardRegion,
-              activeLabel,
-            );
-            if (!result.valid) {
-              setKeyboardRegionError(result.message);
-              return;
-            }
-            if (addRegion(result.region)) setKeyboardRegionError("");
-          }}
-        >
-          {([
-            ["x", "الموضع الأفقي %"],
-            ["y", "الموضع الرأسي %"],
-            ["width", "العرض %"],
-            ["height", "الارتفاع %"],
-          ] as const).map(([field, label]) => (
-            <label key={field}>
-              {label}
-              <input
-                type="number"
-                min={field === "width" || field === "height" ? 1 : 0}
-                max={field === "x" || field === "y" ? 99 : 100}
-                value={keyboardRegion[field]}
-                aria-invalid={Boolean(keyboardRegionError)}
-                aria-describedby={
-                  keyboardRegionError ? keyboardRegionErrorId : undefined
-                }
-                onChange={(event) => {
-                  setKeyboardRegion((current) => ({
-                    ...current,
-                    [field]: Number(event.target.value),
-                  }));
-                  setKeyboardRegionError("");
-                }}
-              />
-            </label>
-          ))}
-          <button type="submit">إضافة منطقة</button>
-          {keyboardRegionError && (
-            <small id={keyboardRegionErrorId} className="field-error" role="alert">
-              {keyboardRegionError}
-            </small>
-          )}
-        </form>
+        <PdfRegionCoordinateForm
+          keyboardRegion={keyboardRegion}
+          setKeyboardRegion={setKeyboardRegion}
+          error={keyboardRegionError}
+          setError={setKeyboardRegionError}
+          activeLabel={activeLabel}
+          onAdd={addRegion}
+        />
 
         <GuidanceReview
           applying={applying}

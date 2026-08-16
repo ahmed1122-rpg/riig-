@@ -6,15 +6,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
-import type { LayerDocumentCommand } from "@motionprep/contracts";
 import {
   canonicalLayerName,
   normalizeLayerName,
 } from "@motionprep/layer-domain";
 import { Icon } from "../../shared/Icon";
-import type { Layer, ProjectMode } from "../../types";
-import type { LayerCheckSummary } from "./layerChecks";
+import type { Layer } from "../../types";
 import { ChecksPanel, LayerSkeleton } from "./LayerDockPanels";
 import {
   LayerDockInteractiveRow,
@@ -23,7 +20,6 @@ import {
 } from "./LayerDockInteractiveRow";
 import { LayerCommandActivity } from "./LayerCommandActivity";
 import { DocumentChangeActivity } from "./DocumentChangeActivity";
-import type { DocumentChangeSummary } from "./documentChangeSummary";
 import { LayerMetadataInspector } from "./LayerMetadataInspector";
 import { PdfPageLayerTree } from "./PdfPageLayerTree";
 import {
@@ -41,40 +37,20 @@ import { useStoredPreference } from "../../shared/useStoredPreference";
 import { useLayerCommandWorkflow } from "./useLayerCommandWorkflow";
 import { VirtualLayerList } from "./VirtualLayerList";
 import { layerReorderIssue } from "./layerReorderGuard";
+import type { LayerDockTab } from "./layerDockInteractions";
 import {
-  handleLayerDockTabKeyDown,
-  startLayerDockResize,
-  type LayerDockTab,
-} from "./layerDockInteractions";
+  CollapsedLayerDock,
+  LayerBulkToolbar,
+  LayerDockFooter,
+  LayerDockHeader,
+} from "./LayerDockChrome";
 import {
   navigateLayerSelection,
   openLayerDiagnostic,
 } from "./layerDockNavigation";
 import { isPageLayer } from "./workspaceLayerKinds";
-
-type LayerDensity = "dense" | "comfortable";
-
-interface LayerDockProps {
-  mode: ProjectMode;
-  layers: Layer[];
-  selectedIds: string[];
-  activeId: string;
-  collapsed: boolean;
-  width: number;
-  loading: boolean;
-  activePdfPage?: number;
-  pdfPages?: Array<{ pageNumber: number }>;
-  canReorder?: boolean;
-  documentChangeLog?: readonly DocumentChangeSummary[];
-  checkSummary: LayerCheckSummary;
-  onCollapsedChange: (value: boolean) => void;
-  onWidthChange: (value: number) => void;
-  onSelectionChange: (ids: string[], activeId: string) => void;
-  onPdfPageChange?: (pageNumber: number) => Promise<boolean>;
-  onLayersChange: (layers: Layer[]) => void;
-  onLayerCommand: (command: LayerDocumentCommand) => Promise<void>;
-  onNotify: (message: string) => void;
-}
+import type { LayerDensity, LayerDockProps } from "./layerDockTypes";
+import { resolveLayerSelection } from "./layerDockSelection";
 
 export function LayerDock({
   mode,
@@ -186,51 +162,14 @@ export function LayerDock({
     id: string,
     event: React.MouseEvent | React.KeyboardEvent,
   ) => {
-    if (event.shiftKey) {
-      const anchorIndex = layers.findIndex((layer) => layer.id === anchorId);
-      const targetIndex = layers.findIndex((layer) => layer.id === id);
-      if (anchorIndex < 0 || targetIndex < 0) {
-        onSelectionChange([id], id);
-        setAnchorId(id);
-        return;
-      }
-      const start = Math.min(anchorIndex, targetIndex);
-      const end = Math.max(anchorIndex, targetIndex);
-      const target = layers[targetIndex];
-      const anchor = layers[anchorIndex];
-      if (
-        !target ||
-        !anchor ||
-        target.kind === "group" ||
-        anchor.kind === "group" ||
-        (target.pageNumber ?? 1) !== (anchor.pageNumber ?? 1) ||
-        (target.parentId ?? null) !== (anchor.parentId ?? null)
-      ) {
-        onSelectionChange([id], id);
-        setAnchorId(id);
-        return;
-      }
-      const range = layers
-        .slice(Math.max(0, start), end + 1)
-        .filter(
-          (layer) =>
-            layer.kind !== "group" &&
-            (layer.pageNumber ?? 1) === (target.pageNumber ?? 1) &&
-            (layer.parentId ?? null) === (target.parentId ?? null),
-        )
-        .map((layer) => layer.id);
-      onSelectionChange(range, id);
-      return;
-    }
-    if (event.ctrlKey || event.metaKey) {
-      const next = selectedIds.includes(id)
-        ? selectedIds.filter((selectedId) => selectedId !== id)
-        : [...selectedIds, id];
-      onSelectionChange(next.length ? next : [id], id);
-      setAnchorId(id);
-      return;
-    }
-    onSelectionChange([id], id);
+    onSelectionChange(resolveLayerSelection({
+      layers,
+      selectedIds,
+      anchorId,
+      targetId: id,
+      shiftKey: event.shiftKey,
+      toggleKey: event.ctrlKey || event.metaKey,
+    }), id);
     setAnchorId(id);
   };
 
@@ -391,41 +330,28 @@ export function LayerDock({
 
   if (collapsed) {
     return (
-      <aside className="pro-layer-dock is-collapsed" aria-label="رصيف الطبقات مطوي">
-        <button type="button" className="pro-layer-expand" aria-label="توسيع رصيف الطبقات" onClick={() => onCollapsedChange(false)}>
-          <Icon name="panelOpen" size={17} /><span>{layerCounts.totalLayerCount}</span>
-        </button>
-      </aside>
+      <CollapsedLayerDock
+        layerCount={layerCounts.totalLayerCount}
+        onExpand={() => onCollapsedChange(false)}
+      />
     );
   }
 
   return (
     <aside ref={dockRef} className={`pro-layer-dock density-${density}`} aria-label="رصيف الطبقات" style={{ width }}>
-      <button
-        className="pro-dock-resizer"
-        type="button"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="تغيير عرض رصيف الطبقات"
-        aria-valuemin={260}
-        aria-valuemax={430}
-        aria-valuenow={width}
-        onPointerDown={(event) =>
-          startLayerDockResize(event, width, onWidthChange)
-        }
-        onKeyDown={(event) => {
-          if (event.key === "ArrowLeft") onWidthChange(Math.min(430, width + 16));
-          if (event.key === "ArrowRight") onWidthChange(Math.max(260, width - 16));
-        }}
+      <LayerDockHeader
+        width={width}
+        onWidthChange={onWidthChange}
+        tab={tab}
+        setTab={setTab}
+        layersTabId={layersTabId}
+        checksTabId={checksTabId}
+        layersPanelId={layersPanelId}
+        checksPanelId={checksPanelId}
+        layerCount={layerCounts.totalLayerCount}
+        issueCount={checkSummary.issueCount}
+        onCollapse={() => onCollapsedChange(true)}
       />
-
-      <header className="pro-dock-header">
-        <div className="panel-tabs" role="tablist" aria-label="تفاصيل المشروع">
-          <button id={layersTabId} type="button" role="tab" aria-selected={tab === "layers"} aria-controls={layersPanelId} tabIndex={tab === "layers" ? 0 : -1} className={tab === "layers" ? "is-active" : ""} onClick={() => setTab("layers")} onKeyDown={(event) => handleLayerDockTabKeyDown(event, tab, setTab)}>الطبقات <span>{layerCounts.totalLayerCount}</span></button>
-          <button id={checksTabId} type="button" role="tab" aria-selected={tab === "checks"} aria-controls={checksPanelId} tabIndex={tab === "checks" ? 0 : -1} className={tab === "checks" ? "is-active" : ""} onClick={() => setTab("checks")} onKeyDown={(event) => handleLayerDockTabKeyDown(event, tab, setTab)}>الفحص <span className="check-count">{checkSummary.issueCount}</span></button>
-        </div>
-        <button className="pro-icon-button" type="button" aria-label="طي رصيف الطبقات" onClick={() => onCollapsedChange(true)}><Icon name="panelClose" size={16} /></button>
-      </header>
 
       {tab === "checks" ? (
         <div id={checksPanelId} className="pro-layer-tabpanel pro-layer-tabpanel--checks" role="tabpanel" aria-labelledby={checksTabId} tabIndex={0}>
@@ -471,15 +397,10 @@ export function LayerDock({
             <DocumentChangeActivity changes={documentChangeLog} />
           </div>
 
-          {selectedIds.length > 1 && (
-            <div className="pro-bulk-toolbar" role="toolbar" aria-label="إجراءات الطبقات المحددة">
-              <strong>{selectedIds.length} طبقات</strong>
-              <button type="button" onClick={() => executeCommand({ kind: "update-state", scope: { kind: "layers", layerIds: selectedIds }, visible: true })}><Icon name="eye" size={13} /> إظهار</button>
-              <button type="button" onClick={() => executeCommand({ kind: "update-state", scope: { kind: "layers", layerIds: selectedIds }, visible: false })}><Icon name="eyeOff" size={13} /> إخفاء</button>
-              <button type="button" onClick={() => executeCommand({ kind: "update-state", scope: { kind: "layers", layerIds: selectedIds }, locked: true })}><Icon name="lock" size={13} /> قفل</button>
-              <button type="button" onClick={() => executeCommand({ kind: "update-state", scope: { kind: "layers", layerIds: selectedIds }, locked: false })}><Icon name="unlock" size={13} /> فتح</button>
-            </div>
-          )}
+          <LayerBulkToolbar
+            selectedIds={selectedIds}
+            onExecute={(command) => void executeCommand(command)}
+          />
 
           {activeLayer && (
             <LayerMetadataInspector
@@ -529,10 +450,12 @@ export function LayerDock({
                 />
               )
           )}
-          <footer className="pro-layer-footer">
-            <span>{mode === "image" ? `${layerCounts.totalLayerCount} من ${MAX_IMAGE_LAYERS} طبقة` : `${layerCounts.currentPageLayerCount} في الصفحة / ${layerCounts.totalLayerCount} إجمالًا`}</span>
-            <span>{canReorder ? "Alt + ↑↓ للترتيب" : "الترتيب محفوظ وغير قابل للتعديل حاليًا"}</span>
-          </footer>
+          <LayerDockFooter
+            mode={mode}
+            currentPageLayerCount={layerCounts.currentPageLayerCount}
+            totalLayerCount={layerCounts.totalLayerCount}
+            canReorder={canReorder}
+          />
         </div>
       )}
     </aside>

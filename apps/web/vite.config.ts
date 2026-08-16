@@ -57,6 +57,12 @@ export default defineConfig({
             return "react-vendor";
           }
           if (
+            normalizedId.endsWith("/features/projects/ProjectsView.tsx") ||
+            normalizedId.endsWith("/features/exports/ExportsView.tsx")
+          ) {
+            return "project-pages";
+          }
+          if (
             normalizedId.includes("/src/features/workspace/CharacterStudio") ||
             normalizedId.includes("/src/features/workspace/useCharacterStudio")
           ) {

@@ -1,5 +1,24 @@
 # Production readiness
 
+Remaining-work update on 2026-08-16: the complete local quality gate now passes
+with zero maintainability warnings, zero grandfathered oversized files, zero
+exact clone blocks, cycle-free imports, 500 API tests, 275 web tests, all
+workspace coverage thresholds, production builds, and a 184.6 KiB gzip
+JavaScript bundle under the unchanged 185 KiB ratchet. A production-shaped
+local Docker topology also passed with two API replicas, PostgreSQL, Redis,
+MinIO, Mailpit, processing/export workers, signed Stripe webhook idempotency,
+restart and artifact download checks. Fault recovery passed for all four
+dependencies, and a two-client PDF workflow smoke completed with 0% errors,
+1.458 s workflow P95, and a drained final queue. This is strong local evidence,
+but it is not bound to a published image digest or managed environment.
+
+Production approval remains withheld because no live production environment
+files or managed-provider coordinates are available in this workspace. The
+same final Git SHA still requires protected CI, signed immutable images,
+managed staging/PostgreSQL/S3, release-bound recovery/rollback and load evidence,
+live billing/provider checks when enabled, current sealed OCR/Character-Rig
+qualification, and owner/legal approval.
+
 Working-candidate update on 2026-08-16: the repository-cleanup pass repairs
 tracked evidence links and removes developer-machine paths, adds automated
 path, CSS-usage, icon-usage, and worker-build contracts, and prevents test

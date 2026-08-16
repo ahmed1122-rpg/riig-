@@ -6,6 +6,17 @@
 
 **Status:** local source candidate; not production approval
 
+## Remaining-work completion update
+
+The second remediation pass completed the repository-wide early-warning
+backlog rather than merely holding the strict cap. All 28 production files
+previously in the 450–550 line warning band were split along existing domain,
+adapter, presentation, and workflow boundaries. Shared contracts were moved to
+cycle-free type modules, and the deployment/topology verifiers were separated
+into focused, reusable checks. The authenticated project and export routes now
+share one lazy production chunk while the public entry and dashboard remain
+independent.
+
 ## Implemented
 
 - Repaired tracked Markdown evidence links and replaced developer-machine paths
@@ -41,19 +52,32 @@
 - `npm audit --omit=dev`: zero known production dependency vulnerabilities.
 - API coverage ratchet: 69% statements, 62% branches, 71% functions, 70% lines.
 - Web coverage ratchet: 56% statements, 53% branches, 49% functions, 58% lines.
-- Bundle: 184.1 KiB gzip JavaScript and 45.1 KiB gzip CSS; landing remains eight
+- Bundle: 184.6 KiB gzip JavaScript and 45.1 KiB gzip CSS; landing remains nine
   requests, a 207.0 KiB hero, and zero blocking font requests.
 - Maintainability: zero exact clone blocks and zero files above the 550-line
-  strict cap. Twenty-eight files remain in the 450–550 early-warning band and
-  are protected from growth by the existing ratchet.
+  strict cap, zero grandfathered files, and zero files in the 450–550
+  early-warning band.
+- Production-shaped local topology: PASS with two API replicas, PostgreSQL,
+  Redis, MinIO/S3, Mailpit, media/document/export workers, restart verification,
+  cross-replica signed Stripe webhook idempotency, export download, and trace
+  identity checks.
+- Dependency fault/recovery drill: PASS for Redis (3.772 s), MinIO (11.712 s),
+  Mailpit (49.705 s), and PostgreSQL (13.906 s), including readiness, worker,
+  and provider-metric recovery.
+- Concurrent PDF workflow smoke: 2/2 journeys passed, 0% errors, workflow P95
+  1.458 s, peak queue depth 1, final queue depth 0, API RSS peak delta 256 KiB,
+  and no worker RSS growth.
 
 ## Deliberately not claimed
 
-This pass does not provide managed PostgreSQL/S3 evidence, immutable staging
-deployment, signed recovery/rollback drills, representative concurrent PDF load,
-live Stripe webhook evidence, external OCR/Character-Rig provider qualification,
-or owner/legal approval. Those release-bound gates must pass for the same full
-Git SHA and immutable image digests before production approval.
+The local topology, fault, and smoke-load evidence above is not release-bound:
+it used the integration identity rather than an immutable published image
+digest. This pass still does not provide managed PostgreSQL/S3 evidence,
+immutable staging deployment, signed managed recovery/rollback drills, the
+protected representative load policy, live Stripe-provider webhook evidence,
+external OCR/Character-Rig provider qualification, or owner/legal approval.
+Those gates must pass for the same full Git SHA and immutable image digests
+before production approval.
 
 Seven pre-existing local screenshot deletions are included in this remediation
 commit with explicit user authorization. Historical reports no longer retain

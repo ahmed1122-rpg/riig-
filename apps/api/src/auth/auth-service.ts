@@ -28,17 +28,10 @@ import {
   createEphemeralSecretProtector,
   type SecretProtector,
 } from "./secret-protector.js";
-import {
-  createOtpAuthUri, formatRecoveryCode,
-  generateTotpSecret,
-  verifyTotpCode,
-} from "./totp.js";
 import { AuthPasswordCoordinator } from "./auth-password-coordinator.js";
 import { AuthUserAccessCoordinator } from "./auth-user-access-coordinator.js";
-import {
-  AuthMfaLoginCoordinator,
-  matchSecondFactor,
-} from "./auth-mfa-login-coordinator.js";
+import { AuthMfaLoginCoordinator } from "./auth-mfa-login-coordinator.js";
+import { AuthMfaSetupCoordinator } from "./auth-mfa-setup-coordinator.js";
 import {
   AuthRegistrationCoordinator,
   type RegistrationResult,
@@ -105,6 +98,7 @@ export class AuthService {
   readonly #passwordCoordinator: AuthPasswordCoordinator;
   readonly #userAccessCoordinator: AuthUserAccessCoordinator;
   readonly #mfaLoginCoordinator: AuthMfaLoginCoordinator;
+  readonly #mfaSetupCoordinator: AuthMfaSetupCoordinator;
   readonly #registrationCoordinator: AuthRegistrationCoordinator;
 
   constructor(
@@ -146,6 +140,17 @@ export class AuthService {
       secretProtector: this.#secretProtector,
       randomToken: () => this.randomToken(),
       hashToken: (token) => this.hashToken(token),
+      publicUser: (user) => this.publicUser(user),
+      domainError: (code, message) => new AuthDomainError(code, message),
+    });
+    this.#mfaSetupCoordinator = new AuthMfaSetupCoordinator({
+      repository: this.repository,
+      now: this.now,
+      secretProtector: this.#secretProtector,
+      totpIssuer: this.#totpIssuer,
+      randomToken: () => this.randomToken(),
+      hashToken: (token) => this.hashToken(token),
+      requireActiveUser: (userId) => this.requireActiveUser(userId),
       publicUser: (user) => this.publicUser(user),
       domainError: (code, message) => new AuthDomainError(code, message),
     });
@@ -287,133 +292,29 @@ export class AuthService {
     return this.#mfaLoginCoordinator.complete(input);
   }
 
-  async beginMfaSetup(userId: string): Promise<{
+  beginMfaSetup(userId: string): Promise<{
     setupToken: string;
     secret: string;
     otpAuthUri: string;
     expiresAt: string;
   }> {
-    const user = await this.requireActiveUser(userId);
-    if (user.mfaEnabled) {
-      throw new AuthDomainError(
-        "MFA_ALREADY_ENABLED",
-        "المصادقة الثنائية مفعلة بالفعل.",
-      );
-    }
-    const secret = generateTotpSecret(randomBytes(20));
-    const setupToken = this.randomToken();
-    const expiresAt = new Date(
-      this.now().getTime() + 10 * 60_000,
-    ).toISOString();
-    await this.repository.saveMfaEnrollment({
-      tokenHash: this.hashToken(setupToken),
-      userId,
-      secretCiphertext: this.#secretProtector.protect(secret),
-      expiresAt,
-    });
-    return {
-      setupToken,
-      secret,
-      otpAuthUri: createOtpAuthUri({
-        issuer: this.#totpIssuer,
-        account: user.email,
-        secret,
-      }),
-      expiresAt,
-    };
+    return this.#mfaSetupCoordinator.begin(userId);
   }
 
-  async confirmMfaSetup(input: {
+  confirmMfaSetup(input: {
     userId: string;
     setupToken: string;
     code: string;
   }): Promise<{ user: UserSummary; recoveryCodes: string[] }> {
-    const tokenHash = this.hashToken(input.setupToken);
-    const enrollment = await this.repository.consumeMfaEnrollment(
-      tokenHash,
-      input.userId,
-      this.now().toISOString(),
-    );
-    if (!enrollment) {
-      throw new AuthDomainError(
-        "MFA_SETUP_INVALID",
-        "انتهت جلسة إعداد المصادقة الثنائية.",
-      );
-    }
-    const secret = this.#secretProtector.unprotect(
-      enrollment.secretCiphertext,
-    );
-    if (!verifyTotpCode(secret, input.code, this.now().getTime())) {
-      await this.repository.saveMfaEnrollment(enrollment);
-      throw new AuthDomainError(
-        "MFA_CODE_INVALID",
-        "رمز تطبيق المصادقة غير صحيح.",
-      );
-    }
-
-    const recoveryCodes = Array.from({ length: 10 }, () =>
-      formatRecoveryCode(randomBytes(5).toString("hex")),
-    );
-    const updated = await this.repository.updateSecurity(input.userId, {
-      mfaEnabled: true,
-      mfaSecretCiphertext: enrollment.secretCiphertext,
-      recoveryCodeHashes: recoveryCodes.map((code) =>
-        this.#secretProtector.hashRecoveryCode(code),
-      ),
-    });
-    if (!updated) {
-      throw new AuthDomainError("USER_NOT_FOUND", "المستخدم غير موجود.");
-    }
-    await this.repository.deleteSessionsByUser(input.userId);
-    return { user: this.publicUser(updated), recoveryCodes };
+    return this.#mfaSetupCoordinator.confirm(input);
   }
 
-  async disableMfa(input: {
+  disableMfa(input: {
     userId: string;
     password: string;
     code: string;
   }): Promise<void> {
-    const user = await this.requireActiveUser(input.userId);
-    if (!user.mfaEnabled) {
-      throw new AuthDomainError(
-        "MFA_NOT_ENABLED",
-        "المصادقة الثنائية غير مفعلة.",
-      );
-    }
-    if (!(await verifyPassword(input.password, user.passwordHash))) {
-      throw new AuthDomainError(
-        "CURRENT_PASSWORD_INVALID",
-        "كلمة المرور الحالية غير صحيحة.",
-      );
-    }
-    const factor = matchSecondFactor(
-      user,
-      input.code,
-      this.#secretProtector,
-      this.now().getTime(),
-    );
-    if (!factor) {
-      throw new AuthDomainError(
-        "MFA_CODE_INVALID",
-        "رمز التحقق غير صحيح.",
-      );
-    }
-    if (
-      factor.kind === "recovery" &&
-      !(await this.repository.consumeRecoveryCode(user.id, factor.codeHash))
-    ) {
-      throw new AuthDomainError(
-        "MFA_CODE_INVALID",
-        "رمز الاسترداد غير صالح أو استُخدم سابقًا.",
-      );
-    }
-    await this.repository.updateSecurity(user.id, {
-      mfaEnabled: false,
-      mfaSecretCiphertext: null,
-      recoveryCodeHashes: [],
-    });
-    await this.repository.deleteSessionsByUser(user.id);
-    await this.repository.deleteMfaChallengesByUser(user.id);
+    return this.#mfaSetupCoordinator.disable(input);
   }
 
   async requestPasswordReset(emailInput: string): Promise<void> {

@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { Pool } from "pg";
-import Stripe from "stripe";
 import { currentLegalAcceptance } from "./legal-acceptance.mjs";
 import { integrationEndpoints } from "./integration-endpoints.mjs";
+import { verifyStripeWebhookIdempotency } from "./verify-topology-stripe.mjs";
 
 const { apiOrigins, mailpitOrigin, databaseUrl } = integrationEndpoints(
   process.env,
@@ -258,116 +258,16 @@ if (!download.ok || (await download.arrayBuffer()).byteLength < 100) {
   throw new Error("Export artifact download is empty or unavailable.");
 }
 
-await verifyStripeWebhookIdempotency(userId);
+await verifyStripeWebhookIdempotency({
+  targetUserId: userId,
+  databaseUrl,
+  webhookSecret,
+  api,
+});
 await verifyOperationalSignals();
 process.stdout.write(
   "Production topology verified: replicas, Redis, Mailpit, S3, workers, restart, export, and signed Stripe webhook.\n",
 );
-
-async function verifyStripeWebhookIdempotency(targetUserId) {
-  const checkoutId = crypto.randomUUID();
-  const providerSuffix = crypto.randomUUID().replaceAll("-", "");
-  const checkoutReference = `cs_topology_${providerSuffix}`;
-  const customerReference = `cus_topology_${providerSuffix}`;
-  const subscriptionReference = `sub_topology_${providerSuffix}`;
-  const pool = new Pool({ connectionString: databaseUrl });
-  try {
-    await pool.query(
-      `INSERT INTO checkout_sessions (
-         id, user_id, provider, plan_id, status, currency, amount_minor,
-         checkout_url, provider_reference, created_at, expires_at
-       )
-       VALUES ($1, $2, 'stripe', 'creator', 'redirect_required', 'USD',
-         1900, 'https://checkout.stripe.test/session', $3,
-         now(), now() + interval '30 minutes')`,
-      [checkoutId, targetUserId, checkoutReference],
-    );
-  } finally {
-    await pool.end();
-  }
-  const payload = JSON.stringify({
-    id: `evt_${crypto.randomUUID().replaceAll("-", "")}`,
-    object: "event",
-    api_version: "2025-06-30.basil",
-    created: Math.floor(Date.now() / 1_000),
-    type: "checkout.session.completed",
-    data: {
-      object: {
-        id: checkoutReference,
-        object: "checkout.session",
-        client_reference_id: checkoutId,
-        payment_status: "paid",
-        amount_total: 1900,
-        currency: "usd",
-        customer: customerReference,
-        subscription: subscriptionReference,
-        metadata: {
-          motionprep_checkout_id: checkoutId,
-          motionprep_user_id: targetUserId,
-          motionprep_plan_id: "creator",
-        },
-      },
-    },
-  });
-  const stripe = new Stripe("test_stripe_key_motionprep_topology_only");
-  const signature = stripe.webhooks.generateTestHeaderString({
-    payload,
-    secret: webhookSecret,
-  });
-  const first = await api(0, "/v1/billing/webhooks/stripe", {
-    method: "POST",
-    body: payload,
-    headers: {
-      "content-type": "application/json",
-      "stripe-signature": signature,
-    },
-    expectedStatus: 200,
-  });
-  const duplicate = await api(1, "/v1/billing/webhooks/stripe", {
-    method: "POST",
-    body: payload,
-    headers: {
-      "content-type": "application/json",
-      "stripe-signature": signature,
-    },
-    expectedStatus: 200,
-  });
-  if (!first.body.data.processed || !duplicate.body.data.duplicate) {
-    throw new Error("Signed Stripe webhook was not idempotent across replicas.");
-  }
-  const verificationPool = new Pool({ connectionString: databaseUrl });
-  try {
-    const verification = await verificationPool.query(
-      `SELECT
-         checkout.status AS checkout_status,
-         subscription.plan_id AS plan_id,
-         (
-           SELECT count(*)::integer
-           FROM audit_events
-           WHERE target_type = 'checkout'
-             AND target_id = checkout.id::text
-             AND action = 'billing.webhook.paid'
-         ) AS paid_audit_count
-       FROM checkout_sessions AS checkout
-       JOIN subscriptions AS subscription
-         ON subscription.user_id = checkout.user_id
-       WHERE checkout.id = $1`,
-      [checkoutId],
-    );
-    const row = verification.rows[0];
-    if (
-      row?.checkout_status !== "paid" ||
-      row?.plan_id !== "creator" ||
-      Number(row?.paid_audit_count) !== 1
-    ) {
-      throw new Error(
-        "Stripe webhook replay changed billing state more than once.",
-      );
-    }
-  } finally {
-    await verificationPool.end();
-  }
-}
 
 async function verifyOperationalSignals() {
   const response = await fetch(`${apiOrigins[0]}/internal/metrics`, {

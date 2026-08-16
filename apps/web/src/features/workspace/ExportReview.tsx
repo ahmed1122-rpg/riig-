@@ -1,41 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { exportFormatsByProjectKind, MAX_IMAGE_LAYERS, MAX_IMAGE_UPLOAD_BYTES, MAX_PDF_UPLOAD_BYTES, type ExportFormat, type ProductionIssue } from "@motionprep/contracts";
-import {
-  canonicalLayerName,
-  normalizeLayerName,
-} from "@motionprep/layer-domain";
+import { useEffect, useRef, useState } from "react";
+import { MAX_IMAGE_LAYERS, MAX_IMAGE_UPLOAD_BYTES, MAX_PDF_UPLOAD_BYTES, type ExportFormat, type ProductionIssue } from "@motionprep/contracts";
 import { ApiError } from "../../lib/api/transport";
 import { Icon } from "../../shared/Icon";
 import type { Layer } from "../../types";
 import { getExportFormatPresentation } from "../../shared/exportPresentation";
-import {
-  moveExportLayer,
-  reviewableExportLayers,
-  selectedExportLayer,
-} from "./exportReviewLayers";
+import { moveExportLayer } from "./exportReviewLayers";
 import {
   selectExportFormat,
   selectExportScope,
   type ExportGenerationState,
 } from "./exportFormatState";
 import { ExportQualitySummary } from "./ExportQualitySummary";
-import {
-  ExportCharacterPreview,
-  ExportPdfPreview,
-} from "./ExportReviewPreviews";
 import { ExportReviewHeader } from "./ExportReviewHeader";
 import { ExportReviewFooter } from "./ExportReviewFooter";
 import { ExportReviewLayerList } from "./ExportReviewLayerList";
-import { evaluateExportPreflight } from "./exportPreflight";
+import { ExportReviewPreviewPanel } from "./ExportReviewPreviewPanel";
 import type {
   ExportReviewProps,
-  FormatOption,
   PdfScope,
   PreviewBackground,
 } from "./exportReviewTypes";
 import { useExportReviewDialog } from "./useExportReviewDialog";
 import { useExportPreviewZoom } from "./useExportPreviewZoom";
-import { isPageLayer } from "./workspaceLayerKinds";
+import { useExportReviewDerivedState } from "./useExportReviewDerivedState";
+import { renameExportLayer } from "./exportLayerRename";
 
 export function ExportReview({
   mode,
@@ -82,66 +70,33 @@ export function ExportReview({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
-  const reviewableLayers = useMemo(
-    () => reviewableExportLayers(layers),
-    [layers],
-  );
-  const selected = useMemo(
-    () => selectedExportLayer(reviewableLayers, selectedLayerId),
-    [reviewableLayers, selectedLayerId],
+  const {
+    reviewableLayers,
+    selected,
+    formats,
+    selectedFormat,
+    displayedGenerationMessage,
+    fixedBackground,
+    pageCount,
+    preflight,
+    footerIssues,
+  } = useExportReviewDerivedState(
+    mode,
+    layers,
+    selectedLayerId,
+    generationMessage,
+    generationState,
+    generationIssues,
+    format,
+    canExport,
+    saveState,
+    canvasSize,
+    pdfPages,
   );
   const effectiveSelectedLayerId = selected?.id ?? "";
-  const formats = useMemo<FormatOption[]>(
-    () =>
-      exportFormatsByProjectKind[mode].map((id) => {
-        const presentation = getExportFormatPresentation(id, mode);
-        return { id, title: presentation.label, hint: presentation.hint };
-      }),
-    [mode],
-  );
-  const selectedFormat = formats.find((item) => item.id === format);
   const namingPresetId = mode === "image" ? "character-basic" : "kinetic-words";
-  const displayedGenerationMessage =
-    generationMessage ??
-    (generationState === "done"
-      ? getExportFormatPresentation(format, mode).successMessage
-      : undefined);
-  const fixedBackground = Boolean(
-    selected?.fixed || (mode === "book" && selected && isPageLayer(selected)),
-  );
   const orderingUnavailable = false;
-  const pageCount = Math.max(
-    1,
-    ...layers.map((layer) => layer.pageNumber ?? 1),
-  );
-  const preflight = useMemo(
-    () => evaluateExportPreflight({
-      mode,
-      layers,
-      canExport,
-      saveState,
-      ...(canvasSize ? { canvasSize } : {}),
-      ...(pdfPages ? { pdfPages } : {}),
-    }),
-    [canExport, canvasSize, layers, mode, pdfPages, saveState],
-  );
-  const footerIssues = useMemo(() => {
-    const findings = [
-      ...preflight.findings
-        .filter(({ severity }) => severity === "blocked")
-        .map(({ key, message }) => ({ key, message })),
-      ...generationIssues.map((issue, index) => ({
-        key: `server:${issue.code}:${issue.layerId ?? issue.pageNumber ?? index}`,
-        message: issue.message,
-      })),
-    ];
-    return [...new Map(findings.map((finding) => [finding.message, finding])).values()];
-  }, [generationIssues, preflight.findings]);
-
-  useEffect(() => {
-    setRenameDraft(selected?.name ?? "");
-    setRenameError("");
-  }, [selected?.id, selected?.name]);
+  useEffect(() => { setRenameDraft(selected?.name ?? ""); setRenameError(""); }, [selected?.id, selected?.name]);
 
   const changeFormat = (nextFormat: ExportFormat) => {
     const next = selectExportFormat(
@@ -198,22 +153,19 @@ export function ExportReview({
   };
 
   const commitLayerName = () => {
-    if (!selected || fixedBackground) return;
-    const nextName = normalizeLayerName(renameDraft);
-    const duplicate = layers.some(
-      (layer) =>
-        layer.id !== selected.id &&
-        (layer.pageNumber ?? 1) === (selected.pageNumber ?? 1) &&
-        (layer.parentId ?? null) === (selected.parentId ?? null) &&
-        canonicalLayerName(layer.name) === canonicalLayerName(nextName),
-    );
-    if (duplicate) {
+    const result = renameExportLayer(layers, selected, renameDraft, fixedBackground);
+    if (result === null) return;
+    if (result === false) {
       setRenameError("الاسم مستخدم داخل المجلد نفسه.");
       return;
     }
-    setRenameDraft(nextName);
+    const [name, renamedLayers] = result;
+    setRenameDraft(name);
     setRenameError("");
-    if (nextName !== selected.name) updateLayer(selected.id, { name: nextName });
+    if (selected && name !== selected.name) {
+      invalidateGeneratedExport();
+      onLayersChange(renamedLayers);
+    }
   };
 
   const moveLayer = (direction: -1 | 1) => {
@@ -318,64 +270,31 @@ export function ExportReview({
         />
 
         <div className="export-review__body">
-          <section className="export-preview-panel" aria-label="المعاينة النهائية">
-            <div className="export-preview-toolbar">
-              <div className="preview-group" aria-label="تكبير المعاينة">
-                <button type="button" onClick={() => setZoom((value) => Math.max(30, value - 10))} aria-label="تصغير"><Icon name="zoomOut" size={16} /></button>
-                <button type="button" className="zoom-value" onClick={() => setZoom(100)} aria-label="عرض مئة بالمئة">{zoom}%</button>
-                <button type="button" onClick={() => setZoom((value) => Math.min(160, value + 10))} aria-label="تكبير"><Icon name="zoomIn" size={16} /></button>
-                <button
-                  type="button"
-                  aria-pressed={fitActive}
-                  onClick={fitPreview}
-                >ملاءمة</button>
-                <button type="button" onClick={() => setZoom(100)}>100%</button>
-              </div>
-              <div className="preview-group background-switch" role="radiogroup" aria-label="خلفية المعاينة">
-                <button type="button" onClick={() => setBackground("white")} aria-pressed={background === "white"}>بيضاء</button>
-                {mode === "image" && (
-                  <>
-                    <button type="button" onClick={() => setBackground("transparent")} aria-pressed={background === "transparent"}>شفافة</button>
-                    <button type="button" onClick={() => setBackground("checker")} aria-pressed={background === "checker"}>شبكية</button>
-                  </>
-                )}
-              </div>
-              <button className="safe-toggle" type="button" onClick={() => setSafeBounds((value) => !value)} aria-pressed={safeBounds}>
-                <Icon name="scan" size={15} /> حدود الأمان
-              </button>
-            </div>
-
-            <div ref={stageRef} className={`export-preview-stage preview-bg--${background}`}>
-              <div ref={scaleRef} className="export-preview-scale" style={{ "--review-zoom": zoom / 100 } as React.CSSProperties}>
-                {mode === "image" ? (
-                  <ExportCharacterPreview
-                    layers={reviewableLayers}
-                    selectedLayerId={effectiveSelectedLayerId}
-                    safeBounds={safeBounds}
-                    canvasWidth={canvasSize?.width ?? 1}
-                    canvasHeight={canvasSize?.height ?? 1}
-                    {...(sourcePreviewUrl ? { sourcePreviewUrl } : {})}
-                  />
-                ) : (
-                  <ExportPdfPreview
-                    layers={reviewableLayers}
-                    selectedLayerId={effectiveSelectedLayerId}
-                    safeBounds={safeBounds}
-                    page={page}
-                    {...(pdfPages ? { pages: pdfPages } : {})}
-                  />
-                )}
-              </div>
-              {mode === "book" && (
-                <div className="pdf-page-navigation">
-                  <button type="button" onClick={() => { if (pdfScope === "selected") invalidateGeneratedExport(); setPage((value) => Math.max(1, value - 1)); }} disabled={page === 1 || (generationState === "working" && pdfScope === "selected")} aria-label="الصفحة السابقة"><Icon name="chevron" size={16} /></button>
-                  <span>صفحة <b>{page}</b> من {pageCount}</span>
-                  <button type="button" onClick={() => { if (pdfScope === "selected") invalidateGeneratedExport(); setPage((value) => Math.min(pageCount, value + 1)); }} disabled={page === pageCount || (generationState === "working" && pdfScope === "selected")} aria-label="الصفحة التالية"><Icon name="chevron" size={16} /></button>
-                </div>
-              )}
-              <span className="adobe-proof"><b>{format === "psd" ? "PSD" : format === "txt" || format === "csv" || format === "json" ? format.toUpperCase() : "ZIP"}</b> <span>أسماء + محفوظة · sRGB</span></span>
-            </div>
-          </section>
+          <ExportReviewPreviewPanel
+            mode={mode}
+            background={background}
+            zoom={zoom}
+            fitActive={fitActive}
+            stageRef={stageRef}
+            scaleRef={scaleRef}
+            setZoom={setZoom}
+            fitPreview={fitPreview}
+            setBackground={setBackground}
+            safeBounds={safeBounds}
+            setSafeBounds={setSafeBounds}
+            layers={reviewableLayers}
+            selectedLayerId={effectiveSelectedLayerId}
+            canvasSize={canvasSize}
+            sourcePreviewUrl={sourcePreviewUrl}
+            page={page}
+            pdfPages={pdfPages}
+            pageCount={pageCount}
+            pdfScope={pdfScope}
+            generationState={generationState}
+            invalidateGeneratedExport={invalidateGeneratedExport}
+            setPage={setPage}
+            format={format}
+          />
 
           <aside className="export-layer-review" aria-label="مراجعة الطبقات">
             <div className="review-section-heading">

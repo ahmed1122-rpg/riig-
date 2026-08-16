@@ -20,39 +20,15 @@ import { BILLING_PLAN_CATALOG } from "@motionprep/contracts";
 import { waitForCheckoutResolution } from "./checkoutReturn";
 import {
   BillingCheckoutDialog,
-  formatBillingPrice,
   type BillingCurrency,
   type CheckoutState,
   type PlanId,
 } from "./BillingCheckoutDialog";
-
-interface BillingPortalProps {
-  authenticated: boolean;
-  onRequireAuth: () => void;
-  onNotify: (message: string) => void;
-}
-
-const planPresentation: Array<{
-  id: PlanId;
-  name: string;
-  note: string;
-}> = [
-  {
-    id: "starter",
-    name: "بداية",
-    note: "للتجربة والمشروعات الخفيفة",
-  },
-  {
-    id: "creator",
-    name: "صانع محتوى",
-    note: "للإنتاج الأسبوعي المنتظم",
-  },
-  {
-    id: "studio",
-    name: "استوديو",
-    note: "للإنتاج المكثف والفرق الصغيرة",
-  },
-];
+import {
+  BillingInvoices,
+  BillingPlanComparison,
+} from "./BillingPlanSections";
+import { planPresentation, type BillingPortalProps } from "./billingPortalConfig";
 
 export default function BillingPortal({
   authenticated,
@@ -445,81 +421,18 @@ export default function BillingPortal({
         </aside>
       </div>
 
-      <section className="plans-section" aria-labelledby="plans-title">
-        <header className="section-heading section-heading--compact">
-          <div><span className="section-index">02</span><h2 id="plans-title">قارن الخطط</h2></div>
-          <div className="billing-plan-controls">
-            <p>الأسعار الشهرية قبل الضرائب التي يحددها المزود عند الحاجة</p>
-            <label>
-              عملة العرض والدفع
-              <select
-                value={currency}
-                onChange={(event) => setCurrency(event.target.value as BillingCurrency)}
-              >
-                <option value="USD">USD</option>
-                <option value="EGP">EGP</option>
-              </select>
-            </label>
-          </div>
-        </header>
-        <div className="plan-rows">
-          {plans.map((item) => (
-            <article
-              className={`plan-row ${item.recommended ? "is-recommended" : ""}`}
-              key={item.id}
-            >
-              <div className="plan-name">
-                {item.recommended && <span>موصى بها</span>}
-                <h3>{item.name}</h3><p>{item.note}</p>
-              </div>
-              <div className="plan-credit">
-                <Icon name="activity" size={17} />
-                <span><strong>{item.credits}</strong><small>شهريًا</small></span>
-              </div>
-              <div className="plan-price">
-                <strong>{formatBillingPrice(item.price, currency)}</strong><small>/ شهر</small>
-              </div>
-              <button
-                type="button"
-                className={
-                  item.id === subscription?.planId
-                    ? "secondary-button"
-                    : "primary-button"
-                }
-                disabled={item.id === subscription?.planId}
-                onClick={() => openCheckout(item.id)}
-              >
-                {item.id === subscription?.planId ? "الخطة الحالية" : "اختيار الخطة"}
-              </button>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="invoice-section" aria-labelledby="invoice-title">
-        <header className="section-heading section-heading--compact">
-          <div><span className="section-index">03</span><h2 id="invoice-title">الفواتير</h2></div>
-        </header>
-        <div className="empty-state">
-          <Icon name="fileSearch" size={24} />
-          <h3>فواتير المزود المستضافة</h3>
-          <p>
-            {subscription?.providerCustomerId
-              ? "استخدم بوابة المزود المستضافة لتنزيل الفواتير، تحديث وسيلة الدفع، أو جدولة الإلغاء."
-              : "تظهر إدارة الفواتير بعد تفعيل اشتراك حي لدى مزود الدفع؛ لا نعرض بيانات تجريبية كفواتير حقيقية."}
-          </p>
-          {subscription?.providerCustomerId && (
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={portalOpening}
-              onClick={() => void openCustomerPortal()}
-            >
-              فتح بوابة الفواتير <Icon name="external" size={14} />
-            </button>
-          )}
-        </div>
-      </section>
+      <BillingPlanComparison
+        plans={plans}
+        currency={currency}
+        currentPlanId={subscription?.planId}
+        onCurrencyChange={setCurrency}
+        onChoose={openCheckout}
+      />
+      <BillingInvoices
+        providerCustomerId={subscription?.providerCustomerId}
+        portalOpening={portalOpening}
+        onOpenPortal={() => void openCustomerPortal()}
+      />
 
       <BillingCheckoutDialog
         checkoutState={checkoutState}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useConfirmation } from "../../shared/useConfirmation";
 import { ShortcutsModal } from "../../shared/ShortcutsModal";
 import type { Layer, ProjectMode } from "../../types";
@@ -8,9 +8,6 @@ import {
   WorkspacePipeline,
   WorkspaceStatusBar,
 } from "./WorkspaceChrome";
-import { getLayerCheckSummary } from "./layerChecks";
-import { getWorkspacePipeline } from "./workspacePresentation";
-import { isWorkspaceRevisionConflict } from "./workspaceConflict";
 import { useWorkspaceReviewAutosave } from "./useWorkspaceReviewAutosave";
 import { useWorkspaceToolController } from "./useWorkspaceToolController";
 import { WorkspaceEditorLayout } from "./WorkspaceEditorLayout";
@@ -28,6 +25,8 @@ import {
   useWorkspaceSourceState,
 } from "./useWorkspaceStateControllers";
 import { useDocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
+import { getWorkspaceMaxUploadBytes, useWorkspaceDerivedState } from "./useWorkspaceDerivedState";
+import { useWorkspaceRevisionConflict } from "./useWorkspaceRevisionConflict";
 
 export function Workspace({
   mode,
@@ -40,10 +39,7 @@ export function Workspace({
   onNotify,
   initialProject,
 }: WorkspaceProps) {
-  const maxUploadBytes =
-    mode === "image"
-      ? capabilities.limits.maxImageUploadBytes
-      : capabilities.limits.maxPdfUploadBytes;
+  const maxUploadBytes = getWorkspaceMaxUploadBytes(mode, capabilities.limits);
   const review = useWorkspaceReviewState(mode);
   const source = useWorkspaceSourceState(mode);
   const editor = useWorkspaceEditorState(mode);
@@ -162,37 +158,9 @@ export function Workspace({
     pdfTextOperation,
     resetToolState,
   } = toolController;
-  const pdfRegionOcrLayer = useMemo(
-    () => bookLayers.find((layer) => layer.id === pdfRegionOcrLayerId),
-    [bookLayers, pdfRegionOcrLayerId],
-  );
-  const pdfRegionOcrPageSize = useMemo(
-    () =>
-      pdfPages.find(
-        (page) => page.pageNumber === pdfRegionOcrLayer?.pageNumber,
-      ),
-    [pdfPages, pdfRegionOcrLayer?.pageNumber],
-  );
-  const handleRevisionConflict = useCallback(
-    async (error: unknown): Promise<void> => {
-      if (!isWorkspaceRevisionConflict(error)) return;
-      const reload = await requestConfirmation({
-        title: "توجد نسخة أحدث من المستند",
-        description:
-          "حُفظت تعديلات أخرى بعد فتح هذه الصفحة. أعد تحميل أحدث نسخة قبل متابعة التحرير؛ ستُستبدل التغييرات المحلية غير المحفوظة.",
-        confirmLabel: "تحميل أحدث نسخة",
-        cancelLabel: "البقاء للمراجعة",
-        tone: "danger",
-      });
-      if (reload) {
-        window.location.reload();
-        return;
-      }
-      onNotify(
-        "أُوقف الحفظ لحماية النسخة الأحدث. انسخ أي نص محلي مهم ثم أعد تحميل المشروع.",
-      );
-    },
-    [onNotify, requestConfirmation],
+  const handleRevisionConflict = useWorkspaceRevisionConflict(
+    requestConfirmation,
+    onNotify,
   );
   const {
     flushLayerReview,
@@ -236,18 +204,22 @@ export function Workspace({
     onNavigationGuardChange,
     onNotify,
   });
-  const layerCheckSummary = useMemo(
-    () => getLayerCheckSummary(mode, layers),
-    [layers, mode],
-  );
-  const hiddenLayers = useMemo(
-    () => imageLayers.filter((layer) => !layer.visible || (solo && layer.id !== activeLayerId)).map((layer) => layer.id),
-    [activeLayerId, imageLayers, solo],
-  );
-  const pipeline = getWorkspacePipeline(
+  const {
+    pdfRegionOcrLayer,
+    pdfRegionOcrPageSize,
+    layerCheckSummary,
+    hiddenLayers,
+    pipeline,
+  } = useWorkspaceDerivedState(
     mode,
+    layers,
+    imageLayers,
+    bookLayers,
+    pdfPages,
+    pdfRegionOcrLayerId,
+    solo,
+    activeLayerId,
     sourceVersion,
-    imageLayers.length,
     pdfMode,
   );
 

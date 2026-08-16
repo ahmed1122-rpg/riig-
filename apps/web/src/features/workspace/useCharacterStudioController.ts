@@ -1,6 +1,4 @@
 import {
-  characterCanonicalViews,
-  characterRequiredFrontalBodyParts,
   characterRequiredHeadParts,
   type CharacterBible,
   type CharacterCanonicalView,
@@ -23,22 +21,18 @@ import {
   saveCharacterBibleDraft,
   type CharacterRigStudioState,
 } from "../../lib/api/character-rig-client";
-import { angleToView, splitLines, type StudioStage } from "./CharacterStudioShared";
+import { type StudioStage } from "./CharacterStudioShared";
 import {
   characterBibleDraftInput,
-  draftMatchesBible,
 } from "./CharacterStudioBible";
 import { useCharacterStudioPolling } from "./useCharacterStudioPolling";
-
-interface CharacterStudioControllerOptions {
-  projectId: string;
-  sourceVersionId: string;
-  canvasSize: { width: number; height: number } | undefined;
-  onNotify: (message: string) => void;
-}
-
-const defaultReviewReason =
-  "تتطابق الهوية والنسب والملامح مع حزمة المراجع المعتمدة.";
+import { deriveCharacterStudioState } from "./characterStudioDerivedState";
+import {
+  characterStudioErrorMessage,
+  defaultCharacterReviewReason,
+  type CharacterStudioControllerOptions,
+} from "./characterStudioControllerSupport";
+import { useCharacterBibleDirty } from "./useCharacterBibleDirty";
 
 export function useCharacterStudioController({
   projectId,
@@ -74,39 +68,22 @@ export function useCharacterStudioController({
   const [angle, setAngle] = useState(0);
   const [generationKind, setGenerationKind] = useState<"view" | "part">("view");
   const [partName, setPartName] = useState<string>(characterRequiredHeadParts[0]);
-  const [reviewReason, setReviewReason] = useState(defaultReviewReason);
+  const [reviewReason, setReviewReason] = useState(defaultCharacterReviewReason);
   const [selectedGenerationId, setSelectedGenerationId] = useState<string>();
   const bibleDirtyRef = useRef(false);
   const hydratedBibleIdRef = useRef<string | undefined>(undefined);
 
-  const bibleDirty = useMemo(
-    () =>
-      Boolean(
-        bible &&
-          bible.status !== "approved" &&
-          !draftMatchesBible(bible, {
-            displayName,
-            identityDescription,
-            negativeConstraints,
-            distinguishingFeatures,
-            outlineColor,
-            headRatio,
-            shoulderRatio,
-            eyeRatio,
-          }),
-      ),
-    [
-      bible,
-      displayName,
-      identityDescription,
-      negativeConstraints,
-      distinguishingFeatures,
-      outlineColor,
-      headRatio,
-      shoulderRatio,
-      eyeRatio,
-    ],
-  );
+  const bibleDirty = useCharacterBibleDirty({
+    bible,
+    displayName,
+    identityDescription,
+    negativeConstraints,
+    distinguishingFeatures,
+    outlineColor,
+    headRatio,
+    shoulderRatio,
+    eyeRatio,
+  });
   bibleDirtyRef.current = bibleDirty;
 
   const hydrateBibleFields = useCallback((remote: CharacterBible) => {
@@ -154,7 +131,7 @@ export function useCharacterStudioController({
     ),
   );
   const handleInitialError = useCallback((caught: unknown) => {
-    setError(errorMessage(caught, "تعذر فتح استوديو تدوير الشخصية."));
+    setError(characterStudioErrorMessage(caught, "تعذر فتح استوديو تدوير الشخصية."));
   }, []);
   const handleLoadingChange = useCallback((nextLoading: boolean) => {
     setLoading(nextLoading);
@@ -167,66 +144,52 @@ export function useCharacterStudioController({
     onLoadingChange: handleLoadingChange,
   });
 
-  const presentViews = useMemo(
+  const {
+    presentViews,
+    distinctReferenceCount,
+    activeView,
+    reviewableGenerations,
+    reviewCandidate,
+    approvedViews,
+    requiredParts,
+    effectivePartName,
+    approvedPartKeys,
+    requiredPartCount,
+    bibleComplete,
+    repairMask,
+    latestCompileJob,
+  } = useMemo(
     () =>
-      new Set(
-        references.flatMap((reference) =>
-          reference.canonicalView ? [reference.canonicalView] : [],
-        ),
-      ),
-    [references],
+      deriveCharacterStudioState({
+        references,
+        generations,
+        jobs,
+        angle,
+        selectedGenerationId,
+        partName,
+        displayName,
+        identityDescription,
+        negativeConstraints,
+        distinguishingFeatures,
+      }),
+    [
+      references,
+      generations,
+      jobs,
+      angle,
+      selectedGenerationId,
+      partName,
+      displayName,
+      identityDescription,
+      negativeConstraints,
+      distinguishingFeatures,
+    ],
   );
-  const distinctReferenceCount = useMemo(
-    () => new Set(references.map((reference) => reference.artifact.sha256)).size,
-    [references],
-  );
-  const activeView = angleToView(angle);
-  const reviewableGenerations = generations.filter(
-    (attempt) => attempt.status === "needs-review" && attempt.outputArtifact,
-  );
-  const reviewCandidate =
-    reviewableGenerations.find(
-      (attempt) => attempt.id === selectedGenerationId,
-    ) ?? reviewableGenerations[0];
   useEffect(() => {
     if (reviewCandidate && reviewCandidate.id !== selectedGenerationId) {
       setSelectedGenerationId(reviewCandidate.id);
     }
   }, [reviewCandidate, selectedGenerationId]);
-  const approvedViews = new Set(
-    generations.flatMap((attempt) =>
-      attempt.status === "approved" && attempt.target.kind === "canonical-view"
-        ? [attempt.target.view]
-        : [],
-    ),
-  );
-  const requiredParts = [
-    ...characterRequiredHeadParts,
-    ...(activeView === "frontal" ? characterRequiredFrontalBodyParts : []),
-  ];
-  const effectivePartName = requiredParts.includes(
-    partName as (typeof requiredParts)[number],
-  )
-    ? partName
-    : requiredParts[0]!;
-  const approvedPartKeys = new Set(
-    generations.flatMap((attempt) =>
-      attempt.status === "approved" && attempt.target.kind === "part"
-        ? [`${attempt.target.view}:${attempt.target.partName}`]
-        : [],
-    ),
-  );
-  const requiredPartCount =
-    characterCanonicalViews.length * characterRequiredHeadParts.length +
-    characterRequiredFrontalBodyParts.length;
-  const bibleComplete = Boolean(
-    displayName.trim().length >= 2 &&
-      identityDescription.trim().length >= 20 &&
-      splitLines(negativeConstraints).length > 0 &&
-      splitLines(distinguishingFeatures).length > 0,
-  );
-  const repairMask = references.find((reference) => reference.role === "part-mask");
-  const latestCompileJob = jobs.find((job) => job.type === "compile-rig");
 
   async function persistBibleDraft(): Promise<CharacterBible> {
     const saved = await saveCharacterBibleDraft(
@@ -415,7 +378,7 @@ export function useCharacterStudioController({
     try {
       await action();
     } catch (caught) {
-      setError(errorMessage(caught, fallback));
+      setError(characterStudioErrorMessage(caught, fallback));
     } finally {
       setSubmitting(false);
     }
@@ -488,8 +451,4 @@ export function useCharacterStudioController({
     reviewGeneration,
     reviewRig,
   };
-}
-
-function errorMessage(caught: unknown, fallback: string): string {
-  return caught instanceof Error ? caught.message : fallback;
 }
