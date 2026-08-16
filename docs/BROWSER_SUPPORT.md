@@ -27,11 +27,14 @@ projects and an engine run is not branded-browser evidence.
 On Linux, every WebKit test runs in its own Playwright process and shard. Video
 capture is disabled, traces begin on the first retry, and the phone-sized gate
 uses DPR 1 with touch input; failure screenshots and retry traces remain
-available. The CI browser job uses the official Playwright image pinned to the
-package version and an immutable digest, with a non-root user, an init process,
-and host IPC. These limits preserve the complete journey and accessibility
-coverage while reducing WebKitGTK renderer pressure and preventing one crash
-from poisoning later tests.
+available. If a shard still exhausts its two Playwright retries, the WebKit
+runner repeats that shard once in a new Playwright process; a second failed
+process fails the release gate. This recovery changes no assertion and prevents
+an already-crashed WebKitGTK process from poisoning its own final result. The CI
+browser job uses the official Playwright image pinned to the package version and
+an immutable digest, with a non-root user, an init process, and host IPC. These
+limits preserve the complete journey and accessibility coverage while reducing
+WebKitGTK renderer pressure.
 Real device pixel density remains part of the Safari/iOS hardware gate below.
 
 ## Branded-browser evidence boundary

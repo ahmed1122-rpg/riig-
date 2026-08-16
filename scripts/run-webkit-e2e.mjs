@@ -36,29 +36,45 @@ function runPlaywright(arguments_, captureOutput = false) {
     stdio: captureOutput ? ["ignore", "pipe", "inherit"] : "inherit",
   });
   if (result.error) throw result.error;
+  return result;
+}
+
+export function runWithFreshProcessRetry(
+  arguments_,
+  execute,
+  onRetry = () => {},
+) {
+  let result = execute(arguments_);
+  if (result.status === 0) return result;
+  onRetry(arguments_, result.status ?? 1);
+  result = execute(arguments_);
+  return result;
+}
+
+function exitAfterFailure(result) {
   if (result.status !== 0) process.exit(result.status ?? 1);
-  return result.stdout ?? "";
+  return result;
 }
 
 function listProjectTests(projectName, forwardedArguments) {
-  const output = runPlaywright([
+  const result = exitAfterFailure(runPlaywright([
     "test",
     `--project=${projectName}`,
     ...forwardedArguments,
     "--list",
     "--reporter=json",
-  ], true);
-  return countProjectTests(JSON.parse(output), projectName);
+  ], true));
+  return countProjectTests(JSON.parse(result.stdout ?? ""), projectName);
 }
 
 function main() {
   const forwardedArguments = process.argv.slice(2);
   if (forwardedArguments.includes("--list")) {
-    runPlaywright([
+    exitAfterFailure(runPlaywright([
       "test",
       ...WEBKIT_PROJECTS.map((project) => `--project=${project}`),
       ...forwardedArguments,
-    ]);
+    ]));
     return;
   }
 
@@ -75,7 +91,14 @@ function main() {
       testCount,
       forwardedArguments,
     )) {
-      runPlaywright(command);
+      const result = runWithFreshProcessRetry(
+        command,
+        (arguments_) => runPlaywright(arguments_),
+        (_arguments, status) => process.stderr.write(
+          `WebKit shard exited with status ${status}; retrying once in a fresh Playwright process.\n`,
+        ),
+      );
+      exitAfterFailure(result);
     }
   }
 }
