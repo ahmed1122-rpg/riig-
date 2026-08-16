@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -11,7 +11,8 @@ const windowsAbsolutePathPattern = /\b[A-Za-z]:\\[^\r\n"|]+/gu;
 
 export async function verifyRepositoryPaths(repositoryRoot = defaultRoot) {
   const violations = [];
-  const trackedFiles = await listTrackedTextFiles(repositoryRoot);
+  const { files: trackedFiles, sourceImageFallback } =
+    await listTrackedTextFiles(repositoryRoot);
 
   for (const relativePath of trackedFiles) {
     const absolutePath = path.join(repositoryRoot, relativePath);
@@ -27,6 +28,7 @@ export async function verifyRepositoryPaths(repositoryRoot = defaultRoot) {
         repositoryRoot,
         relativePath,
         body,
+        sourceImageFallback,
       })));
     }
     if (isPortableEvidenceFile(relativePath)) {
@@ -41,7 +43,12 @@ export async function verifyRepositoryPaths(repositoryRoot = defaultRoot) {
   return violations;
 }
 
-async function findBrokenMarkdownLinks({ repositoryRoot, relativePath, body }) {
+async function findBrokenMarkdownLinks({
+  repositoryRoot,
+  relativePath,
+  body,
+  sourceImageFallback,
+}) {
   const violations = [];
   for (const match of body.matchAll(markdownLinkPattern)) {
     const rawTarget = match.groups?.target ?? "";
@@ -81,6 +88,15 @@ async function findBrokenMarkdownLinks({ repositoryRoot, relativePath, body }) {
       await access(resolved);
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
+      const repositoryRelativeTarget = path
+        .relative(repositoryRoot, resolved)
+        .replaceAll("\\", "/");
+      if (
+        sourceImageFallback &&
+        repositoryRelativeTarget.startsWith("artifacts/")
+      ) {
+        continue;
+      }
       violations.push(
         `${relativePath}:${lineNumberAt(body, match.index ?? 0)} links to a missing path: ${target}`,
       );
@@ -90,30 +106,67 @@ async function findBrokenMarkdownLinks({ repositoryRoot, relativePath, body }) {
 }
 
 async function listTrackedTextFiles(repositoryRoot) {
-  const { stdout } = await execFileAsync(
-    "git",
-    [
-      "ls-files",
-      "--cached",
-      "--others",
-      "--exclude-standard",
-      "-z",
-      "--",
-      "*.md",
-      "*.json",
-      "*.txt",
-    ],
-    { cwd: repositoryRoot, encoding: "buffer", windowsHide: true },
-  );
-  return [
-    ...new Set(
-      stdout
-        .toString("utf8")
-        .split("\0")
-        .filter(Boolean)
-        .map((value) => value.replaceAll("\\", "/")),
-    ),
-  ];
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      [
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        "--",
+        "*.md",
+        "*.json",
+        "*.txt",
+      ],
+      { cwd: repositoryRoot, encoding: "buffer", windowsHide: true },
+    );
+    return {
+      files: uniquePortablePaths(stdout.toString("utf8").split("\0")),
+      sourceImageFallback: false,
+    };
+  } catch (error) {
+    const stderr = error?.stderr?.toString?.("utf8") ?? "";
+    if (!stderr.includes("not a git repository")) throw error;
+    return {
+      files: await listSourceImageTextFiles(repositoryRoot),
+      sourceImageFallback: true,
+    };
+  }
+}
+
+const sourceImageExcludedDirectories = new Set([
+  ".git",
+  ".tmp",
+  "coverage",
+  "dist",
+  "node_modules",
+  "playwright-report",
+  "test-results",
+]);
+
+async function listSourceImageTextFiles(repositoryRoot) {
+  const files = [];
+  async function visit(directory, relativeDirectory = "") {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue;
+      const relativePath = path.posix.join(relativeDirectory, entry.name);
+      if (entry.isDirectory()) {
+        if (!sourceImageExcludedDirectories.has(entry.name)) {
+          await visit(path.join(directory, entry.name), relativePath);
+        }
+        continue;
+      }
+      if (/\.(?:md|json|txt)$/iu.test(entry.name)) files.push(relativePath);
+    }
+  }
+  await visit(repositoryRoot);
+  return uniquePortablePaths(files);
+}
+
+function uniquePortablePaths(paths) {
+  return [...new Set(paths.filter(Boolean).map((value) => value.replaceAll("\\", "/")))];
 }
 
 function isPortableEvidenceFile(relativePath) {

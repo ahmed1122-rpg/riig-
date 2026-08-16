@@ -46,6 +46,25 @@ test("checks untracked files and tolerates tracked files deleted in the worktree
   assert.match(violations[0], /docs\/untracked\.md:1 links to a missing path/u);
 });
 
+test("checks a source image without Git metadata and skips dependency output", async () => {
+  const root = await mkdtemp(join(tmpdir(), "motionprep-paths-image-"));
+  await mkdir(join(root, "docs"), { recursive: true });
+  await mkdir(join(root, "node_modules", "fixture"), { recursive: true });
+  await writeFile(
+    join(root, "docs", "index.md"),
+    "[Missing](missing.md)\n[Image-excluded evidence](../artifacts/report.md)\n",
+  );
+  await writeFile(
+    join(root, "node_modules", "fixture", "README.md"),
+    "[Dependency missing](missing.md)\n",
+  );
+
+  const violations = await verifyRepositoryPaths(root);
+  assert.deepEqual(violations, [
+    "docs/index.md:1 links to a missing path: missing.md",
+  ]);
+});
+
 async function createRepository(files) {
   const root = await mkdtemp(join(tmpdir(), "motionprep-paths-"));
   for (const [relativePath, body] of Object.entries(files)) {
