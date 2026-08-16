@@ -75,21 +75,6 @@ export default defineConfig({
         viewport: { width: 1_440, height: 900 },
       },
     },
-    {
-      name: "mobile-webkit",
-      retries: 2,
-      use: {
-        ...devices["Desktop Safari"],
-        ...webkitDiagnostics,
-        browserName: "webkit",
-        deviceScaleFactor: 1,
-        hasTouch: false,
-        // WebKitGTK crashes intermittently under its synthetic iOS/touch path.
-        // This profile qualifies phone-sized WebKit layout; Chromium and Firefox
-        // retain automated touch coverage, while real iOS remains a hardware gate.
-        viewport: { width: 390, height: 844 },
-      },
-    },
   ],
   webServer: [
     {

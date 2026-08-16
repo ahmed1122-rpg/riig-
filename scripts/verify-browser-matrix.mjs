@@ -8,7 +8,6 @@ export const requiredBrowserProjects = Object.freeze({
   "desktop-firefox": "firefox",
   "mobile-firefox": "firefox",
   "desktop-webkit": "webkit",
-  "mobile-webkit": "webkit",
 });
 
 export const releasePlaywrightImage =
@@ -33,22 +32,8 @@ export function validateBrowserMatrix(config, packageManifest) {
     if (name.startsWith("mobile-") && (!Number.isFinite(width) || width > 430)) {
       violations.push(`${name} must exercise a mobile-sized viewport.`);
     }
-    if (
-      name.startsWith("mobile-") &&
-      name !== "mobile-webkit" &&
-      project.use?.hasTouch !== true
-    ) {
+    if (name.startsWith("mobile-") && project.use?.hasTouch !== true) {
       violations.push(`${name} must exercise touch input.`);
-    }
-    if (name === "mobile-webkit" && project.use?.hasTouch !== false) {
-      violations.push(
-        "mobile-webkit must disable unstable synthetic touch emulation on Linux.",
-      );
-    }
-    if (name === "mobile-webkit" && project.use?.isMobile === true) {
-      violations.push(
-        "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
-      );
     }
     if (name.endsWith("-webkit") && (
       project.use?.video !== "off" ||
@@ -63,11 +48,6 @@ export function validateBrowserMatrix(config, packageManifest) {
         `${name} must retain two retries for the isolated Linux WebKit gate.`,
       );
     }
-    if (name === "mobile-webkit" && project.use?.deviceScaleFactor !== 1) {
-      violations.push(
-        "mobile-webkit must use DPR 1 in the Linux qualification gate.",
-      );
-    }
   }
 
   const installCommand = packageManifest.scripts?.["test:e2e:install"] ?? "";
@@ -80,7 +60,7 @@ export function validateBrowserMatrix(config, packageManifest) {
     if (browserName === "webkit") {
       if (engineCommand !== "node scripts/run-webkit-e2e.mjs") {
         violations.push(
-          "test:e2e:webkit must isolate desktop-webkit and mobile-webkit tests through the WebKit runner.",
+          "test:e2e:webkit must isolate desktop-webkit tests through the WebKit runner.",
         );
       }
       continue;

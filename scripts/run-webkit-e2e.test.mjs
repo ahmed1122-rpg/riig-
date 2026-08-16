@@ -10,24 +10,25 @@ test("counts only the requested project across nested Playwright suites", () => 
   const report = {
     suites: [{
       specs: [
-        { tests: [{ projectName: "mobile-webkit" }] },
+        { tests: [{ projectName: "desktop-webkit" }] },
+        { tests: [{ projectName: "mobile-firefox" }] },
         { tests: [{ projectName: "desktop-webkit" }] },
       ],
-      suites: [{ specs: [{ tests: [{ projectName: "mobile-webkit" }] }] }],
+      suites: [{ specs: [{ tests: [{ projectName: "mobile-firefox" }] }] }],
     }],
   };
 
-  assert.equal(countProjectTests(report, "mobile-webkit"), 2);
-  assert.equal(countProjectTests(report, "desktop-webkit"), 1);
+  assert.equal(countProjectTests(report, "desktop-webkit"), 2);
+  assert.equal(countProjectTests(report, "mobile-firefox"), 2);
 });
 
 test("creates one fully isolated shard command per discovered test", () => {
   assert.deepEqual(
-    isolatedProjectCommands("mobile-webkit", 2, ["--grep", "PDF"]),
+    isolatedProjectCommands("desktop-webkit", 2, ["--grep", "PDF"]),
     [
       [
         "test",
-        "--project=mobile-webkit",
+        "--project=desktop-webkit",
         "--fully-parallel",
         "--shard=1/2",
         "--grep",
@@ -35,7 +36,7 @@ test("creates one fully isolated shard command per discovered test", () => {
       ],
       [
         "test",
-        "--project=mobile-webkit",
+        "--project=desktop-webkit",
         "--fully-parallel",
         "--shard=2/2",
         "--grep",
@@ -48,7 +49,7 @@ test("creates one fully isolated shard command per discovered test", () => {
 test("retries a failed WebKit shard once in a fresh process", () => {
   const calls = [];
   const retries = [];
-  const command = ["test", "--project=mobile-webkit", "--shard=1/1"];
+  const command = ["test", "--project=desktop-webkit", "--shard=1/1"];
   const statuses = [1, 0];
 
   const result = runWithFreshProcessRetry(

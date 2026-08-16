@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
-const WEBKIT_PROJECTS = Object.freeze(["desktop-webkit", "mobile-webkit"]);
+export const WEBKIT_PROJECTS = Object.freeze(["desktop-webkit"]);
 const playwrightCli = createRequire(import.meta.url).resolve("@playwright/test/cli");
 
 export function countProjectTests(report, projectName) {

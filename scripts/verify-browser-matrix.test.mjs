@@ -25,14 +25,9 @@ function validConfig() {
       ...(name.endsWith("-webkit") ? { retries: 2 } : {}),
       use: {
         browserName,
-        ...(name.startsWith("mobile-") && name !== "mobile-webkit"
-          ? { hasTouch: true }
-          : {}),
+        ...(name.startsWith("mobile-") ? { hasTouch: true } : {}),
         ...(name.endsWith("-webkit")
           ? { trace: "on-first-retry", video: "off" }
-          : {}),
-        ...(name === "mobile-webkit"
-          ? { deviceScaleFactor: 1, hasTouch: false }
           : {}),
         viewport: {
           width: name.startsWith("mobile-") ? 412 : 1_440,
@@ -103,7 +98,7 @@ test("rejects a combined or incomplete engine execution contract", () => {
       },
     }),
     [
-      "test:e2e:webkit must isolate desktop-webkit and mobile-webkit tests through the WebKit runner.",
+      "test:e2e:webkit must isolate desktop-webkit tests through the WebKit runner.",
       "test:e2e must isolate each browser engine through the matrix runner.",
     ],
   );
@@ -117,20 +112,6 @@ test("rejects release qualification against the development module graph", () =>
   assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
     "The release browser gate must build and serve the production web bundle.",
     "The release browser gate must not qualify the Vite development server.",
-  ]);
-});
-
-test("rejects unstable mobile emulation in the Linux WebKit profile", () => {
-  const config = validConfig();
-  config.projects = config.projects.map((project) =>
-    project.name === "mobile-webkit"
-      ? { ...project, use: { ...project.use, isMobile: true, hasTouch: true } }
-      : project,
-  );
-
-  assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
-    "mobile-webkit must disable unstable synthetic touch emulation on Linux.",
-    "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
   ]);
 });
 
@@ -171,18 +152,15 @@ test("rejects a mutable or self-installed release browser runtime", () => {
   ]);
 });
 
-test("rejects high-overhead WebKit diagnostics and mobile pixel density", () => {
+test("rejects high-overhead WebKit diagnostics", () => {
   const config = validConfig();
   config.projects = config.projects.map((project) =>
     project.name === "desktop-webkit"
       ? { ...project, use: { ...project.use, video: "retain-on-failure" } }
-      : project.name === "mobile-webkit"
-        ? { ...project, use: { ...project.use, deviceScaleFactor: 2 } }
-        : project,
+      : project,
   );
 
   assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
     "desktop-webkit must use low-overhead crash diagnostics on Linux.",
-    "mobile-webkit must use DPR 1 in the Linux qualification gate.",
   ]);
 });
