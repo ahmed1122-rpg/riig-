@@ -19,7 +19,7 @@
   "dependencies": {
     "@motionprep/contracts": "*",
     "@motionprep/layer-domain": "*",
-    "@napi-rs/canvas": "^1.0.2",
+    "@napi-rs/canvas": "^1.0.6",
     "@tesseract.js-data/ara": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "pdfjs-dist": "^6.2.108",
