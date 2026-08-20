@@ -39,6 +39,7 @@ ENV API_PORT=4000
 # text layer supplies its own reviewed font file. Keep discovery deterministic
 # and avoid production warnings from the slim base image.
 RUN apt-get update \
+  && apt-get upgrade --yes \
   && apt-get install --yes --no-install-recommends fontconfig \
   && rm -rf /var/lib/apt/lists/*
 

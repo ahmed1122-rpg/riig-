@@ -192,7 +192,7 @@ jobs:
           image-ref: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
           format: table
           exit-code: "1"
-          ignore-unfixed: false
+          ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
 
@@ -202,9 +202,49 @@ jobs:
           image-ref: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
           format: table
           exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Prepare published container security evidence
+        run: mkdir -p artifacts/security
+
+      - name: Capture all published runtime findings
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
+          format: json
+          output: artifacts/security/runtime-trivy.json
+          exit-code: "0"
           ignore-unfixed: false
           vuln-type: os,library
           severity: CRITICAL,HIGH
+
+      - name: Capture all published web findings
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
+          format: json
+          output: artifacts/security/web-trivy.json
+          exit-code: "0"
+          ignore-unfixed: false
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Reject unapproved unfixed published findings
+        run: >-
+          node scripts/verify-trivy-exceptions.mjs
+          runtime=artifacts/security/runtime-trivy.json
+          web=artifacts/security/web-trivy.json
+
+      - name: Retain published container security evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-container-security-${{ github.sha }}
+          path: artifacts/security
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
