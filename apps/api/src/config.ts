@@ -77,6 +77,7 @@ const environmentSchema = z
     REDIS_URL: optionalUrl,
     METRICS_BEARER_TOKEN: optionalText(32),
     OBJECT_STORAGE_MODE: z.enum(["memory", "s3"]).default("memory"),
+    MALWARE_SCAN_MODE: z.enum(["disabled", "required"]).default("disabled"),
     ...applicationObjectStorageFields,
     PROCESSING_EXECUTION_MODE: z
       .enum(["inline", "worker"])
@@ -406,6 +407,16 @@ const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["OBJECT_STORAGE_MODE"],
         message: "Production must use durable S3-compatible object storage.",
+      });
+    }
+    if (
+      value.NODE_ENV === "production" &&
+      value.MALWARE_SCAN_MODE !== "required"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MALWARE_SCAN_MODE"],
+        message: "Production uploads require fail-closed malware scanning.",
       });
     }
     validateObjectStorageEnvironment(

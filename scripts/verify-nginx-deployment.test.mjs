@@ -58,6 +58,7 @@ test("rejects spoofable forwarding and missing location headers", () => {
 const validRuntimeWiring = `
 --add-host api:127.0.0.1
 --env TRUSTED_PROXY_CIDR=127.0.0.1/32
+--env TRUSTED_PROXY_CIDR=invalid
 --tmpfs /etc/nginx/conf.d:rw,size=1m,mode=1777
 /etc/nginx/conf.d:size=1m,mode=1777
 `;

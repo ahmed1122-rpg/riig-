@@ -3,27 +3,36 @@
     "compose.integration.yaml": {
       "api-a": [],
       "api-b": [],
+      "clamav": [],
       "mailpit": [],
       "migrate": [],
       "minio": [],
       "minio-init": [],
       "postgres": [],
       "redis": [],
-      "release-web": ["release-drill"],
+      "release-web": [
+        "release-drill"
+      ],
       "worker-document": [],
       "worker-export": [],
-      "worker-media": []
+      "worker-media": [],
+      "worker-security": []
     },
     "compose.production.yaml": {
       "api": [],
-      "maintenance": ["maintenance"],
+      "maintenance": [
+        "maintenance"
+      ],
       "maintenance-scheduler": [],
       "migrate": [],
       "web": [],
-      "worker-character": ["character-rig"],
+      "worker-character": [
+        "character-rig"
+      ],
       "worker-document": [],
       "worker-export": [],
-      "worker-media": []
+      "worker-media": [],
+      "worker-security": []
     },
     "compose.yaml": {
       "mailpit": [],
@@ -43,8 +52,14 @@
         "base": "node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7",
         "target": "runtime-base"
       },
-      { "base": "runtime-base", "target": "adobe-golden-generator" },
-      { "base": "runtime-base", "target": "runtime" }
+      {
+        "base": "runtime-base",
+        "target": "adobe-golden-generator"
+      },
+      {
+        "base": "runtime-base",
+        "target": "runtime"
+      }
     ],
     "Dockerfile.qa": [
       {
@@ -71,6 +86,7 @@
     "apiPackageExports": [
       "./character-worker",
       "./export-worker",
+      "./malware-scan-worker",
       "./object-storage-environment",
       "./processing-worker",
       "./tracing"
@@ -128,7 +144,8 @@
     "040_character_rig_reviews.sql": "4860cf9b538abb30624258964900705e469ed13f69e16a7219aec8e8434354d1",
     "041_derived_asset_registry.sql": "7fd69b491a1f54b188f72a08765f17473d457d63fb4a2cc5cc85e69ff44d0e38",
     "042_privacy_retention_state_machines.sql": "86f207a49b163b9c1d83d7bc17e9d4519fb0f798ed9ef0522325a0f253cd357d",
-    "043_email_verification.sql": "d19cea9b810f21d81db6327cea13c6eba6567c03d52c5f4c83ad17acda3a4702"
+    "043_email_verification.sql": "d19cea9b810f21d81db6327cea13c6eba6567c03d52c5f4c83ad17acda3a4702",
+    "044_malware_scanning.sql": "e2587305fb93667092825a92c83613c208bea7fdf03ce114a194be65592d720b"
   },
   "openApiOperations": [
     "DELETE /v1/account",
@@ -223,6 +240,11 @@
         "production": "./dist/exports/export-worker-runtime.js",
         "types": "./src/exports/export-worker-runtime.ts"
       },
+      "./malware-scan-worker": {
+        "default": "./src/security/malware-scan-worker-runtime.ts",
+        "production": "./dist/security/malware-scan-worker-runtime.js",
+        "types": "./src/security/malware-scan-worker-runtime.ts"
+      },
       "./object-storage-environment": {
         "default": "./src/storage/object-storage-environment.ts",
         "production": "./dist/storage/object-storage-environment.js",
@@ -239,32 +261,122 @@
         "types": "./src/observability/tracing.ts"
       }
     },
-    "@motionprep/contracts": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
-    "@motionprep/document-processing": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
-    "@motionprep/export-adapters": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
-    "@motionprep/guidance": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
-    "@motionprep/layer-domain": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
-    "@motionprep/media-processing": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } },
-    "@motionprep/presets": { ".": { "default": "./src/index.ts", "production": "./dist/index.js" } }
+    "@motionprep/contracts": {
+      ".": {
+        "default": "./src/index.ts",
+        "production": "./dist/index.js"
+      }
+    },
+    "@motionprep/document-processing": {
+      ".": {
+        "default": "./src/index.ts",
+        "production": "./dist/index.js"
+      }
+    },
+    "@motionprep/export-adapters": {
+      ".": {
+        "default": "./src/index.ts",
+        "production": "./dist/index.js"
+      }
+    },
+    "@motionprep/guidance": {
+      ".": {
+        "default": "./src/index.ts",
+        "production": "./dist/index.js"
+      }
+    },
+    "@motionprep/layer-domain": {
+      ".": {
+        "default": "./src/index.ts",
+        "production": "./dist/index.js"
+      }
+    },
+    "@motionprep/media-processing": {
+      ".": {
+        "default": "./src/index.ts",
+        "production": "./dist/index.js"
+      }
+    },
+    "@motionprep/presets": {
+      ".": {
+        "default": "./src/index.ts",
+        "production": "./dist/index.js"
+      }
+    }
   },
   "rootScripts": [
-    "benchmark:character-rig", "benchmark:ocr", "benchmark:ocr:corpus",
-    "benchmark:ocr:development", "benchmark:ocr:holdout:open", "benchmark:ocr:selector",
-    "benchmark:ocr:selector:quick", "benchmark:ocr:selector:validation",
-    "build", "clean", "coverage", "deadcode", "dev", "dev:api", "dev:durable", "dev:stack", "dev:stack:character",
-    "dev:web", "dev:worker-character", "dev:worker-document", "dev:worker-export",
-    "dev:worker-media", "fetch:representative-pdf", "fixture:ocr:corpus:fetch",
-    "fixture:ocr:generate", "fixtures:generate", "golden:adobe:generate", "lint",
-    "lint:css", "production:compose", "quality", "test", "test:character-rig:benchmark",
-    "test:e2e", "test:e2e:chromium", "test:e2e:firefox", "test:e2e:install", "test:e2e:webkit",
-    "test:faults:topology", "test:load:pdf",
-    "test:load:utils", "test:release-drill:utils", "test:release-rollback",
-    "test:representative-pdf", "test:topology", "test:topology:full", "typecheck",
-    "verify:adobe-golden", "verify:alerts", "verify:architecture", "verify:bundle",
-    "verify:character-rig:benchmark", "verify:clean", "verify:contracts", "verify:css",
-    "verify:deployment", "verify:fixtures", "verify:icons", "verify:incident", "verify:maintainability",
-    "verify:object-storage", "verify:ocr-corpus", "verify:paths", "verify:recovery", "verify:release-checkout", "verify:release-env",
-    "verify:release-env:test", "verify:release-evidence:test", "verify:security-license", "verify:staging-application",
+    "benchmark:character-rig",
+    "benchmark:ocr",
+    "benchmark:ocr:corpus",
+    "benchmark:ocr:development",
+    "benchmark:ocr:holdout:open",
+    "benchmark:ocr:selector",
+    "benchmark:ocr:selector:quick",
+    "benchmark:ocr:selector:validation",
+    "build",
+    "clean",
+    "coverage",
+    "deadcode",
+    "dev",
+    "dev:api",
+    "dev:durable",
+    "dev:stack",
+    "dev:stack:character",
+    "dev:web",
+    "dev:worker-character",
+    "dev:worker-document",
+    "dev:worker-export",
+    "dev:worker-media",
+    "dev:worker-security",
+    "fetch:representative-pdf",
+    "fixture:ocr:corpus:fetch",
+    "fixture:ocr:generate",
+    "fixtures:generate",
+    "golden:adobe:generate",
+    "lint",
+    "lint:css",
+    "production:compose",
+    "quality",
+    "test",
+    "test:character-rig:benchmark",
+    "test:e2e",
+    "test:e2e:chromium",
+    "test:e2e:firefox",
+    "test:e2e:install",
+    "test:e2e:webkit",
+    "test:faults:topology",
+    "test:load:pdf",
+    "test:load:utils",
+    "test:release-drill:utils",
+    "test:release-rollback",
+    "test:representative-pdf",
+    "test:topology",
+    "test:topology:full",
+    "typecheck",
+    "verify:adobe-golden",
+    "verify:alerts",
+    "verify:architecture",
+    "verify:bundle",
+    "verify:character-rig:benchmark",
+    "verify:clean",
+    "verify:contracts",
+    "verify:css",
+    "verify:dependency-audit",
+    "verify:deployment",
+    "verify:fixtures",
+    "verify:icons",
+    "verify:incident",
+    "verify:maintainability",
+    "verify:object-storage",
+    "verify:ocr-corpus",
+    "verify:paths",
+    "verify:recovery",
+    "verify:release-checkout",
+    "verify:release-env",
+    "verify:release-env:test",
+    "verify:release-evidence:test",
+    "verify:security-license",
+    "verify:staging-application",
     "verify:visuals"
   ],
   "schemaVersion": 1,
@@ -288,27 +400,122 @@
       "development": "node --env-file-if-exists=../../.env --watch --import tsx src/index.ts",
       "production": "node --conditions=production dist/index.js",
       "source": "apps/worker-media/src/index.ts"
+    },
+    "@motionprep/worker-security": {
+      "development": "node --env-file-if-exists=../../.env --watch --import tsx src/index.ts",
+      "production": "node --conditions=production dist/index.js",
+      "source": "apps/worker-security/src/index.ts"
     }
   },
   "workspaceScripts": {
     "@motionprep/api": [
-      "build", "coverage", "db:migrate", "db:migrate:prod", "dev",
-      "maintenance:retention", "maintenance:retention:prod",
-      "maintenance:retention:scheduler", "maintenance:retention:scheduler:prod",
-      "serve:e2e", "start", "test", "test:character-rig:race", "test:integration", "typecheck",
-      "verify:staging-dependencies", "verify:staging-dependencies:test"
+      "build",
+      "coverage",
+      "db:migrate",
+      "db:migrate:prod",
+      "dev",
+      "maintenance:retention",
+      "maintenance:retention:prod",
+      "maintenance:retention:scheduler",
+      "maintenance:retention:scheduler:prod",
+      "serve:e2e",
+      "start",
+      "test",
+      "test:character-rig:race",
+      "test:integration",
+      "typecheck",
+      "verify:staging-dependencies",
+      "verify:staging-dependencies:test"
     ],
-    "@motionprep/contracts": ["build", "coverage", "test", "typecheck"],
-    "@motionprep/document-processing": ["build", "coverage", "test", "typecheck"],
-    "@motionprep/export-adapters": ["build", "coverage", "test", "typecheck"],
-    "@motionprep/guidance": ["build", "coverage", "test", "typecheck"],
-    "@motionprep/layer-domain": ["build", "coverage", "test", "typecheck"],
-    "@motionprep/media-processing": ["build", "coverage", "test", "typecheck"],
-    "@motionprep/presets": ["build", "coverage", "test", "typecheck"],
-    "@motionprep/web": ["build", "coverage", "dev", "preview", "test", "typecheck"],
-    "@motionprep/worker-character": ["build", "coverage", "dev", "start", "test", "typecheck"],
-    "@motionprep/worker-document": ["build", "coverage", "dev", "start", "test", "typecheck"],
-    "@motionprep/worker-export": ["build", "coverage", "dev", "start", "test", "typecheck"],
-    "@motionprep/worker-media": ["build", "coverage", "dev", "start", "test", "typecheck"]
+    "@motionprep/contracts": [
+      "build",
+      "coverage",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/document-processing": [
+      "build",
+      "coverage",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/export-adapters": [
+      "build",
+      "coverage",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/guidance": [
+      "build",
+      "coverage",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/layer-domain": [
+      "build",
+      "coverage",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/media-processing": [
+      "build",
+      "coverage",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/presets": [
+      "build",
+      "coverage",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/web": [
+      "build",
+      "coverage",
+      "dev",
+      "preview",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/worker-character": [
+      "build",
+      "coverage",
+      "dev",
+      "start",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/worker-document": [
+      "build",
+      "coverage",
+      "dev",
+      "start",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/worker-export": [
+      "build",
+      "coverage",
+      "dev",
+      "start",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/worker-media": [
+      "build",
+      "coverage",
+      "dev",
+      "start",
+      "test",
+      "typecheck"
+    ],
+    "@motionprep/worker-security": [
+      "build",
+      "coverage",
+      "dev",
+      "start",
+      "test",
+      "typecheck"
+    ]
   }
 }

@@ -14,6 +14,7 @@ x-runtime: &runtime
   tmpfs:
     - /tmp:size=256m,mode=1777
   restart: unless-stopped
+  pids_limit: ${RUNTIME_PIDS_LIMIT:-256}
   # Worker drain defaults to 30s; leave a margin for lease requeue and cleanup.
   stop_grace_period: 45s
   security_opt:
@@ -112,6 +113,28 @@ services:
       start_period: 30s
       retries: 3
 
+  worker-security:
+    <<: *runtime
+    env_file:
+      - ${MOTIONPREP_SECURITY_WORKER_ENV_FILE:?Set MOTIONPREP_SECURITY_WORKER_ENV_FILE to the security-worker secret file}
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-security/dist/index.js
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: ${SECURITY_MEMORY_LIMIT:-512m}
+    cpus: ${SECURITY_CPU_LIMIT:-1.0}
+    # Allow an in-flight bounded scanner request to settle or release its lease.
+    stop_grace_period: 140s
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "security"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
   worker-document:
     <<: *runtime
     env_file:
@@ -187,6 +210,7 @@ services:
       - application
     init: true
     read_only: true
+    pids_limit: ${WEB_PIDS_LIMIT:-128}
     security_opt:
       - no-new-privileges:true
     cap_drop:

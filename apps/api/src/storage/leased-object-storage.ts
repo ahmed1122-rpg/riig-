@@ -251,7 +251,7 @@ export function objectWriteScope(objectKey: string): ObjectWriteScope {
     throw new Error(`Object key ${objectKey} has an invalid project identifier.`);
   }
   const writerType: ObjectWriterType =
-    namespace === "sources"
+    namespace === "sources" || namespace === "quarantine"
       ? "upload"
       : namespace === "artifacts"
         ? "export"

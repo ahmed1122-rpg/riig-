@@ -66,6 +66,7 @@ export async function buildApp(
   config: AppConfig,
   dependencies: AppDependencies = {},
 ): Promise<FastifyInstance> {
+  assertProductionDependencies(config, dependencies);
   const app = Fastify({
     logger: createHttpLoggerOptions(config.NODE_ENV),
     bodyLimit: config.MAX_UPLOAD_BYTES,
@@ -147,6 +148,7 @@ export async function buildApp(
     metrics: uploadReconciliationMetrics,
     logger: app.log,
     ...(dependencies.uploadFinalization ? { finalization: dependencies.uploadFinalization } : {}),
+    ...(dependencies.uploadScanQueue ? { scanQueue: dependencies.uploadScanQueue } : {}),
     ...(dependencies.uploadIntegrityFailures ? { integrityFailures: dependencies.uploadIntegrityFailures } : {}),
     ...(dependencies.uploadCancellations ? { cancellations: dependencies.uploadCancellations } : {}),
   });
@@ -321,6 +323,9 @@ export async function buildApp(
         ? (["export"] as const)
         : []),
       ...(config.CHARACTER_RIG_ENABLED ? (["character"] as const) : []),
+      ...(config.MALWARE_SCAN_MODE === "required"
+        ? (["security"] as const)
+        : []),
     ]),
     ...(dependencies.operationalStatus
       ? { operationalStatus: dependencies.operationalStatus }
@@ -408,4 +413,58 @@ export async function buildApp(
   );
 
   return app;
+}
+
+export function assertProductionDependencies(
+  config: Pick<
+    AppConfig,
+    "NODE_ENV" | "PAYMENT_MODE" | "CHARACTER_RIG_ENABLED" | "MALWARE_SCAN_MODE"
+  >,
+  dependencies: AppDependencies,
+): void {
+  if (config.NODE_ENV !== "production") return;
+  const required: Array<keyof AppDependencies> = [
+    "projects",
+    "projectReviews",
+    "uploads",
+    "uploadFinalization",
+    "uploadIntegrityFailures",
+    "uploadCancellations",
+    "sourceVersions",
+    "sourceVersionRestores",
+    "exports",
+    "auth",
+    "audit",
+    "billing",
+    "idempotency",
+    "loginAttempts",
+    "objectStorage",
+    "processingJobs",
+    "layerDocuments",
+    "emailSender",
+    "secretProtector",
+    "readiness",
+    "dependencyReadiness",
+    "adminAccess",
+    "usageMeter",
+    "operationalStatus",
+    "rateLimitStore",
+    "accountPrivacy",
+    "derivedAssets",
+    ...(config.MALWARE_SCAN_MODE === "required"
+      ? (["uploadScanQueue"] as const)
+      : []),
+    ...(config.CHARACTER_RIG_ENABLED
+      ? (["characterRigs", "characterJobs"] as const)
+      : []),
+    ...(config.PAYMENT_MODE === "live"
+      ? (["paymentProviders"] as const)
+      : []),
+  ];
+  const missing = required.filter((key) => dependencies[key] === undefined);
+  if (missing.length > 0) {
+    throw new Error(
+      `Production dependency wiring is incomplete: ${missing.join(", ")}.`,
+    );
+  }
 }

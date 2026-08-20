@@ -251,7 +251,17 @@ async function executeJourney(index, cookie) {
     if (upload.body.data.sha256 !== sourceSha256) {
       throw new Error("Server upload SHA-256 differs from the load fixture.");
     }
-    const sourceVersionId = upload.body.data.sourceVersionId;
+    const scannedUpload = upload.body.data.status === "ready"
+      ? upload.body.data
+      : await measure("malware-scan", () =>
+          waitForUpload(intent.body.data.uploadId),
+        );
+    if (scannedUpload.malwareScanVerdict !== "clean") {
+      throw new Error(
+        `Upload became ready without a clean malware verdict: ${scannedUpload.malwareScanVerdict}`,
+      );
+    }
+    const sourceVersionId = scannedUpload.sourceVersionId;
     const processing = await measure("processing-submit", () =>
       api("/v1/processing/jobs", {
         method: "POST",
@@ -337,6 +347,28 @@ async function executeJourney(index, cookie) {
       await new Promise((resolve) => setTimeout(resolve, config.pollIntervalMs));
     }
     throw new Error(`${label} did not become ready within ${config.jobTimeoutMs}ms.`);
+  }
+
+  async function waitForUpload(uploadId) {
+    const deadline = Date.now() + config.jobTimeoutMs;
+    while (Date.now() < deadline) {
+      const response = await api(`/v1/uploads/${uploadId}`, {
+        expectedStatus: 200,
+      });
+      const upload = response.body.data;
+      if (["rejected", "scan_failed", "failed", "cancelled"].includes(
+        upload.status,
+      )) {
+        throw new Error(
+          `Upload malware scan became terminal: ${upload.status}`,
+        );
+      }
+      if (upload.status === "ready") return upload;
+      await new Promise((resolve) => setTimeout(resolve, config.pollIntervalMs));
+    }
+    throw new Error(
+      `Upload malware scan did not become ready within ${config.jobTimeoutMs}ms.`,
+    );
   }
 }
 

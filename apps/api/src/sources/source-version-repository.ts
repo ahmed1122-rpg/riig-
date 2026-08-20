@@ -1,4 +1,5 @@
 import type {
+  MalwareScanVerdict,
   SourceType,
   SourceVersionStatus,
   SourceVersionSummary,
@@ -21,6 +22,7 @@ export interface SourceVersionRepository {
     changes: {
       status?: SourceVersionStatus;
       sha256?: string | null;
+      malwareScanVerdict?: MalwareScanVerdict;
     },
   ): Promise<SourceVersionSummary | null>;
 }
@@ -73,13 +75,20 @@ export class InMemorySourceVersionRepository
     changes: {
       status?: SourceVersionStatus;
       sha256?: string | null;
+      malwareScanVerdict?: MalwareScanVerdict;
     },
   ): Promise<SourceVersionSummary | null> {
     const current = this.#versions.get(id);
     if (!current) return null;
     const updated: SourceVersionSummary = {
       ...current,
-      ...changes,
+      ...(changes.status ? { status: changes.status } : {}),
+      ...(Object.prototype.hasOwnProperty.call(changes, "sha256")
+        ? { sha256: changes.sha256 ?? null }
+        : {}),
+      ...(changes.malwareScanVerdict
+        ? { malwareScanVerdict: changes.malwareScanVerdict }
+        : {}),
       updatedAt: new Date().toISOString(),
     };
     this.#versions.set(id, updated);

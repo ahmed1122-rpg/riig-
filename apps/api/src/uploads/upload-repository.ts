@@ -37,6 +37,7 @@ const activeStatuses = new Set<UploadSession["status"]>([
   "validating",
   "uploading",
   "verifying",
+  "scanning",
 ]);
 
 export class InMemoryUploadRepository implements UploadRepository {
@@ -66,6 +67,8 @@ export class InMemoryUploadRepository implements UploadRepository {
         (session) =>
           session.projectId === projectId &&
           session.status === "ready" &&
+          (session.malwareScanVerdict === undefined ||
+            session.malwareScanVerdict === "clean") &&
           session.sourceVersionId === sourceVersionId,
       ) ?? null
     );
@@ -99,7 +102,9 @@ export class InMemoryUploadRepository implements UploadRepository {
       total: sessions.length,
       active: sessions.filter((session) => activeStatuses.has(session.status))
         .length,
-      failed: sessions.filter((session) => session.status === "failed").length,
+      failed: sessions.filter((session) =>
+        ["failed", "rejected", "scan_failed"].includes(session.status),
+      ).length,
     };
   }
 

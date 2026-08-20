@@ -60,15 +60,20 @@ function FeatureLoading() {
   );
 }
 
-function SessionSplash() {
+function SessionSplash({ onRetry }: { onRetry?: () => void } = {}) {
+  const unavailable = Boolean(onRetry);
   return (
-    <div className="session-splash" role="status" aria-live="polite">
+    <div
+      className="session-splash"
+      role={unavailable ? "alert" : "status"}
+    >
       <div className="session-splash__content">
-        <span className="session-splash__mark" aria-hidden="true">
-          <Icon name="layers" size={27} />
+        <span className="session-splash__mark">
+          <Icon name={unavailable ? "warning" : "layers"} />
         </span>
-        <strong>جارٍ فتح MotionPrep…</strong>
-        <small>نتحقق من الجلسة قبل اختيار مساحة العمل المناسبة.</small>
+        <strong>{unavailable ? "تعذر الاتصال" : "جارٍ فتح MotionPrep…"}</strong>
+        {!unavailable && <small>نتحقق من الجلسة قبل فتح مساحة العمل.</small>}
+        {onRetry && <button type="button" className="button button--primary" onClick={onRetry}>إعادة المحاولة</button>}
       </div>
     </div>
   );
@@ -93,6 +98,7 @@ export function App() {
     capabilities,
     capabilitiesPhase,
     capabilitiesErrorRequestId,
+    refreshSession,
     refreshCapabilities,
     refreshSessionAfterAuthentication,
     clearSession,
@@ -170,6 +176,10 @@ export function App() {
 
   if (rootSurface === "splash") {
     return <SessionSplash />;
+  }
+
+  if (rootSurface === "session-unavailable") {
+    return <SessionSplash onRetry={() => void refreshSession()} />;
   }
 
   if (rootSurface === "marketing") {

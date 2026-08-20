@@ -22,7 +22,7 @@ describe("runtime capabilities", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({
-      schemaVersion: "1.1",
+      schemaVersion: "1.2",
       limits: {
         maxUploadBytes: 30 * 1024 * 1024,
         maxImageUploadBytes: 30 * 1024 * 1024,

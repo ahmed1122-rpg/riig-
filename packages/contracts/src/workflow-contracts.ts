@@ -4,6 +4,7 @@ import type {
   ExportJobStatus,
   ExportScope,
   PaymentProviderId,
+  MalwareScanVerdict,
   PdfSeparationMode,
   ProcessingJobStatus,
   ProjectKind,
@@ -53,6 +54,7 @@ export interface SourceVersionSummary {
   sizeBytes: number;
   status: SourceVersionStatus;
   sha256: string | null;
+  malwareScanVerdict?: MalwareScanVerdict;
   createdAt: string;
   updatedAt: string;
 }
@@ -381,6 +383,7 @@ export interface UploadSession extends UploadIntent {
   status: UploadStatus;
   sourceVersionId: string | null;
   sha256: string | null;
+  malwareScanVerdict?: MalwareScanVerdict;
   createdAt: string;
   updatedAt: string;
 }

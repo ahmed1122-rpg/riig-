@@ -208,12 +208,12 @@ export function verifyWorkflowSecurity(workflows) {
       workflowSteps(document).some(
         (step) => typeof step?.run === "string" &&
           tokenizeShell(step.run).includes("npm") &&
-          step.run.includes("audit --audit-level=high"),
+          step.run.includes("verify:dependency-audit"),
       );
   });
   if (!scheduledAudit) {
     violations.push(
-      "Scheduled dependency audit workflow is missing the 17 4 * * * cron and npm high-severity audit step.",
+      "Scheduled dependency audit workflow is missing the 17 4 * * * cron and governed dependency audit step.",
     );
   }
   return violations;

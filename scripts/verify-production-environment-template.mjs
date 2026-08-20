@@ -13,6 +13,10 @@ const requiredKeys = [
   "OBJECT_STORAGE_SECRET_KEY",
   "OBJECT_STORAGE_SESSION_TOKEN",
   "OBJECT_STORAGE_ENCRYPTION_MODE",
+  "MALWARE_SCAN_MODE",
+  "MALWARE_SCANNER_HOST",
+  "MALWARE_SCANNER_PORT",
+  "MALWARE_DEFINITIONS_MAX_AGE_HOURS",
   "OBJECT_STORAGE_REQUIRE_VERSIONING",
   "PAYMENT_MODE",
   "PDF_OCR_MODE",
@@ -32,6 +36,7 @@ const requiredKeys = [
   "MOTIONPREP_MEDIA_WORKER_ENV_FILE",
   "MOTIONPREP_DOCUMENT_WORKER_ENV_FILE",
   "MOTIONPREP_EXPORT_WORKER_ENV_FILE",
+  "MOTIONPREP_SECURITY_WORKER_ENV_FILE",
   "MOTIONPREP_CHARACTER_WORKER_ENV_FILE",
 ];
 
@@ -47,6 +52,11 @@ export function verifyProductionEnvironmentTemplate(source) {
       "Regional PDF OCR must remain disabled in the production template until the holdout gate passes.",
     );
   }
+  if (!/^MALWARE_SCAN_MODE=required$/mu.test(source)) {
+    violations.push(
+      "Production uploads must keep fail-closed malware scanning required.",
+    );
+  }
   if (!/^CHARACTER_RIG_ENABLED=false$/mu.test(source)) {
     violations.push(
       "Character Studio must remain disabled in the production template until its private-provider and Golden gates pass.",
@@ -55,6 +65,41 @@ export function verifyProductionEnvironmentTemplate(source) {
   for (const key of requiredKeys) {
     if (!source.includes(`${key}=`)) {
       violations.push(`Production environment template is missing ${key}.`);
+    }
+  }
+  return violations;
+}
+
+export function verifyWorkerEnvironmentParity(templates) {
+  const violations = [];
+  const commonKeys = [
+    "NODE_ENV",
+    "MOTIONPREP_WORKLOAD_IDENTITY",
+    "DATABASE_URL",
+    "DATABASE_POOL_MAX",
+    "OBJECT_STORAGE_REGION",
+    "OBJECT_STORAGE_BUCKET",
+    "OBJECT_STORAGE_ACCESS_KEY",
+    "OBJECT_STORAGE_SECRET_KEY",
+    "OBJECT_STORAGE_SESSION_TOKEN",
+    "OBJECT_STORAGE_FORCE_PATH_STYLE",
+    "OBJECT_STORAGE_ENCRYPTION_MODE",
+    "OBJECT_STORAGE_REQUIRE_VERSIONING",
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "OTEL_TRACES_SAMPLER",
+    "OTEL_TRACES_SAMPLER_ARG",
+  ];
+  for (const [name, source] of Object.entries(templates)) {
+    const keys = new Set(
+      source.split(/\r?\n/u)
+        .map((line) => /^([A-Z][A-Z0-9_]*)=/u.exec(line)?.[1])
+        .filter(Boolean),
+    );
+    for (const key of commonKeys) {
+      if (!keys.has(key)) {
+        violations.push(`${name} worker template is missing common key ${key}.`);
+      }
     }
   }
   return violations;

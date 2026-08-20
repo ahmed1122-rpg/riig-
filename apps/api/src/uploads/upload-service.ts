@@ -34,6 +34,7 @@ import {
 import type { UploadCancellationCommand } from "./upload-cancellation.js";
 import type { PreparedUploadContent } from "./upload-content.js";
 import { createUploadIntent } from "./upload-intent-coordinator.js";
+import type { UploadScanQueueCommand } from "./upload-scan-queue.js";
 
 export class UploadDomainError extends Error {
   constructor(
@@ -80,6 +81,7 @@ export class UploadService {
       },
     ) => void,
     private readonly maxImageUploadBytes = MAX_IMAGE_UPLOAD_BYTES,
+    private readonly scanQueue?: UploadScanQueueCommand,
   ) {
     assertUploadLimit(maxUploadBytes);
     assertImageUploadLimit(maxImageUploadBytes);
@@ -99,6 +101,7 @@ export class UploadService {
   ): Promise<UploadSession> {
     const session = await this.requireSession(uploadId);
     if (session.status === "ready") return this.reconcileReady(session);
+    if (session.status === "scanning") return session;
     if (session.status !== "uploading") {
       throw new UploadDomainError(
         "UPLOAD_NOT_COMPLETABLE",
@@ -243,6 +246,7 @@ export class UploadService {
         limitFor: (contentType) => this.limitFor(contentType),
         cancelSession: (session) => this.cancelSession(session),
         domainError: (code, message) => new UploadDomainError(code, message),
+        objectKeyPrefix: this.scanQueue ? "quarantine" : "sources",
       },
       input,
       idempotencyKey,
@@ -254,6 +258,9 @@ export class UploadService {
     session: UploadSession,
     sha256: string,
   ): Promise<UploadSession> {
+    if (this.scanQueue) {
+      return this.scanQueue.enqueue({ session, sha256 });
+    }
     if (this.finalization) {
       return this.finalization.finalize({ session, sha256 });
     }
@@ -331,10 +338,10 @@ export class UploadService {
 
   async cancel(uploadId: string): Promise<UploadSession> {
     const session = await this.requireSession(uploadId);
-    if (session.status === "ready") {
+    if (["ready", "rejected", "scan_failed"].includes(session.status)) {
       throw new UploadDomainError(
         "UPLOAD_NOT_COMPLETABLE",
-        "اكتمل الرفع بالفعل ولا يمكن إلغاؤه.",
+        "وصل الرفع إلى حالة نهائية ولا يمكن إلغاؤه.",
       );
     }
 

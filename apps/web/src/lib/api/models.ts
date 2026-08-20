@@ -99,14 +99,19 @@ export interface AdminSystemStatus {
   status: "ready" | "degraded";
   workers: Array<{
     instanceId: string;
-    workerType: "media" | "document" | "export";
+    workerType: "media" | "document" | "export" | "character" | "security";
     releaseVersion: string;
     concurrency: number;
     lastSeenAt: string;
     stale: boolean;
   }>;
   queues: Array<{
-    queue: "processing-media" | "processing-document" | "export";
+    queue:
+      | "processing-media"
+      | "processing-document"
+      | "export"
+      | "character"
+      | "malware-scan";
     queued: number;
     active: number;
     failed: number;

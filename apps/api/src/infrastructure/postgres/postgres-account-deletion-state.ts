@@ -339,10 +339,27 @@ async function cancelClaimableWork(
   changedAt: string,
 ): Promise<void> {
   await client.query(
+    `UPDATE malware_scan_jobs scan
+     SET status = 'failed', error_code = 'ACCOUNT_DELETION',
+         lease_owner = NULL, lease_expires_at = NULL,
+         completed_at = $2, updated_at = $2
+     FROM projects project
+     WHERE project.id = scan.project_id AND project.owner_user_id = $1
+       AND scan.status IN ('queued', 'retry_wait')`,
+    [userId, changedAt],
+  );
+  await client.query(
     `UPDATE upload_sessions upload SET status = 'cancelled', updated_at = $2
      FROM projects project
      WHERE project.id = upload.project_id AND project.owner_user_id = $1
-       AND upload.status IN ('validating', 'uploading', 'verifying')`,
+       AND upload.status IN ('validating', 'uploading', 'verifying', 'scanning')
+       AND NOT EXISTS (
+         SELECT 1 FROM malware_scan_jobs scan
+         WHERE scan.upload_id = upload.upload_id
+           AND scan.status = 'scanning'
+           AND scan.lease_owner IS NOT NULL
+           AND scan.lease_expires_at > $2
+       )`,
     [userId, changedAt],
   );
   for (const [table, queuedStatus] of [
@@ -383,6 +400,13 @@ async function hasLiveLeases(
        WHERE project.owner_user_id = $1 AND job.status IN ('processing', 'verifying')
          AND job.lease_owner IS NOT NULL
          AND (job.lease_expires_at IS NULL OR job.lease_expires_at > $2)
+       UNION ALL
+       SELECT 1 AS active
+       FROM malware_scan_jobs scan
+       JOIN projects project ON project.id = scan.project_id
+       WHERE project.owner_user_id = $1 AND scan.status = 'scanning'
+         AND scan.lease_owner IS NOT NULL
+         AND (scan.lease_expires_at IS NULL OR scan.lease_expires_at > $2)
        UNION ALL
        SELECT 1 AS active
        FROM object_write_leases lease

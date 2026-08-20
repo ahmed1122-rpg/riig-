@@ -50,6 +50,7 @@ test("requires distinct environment files for every workload boundary", () => {
     "MOTIONPREP_MEDIA_WORKER_ENV_FILE",
     "MOTIONPREP_DOCUMENT_WORKER_ENV_FILE",
     "MOTIONPREP_EXPORT_WORKER_ENV_FILE",
+    "MOTIONPREP_SECURITY_WORKER_ENV_FILE",
     "MOTIONPREP_CHARACTER_WORKER_ENV_FILE",
   ];
   const source = names.map((name) => `${name}=${name}.env`).join("\n");
@@ -77,6 +78,7 @@ test("rejects shared identities and API secrets in worker environments", () => {
     ["MOTIONPREP_MEDIA_WORKER_ENV_FILE", "MOTIONPREP_WORKLOAD_IDENTITY=media\nDATABASE_URL=postgresql://media:x@db/app?sslmode=require"],
     ["MOTIONPREP_DOCUMENT_WORKER_ENV_FILE", "MOTIONPREP_WORKLOAD_IDENTITY=document\nDATABASE_URL=postgresql://document:x@db/app?sslmode=require"],
     ["MOTIONPREP_EXPORT_WORKER_ENV_FILE", "MOTIONPREP_WORKLOAD_IDENTITY=export\nDATABASE_URL=postgresql://export:x@db/app?sslmode=require"],
+    ["MOTIONPREP_SECURITY_WORKER_ENV_FILE", "MOTIONPREP_WORKLOAD_IDENTITY=security\nDATABASE_URL=postgresql://security:x@db/app?sslmode=require"],
     ["MOTIONPREP_CHARACTER_WORKER_ENV_FILE", "MOTIONPREP_WORKLOAD_IDENTITY=character\nDATABASE_URL=postgresql://character:x@db/app?sslmode=require"],
   ]);
   assert.deepEqual(validateServiceEnvironmentIsolation(isolated), []);

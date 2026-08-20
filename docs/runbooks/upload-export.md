@@ -15,6 +15,8 @@
 - Export retry rate exceeds 2% or `lease_lost` appears.
 - Export verification failure rate exceeds 2%.
 - Repeated artifact checksum mismatch.
+- `malware-scan` queue age, retries, or a missing `security` heartbeat: stop
+  accepting release traffic until the scanner and fresh definitions recover.
 
 ## First checks
 
@@ -34,6 +36,9 @@
 8. For a missing raster layer, compare its `rasterAsset` size and SHA-256 with
    the object at the referenced key. Never export a partially matching asset
    set.
+9. For a scan incident, inspect `malware_scan_jobs` attempt, lease, error code,
+   engine, and definitions version. Never move an object from `quarantine/`
+   manually and never convert `scan_failed` to `ready`.
 
 ## Safe mitigation
 
@@ -41,6 +46,8 @@
 - Keep ready source objects under `sources/` unchanged until verification
   resumes. Do not apply a temporary prefix-wide expiry.
 - Retry only through the same idempotency key.
+- Keep processing fenced unless the upload is `ready` and its malware verdict
+  is `clean`. Scanner unavailability is not a reason to bypass the gate.
 - Do not manually mark a failed artifact as ready.
 - Disable `psd` in the image format allow-list if a compatibility regression is
   confirmed; keep `png-layers-json` available as the reversible fallback.

@@ -1,6 +1,6 @@
 {
   "name": "@motionprep/api",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -19,6 +19,11 @@
       "types": "./src/character-rig/character-worker-runtime.ts",
       "production": "./dist/character-rig/character-worker-runtime.js",
       "default": "./src/character-rig/character-worker-runtime.ts"
+    },
+    "./malware-scan-worker": {
+      "types": "./src/security/malware-scan-worker-runtime.ts",
+      "production": "./dist/security/malware-scan-worker-runtime.js",
+      "default": "./src/security/malware-scan-worker-runtime.ts"
     },
     "./object-storage-environment": {
       "types": "./src/storage/object-storage-environment.ts",

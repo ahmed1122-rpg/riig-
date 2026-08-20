@@ -71,6 +71,7 @@ export class AuthDomainError extends Error {
       | "ACCOUNT_LOCKED"
       | "ACCOUNT_SUSPENDED"
       | "SESSION_INVALID"
+      | "AUTHORIZATION_DENIED"
       | "USER_NOT_FOUND"
       | "LAST_ADMIN_PROTECTED"
       | "MFA_REQUIRED"

@@ -38,6 +38,13 @@ x-runtime: &runtime
     OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
     OBJECT_STORAGE_ENCRYPTION_MODE: none
     OBJECT_STORAGE_REQUIRE_VERSIONING: "true"
+    MALWARE_SCAN_MODE: required
+    MALWARE_SCANNER_HOST: clamav
+    MALWARE_SCANNER_PORT: "3310"
+    MALWARE_SCANNER_TIMEOUT_MS: "30000"
+    MALWARE_DEFINITIONS_MAX_AGE_HOURS: "168"
+    MALWARE_SCAN_POLL_MS: "100"
+    MALWARE_SCAN_LEASE_MS: "60000"
     PROCESSING_EXECUTION_MODE: worker
     EXPORT_EXECUTION_MODE: worker
     PDF_OCR_MODE: disabled
@@ -118,6 +125,20 @@ services:
         mc version info local/motionprep-integration
     restart: "no"
 
+  clamav:
+    image: clamav/clamav:stable_base@sha256:85dbdcae852ad2e51a54e4a6e29c099f45971df746204ffc1274cb7ef7ff3f7b
+    networks:
+      - integration
+    init: true
+    volumes:
+      - ./artifacts/fixtures/malware-test-signatures.ndb:/var/lib/clamav/motionprep-integration.ndb
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 3s
+      timeout: 3s
+      start_period: 15s
+      retries: 120
+
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
     environment:
@@ -154,6 +175,8 @@ services:
       minio-init:
         condition: service_completed_successfully
       mailpit:
+        condition: service_healthy
+      clamav:
         condition: service_healthy
     ports:
       - "${INTEGRATION_API_A_PORT:-54101}:4000"
@@ -216,6 +239,19 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  worker-security:
+    <<: *runtime
+    depends_on: *application-dependencies
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-security/dist/index.js
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "security"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
 
   release-web:
     image: ${INTEGRATION_WEB_IMAGE_REF:-motionprep-web:integration}

@@ -20,6 +20,7 @@ const dockerignore = `!.env.production.example
 !.env.production.maintenance.example
 !.env.production.worker.example
 !.env.production.worker-character.example
+!.env.production.worker-security.example
 !artifacts/adobe-golden/photoshop-result.txt
 !artifacts/adobe-golden/after-effects-result.txt
 `;

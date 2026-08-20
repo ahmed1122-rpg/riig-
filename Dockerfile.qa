@@ -14,6 +14,7 @@ COPY apps/worker-document/package.json ./apps/worker-document/package.json
 COPY apps/worker-export/package.json ./apps/worker-export/package.json
 COPY apps/worker-character/package.json ./apps/worker-character/package.json
 COPY apps/worker-media/package.json ./apps/worker-media/package.json
+COPY apps/worker-security/package.json ./apps/worker-security/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY packages/document-processing/package.json ./packages/document-processing/package.json
 COPY packages/export-adapters/package.json ./packages/export-adapters/package.json

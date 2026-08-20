@@ -45,7 +45,7 @@ export class PostgresRetentionStore implements RetentionStore {
     const result = await this.pool.query<{ changed: number }>(
       `WITH purged AS (
          UPDATE upload_sessions SET status = CASE
-             WHEN status IN ('validating', 'uploading', 'verifying')
+             WHEN status IN ('validating', 'uploading', 'verifying', 'scanning')
                THEN 'cancelled' ELSE status END,
            object_purged_at = $2, updated_at = $2
          WHERE upload_id = $1 AND status <> 'ready'
@@ -53,7 +53,7 @@ export class PostgresRetentionStore implements RetentionStore {
          RETURNING source_version_id
        ), updated_source AS (
          UPDATE source_versions source SET status = CASE
-             WHEN source.status IN ('validating', 'uploading', 'verifying')
+             WHEN source.status IN ('validating', 'uploading', 'verifying', 'scanning')
                THEN 'cancelled' ELSE source.status END, updated_at = $2
          FROM purged WHERE source.id = purged.source_version_id RETURNING source.id
        ) SELECT count(*)::integer AS changed FROM purged`,

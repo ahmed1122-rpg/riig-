@@ -175,7 +175,7 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
               : {}),
             onUploadProgress: (progress) => {
               if (!isCurrent()) return;
-              options.setUploadState("uploading");
+              options.setUploadState(progress === 100 ? "scanning" : "uploading");
               options.setUploadProgress(Math.round(progress * 0.65));
             },
             onProcessingProgress: (progress) => {

@@ -269,17 +269,27 @@ node scripts/run-production-compose.mjs .env.production \
   --profile character-rig up -d worker-character
 ```
 
-The `migrate` service applies all additive SQL migrations through migration 043
+The `migrate` service applies all additive SQL migrations through migration 044
 before the API and workers start. Migrations 038–041 add the Character Rig
 domain, worker observability, review decisions, and the derived-asset registry;
 migration 042 adds privacy/retention state machines and object-write leases,
-and migration 043 adds single-use email verification;
+migration 043 adds single-use email verification, and migration 044 adds the
+durable malware-scan queue, verdict metadata, leases, and security-worker
+observability;
 earlier migrations 027 and 028 add the durable
 email outbox and job correlation. Upload publication is then
 committed atomically across the upload session, source version, and project;
 the API startup reconciler re-inspects S3 metadata before repairing an
 interrupted legacy state. The web container exposes port 8080 and proxies `/v1` to the private API
 service. Only the web port should be published.
+
+`MALWARE_SCAN_MODE=required` is mandatory in production. The API writes new
+objects only under `quarantine/`; `worker-security` verifies object size and
+SHA-256 while streaming it to ClamAV, rejects stale signature definitions,
+and alone promotes a clean object into `sources/`. Processing remains fenced
+until both upload state and malware verdict are ready/clean. Deploy ClamAV or
+a compatible private scanner on the endpoint in the security-worker secret
+file, and grant that worker the least-privilege policy in `OBJECT_STORAGE.md`.
 
 The migration runner waits at most `MIGRATION_ADVISORY_LOCK_TIMEOUT_MS` for the
 single-runner advisory lock and applies `MIGRATION_LOCK_TIMEOUT_MS` to DDL lock

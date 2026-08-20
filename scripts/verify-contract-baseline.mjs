@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
@@ -227,14 +227,19 @@ function compareStrings(left, right) {
 async function main() {
   const workspace = process.cwd();
   const actual = await collectContractSnapshot(workspace);
-  if (process.argv.includes("--measure")) {
-    process.stdout.write(`${JSON.stringify(actual, null, 2)}\n`);
-    return;
-  }
   const baselinePath = path.resolve(
     workspace,
     process.env.CONTRACT_BASELINE ?? DEFAULT_BASELINE,
   );
+  if (process.argv.includes("--update")) {
+    await writeFile(baselinePath, `${JSON.stringify(actual, null, 2)}\n`, "utf8");
+    process.stdout.write(`Contract baseline updated: ${path.relative(workspace, baselinePath)}.\n`);
+    return;
+  }
+  if (process.argv.includes("--measure")) {
+    process.stdout.write(`${JSON.stringify(actual, null, 2)}\n`);
+    return;
+  }
   const expected = JSON.parse(await readFile(baselinePath, "utf8"));
   const differences = findContractDrift(actual, expected);
   if (differences.length > 0) {

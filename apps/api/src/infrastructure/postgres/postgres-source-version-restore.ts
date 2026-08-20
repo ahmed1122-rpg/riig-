@@ -161,13 +161,13 @@ export class PostgresSourceVersionRestoreCommand
             AND NOT EXISTS (
               SELECT 1 FROM upload_sessions AS active_upload
               WHERE active_upload.project_id = projects.id
-                AND active_upload.status IN ('validating', 'uploading', 'verifying')
+                AND active_upload.status IN ('validating', 'uploading', 'verifying', 'scanning')
                 AND active_upload.expires_at > now()
             )
             AND NOT EXISTS (
               SELECT 1 FROM source_versions AS active_source
               WHERE active_source.project_id = projects.id
-                AND active_source.status IN ('validating', 'uploading', 'verifying')
+                AND active_source.status IN ('validating', 'uploading', 'verifying', 'scanning')
                 AND active_source.updated_at > now() - interval '15 minutes'
             )
           RETURNING id, name, kind, status, current_source_version_id,
@@ -265,12 +265,12 @@ async function hasActiveUpload(
     `SELECT EXISTS (
        SELECT 1 FROM upload_sessions AS active_upload
        WHERE active_upload.project_id = $1
-         AND active_upload.status IN ('validating', 'uploading', 'verifying')
+         AND active_upload.status IN ('validating', 'uploading', 'verifying', 'scanning')
          AND active_upload.expires_at > now()
        UNION ALL
        SELECT 1 FROM source_versions AS active_source
        WHERE active_source.project_id = $1
-         AND active_source.status IN ('validating', 'uploading', 'verifying')
+         AND active_source.status IN ('validating', 'uploading', 'verifying', 'scanning')
          AND active_source.updated_at > now() - interval '15 minutes'
      ) AS busy`,
     [projectId],

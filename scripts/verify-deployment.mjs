@@ -6,7 +6,10 @@ import { verifyObservabilityArtifacts } from "./verify-observability-artifacts.m
 import { requiredDeploymentFiles } from "./deployment-required-files.mjs";
 import { verifyNodeToolchain } from "./verify-node-toolchain.mjs";
 import { verifyNginxDeployment, verifyNginxRuntimeWiring } from "./verify-nginx-deployment.mjs";
-import { verifyProductionEnvironmentTemplate } from "./verify-production-environment-template.mjs";
+import {
+  verifyProductionEnvironmentTemplate,
+  verifyWorkerEnvironmentParity,
+} from "./verify-production-environment-template.mjs";
 import { verifyQaImageContract } from "./verify-qa-image-contract.mjs";
 import { verifyRuntimeImageContract } from "./verify-runtime-image-contract.mjs";
 import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
@@ -47,6 +50,7 @@ const [
   maintenanceExampleEnvironment,
   workerExampleEnvironment,
   characterWorkerExampleEnvironment,
+  securityWorkerExampleEnvironment,
   webApiClient,
   processingRuntime,
   processingJobExecutor,
@@ -58,6 +62,9 @@ const [
   exportWorkerConfig,
   characterWorkerEntry,
   characterWorkerConfig,
+  securityWorkerEntry,
+  securityWorkerConfig,
+  securityWorkerRuntime,
   objectStorageEnvironment,
   s3Storage,
   objectStorageContract,
@@ -87,6 +94,7 @@ const [
       ".env.production.maintenance.example",
       ".env.production.worker.example",
       ".env.production.worker-character.example",
+      ".env.production.worker-security.example",
       "apps/web/src/lib/api/transport.ts",
       "apps/api/src/processing/processing-worker-runtime.ts",
       "apps/api/src/processing/processing-job-executor.ts",
@@ -98,6 +106,9 @@ const [
       "apps/worker-export/src/config.ts",
       "apps/worker-character/src/index.ts",
       "apps/worker-character/src/config.ts",
+      "apps/worker-security/src/index.ts",
+      "apps/api/src/security/malware-scan-worker-config.ts",
+      "apps/api/src/security/malware-scan-worker-runtime.ts",
       "apps/api/src/storage/object-storage-environment.ts",
       "apps/api/src/storage/s3-object-storage.ts",
       "docs/OBJECT_STORAGE.md",
@@ -136,8 +147,14 @@ violations.push(
     maintenanceExampleEnvironment,
     workerExampleEnvironment,
     characterWorkerExampleEnvironment,
+    securityWorkerExampleEnvironment,
   ].join("\n")),
 );
+violations.push(...verifyWorkerEnvironmentParity({
+  standard: workerExampleEnvironment,
+  character: characterWorkerExampleEnvironment,
+  security: securityWorkerExampleEnvironment,
+}));
 const ciWorkflow = workflowSources[0];
 violations.push(...verifyQaImageContract({ dockerfile: qaDockerfile, ciWorkflow, dockerignore }));
 try {
@@ -341,6 +358,7 @@ for (const service of [
   "worker-media",
   "worker-document",
   "worker-export",
+  "worker-security",
   "worker-character",
   "web",
 ]) {
@@ -431,6 +449,9 @@ violations.push(...verifyWorkerDeploymentContracts({
   exportWorkerConfig,
   characterWorkerEntry,
   characterWorkerConfig,
+  securityWorkerEntry,
+  securityWorkerConfig,
+  securityWorkerRuntime,
   mediaWorkerEntry,
   documentWorkerEntry,
   objectStorageEnvironment,
