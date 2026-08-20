@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback } from "react";
 import type { LayerDocumentCommand } from "@motionprep/contracts";
 import type { Layer } from "../../types";
 import {
@@ -23,8 +23,7 @@ import {
   workspaceCommandError,
   type WorkspaceCommandStatus,
 } from "./workspaceCommandStatus";
-
-type SetState<Value> = Dispatch<SetStateAction<Value>>;
+import type { WorkspaceSetState as SetState } from "./Workspace.types";
 
 type PdfTextInput =
   | { operation: "split"; offset: number }

@@ -107,6 +107,7 @@ describe("merge eligibility edges", () => {
     expect(canMergeRasterLayers(rasters, ["first", "missing"])).toMatchObject({ reason: "MISSING" });
     expect(canMergeRasterLayers([first, rasters[1]!], ["first", "second"])).toMatchObject({ reason: "KIND" });
     expect(canMergeRasterLayers([{ ...rasters[0]!, locked: true }, rasters[1]!], ["first", "second"])).toMatchObject({ reason: "PROTECTED" });
+    expect(canMergeRasterLayers([rasters[0]!, { ...rasters[1]!, pageNumber: 2 }], ["first", "second"])).toMatchObject({ reason: "PAGE" });
     expect(canMergeRasterLayers([rasters[0]!, { ...rasters[1]!, parentId: "other" }], ["first", "second"])).toMatchObject({ reason: "PARENT" });
     expect(canMergeRasterLayers(rasters, ["first", "second"])).toEqual({ allowed: true });
   });

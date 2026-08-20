@@ -193,11 +193,11 @@ body {
 }
 
 :where(
-  .time-saved, .creation-path, .processing-card, .data-state,
+  .time-saved, .creation-path, .data-state,
   .current-plan, .billing-method, .plan-row, .invoice-section,
   .security-primary, .security-side, .settings-card, .help-atlas,
-  .help-steps li, .help-limits, .admin-stat, .admin-panel,
-  .admin-table-wrap, .billing-admin-list, .system-settings-list
+  .help-steps li, .help-limits, .admin-stat,
+  .billing-admin-list, .system-settings-list
 ) {
   border: 1px solid transparent;
   border-radius: var(--panel-radius);
@@ -224,7 +224,6 @@ body {
 }
 
 .usage-bar,
-.job-progress,
 .time-line,
 .project-progress > span {
   overflow: hidden;
@@ -232,7 +231,7 @@ body {
   background: color-mix(in srgb, var(--surface-muted) 88%, var(--atelier-indigo));
 }
 
-:where(.usage-bar, .job-progress, .time-line, .project-progress > span) :where(i, span) {
+:where(.usage-bar, .time-line, .project-progress > span) :where(i, span) {
   border-radius: inherit;
   background: var(--gradient-atelier);
 }
@@ -482,11 +481,11 @@ body {
   box-shadow: inset 0 1px rgba(255, 255, 255, .045), 0 18px 50px rgba(0, 0, 0, .24);
 }
 
-.app-shell--workspace :where(.pro-tool-button, .pro-preview-control, .pro-focus-button) {
+.app-shell--workspace :where(.pro-preview-control, .pro-focus-button) {
   border-radius: 8px;
 }
 
-.app-shell--workspace :where(.pro-tool-button.is-active, .pro-layer-row.is-selected) {
+.app-shell--workspace .pro-layer-row.is-selected {
   background: linear-gradient(90deg, rgba(32, 217, 238, .15), rgba(113, 103, 255, .13));
   box-shadow: inset -2px 0 var(--atelier-cyan);
 }

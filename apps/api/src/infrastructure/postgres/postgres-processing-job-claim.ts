@@ -1,10 +1,7 @@
 import type { ProcessingJob, ProjectKind } from "@motionprep/contracts";
 import type { Pool } from "pg";
-import {
-  mapProcessingRow,
-  type ProcessingRow,
-} from "../infrastructure/postgres/processing-row.js";
-import { updateProjectStatusForJob } from "../projects/project-job-status.js";
+import { updateProjectStatusForJob } from "../../projects/project-job-status.js";
+import { mapProcessingRow, type ProcessingRow } from "./processing-row.js";
 
 export async function claimNextProcessingJob(
   pool: Pool,

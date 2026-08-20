@@ -26,6 +26,22 @@ for (const [index, asset] of (manifest.assets ?? []).entries()) {
   if (!["project-owned", "project-generated", "user-authorized project use"].includes(asset.license)) {
     violations.push(`${label} uses an unapproved license value.`);
   }
+  if (asset.sourcePath) {
+    violations.push(
+      `${label} uses legacy sourcePath; use a repository-relative source or an opaque externalSourceRef.`,
+    );
+  }
+  if (asset.source && asset.externalSourceRef) {
+    violations.push(`${label} cannot define both source and externalSourceRef.`);
+  }
+  if (asset.externalSourceRef) {
+    if (!/^user-authorized:[a-z0-9-]+$/u.test(asset.externalSourceRef)) {
+      violations.push(`${label} has an invalid externalSourceRef.`);
+    }
+    if (!asset.sourceSha256) {
+      violations.push(`${label} must retain a source SHA-256 for external evidence.`);
+    }
+  }
 
   const outputPath = path.resolve(manifestDirectory, asset.output);
   try {
@@ -55,7 +71,7 @@ for (const [index, asset] of (manifest.assets ?? []).entries()) {
 
   const sourcePath = asset.source
     ? path.resolve(manifestDirectory, asset.source)
-    : asset.sourcePath;
+    : undefined;
   if (sourcePath && asset.sourceSha256) {
     try {
       await access(sourcePath);

@@ -1,6 +1,15 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Icon } from "../../shared/Icon";
 import type { PdfLayerTreeNode, PdfPageFolder } from "./layerPageScope";
+import {
+  usePdfPageFolderWindow,
+} from "./usePdfPageFolderWindow";
 
 interface PdfPageLayerTreeProps {
   folders: readonly PdfPageFolder[];
@@ -14,6 +23,7 @@ interface PdfPageLayerTreeProps {
 
 const INITIAL_PAGE_NODE_WINDOW = 80;
 const PAGE_NODE_WINDOW_STEP = 160;
+const PAGE_FOLDER_VIRTUALIZATION_THRESHOLD = 200;
 
 export function PdfPageLayerTree({
   folders,
@@ -49,6 +59,16 @@ export function PdfPageLayerTree({
     if (firstMatch) setExpandedPages(new Set([firstMatch.pageNumber]));
   }, [searchActive, visibleFolders]);
 
+  const expandedPage = [...expandedPages][0];
+  const virtualized = visibleFolders.length > PAGE_FOLDER_VIRTUALIZATION_THRESHOLD;
+  const folderWindow = usePdfPageFolderWindow({
+    compact,
+    enabled: virtualized,
+    expandedPage,
+    folders: visibleFolders,
+    pageLimits,
+  });
+
   if (!loading && visibleFolders.length === 0) {
     return (
       <div className="pro-layer-empty" role="status">
@@ -61,11 +81,18 @@ export function PdfPageLayerTree({
 
   return (
     <div
-      className={`pdf-page-tree ${compact ? "is-compact" : ""}`}
+      ref={folderWindow.containerRef}
+      className={`pdf-page-tree ${compact ? "is-compact" : ""} ${virtualized ? "is-virtualized" : ""}`}
       role="group"
       aria-label="مجلدات صفحات PDF"
+      onScroll={virtualized ? folderWindow.onScroll : undefined}
     >
-      {visibleFolders.map((folder) => {
+      <div
+        className={virtualized ? "pdf-page-tree__spacer" : undefined}
+        style={virtualized ? { height: folderWindow.totalHeight } : undefined}
+      >
+      {folderWindow.rows.map((row) => {
+        const { folder } = row;
         const expanded = expandedPages.has(folder.pageNumber);
         const nodeLimit =
           pageLimits.get(folder.pageNumber) ?? INITIAL_PAGE_NODE_WINDOW;
@@ -74,7 +101,7 @@ export function PdfPageLayerTree({
           : { nodes: [], total: 0 };
         const contentId = `${baseId}-page-${folder.pageNumber}`;
         const current = folder.pageNumber === activePage;
-        return (
+        const section = (
           <section
             className={`pdf-page-folder ${current ? "is-current" : ""}`}
             key={folder.id}
@@ -154,7 +181,19 @@ export function PdfPageLayerTree({
             </div>}
           </section>
         );
+        return virtualized ? (
+          <div
+            key={folder.id}
+            className="pdf-page-tree__item"
+            style={{ top: row.top }}
+          >
+            {section}
+          </div>
+        ) : (
+          section
+        );
       })}
+      </div>
     </div>
   );
 }
@@ -213,15 +252,10 @@ function limitPdfTreeNodes(
   limit: number,
 ): { nodes: PdfLayerTreeNode[]; total: number } {
   let remaining = limit;
-  let total = 0;
   const visit = (items: readonly PdfLayerTreeNode[]): PdfLayerTreeNode[] => {
     const limited: PdfLayerTreeNode[] = [];
     for (const node of items) {
-      total += 1;
-      if (remaining <= 0) {
-        total += countTreeNodes(node.children);
-        continue;
-      }
+      if (remaining <= 0) break;
       remaining -= 1;
       limited.push({
         layer: node.layer,
@@ -230,7 +264,7 @@ function limitPdfTreeNodes(
     }
     return limited;
   };
-  return { nodes: visit(nodes), total };
+  return { nodes: visit(nodes), total: countTreeNodes(nodes) };
 }
 
 function countTreeNodes(nodes: readonly PdfLayerTreeNode[]): number {

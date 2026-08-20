@@ -11,7 +11,13 @@ export async function registerCspReportRoutes(
     clientTelemetry?: {
       observeError(kind: string): void;
       observeLcp(milliseconds: number): void;
+      observeCspViolation(
+        directive: string,
+        disposition: string,
+        browserFamily: string,
+      ): void;
     };
+    release?: string;
   } = {},
 ): Promise<void> {
   for (const contentType of CSP_REPORT_CONTENT_TYPES) {
@@ -30,8 +36,19 @@ export async function registerCspReportRoutes(
   app.post("/v1/security/csp-report", {
     config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
   }, async (request, reply) => {
-    const report = sanitizeCspReport(request.body);
-    if (report) app.log.warn(report, "security.csp_violation_reported");
+    const browserFamily = classifyBrowserFamily(request.headers["user-agent"]);
+    for (const report of sanitizeCspReports(request.body)) {
+      options.clientTelemetry?.observeCspViolation(
+        report.effective_directive ?? "unknown",
+        report.disposition ?? "unknown",
+        browserFamily,
+      );
+      app.log.warn({
+        ...report,
+        browser_family: browserFamily,
+        release: safeIdentifier(options.release),
+      }, "security.csp_violation_reported");
+    }
     return reply.status(204).send();
   });
   app.post("/v1/security/client-report", {
@@ -100,6 +117,21 @@ export function sanitizeCspReport(value: unknown): Record<string, string> | null
     blocked_origin: safeOrigin(raw["blocked-uri"] ?? raw.blockedURL),
     disposition: safeText(raw.disposition),
   };
+}
+
+export function sanitizeCspReports(value: unknown): Record<string, string>[] {
+  const values = Array.isArray(value) ? value.slice(0, 20) : [value];
+  return values
+    .map((candidate) => sanitizeCspReport(candidate))
+    .filter((report): report is Record<string, string> => report !== null);
+}
+
+export function classifyBrowserFamily(userAgent: string | undefined): string {
+  if (!userAgent) return "unknown";
+  if (/Firefox\//u.test(userAgent)) return "firefox";
+  if (/(?:Chrome|Chromium|CriOS|Edg)\//u.test(userAgent)) return "chromium";
+  if (/AppleWebKit\//u.test(userAgent)) return "webkit";
+  return "unknown";
 }
 
 function extractReport(value: unknown): Record<string, unknown> | null {

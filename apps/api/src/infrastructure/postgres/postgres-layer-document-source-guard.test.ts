@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { PostgresLayerDocumentRepository } from "./postgres-processing-repository.js";
+import { PostgresLayerDocumentRepository } from "./postgres-layer-document-repository.js";
 
 function layerDocument() {
   return {

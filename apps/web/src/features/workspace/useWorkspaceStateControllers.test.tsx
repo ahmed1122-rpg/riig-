@@ -12,7 +12,8 @@ import {
 const layer: Layer = {
   id: "layer-1",
   name: "طبقة",
-  kind: "body",
+  kind: "raster",
+  presentationKind: "body",
   visible: true,
   locked: false,
   opacity: 100,
@@ -65,7 +66,8 @@ describe("workspace state controllers", () => {
     const background: Layer = {
       ...layer,
       id: "background",
-      kind: "page",
+      kind: "raster",
+      presentationKind: "page",
       parentId: pageGroup.id,
       pageNumber: 1,
     };

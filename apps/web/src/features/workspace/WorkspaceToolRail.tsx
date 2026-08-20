@@ -69,7 +69,12 @@ export function WorkspaceToolRail({
                   }}
                 >
                   <Icon name={tool.icon} size={17} />
-                  {!collapsed && <span>{tool.label}</span>}
+                  {!collapsed && (
+                    <span>
+                      {tool.label}
+                      {tool.statusBadge && <em className="pro-tool-status">{tool.statusBadge}</em>}
+                    </span>
+                  )}
                   {!collapsed && tool.shortcut && <kbd>{tool.shortcut.label}</kbd>}
                 </button>
                 {!tool.available && tool.unavailableReason && (

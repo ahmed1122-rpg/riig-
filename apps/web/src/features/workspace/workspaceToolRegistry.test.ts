@@ -31,6 +31,10 @@ describe("workspace tool registry", () => {
       "source.versions",
     ]);
     expect(tools.every((tool) => tool.available)).toBe(true);
+    expect(tools.find((tool) => tool.id === "image.turntable")).toMatchObject({
+      label: "استوديو تدوير الشخصية",
+      icon: "turntable",
+    });
   });
 
   it("never exposes Character Turntable for PDF projects", () => {
@@ -110,6 +114,43 @@ describe("workspace tool registry", () => {
     ).toEqual({ kind: "character-rig" });
   });
 
+  it("maps every registered tool to an explicit controller dispatch", () => {
+    const registered = [
+      ...getReadyWorkspaceTools("image", true, enabledFeatures),
+      ...getReadyWorkspaceTools("book", true, enabledFeatures),
+    ];
+    const unique = new Map(registered.map((tool) => [tool.id, tool]));
+
+    expect(unique.size).toBe(20);
+    expect(
+      [...unique.values()].map((tool) => ({
+        id: tool.id,
+        dispatch: resolveWorkspaceToolDispatch(tool).kind,
+      })),
+    ).toEqual([
+      { id: "image.keep", dispatch: "editor" },
+      { id: "image.exclude", dispatch: "editor" },
+      { id: "image.separate", dispatch: "editor" },
+      { id: "image.erase", dispatch: "editor" },
+      { id: "image.undo", dispatch: "editor" },
+      { id: "image.redo", dispatch: "editor" },
+      { id: "image.edge-refine", dispatch: "image-edge-refine" },
+      { id: "image.merge", dispatch: "image-merge" },
+      { id: "image.turntable", dispatch: "character-rig" },
+      { id: "source.versions", dispatch: "source-versions" },
+      { id: "pdf.heading", dispatch: "editor" },
+      { id: "pdf.line", dispatch: "editor" },
+      { id: "pdf.topic", dispatch: "editor" },
+      { id: "pdf.exclude", dispatch: "editor" },
+      { id: "pdf.reading-order", dispatch: "reading-order" },
+      { id: "pdf.undo", dispatch: "editor" },
+      { id: "pdf.redo", dispatch: "editor" },
+      { id: "pdf.region-ocr", dispatch: "pdf-region-ocr" },
+      { id: "pdf.split", dispatch: "pdf-split" },
+      { id: "pdf.merge", dispatch: "pdf-merge" },
+    ]);
+  });
+
   it("matches exactly the displayed shortcuts without H/R conflicts", () => {
     const tools = getReadyWorkspaceTools("book", true, enabledFeatures);
     const event = {
@@ -137,6 +178,15 @@ describe("workspace tool registry", () => {
         }),
       ).map((tool) => tool.id),
     ).toEqual(["pdf.redo"]);
+    expect(
+      tools.filter((tool) =>
+        isWorkspaceShortcut(tool, { ...event, key: "o" }),
+      ).map((tool) => tool.id),
+    ).toEqual(["pdf.region-ocr"]);
+    expect(tools.find((tool) => tool.id === "pdf.region-ocr")).toMatchObject({
+      icon: "ocrZone",
+      shortcut: { key: "o", label: "O" },
+    });
   });
 
   it("disables regional OCR when the runtime capability is unavailable", () => {
@@ -151,6 +201,7 @@ describe("workspace tool registry", () => {
 
     expect(regionalOcr).toMatchObject({
       available: false,
+      statusBadge: "غير مفعّل",
       unavailableReason: "الدليل الإنتاجي غير صالح بعد.",
     });
     expect(resolveWorkspaceToolDispatch(regionalOcr!)).toEqual({

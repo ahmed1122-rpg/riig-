@@ -79,7 +79,7 @@
 
 ### R-03 — انحراف توثيق الإصدار عن الواقع — P0
 
-`docs/IMPLEMENTATION_REPORT_2026-08-02.md:9` يقول إنه لا توجد بوابة جودة فاشلة، و`:138` يقول إن `npm run quality` نجح. التقرير نفسه يقول إن `Workspace.tsx` وصل إلى سقف 500 وإن الدين صفر. الحالة الحالية تقول العكس:
+`docs/archive/IMPLEMENTATION_REPORT_2026-08-02.md:9` يقول إنه لا توجد بوابة جودة فاشلة، و`:138` يقول إن `npm run quality` نجح. التقرير نفسه يقول إن `Workspace.tsx` وصل إلى سقف 500 وإن الدين صفر. الحالة الحالية تقول العكس:
 
 - `Workspace.tsx` يحتوي 536 سطرًا فعليًا و522 سطر مصدر محسوبًا.
 - `quality` لا يمكنه النجاح لأن lint/deadcode/typecheck/build/maintainability تفشل.

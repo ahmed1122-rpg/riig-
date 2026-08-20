@@ -10,10 +10,46 @@ export type StudioStage =
 export const studioStages: Array<{ id: StudioStage; label: string }> = [
   { id: "bible", label: "هوية الشخصية" },
   { id: "references", label: "المراجع" },
-  { id: "turntable", label: "Turntable" },
+  { id: "turntable", label: "منصة التدوير" },
   { id: "compare", label: "المقارنة والإصلاح" },
-  { id: "rig", label: "Rig وPSD" },
+  { id: "rig", label: "الهيكل وPSD" },
 ];
+
+export const characterPartLabels: Record<string, string> = {
+  head: "الرأس",
+  "left-eye": "العين اليسرى",
+  "right-eye": "العين اليمنى",
+  "left-brow": "الحاجب الأيسر",
+  "right-brow": "الحاجب الأيمن",
+  nose: "الأنف",
+  mouth: "الفم",
+  torso: "الجذع",
+  "left-arm": "الذراع اليسرى",
+  "right-arm": "الذراع اليمنى",
+  "left-hand": "اليد اليسرى",
+  "right-hand": "اليد اليمنى",
+  "left-leg": "الساق اليسرى",
+  "right-leg": "الساق اليمنى",
+};
+
+export function studioStatusLabel(status?: string): string {
+  if (!status) return "غير متاح";
+  return ({
+    draft: "مسودة",
+    training: "قيد التدريب",
+    ready: "جاهز",
+    queued: "في قائمة الانتظار",
+    processing: "قيد المعالجة",
+    verifying: "قيد التحقق",
+    "needs-review": "يحتاج مراجعة",
+    approved: "معتمد",
+    rejected: "مرفوض",
+    failed: "فشل",
+    cancelled: "ملغى",
+    exported: "مُصدّر",
+    retired: "متقاعد",
+  } as Record<string, string>)[status] ?? status;
+}
 
 export const characterViewLabels: Record<CharacterCanonicalView, string> = {
   frontal: "أمامي",

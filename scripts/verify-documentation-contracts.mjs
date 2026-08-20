@@ -16,6 +16,15 @@ const authBillingAdminPath = new URL(
   import.meta.url,
 );
 const securityPolicyPath = new URL("../SECURITY.md", import.meta.url);
+const traceabilityPath = new URL(
+  "../docs/VERIFICATION_TRACEABILITY.md",
+  import.meta.url,
+);
+const designTokensPath = new URL("../docs/DESIGN_TOKENS.md", import.meta.url);
+const brandedBrowserRunbookPath = new URL(
+  "../docs/runbooks/branded-browser-validation.md",
+  import.meta.url,
+);
 const securityRoutePaths = [
   "../apps/api/src/auth/auth-routes.ts",
   "../apps/api/src/privacy/account-privacy-routes.ts",
@@ -28,6 +37,9 @@ const [
   uploadRoutes,
   authBillingAdmin,
   securityPolicy,
+  traceability,
+  designTokens,
+  brandedBrowserRunbook,
   securityRouteSources,
 ] = await Promise.all([
   readFile(buildMapPath, "utf8"),
@@ -35,6 +47,9 @@ const [
   readFile(uploadRoutesPath, "utf8"),
   readFile(authBillingAdminPath, "utf8"),
   readFile(securityPolicyPath, "utf8"),
+  readFile(traceabilityPath, "utf8"),
+  readFile(designTokensPath, "utf8"),
+  readFile(brandedBrowserRunbookPath, "utf8"),
   Promise.all(securityRoutePaths.map((path) => readFile(path, "utf8"))),
 ]);
 const violations = [];
@@ -77,6 +92,26 @@ if (buildMap.includes("/v1/projects/:projectId/uploads")) {
   violations.push(
     "docs/BUILD_MAP.md still contains the retired project-scoped upload route.",
   );
+}
+
+for (const staleClaim of [
+  "المسافات موحدة بتدرج صغير `4/8/12/16px`",
+  "الأداة غير المكتملة تظهر «مخطط لها»",
+  "التعارض يعيد HTTP 409 ويطلب إعادة التحميل.",
+]) {
+  if (buildMap.includes(staleClaim)) {
+    violations.push(`docs/BUILD_MAP.md contains an overstated claim: ${staleClaim}`);
+  }
+}
+for (const [label, pattern] of [
+  ["spacing is not literally uniform", /القيم الحالية ليست موحدة حرفيًا/u],
+  ["the registry has no planned state", /سجل الأدوات الحالي لا يملك حالة «مخطط لها»/u],
+  ["project creation is conditional", /للمشروع الجديد فقط/u],
+  ["revision reload requires confirmation", /يطلب\s+تأكيد تحميل النسخة الأحدث/u],
+]) {
+  if (!pattern.test(buildMap)) {
+    violations.push(`docs/BUILD_MAP.md is missing the evidence boundary: ${label}`);
+  }
 }
 
 if (!buildMap.includes("Redis طبقة تشغيلية")) {
@@ -124,6 +159,56 @@ for (const requiredSecurityControl of [
 ]) {
   if (!securityPolicy.includes(requiredSecurityControl)) {
     violations.push(`SECURITY.md must retain the ${requiredSecurityControl} control.`);
+  }
+}
+
+for (const traceId of [
+  "workspace-layout",
+  "workspace-tool-availability",
+  "revision-conflict",
+  "upload-flow",
+  "upload-integrity",
+  "image-layer-cap",
+  "regional-ocr",
+  "export-capabilities",
+  "adobe-golden",
+  "browser-qualification",
+  "branded-safari-ios",
+  "character-studio",
+  "production-authorization",
+]) {
+  if (!traceability.includes(`\`${traceId}\``)) {
+    violations.push(`Verification traceability is missing ${traceId}.`);
+  }
+}
+for (const status of [
+  "source-verified",
+  "release-qualified",
+  "disabled-by-gate",
+  "external-pending",
+]) {
+  if (!traceability.includes(`\`${status}\``)) {
+    violations.push(`Verification traceability is missing status ${status}.`);
+  }
+}
+for (const token of [
+  "--vp-space-1",
+  "--vp-space-2",
+  "--vp-space-3",
+  "--vp-space-4",
+]) {
+  if (!designTokens.includes(`\`${token}\``)) {
+    violations.push(`Design token documentation is missing ${token}.`);
+  }
+}
+for (const evidenceField of [
+  "Release SHA:",
+  "Browser brand/version:",
+  "Device/model and native pixel density:",
+  "Decision: pass | fail",
+]) {
+  if (!brandedBrowserRunbook.includes(evidenceField)) {
+    violations.push(`Branded-browser runbook is missing ${evidenceField}`);
   }
 }
 

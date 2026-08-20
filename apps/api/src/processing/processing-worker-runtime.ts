@@ -9,6 +9,7 @@ import { LeaseGuardedObjectStorage } from "../storage/leased-object-storage.js";
 import { PostgresObjectWriteLeaseCoordinator } from "../infrastructure/postgres/postgres-object-write-lease.js";
 import { loadProcessingWorkerConfig } from "./processing-worker-config.js";
 import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
+import { claimNextProcessingJob } from "../infrastructure/postgres/postgres-processing-job-claim.js";
 import { PostgresDerivedAssetRegistry } from "../infrastructure/postgres/postgres-derived-asset-registry.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
 import { releaseProcessingJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
@@ -19,13 +20,12 @@ import {
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
 import { withJobTrace } from "../observability/tracing.js";
-import { claimNextProcessingJob } from "./processing-job-claim.js";
 import {
   processClaimedJob,
   type ProcessingJobExecutionContext,
 } from "./processing-job-executor.js";
 
-export { claimNextProcessingJob } from "./processing-job-claim.js";
+export { claimNextProcessingJob } from "../infrastructure/postgres/postgres-processing-job-claim.js";
 
 export interface ProcessingWorkerOptions {
   projectKind: ProjectKind;

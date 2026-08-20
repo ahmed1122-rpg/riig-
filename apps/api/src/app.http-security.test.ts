@@ -49,4 +49,38 @@ describe("HTTP security contracts", () => {
 
     await app.close();
   });
+
+  it("exposes sanitized CSP violation counters to private metrics", async () => {
+    const app = await buildApp(loadConfig({ NODE_ENV: "test" }));
+    const report = await app.inject({
+      method: "POST",
+      url: "/v1/security/csp-report",
+      headers: {
+        "content-type": "application/reports+json",
+        "user-agent": "Mozilla/5.0 Chrome/140.0 Safari/537.36",
+      },
+      payload: JSON.stringify([
+        {
+          body: {
+            effectiveDirective: "style-src-attr",
+            blockedURL: "https://private.example/path?token=secret",
+            disposition: "enforce",
+          },
+        },
+      ]),
+    });
+    const metrics = await app.inject({
+      method: "GET",
+      url: "/internal/metrics",
+    });
+
+    expect(report.statusCode).toBe(204);
+    expect(metrics.statusCode).toBe(200);
+    expect(metrics.body).toContain(
+      'motionprep_csp_violations_total{directive="style-src-attr",disposition="enforce",browser="chromium",release="development"} 1',
+    );
+    expect(metrics.body).not.toContain("private.example");
+
+    await app.close();
+  });
 });

@@ -2,7 +2,7 @@ import type { ExportJob, LayerDocument } from "@motionprep/contracts";
 import { Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ProjectReviewDomainError } from "../../projects/project-review.js";
-import { PostgresLayerDocumentRepository } from "./postgres-processing-repository.js";
+import { PostgresLayerDocumentRepository } from "./postgres-layer-document-repository.js";
 import { PostgresExportRepository } from "./postgres-export-repository.js";
 import { PostgresProjectRepository } from "./postgres-project-repository.js";
 import { PostgresProjectReviewCommand } from "./postgres-project-review.js";

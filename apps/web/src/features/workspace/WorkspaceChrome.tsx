@@ -2,7 +2,7 @@ import { type MouseEvent, type RefObject } from "react";
 import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 import { Icon } from "../../shared/Icon";
 import type { PdfSegmentation, ProjectMode } from "../../types";
-import { pdfSegmentationLabels } from "./pdfSegmentation";
+import { pdfSegmentationLabels } from "../../shared/pdfSegmentation";
 import type { WorkspaceMobilePanel } from "./workspaceMobilePanel";
 import type { WorkspaceCommandStatus } from "./workspaceCommandStatus";
 

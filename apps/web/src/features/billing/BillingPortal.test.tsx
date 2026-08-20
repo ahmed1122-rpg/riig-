@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { BILLING_PLAN_CATALOG } from "@motionprep/contracts";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   completeSandboxCheckout,
@@ -140,5 +140,36 @@ describe("BillingPortal checkout return", () => {
     expect(completeSandboxCheckout).not.toHaveBeenCalled();
     expect(createHostedCheckout).not.toHaveBeenCalled();
     expect(createBillingPortal).not.toHaveBeenCalled();
+  });
+
+  it("uses the selected EGP catalog price for hosted checkout", async () => {
+    vi.mocked(createHostedCheckout).mockResolvedValue({ checkoutUrl: "/pay" });
+    render(
+      <BillingPortal
+        authenticated
+        onRequireAuth={vi.fn()}
+        onNotify={vi.fn()}
+      />,
+    );
+
+    const currencySelect = await screen.findByRole("combobox", {
+      name: "عملة العرض والدفع",
+    });
+    fireEvent.change(currencySelect, { target: { value: "EGP" } });
+    expect((currencySelect as HTMLSelectElement).value).toBe("EGP");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "اختيار الخطة" })[0]!);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /المتابعة للدفع المستضاف/u }),
+    );
+
+    await waitFor(() =>
+      expect(createHostedCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({
+          planId: "creator",
+          currency: "EGP",
+        }),
+      ),
+    );
   });
 });

@@ -8,7 +8,8 @@ import { LayerRow, type LayerRowProps } from "./LayerDockPanels";
 const rasterLayer: Layer = {
   id: "raster-1",
   name: "+جزء_01",
-  kind: "body",
+  kind: "raster",
+  presentationKind: "body",
   visible: true,
   locked: false,
   opacity: 1,

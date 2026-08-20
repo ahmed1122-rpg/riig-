@@ -25,13 +25,18 @@ export function verifyNginxDeployment(nginx, securityHeaders) {
     violations.push("The public web proxy must emit HSTS on every response path.");
   }
   for (const token of [
-    "Content-Security-Policy-Report-Only",
-    "style-src 'self'",
+    "Content-Security-Policy",
+    "style-src 'self';",
     "report-uri /v1/security/csp-report",
+    "report-to csp-endpoint",
+    "Reporting-Endpoints",
   ]) {
     if (!securityHeaders.includes(token)) {
       violations.push(`The CSP migration contract is missing token: ${token}`);
     }
+  }
+  if (securityHeaders.includes("unsafe-inline")) {
+    violations.push("The enforced CSP must not allow unsafe inline styles or scripts.");
   }
   const headerIncludes =
     nginx.match(/include \/etc\/nginx\/snippets\/security-headers\.conf;/gu) ?? [];

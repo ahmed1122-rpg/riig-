@@ -1,6 +1,22 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const previewApiOrigin = resolvePlaywrightPreviewApiOrigin(
+  process.env.PLAYWRIGHT_PREVIEW_API_ORIGIN,
+);
+export const strictContentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "connect-src 'self'",
+].join("; ");
+
 export default defineConfig({
   envDir: "../../",
   plugins: [react()],
@@ -13,6 +29,18 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
+    headers: {
+      "Content-Security-Policy": strictContentSecurityPolicy,
+    },
+    ...(previewApiOrigin
+      ? {
+          proxy: {
+            "/v1": {
+              target: previewApiOrigin,
+            },
+          },
+        }
+      : {}),
   },
   build: {
     manifest: true,
@@ -27,6 +55,12 @@ export default defineConfig({
             normalizedId.includes("/node_modules/scheduler/")
           ) {
             return "react-vendor";
+          }
+          if (
+            normalizedId.endsWith("/features/projects/ProjectsView.tsx") ||
+            normalizedId.endsWith("/features/exports/ExportsView.tsx")
+          ) {
+            return "project-pages";
           }
           if (
             normalizedId.includes("/src/features/workspace/CharacterStudio") ||
@@ -46,8 +80,9 @@ export default defineConfig({
             "/src/shared/useConfirmation.tsx",
             "/src/shared/workflowFailurePresentation.ts",
             "/src/features/auth/PasswordRequirements.tsx",
-            "/src/features/exports/exportPresentation.ts",
-            "/src/features/workspace/pdfSegmentation.ts",
+            "/src/shared/exportPresentation.ts",
+            "/src/shared/pdfSegmentation.ts",
+            "/src/shared/useStoredPreference.ts",
           ];
           return sharedPrimitives.some((modulePath) =>
             normalizedId.includes(modulePath),
@@ -59,3 +94,17 @@ export default defineConfig({
     },
   },
 });
+
+export function resolvePlaywrightPreviewApiOrigin(
+  configuredOrigin: string | undefined,
+): string | undefined {
+  const value = configuredOrigin?.trim();
+  if (!value) return undefined;
+  const origin = new URL(value);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1") {
+    throw new Error(
+      "PLAYWRIGHT_PREVIEW_API_ORIGIN must be an HTTP loopback origin.",
+    );
+  }
+  return origin.origin;
+}

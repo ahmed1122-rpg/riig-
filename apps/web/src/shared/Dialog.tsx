@@ -70,7 +70,7 @@ export function Dialog({
       if (stackIndex >= 0) openDialogStack.splice(stackIndex, 1);
       restoreEnvironment();
       if (previouslyFocused?.isConnected) {
-        window.requestAnimationFrame(() => previouslyFocused.focus());
+        previouslyFocused.focus();
       }
     };
   }, []);

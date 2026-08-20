@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { InMemoryIdempotencyStore } from "../idempotency/idempotency-store.js";
 import { createDatabase } from "../infrastructure/postgres/database.js";
 import { PostgresExportRepository } from "../infrastructure/postgres/postgres-export-repository.js";
-import { PostgresLayerDocumentRepository } from "../infrastructure/postgres/postgres-processing-repository.js";
+import { PostgresLayerDocumentRepository } from "../infrastructure/postgres/postgres-layer-document-repository.js";
 import { PostgresUploadRepository } from "../infrastructure/postgres/postgres-upload-repository.js";
 import {
   S3ObjectStorage,

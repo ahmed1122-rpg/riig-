@@ -5,19 +5,14 @@ export function toDomainLayer(layer: Layer): LayerNode {
   return {
     id: layer.id,
     parentId: layer.parentId ?? null,
-    kind:
-      layer.kind === "text"
-        ? "text"
-        : layer.kind === "group"
-          ? "group"
-          : "raster",
+    kind: layer.kind,
     name: layer.name as `+${string}`,
     visible: layer.visible,
     locked: layer.locked,
     opacity: layer.opacity / 100,
-    fixed: layer.fixed ?? layer.kind === "page",
+    fixed: layer.fixed ?? false,
     zIndex: layer.zIndex ?? 0,
-    ...(layer.fullContent ? { fullText: layer.fullContent } : {}),
+    ...(layer.fullText ? { fullText: layer.fullText } : {}),
     ...(layer.pageNumber === undefined ? {} : { pageNumber: layer.pageNumber }),
     ...(layer.bounds ? { bounds: layer.bounds } : {}),
     ...(layer.direction ? { direction: layer.direction } : {}),

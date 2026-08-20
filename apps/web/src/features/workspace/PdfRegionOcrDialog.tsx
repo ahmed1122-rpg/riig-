@@ -62,7 +62,7 @@ export function PdfRegionOcrDialog({
     >
       <div className="pdf-region-ocr-summary">
         <p>
-          <strong>الطبقة:</strong> {layer.fullContent ?? layer.name}
+          <strong>الطبقة:</strong> {layer.fullText ?? layer.name}
         </p>
         <p>
           <strong>الصفحة:</strong> {layer.pageNumber ?? 1} — {Math.round(pageSize.width)} × {Math.round(pageSize.height)}

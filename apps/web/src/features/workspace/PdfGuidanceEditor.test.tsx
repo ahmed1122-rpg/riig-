@@ -17,7 +17,7 @@ const textLayer = (changes: Partial<Layer> = {}): Layer => ({
   color: "#111111",
   pageNumber: 1,
   bounds: { x: 5, y: 5, width: 60, height: 20 },
-  fullContent: "النص الأصلي",
+  fullText: "النص الأصلي",
   ...changes,
 });
 

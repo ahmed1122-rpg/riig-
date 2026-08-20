@@ -43,6 +43,7 @@ export function canMergeRasterLayers(
   if (!selected) return { allowed: false, reason: "MISSING" };
   if (selected.some((layer) => layer.kind !== "raster")) return { allowed: false, reason: "KIND" };
   if (selected.some((layer) => layer.fixed || layer.locked)) return { allowed: false, reason: "PROTECTED" };
+  if (!same(selected, (layer) => layer.pageNumber ?? null)) return { allowed: false, reason: "PAGE" };
   if (!same(selected, (layer) => layer.parentId)) return { allowed: false, reason: "PARENT" };
   return { allowed: true };
 }

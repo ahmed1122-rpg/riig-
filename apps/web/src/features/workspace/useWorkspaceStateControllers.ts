@@ -10,8 +10,8 @@ import type { PreviewBackground } from "./PreviewToolbar";
 import type { UploadState } from "./SourceUploadStatus";
 import type { WorkspaceSaveState } from "./WorkspaceChrome";
 import type { WorkspaceMobilePanel } from "./workspaceMobilePanel";
-import { storedPdfSegmentation } from "./pdfSegmentation";
-import { useWorkspacePreference } from "./useWorkspacePreference";
+import { storedPdfSegmentation } from "../../shared/pdfSegmentation";
+import { useStoredPreference } from "../../shared/useStoredPreference";
 import {
   firstEditableWorkspaceLayer,
   firstEditableWorkspaceLayerId,
@@ -212,15 +212,15 @@ export function useWorkspaceEditorState(mode: ProjectMode) {
   const [solo, setSolo] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [layerLoading, setLayerLoading] = useState(false);
-  const [toolCollapsed, setToolCollapsed] = useWorkspacePreference(
+  const [toolCollapsed, setToolCollapsed] = useStoredPreference(
     "motionprep.workspace.tools-collapsed",
     false,
   );
-  const [layersCollapsed, setLayersCollapsed] = useWorkspacePreference(
+  const [layersCollapsed, setLayersCollapsed] = useStoredPreference(
     "motionprep.workspace.layers-collapsed",
     false,
   );
-  const [layerWidth, setLayerWidth] = useWorkspacePreference(
+  const [layerWidth, setLayerWidth] = useStoredPreference(
     "motionprep.workspace.layers-width",
     326,
     (value): value is number =>

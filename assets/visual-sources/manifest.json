@@ -154,7 +154,7 @@
     },
     {
       "output": "../../apps/web/public/visuals/presenter-auth.webp",
-      "sourcePath": "D:\\فارغ\\سيدة.png",
+      "externalSourceRef": "user-authorized:presenter-auth",
       "sourceSha256": "7DB3975E8188459F51C1B1567570D271F94789F2640D483B2E08F5EE6BF93367",
       "outputSha256": "710243AFFB2C2846BDE0B722A84E32D30B6C23359B807BEFD359818E952D66EE",
       "width": 960,
@@ -167,7 +167,7 @@
     },
     {
       "output": "../../apps/web/public/visuals/presenter-poses.webp",
-      "sourcePath": "D:\\فارغ\\أوضاع.png",
+      "externalSourceRef": "user-authorized:presenter-poses",
       "sourceSha256": "7A1E4D738759F579410A28D6C5C6DE190EE39EAC1382B13935EC8A99DEBC8783",
       "outputSha256": "9B3F4B4CDC10489C35E455D9F21CB2B69BEBF8FB9D5583FC64547C2085C00B94",
       "width": 1024,

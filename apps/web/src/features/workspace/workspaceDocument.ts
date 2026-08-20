@@ -63,14 +63,13 @@ export function toWorkspaceLayers(
     id: layer.id,
     parentId: layer.parentId,
     name: layer.name,
-    kind:
-      layer.kind === "group"
-        ? "group"
-        : layer.kind === "text"
-        ? "text"
-        : mode === "book" && layer.fixed
-          ? "page"
-          : "body",
+    kind: layer.kind,
+    ...(layer.kind === "raster"
+      ? {
+          presentationKind:
+            mode === "book" && layer.fixed ? "page" as const : "body" as const,
+        }
+      : {}),
     visible: layer.visible,
     locked: layer.locked,
     fixed: layer.fixed,
@@ -86,7 +85,7 @@ export function toWorkspaceLayers(
     ...(layer.kind === "raster"
       ? { hasRasterAsset: Boolean(layer.rasterAsset) }
       : {}),
-    ...(layer.fullText ? { fullContent: layer.fullText } : {}),
+    ...(layer.fullText ? { fullText: layer.fullText } : {}),
     ...layerLayoutMetadata(layer),
   }));
 }

@@ -1,11 +1,11 @@
 APP|Adobe After Effects|26.3x87
 OS|Windows/64 10.0
 FILE|image-layers.psd|true|640|360|2
-PREVIEW|image-layers.psd|C:\Users\M\Documents\ChatGPT\rigooo\artifacts\adobe-golden\generated\after-effects-0.png
+PREVIEW|image-layers.psd|artifacts/adobe-golden/generated/after-effects-0.png
 LAYER|0|1|+البطاقة|300|200|72|true|5412
 LAYER|0|2|+الخلفية|640|360|100|true|5412
 FILE|book-pages.psd|true|640|720|2
-PREVIEW|book-pages.psd|C:\Users\M\Documents\ChatGPT\rigooo\artifacts\adobe-golden\generated\after-effects-1.png
+PREVIEW|book-pages.psd|artifacts/adobe-golden/generated/after-effects-1.png
 LAYER|1|1|+page_001|640|720|100|true|n/a
 LAYER|1|2|+page_002|640|720|100|true|n/a
 CLEANUP|0|0

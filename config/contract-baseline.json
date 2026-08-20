@@ -262,8 +262,8 @@
     "test:representative-pdf", "test:topology", "test:topology:full", "typecheck",
     "verify:adobe-golden", "verify:alerts", "verify:architecture", "verify:bundle",
     "verify:character-rig:benchmark", "verify:clean", "verify:contracts", "verify:css",
-    "verify:deployment", "verify:fixtures", "verify:incident", "verify:maintainability",
-    "verify:object-storage", "verify:ocr-corpus", "verify:recovery", "verify:release-checkout", "verify:release-env",
+    "verify:deployment", "verify:fixtures", "verify:icons", "verify:incident", "verify:maintainability",
+    "verify:object-storage", "verify:ocr-corpus", "verify:paths", "verify:recovery", "verify:release-checkout", "verify:release-env",
     "verify:release-env:test", "verify:release-evidence:test", "verify:security-license", "verify:staging-application",
     "verify:visuals"
   ],

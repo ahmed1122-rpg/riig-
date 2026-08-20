@@ -38,6 +38,43 @@ describe("password hash upgrades", () => {
     expect(passwordHashNeedsUpgrade(upgraded?.passwordHash ?? "")).toBe(false);
   });
 
+  it("upgrades a valid v2 hash to the current work factor after sign-in", async () => {
+    const repository = new InMemoryAuthRepository();
+    const salt = Buffer.alloc(16, 8);
+    const key = scryptSync(TEST_PASSWORD, salt, 64, {
+      N: 16_384,
+      r: 8,
+      p: 1,
+      maxmem: 64 * 1024 * 1024,
+    });
+    const v2Hash = `scrypt$v2$16384$8$1$${salt.toString("hex")}$${key.toString("hex")}`;
+    const userId = crypto.randomUUID();
+    await repository.saveUser({
+      id: userId,
+      name: "Version two user",
+      email: "v2@example.test",
+      role: "creator",
+      status: "active",
+      passwordHash: v2Hash,
+      mfaEnabled: false,
+      mfaSecretCiphertext: null,
+      recoveryCodeHashes: [],
+      createdAt: "2026-08-16T00:00:00.000Z",
+      lastLoginAt: null,
+    });
+
+    const result = await new AuthService(repository).login({
+      email: "v2@example.test",
+      password: TEST_PASSWORD,
+      attemptKey: "v2-test",
+    });
+
+    expect(result.kind).toBe("session");
+    const upgraded = await repository.findUserById(userId);
+    expect(upgraded?.passwordHash).toMatch(/^scrypt\$v3\$32768\$8\$3\$/u);
+    expect(passwordHashNeedsUpgrade(upgraded?.passwordHash ?? "")).toBe(false);
+  });
+
   it("does not rewrite a suspended account even when its password is legacy", async () => {
     const repository = new InMemoryAuthRepository();
     const salt = Buffer.alloc(16, 3);

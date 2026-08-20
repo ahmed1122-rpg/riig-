@@ -105,10 +105,7 @@
   .path-copy > p,
   .path-output-preview > b,
   .path-output-preview > i,
-  .recent-copy > small,
-  .processing-head > small,
-  .processing-card > p,
-  .processing-foot > span
+  .recent-copy > small
 ) {
   font-size: 11px;
 }
@@ -128,10 +125,7 @@
   .section-heading > p,
   .path-copy > small,
   .path-copy > p,
-  .recent-copy > small,
-  .processing-head > small,
-  .processing-card > p,
-  .processing-foot > span
+  .recent-copy > small
 ) {
   color: #53627a;
 }
@@ -326,8 +320,6 @@
   .bounded-note,
   .admin-updated,
   .workspace-progress,
-  .pro-window-note,
-  .processing-foot,
   .auth-trace small
 ) {
   font-size: 12px !important;

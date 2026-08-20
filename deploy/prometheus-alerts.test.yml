@@ -136,3 +136,18 @@ tests:
             exp_annotations:
               summary: MotionPrep authentication rejection rate is elevated
               runbook: docs/runbooks/production-dependency-recovery.md
+
+  - name: CSP violations page operators after a sustained report
+    interval: 1m
+    input_series:
+      - series: 'motionprep_csp_violations_total{directive="style-src-attr",disposition="enforce"}'
+        values: '0+1x10'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: MotionPrepCspViolationDetected
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: A browser reported a Content Security Policy violation
+              runbook: docs/runbooks/client-experience.md

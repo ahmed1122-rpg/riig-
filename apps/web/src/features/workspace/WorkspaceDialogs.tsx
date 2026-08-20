@@ -1,5 +1,9 @@
 import { lazy, Suspense, type MouseEvent } from "react";
-import type { ExportFormat, LayerDocumentCommand } from "@motionprep/contracts";
+import type {
+  ApplicationCapabilities,
+  ExportFormat,
+  LayerDocumentCommand,
+} from "@motionprep/contracts";
 import type { Layer, ProjectMode } from "../../types";
 import { ExportReview } from "./ExportReview";
 import { ImageRasterOperationDialog } from "./ImageRasterOperationDialog";
@@ -41,7 +45,7 @@ const CharacterStudioDialog = lazy(async () => {
 
 interface WorkspaceDialogsModel {
   mode: ProjectMode;
-  maxUploadBytes: number;
+  maxUploadBytes: ApplicationCapabilities["limits"]["maxUploadBytes"];
   persistedSource: boolean;
   projectId: string | undefined;
   sourceVersionId: string | undefined;
@@ -114,7 +118,7 @@ interface WorkspaceDialogsModel {
 interface WorkspaceDialogsProps {
   context: {
     mode: ProjectMode;
-    maxUploadBytes: number;
+    maxUploadBytes: ApplicationCapabilities["limits"]["maxUploadBytes"];
     onNotify: (message: string) => void;
   };
   source: WorkspaceSourceState;

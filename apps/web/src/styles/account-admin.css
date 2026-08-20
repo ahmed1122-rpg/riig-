@@ -274,6 +274,9 @@
 .payment-card-demo small { color: #afc9c3; font-size: 7px; direction: ltr; text-align: right; }
 .billing-method > p { display: flex; align-items: center; gap: 5px; margin-top: 11px; color: var(--text-muted); font-size: 7px; }
 .plans-section { margin-bottom: 34px; }
+.billing-plan-controls { display: flex; align-items: end; gap: 16px; }
+.billing-plan-controls label { display: grid; gap: 5px; color: var(--text-muted); font-size: 8px; font-weight: 800; }
+.billing-plan-controls select { min-height: 34px; padding: 5px 24px 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--text); }
 .plan-rows { border-top: 1px solid var(--line); }
 .plan-row {
   position: relative;

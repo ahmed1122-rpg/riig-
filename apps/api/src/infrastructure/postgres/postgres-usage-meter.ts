@@ -7,6 +7,7 @@ import {
   type UsageMeterMode,
 } from "../../billing/usage-meter.js";
 import { roundUsage } from "../../billing/usage-rounding.js";
+import { withTransaction } from "./database.js";
 
 interface SubscriptionRow {
   id: string;
@@ -26,7 +27,7 @@ export class PostgresUsageMeter implements UsageMeter {
 
   async reserveJob(userId: string, jobId: string): Promise<void> {
     if (this.mode === "off") return;
-    await this.transaction(async (client) => {
+    await withTransaction(this.pool, async (client) => {
       const fallback = starterSubscription(userId, this.now());
       await client.query(
         `INSERT INTO subscriptions (
@@ -92,7 +93,7 @@ export class PostgresUsageMeter implements UsageMeter {
 
   async releaseJob(jobId: string): Promise<void> {
     if (this.mode === "off") return;
-    await this.transaction(async (client) => {
+    await withTransaction(this.pool, async (client) => {
       const reservation = await client.query<{
         user_id: string;
         subscription_id: string;
@@ -139,7 +140,7 @@ export class PostgresUsageMeter implements UsageMeter {
     seconds: number,
   ): Promise<void> {
     if (this.mode === "off") return;
-    await this.transaction(async (client) => {
+    await withTransaction(this.pool, async (client) => {
       const reservation = await client.query<{
         user_id: string;
         subscription_id: string;
@@ -227,20 +228,4 @@ export class PostgresUsageMeter implements UsageMeter {
     );
   }
 
-  private async transaction<T>(
-    operation: (client: PoolClient) => Promise<T>,
-  ): Promise<T> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const result = await operation(client);
-      await client.query("COMMIT");
-      return result;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
 }

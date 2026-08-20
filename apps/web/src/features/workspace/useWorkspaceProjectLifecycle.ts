@@ -3,8 +3,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type Dispatch,
-  type SetStateAction,
 } from "react";
 import type { ApplicationCapabilities } from "@motionprep/contracts";
 import type { ConfirmationRequest } from "../../shared/useConfirmation";
@@ -16,13 +14,15 @@ import {
   type ProjectSummary,
 } from "../../lib/api";
 import { useResourcePolling } from "../../shared/hooks/useResourcePolling";
-import type { WorkspaceProps } from "./Workspace.types";
+import type {
+  WorkspaceProps,
+  WorkspaceSetState as SetState,
+} from "./Workspace.types";
 import type { UploadState } from "./SourceUploadStatus";
 import { useWorkspaceUpload } from "./useWorkspaceUpload";
 import { loadWorkspaceProjectDocument } from "./workspaceDocument";
 import type { DocumentCommandCoordinator } from "./useDocumentCommandCoordinator";
 
-type SetState<Value> = Dispatch<SetStateAction<Value>>;
 const pendingProjectStatuses = new Set([
   "validating",
   "uploading",

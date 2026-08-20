@@ -6,13 +6,13 @@ import type { IconName } from "./Icon";
 
 const ICON_NAMES = [
   "home", "folder", "help", "settings", "search", "menu", "close",
-  "chevron", "plus", "image", "book", "layers", "review", "spark",
+  "chevron", "plus", "image", "layers", "review", "spark",
   "eye", "eyeOff", "lock", "unlock", "upload", "zoomIn", "zoomOut",
   "pointer", "undo", "check", "warning", "info", "sun", "moon",
-  "arrow", "filter", "grid", "list", "download", "refresh", "merge",
+  "arrow", "filter", "grid", "list", "download", "refresh", "turntable", "fitCanvas", "merge",
   "split", "scan", "panelClose", "panelOpen", "arrowUp", "arrowDown",
   "grip", "packageCheck", "brush", "eraser", "target", "highlighter",
-  "boxSelect", "scanText", "badgeCheck", "activity", "creditCard",
+  "boxSelect", "scanText", "ocrZone", "badgeCheck", "activity", "creditCard",
   "database", "external", "fileSearch", "gauge", "history", "key",
   "login", "logout", "mail", "server", "shield", "shieldCheck",
   "smartphone", "users", "wallet",
@@ -60,12 +60,12 @@ describe("Icon", () => {
       renderToStaticMarkup(<Icon name={name} />),
     );
 
-    expect(ICON_NAMES).toHaveLength(67);
+    expect(ICON_NAMES).toHaveLength(69);
     expect(ALL_ICONS_COVERED).toBe(true);
     expect(new Set(catalog)).toHaveLength(ICON_NAMES.length);
     expect(catalog.every((markup) => !markup.includes("undefined"))).toBe(true);
     expect(createHash("sha256").update(catalog.join("\n")).digest("hex")).toBe(
-      "b2b753412158f0a1143f439ec35cc41e67bdf8ff7b386d2dadf377b2ff7f61b2",
+      "9cfe353d840c54e77c4bbec546cffd13e93fba878d2bdf31a9723761875f996b",
     );
   });
 });

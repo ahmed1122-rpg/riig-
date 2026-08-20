@@ -1,5 +1,65 @@
 # Production readiness
 
+Remaining-work update on 2026-08-16: the complete local quality gate now passes
+with zero maintainability warnings, zero grandfathered oversized files, zero
+exact clone blocks, cycle-free imports, 500 API tests, 275 web tests, all
+workspace coverage thresholds, production builds, and a 184.6 KiB gzip
+JavaScript bundle under the unchanged 185 KiB ratchet. A production-shaped
+local Docker topology also passed with two API replicas, PostgreSQL, Redis,
+MinIO, Mailpit, processing/export workers, signed Stripe webhook idempotency,
+restart and artifact download checks. Fault recovery passed for all four
+dependencies, and a two-client PDF workflow smoke completed with 0% errors,
+1.458 s workflow P95, and a drained final queue. This is strong local evidence,
+but it is not bound to a published image digest or managed environment.
+
+Production approval remains withheld because no live production environment
+files or managed-provider coordinates are available in this workspace. The
+same final Git SHA still requires protected CI, signed immutable images,
+managed staging/PostgreSQL/S3, release-bound recovery/rollback and load evidence,
+live billing/provider checks when enabled, current sealed OCR/Character-Rig
+qualification, and owner/legal approval.
+
+Working-candidate update on 2026-08-16: the repository-cleanup pass repairs
+tracked evidence links and removes developer-machine paths, adds automated
+path, CSS-usage, icon-usage, and worker-build contracts, and prevents test
+files from entering the media/document worker builds. Shared web preferences,
+PDF segmentation, and export presentation now sit outside feature boundaries;
+processing execution depends on the `UsageMeter` port, while PostgreSQL job
+claiming lives in the infrastructure adapter. Coverage ratchets now match the
+measured source baseline instead of allowing a large silent regression. The
+desktop Chromium production-preview suite passed 8/8, including authenticated
+Security and real administrator navigation. A separate live Chromium audit of
+the public entry, Security, and the administrator overview reported zero
+WCAG A/AA violations and no browser errors.
+
+This remains a local candidate rather than production approval. Regional OCR,
+Character Rig, and real payment collection remain fail-closed until their
+documented provider, quality, rights, webhook, managed-staging, recovery, and
+release-identity gates pass for the same immutable Git SHA and image digests.
+
+Working-candidate update on 2026-08-15: the report-guided implementation
+restores all 14 tracked public visual assets and verifies browser image decode,
+implements canvas fit and Space-drag pan, exposes USD/EGP catalog prices through
+the hosted-checkout contract, localizes Character Studio, gives turntable/OCR/
+fit distinct icons and OCR a keyboard shortcut, adds a truthful disabled-state
+badge, previews raster merges, selects PDF split points by clicking a word, and
+accepts a single source file through a full-workspace drop target. Workspace
+page navigation and processing layer-operation route registration were split
+from their previous high-risk files; the maintainability ratchet remains at
+zero exact clone blocks. The intentional feature increment measures 184.0 KiB
+gzip JavaScript under a 185 KiB ratchet, while landing startup remains eight
+requests, a 207.0 KiB hero, and zero blocking font requests.
+
+This is still a local source candidate, not production approval. Keep regional
+OCR and Character Rig fail-closed unless their current capability evidence is
+valid. The exact commit created from this work still requires immutable-image
+publication and deployment to managed staging, managed PostgreSQL and S3
+integration evidence, signed recovery and rollback drills, representative
+concurrent PDF load with queue/memory/latency thresholds, live Stripe webhook
+evidence if billing is enabled, and owner/legal approval of the Arabic policy
+documents. Every external result must bind the same full Git SHA and image
+digests; prior release evidence cannot be reused for this candidate.
+
 Latest working-candidate verification on 2026-08-14 supersedes the local
 counts below. The ordered remediation separates document-command feedback from
 source upload state, adds storage-key-safe Raster diagnostics with layer

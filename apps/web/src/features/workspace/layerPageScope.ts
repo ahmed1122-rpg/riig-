@@ -1,5 +1,6 @@
 import { isPdfPageRootGroup } from "@motionprep/layer-domain";
 import type { Layer, ProjectMode } from "../../types";
+import { isPageLayer } from "./workspaceLayerKinds";
 
 export interface PdfPageReference {
   pageNumber: number;
@@ -184,8 +185,8 @@ function comparePdfTreeNodes(
   left: PdfLayerTreeNode,
   right: PdfLayerTreeNode,
 ): number {
-  const leftBackground = left.layer.kind === "page" ? 0 : 1;
-  const rightBackground = right.layer.kind === "page" ? 0 : 1;
+  const leftBackground = isPageLayer(left.layer) ? 0 : 1;
+  const rightBackground = isPageLayer(right.layer) ? 0 : 1;
   return (
     leftBackground - rightBackground ||
     (left.layer.readingOrder ?? Number.MAX_SAFE_INTEGER) -

@@ -7,7 +7,8 @@ const layers: Layer[] = [
   {
     id: "back",
     name: "+جزء_01",
-    kind: "body",
+    kind: "raster",
+    presentationKind: "body",
     visible: true,
     locked: false,
     opacity: 100,
@@ -19,7 +20,8 @@ const layers: Layer[] = [
   {
     id: "front",
     name: "+جزء_02",
-    kind: "body",
+    kind: "raster",
+    presentationKind: "body",
     visible: true,
     locked: false,
     opacity: 60,

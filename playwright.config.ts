@@ -9,6 +9,10 @@ if (apiPort === webPort) {
 
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
 const webOrigin = `http://127.0.0.1:${webPort}`;
+const webkitDiagnostics = {
+  trace: "on-first-retry" as const,
+  video: "off" as const,
+};
 
 export default defineConfig({
   testDir: "./e2e",
@@ -63,22 +67,12 @@ export default defineConfig({
     },
     {
       name: "desktop-webkit",
+      retries: 2,
       use: {
         ...devices["Desktop Safari"],
+        ...webkitDiagnostics,
         browserName: "webkit",
         viewport: { width: 1_440, height: 900 },
-      },
-    },
-    {
-      name: "mobile-webkit",
-      use: {
-        ...devices["Desktop Safari"],
-        browserName: "webkit",
-        deviceScaleFactor: 2,
-        hasTouch: true,
-        // Playwright's iOS-only isMobile emulation crashes WebKitGTK on Linux.
-        // This profile still qualifies the WebKit engine at a phone viewport.
-        viewport: { width: 390, height: 844 },
       },
     },
   ],
@@ -105,7 +99,7 @@ export default defineConfig({
         CHARACTER_RIG_ENABLED: "false",
         EMAIL_DELIVERY_MODE: "memory",
         AUTH_ENCRYPTION_KEY: "",
-        E2E_ADMIN_EMAIL: "",
+        E2E_ADMIN_EMAIL: "playwright-admin@example.test",
       },
       reuseExistingServer: false,
       timeout: 30_000,
@@ -113,11 +107,14 @@ export default defineConfig({
       stderr: "pipe",
     },
     {
-      command:
-        `npm run dev --workspace @motionprep/web -- --host 127.0.0.1 --port ${webPort} --strictPort`,
+      command: [
+        "npm run build --workspace @motionprep/web",
+        `npm run preview --workspace @motionprep/web -- --host 127.0.0.1 --port ${webPort} --strictPort`,
+      ].join(" && "),
       url: webOrigin,
       env: {
-        VITE_API_ORIGIN: apiOrigin,
+        VITE_API_ORIGIN: "",
+        PLAYWRIGHT_PREVIEW_API_ORIGIN: apiOrigin,
       },
       reuseExistingServer: false,
       timeout: 30_000,

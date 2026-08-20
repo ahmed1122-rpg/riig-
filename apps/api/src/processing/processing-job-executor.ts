@@ -9,11 +9,11 @@ import {
 } from "@motionprep/document-processing";
 import { prepareImageSource } from "@motionprep/media-processing";
 import type { Pool, PoolClient } from "pg";
+import type { UsageMeter } from "../billing/usage-meter.js";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { isObjectStorageIntegrityFailure } from "../storage/object-storage.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
 import type { DerivedAssetRegistry } from "../storage/derived-asset-registry.js";
-import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
 import { startLeaseHeartbeat } from "../jobs/lease-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
 import { updateProjectStatusForJob } from "../projects/project-job-status.js";
@@ -38,7 +38,7 @@ export interface ProcessingJobExecutionContext {
   rasterAssetWriteConcurrency: number;
   derivedAssets?: DerivedAssetRegistry;
   pdfOcrEngine: LocalArabicPdfOcrEngine | null;
-  usageMeter: PostgresUsageMeter;
+  usageMeter: UsageMeter;
   log: (
     level: "info" | "warning" | "error",
     message: string,

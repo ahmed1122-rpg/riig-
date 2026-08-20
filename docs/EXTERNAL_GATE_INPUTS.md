@@ -69,3 +69,6 @@ provider URL, and mutable image values are rejected by the existing verifiers.
 
 Until all applicable evidence exists, the truthful status is: locally ready for
 review and hosted CI, externally pending, production No-Go.
+
+Use [`VERIFICATION_TRACEABILITY.md`](VERIFICATION_TRACEABILITY.md) to map each
+release claim to its source checks, external evidence, owner, and current gate.

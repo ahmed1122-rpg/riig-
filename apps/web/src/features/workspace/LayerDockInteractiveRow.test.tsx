@@ -11,7 +11,8 @@ import {
 const targetLayer: Layer = {
   id: "target",
   name: "+target",
-  kind: "body",
+  kind: "raster",
+  presentationKind: "body",
   visible: true,
   locked: false,
   opacity: 100,

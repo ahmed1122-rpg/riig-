@@ -13,24 +13,12 @@ import {
 } from "../idempotency/idempotency-store.js";
 import { requestFingerprint } from "../idempotency/request-fingerprint.js";
 import type { BillingRepository } from "./billing-repository.js";
+import { planFor, usageForPlan } from "./billing-plan-usage.js";
+import { BillingDomainError } from "./billing-errors.js";
 import type { PaymentProvider } from "./payment-provider.js";
 import { starterSubscription } from "./usage-meter.js";
 
-export class BillingDomainError extends Error {
-  constructor(
-    readonly code:
-      | "PAYMENT_PROVIDER_UNAVAILABLE"
-      | "CHECKOUT_NOT_FOUND"
-      | "CHECKOUT_NOT_COMPLETABLE"
-      | "IDEMPOTENCY_CONFLICT"
-      | "WEBHOOK_SIGNATURE_INVALID"
-      | "WEBHOOK_EVENT_INVALID"
-      | "SUBSCRIPTION_NOT_MANAGEABLE",
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export { BillingDomainError } from "./billing-errors.js";
 
 export class BillingService {
   readonly #providers: Map<PaymentProviderId, PaymentProvider>;
@@ -473,23 +461,4 @@ export class BillingService {
     await this.repository.saveSubscription(subscription);
     return true;
   }
-}
-
-function usageForPlan(
-  current: SubscriptionView["usage"],
-  planId: SubscriptionView["planId"],
-): SubscriptionView["usage"] {
-  const plan = planFor(planId);
-  return {
-    jobs: current.jobs,
-    jobLimit: plan.jobLimit,
-    processingMinutes: current.processingMinutes,
-    processingMinuteLimit: plan.processingMinuteLimit,
-  };
-}
-
-function planFor(planId: SubscriptionView["planId"]) {
-  const plan = BILLING_PLAN_CATALOG.find((candidate) => candidate.id === planId);
-  if (!plan) throw new Error(`Unknown billing plan: ${planId}`);
-  return plan;
 }

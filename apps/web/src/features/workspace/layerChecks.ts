@@ -4,6 +4,8 @@ import { MAX_IMAGE_LAYERS } from "@motionprep/contracts";
 import type { ProductionIssue } from "@motionprep/contracts";
 import { validateLayerGraph } from "@motionprep/layer-domain";
 import { toDomainLayer } from "./workspaceLayerDomain";
+import { isPageLayer } from "./workspaceLayerKinds";
+import { contentLayers } from "./layerPageScope";
 
 interface LayerCheckItem {
   id: "names" | "graph" | "assets" | "structure" | "confidence";
@@ -35,7 +37,7 @@ export function getLayerCheckSummary(
   mode: ProjectMode,
   layers: readonly Layer[],
 ): LayerCheckSummary {
-  const contentLayers = layers.filter((layer) => layer.kind !== "group");
+  const documentContentLayers = contentLayers(layers);
   const graphIssues = validateLayerGraph({
     schemaVersion: "1.0",
     projectId: "workspace-diagnostics",
@@ -49,21 +51,21 @@ export function getLayerCheckSummary(
   const structuralIssues = graphIssues.filter(({ code }) =>
     !["INVALID_LAYER_PREFIX", "INVALID_LAYER_NAME", "DUPLICATE_LAYER_NAME"].includes(code));
   const missingRasterAssets = mode === "image"
-    ? contentLayers.filter(
+    ? documentContentLayers.filter(
         (layer) =>
           layer.kind !== "text" &&
-          layer.kind !== "page" &&
+          !isPageLayer(layer) &&
           layer.hasRasterAsset === false,
       )
     : [];
-  const lowConfidence = contentLayers.filter(hasLowConfidence).length;
+  const lowConfidence = documentContentLayers.filter(hasLowConfidence).length;
   const backgroundValid =
     mode === "image" ||
     layers
-      .filter((layer) => layer.kind === "page")
+      .filter(isPageLayer)
       .every((layer) => layer.locked && layer.name.startsWith("+page_"));
   const layerLimitValid =
-    mode === "book" || contentLayers.length <= MAX_IMAGE_LAYERS;
+    mode === "book" || documentContentLayers.length <= MAX_IMAGE_LAYERS;
   const issueCount =
     namingIssues.length +
     structuralIssues.length +
@@ -112,7 +114,7 @@ export function getLayerCheckSummary(
       label: mode === "image" ? "حد الطبقات" : "خلفيات الصفحات",
       message:
         mode === "image"
-          ? `${contentLayers.length} من ${MAX_IMAGE_LAYERS} طبقة`
+          ? `${documentContentLayers.length} من ${MAX_IMAGE_LAYERS} طبقة`
           : backgroundValid
             ? "ثابتة ومقفلة"
             : "توجد خلفية غير مطابقة",

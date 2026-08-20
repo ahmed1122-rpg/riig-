@@ -65,6 +65,32 @@ for (const file of sourceFiles) {
       }
     }
 
+    for (const dependency of dependencies) {
+      const webFeature = /^apps\/web\/src\/features\/([^/]+)\//u.exec(normalized)?.[1];
+      const dependencyFeature = /^apps\/web\/src\/features\/([^/]+)\//u.exec(
+        dependency,
+      )?.[1];
+      if (
+        webFeature &&
+        dependencyFeature &&
+        webFeature !== dependencyFeature &&
+        !/\.(?:test|spec)\.(?:ts|tsx)$/u.test(normalized)
+      ) {
+        violations.push(
+          `${normalized}: feature ${webFeature} must use shared/domain modules instead of importing feature ${dependencyFeature}`,
+        );
+      }
+      if (
+        normalized.startsWith("apps/api/src/processing/") &&
+        dependency.startsWith("apps/api/src/infrastructure/") &&
+        !normalized.endsWith("processing-worker-runtime.ts")
+      ) {
+        violations.push(
+          `${normalized}: processing application code must depend on ports, not infrastructure adapters`,
+        );
+      }
+    }
+
     if (
       normalized === "apps/api/src/exports/export-service.ts" &&
       imports.includes("sharp")

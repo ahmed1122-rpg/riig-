@@ -18,6 +18,12 @@ import {
   decodeRgba,
   forEachNeighbor,
 } from "./raster-pixels.js";
+import {
+  containsTransparency,
+  toBounds,
+  unionBounds,
+  type ComponentStats,
+} from "./image-component-geometry.js";
 
 export * from "./media-processing-types.js";
 export { applyRasterGuidance } from "./raster-guidance.js";
@@ -170,15 +176,6 @@ export async function prepareImageSource(
     }),
     rasterAssets,
   };
-}
-
-interface ComponentStats {
-  label: number;
-  area: number;
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
 }
 
 interface ComponentSegmentation {
@@ -458,34 +455,5 @@ function createAssetReference(
     contentType: "image/png",
     sizeBytes: body.byteLength,
     sha256: createHash("sha256").update(body).digest("hex"),
-  };
-}
-
-function containsTransparency(pixels: Buffer): boolean {
-  for (let offset = 3; offset < pixels.length; offset += 4) {
-    if (pixels[offset] !== 255) return true;
-  }
-  return false;
-}
-
-function toBounds(component: ComponentStats): LayerBounds {
-  return {
-    x: component.minX,
-    y: component.minY,
-    width: component.maxX - component.minX + 1,
-    height: component.maxY - component.minY + 1,
-  };
-}
-
-function unionBounds(components: readonly ComponentStats[]): LayerBounds {
-  const minX = Math.min(...components.map((component) => component.minX));
-  const minY = Math.min(...components.map((component) => component.minY));
-  const maxX = Math.max(...components.map((component) => component.maxX));
-  const maxY = Math.max(...components.map((component) => component.maxY));
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX + 1,
-    height: maxY - minY + 1,
   };
 }

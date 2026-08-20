@@ -5,16 +5,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api/transport";
 import type { Layer } from "../../types";
+import { ExportReview } from "./ExportReview";
 import {
   ExportCharacterPreview,
   ExportPdfPreview,
-  ExportReview,
-} from "./ExportReview";
+} from "./ExportReviewPreviews";
 
 const sourceLayer: Layer = {
   id: "source",
   name: "+source",
-  kind: "body",
+  kind: "raster",
+  presentationKind: "body",
   visible: true,
   locked: false,
   opacity: 75,
@@ -239,7 +240,8 @@ describe("ExportReview production editing policy", () => {
       ...sourceLayer,
       id: "page-1",
       name: "+page_001_background",
-      kind: "page",
+      kind: "raster",
+      presentationKind: "page",
       locked: true,
       pageNumber: 1,
     };
@@ -322,7 +324,7 @@ describe("ExportPdfPreview", () => {
       name: "+العنوان_الفعلي",
       kind: "text",
       pageNumber: 2,
-      fullContent: "النص المستخرج فعليًا",
+      fullText: "النص المستخرج فعليًا",
       bounds: { x: 61.2, y: 79.2, width: 306, height: 79.2 },
       direction: "rtl",
       textAlign: "center",

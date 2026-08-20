@@ -1,17 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  releasePlaywrightImage,
   requiredBrowserProjects,
   validateBrowserMatrix,
+  validateBrowserWorkflow,
 } from "./verify-browser-matrix.mjs";
 
 function validConfig() {
   return {
+    webServer: [
+      { command: "npm run serve:e2e --workspace @motionprep/api" },
+      {
+        command:
+          "npm run build --workspace @motionprep/web && npm run preview --workspace @motionprep/web",
+        env: {
+          VITE_API_ORIGIN: "",
+          PLAYWRIGHT_PREVIEW_API_ORIGIN: "http://127.0.0.1:45100",
+        },
+      },
+    ],
     projects: Object.entries(requiredBrowserProjects).map(([name, browserName]) => ({
       name,
+      ...(name.endsWith("-webkit") ? { retries: 2 } : {}),
       use: {
         browserName,
         ...(name.startsWith("mobile-") ? { hasTouch: true } : {}),
+        ...(name.endsWith("-webkit")
+          ? { trace: "on-first-retry", video: "off" }
+          : {}),
         viewport: {
           width: name.startsWith("mobile-") ? 412 : 1_440,
           height: name.startsWith("mobile-") ? 915 : 900,
@@ -28,8 +45,7 @@ const packageManifest = {
       "playwright test --project=desktop-chromium --project=mobile-chromium",
     "test:e2e:firefox":
       "playwright test --project=desktop-firefox --project=mobile-firefox",
-    "test:e2e:webkit":
-      "playwright test --project=desktop-webkit --project=mobile-webkit",
+    "test:e2e:webkit": "node scripts/run-webkit-e2e.mjs",
     "test:e2e:install": "playwright install --with-deps chromium firefox webkit",
   },
 };
@@ -82,21 +98,69 @@ test("rejects a combined or incomplete engine execution contract", () => {
       },
     }),
     [
-      "test:e2e:webkit must run mobile-webkit.",
+      "test:e2e:webkit must isolate desktop-webkit tests through the WebKit runner.",
       "test:e2e must isolate each browser engine through the matrix runner.",
     ],
   );
 });
 
-test("rejects unstable iOS emulation in the Linux WebKit profile", () => {
+test("rejects release qualification against the development module graph", () => {
+  const config = validConfig();
+  config.webServer[1].command =
+    "npm run dev --workspace @motionprep/web -- --host 127.0.0.1";
+
+  assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
+    "The release browser gate must build and serve the production web bundle.",
+    "The release browser gate must not qualify the Vite development server.",
+  ]);
+});
+
+test("accepts the pinned release browser container contract", () => {
+  const workflow = [
+    "browser-e2e:",
+    "  container:",
+    `    image: ${releasePlaywrightImage}`,
+    "    options: --user 1001 --init --ipc=host",
+    "  strategy:",
+    "    matrix:",
+    "      engine: [chromium, firefox, webkit]",
+    "  steps:",
+    "    - run: npm run test:e2e:${{ matrix.engine }}",
+    "      name: playwright-evidence-${{ matrix.engine }}",
+  ].join("\n");
+
+  assert.deepEqual(validateBrowserWorkflow(workflow), []);
+});
+
+test("rejects a mutable or self-installed release browser runtime", () => {
+  const workflow = [
+    "browser-e2e:",
+    "  container:",
+    "    image: mcr.microsoft.com/playwright:v1.62.1-noble",
+    "    options: --user 1001",
+    "  steps:",
+    "    - run: npm run test:e2e:install",
+  ].join("\n");
+
+  assert.deepEqual(validateBrowserWorkflow(workflow), [
+    "browser-e2e must use the repository-approved Playwright image and digest.",
+    "browser-e2e must run the Playwright container with the approved non-root, init, and IPC options.",
+    "browser-e2e must use the browsers preinstalled in the pinned Playwright image.",
+    "browser-e2e must isolate Chromium, Firefox, and WebKit in separate matrix jobs.",
+    "browser-e2e matrix jobs must invoke only their selected engine.",
+    "browser-e2e failure evidence must be unique to each engine job.",
+  ]);
+});
+
+test("rejects high-overhead WebKit diagnostics", () => {
   const config = validConfig();
   config.projects = config.projects.map((project) =>
-    project.name === "mobile-webkit"
-      ? { ...project, use: { ...project.use, isMobile: true } }
+    project.name === "desktop-webkit"
+      ? { ...project, use: { ...project.use, video: "retain-on-failure" } }
       : project,
   );
 
   assert.deepEqual(validateBrowserMatrix(config, packageManifest), [
-    "mobile-webkit must avoid the unstable iOS-only isMobile emulation on Linux.",
+    "desktop-webkit must use low-overhead crash diagnostics on Linux.",
   ]);
 });

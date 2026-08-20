@@ -1,7 +1,11 @@
 import { EventEmitter } from "node:events";
 import type { PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { createDatabase, rollbackTransaction } from "./database.js";
+import {
+  createDatabase,
+  rollbackTransaction,
+  withTransaction,
+} from "./database.js";
 
 describe("database pool lifecycle", () => {
   it("handles idle-client errors without an unhandled error event", async () => {
@@ -73,5 +77,42 @@ describe("transaction rollback", () => {
       rollbackError,
     ]);
     expect((failure as AggregateError).cause).toBe(rollbackError);
+  });
+});
+
+describe("withTransaction", () => {
+  it("commits a successful operation and releases the client", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const release = vi.fn();
+    const client = { query, release } as unknown as PoolClient;
+    const pool = { connect: vi.fn().mockResolvedValue(client) };
+
+    await expect(
+      withTransaction(pool as never, async () => "committed"),
+    ).resolves.toBe("committed");
+    expect(query.mock.calls.map(([statement]) => statement)).toEqual([
+      "BEGIN",
+      "COMMIT",
+    ]);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("rolls back a failed operation without masking it", async () => {
+    const transactionError = new Error("write failed");
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const release = vi.fn();
+    const client = { query, release } as unknown as PoolClient;
+    const pool = { connect: vi.fn().mockResolvedValue(client) };
+
+    await expect(
+      withTransaction(pool as never, async () => {
+        throw transactionError;
+      }),
+    ).rejects.toBe(transactionError);
+    expect(query.mock.calls.map(([statement]) => statement)).toEqual([
+      "BEGIN",
+      "ROLLBACK",
+    ]);
+    expect(release).toHaveBeenCalledOnce();
   });
 });

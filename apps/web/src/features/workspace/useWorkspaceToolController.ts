@@ -150,8 +150,8 @@ export function useWorkspaceToolController(
           !options.activeLayer ||
           options.activeLayer.kind !== "text" ||
           options.activeLayer.locked ||
-          !options.activeLayer.fullContent ||
-          Array.from(options.activeLayer.fullContent).length < 2
+          !options.activeLayer.fullText ||
+          Array.from(options.activeLayer.fullText).length < 2
         ) {
           options.onNotify(
             "اختر وحدة نصية غير مقفلة تحتوي حرفين على الأقل قبل التقسيم.",
@@ -185,7 +185,7 @@ export function useWorkspaceToolController(
       if (dispatch.kind === "image-edge-refine") {
         if (
           !options.activeLayer ||
-          options.activeLayer.kind !== "body" ||
+          options.activeLayer.kind !== "raster" ||
           options.activeLayer.locked
         ) {
           options.onNotify(
@@ -226,7 +226,7 @@ export function useWorkspaceToolController(
       }
       if (dispatch.kind === "character-rig") {
         if (options.mode !== "image") {
-          options.onNotify("Character Turntable يعالج الصور فقط ولا يقبل ملفات PDF.");
+          options.onNotify("تدوير الشخصية متاح للصور فقط.");
           return;
         }
         setCharacterStudioOpen(true);

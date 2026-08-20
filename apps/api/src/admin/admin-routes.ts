@@ -1,9 +1,8 @@
 import type { UserRole, UserStatus } from "@motionprep/contracts";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { z } from "zod";
+import type { FastifyInstance } from "fastify";
 import type { AuditService } from "../audit/audit-service.js";
 import { requireRole } from "../auth/authorize.js";
-import { AuthDomainError, type AuthService } from "../auth/auth-service.js";
+import type { AuthService } from "../auth/auth-service.js";
 import type { ExportRepository } from "../exports/export-repository.js";
 import type { BillingRepository } from "../billing/billing-repository.js";
 import {
@@ -16,37 +15,13 @@ import type { UploadRepository } from "../uploads/upload-repository.js";
 import type { AdminAccessCommand } from "./admin-access-command.js";
 import type { OperationalStatusProvider } from "../observability/operational-status.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
-
-const updateUserSchema = z
-  .object({
-    role: z.enum(["creator", "support", "finance", "admin"]).optional(),
-    status: z.enum(["active", "suspended", "pending_verification"]).optional(),
-    reason: z.string().trim().min(10).max(500),
-  })
-  .refine((value) => value.role !== undefined || value.status !== undefined);
-
-const userParamsSchema = z.object({ userId: z.string().uuid() });
-const processingParamsSchema = z.object({ jobId: z.string().uuid() });
-const retryProcessingSchema = z.object({
-  reason: z.string().trim().min(10).max(500),
-});
-
-function adminError(
-  error: unknown,
-  request: FastifyRequest,
-  reply: FastifyReply,
-) {
-  if (!(error instanceof AuthDomainError)) throw error;
-  const status = error.code === "USER_NOT_FOUND" ? 404 : 403;
-  return reply.status(status).send({
-    data: null,
-    error: {
-      code: error.code,
-      message: error.message,
-      requestId: request.id,
-    },
-  });
-}
+import {
+  processingParamsSchema,
+  retryProcessingSchema,
+  updateUserSchema,
+  userParamsSchema,
+} from "./admin-route-schemas.js";
+import { sendAdminAuthError } from "./admin-route-error.js";
 
 export async function registerAdminRoutes(
   app: FastifyInstance,
@@ -96,7 +71,7 @@ export async function registerAdminRoutes(
         error: null,
       };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -110,7 +85,7 @@ export async function registerAdminRoutes(
         error: null,
       };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -122,7 +97,7 @@ export async function registerAdminRoutes(
         error: null,
       };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -220,7 +195,7 @@ export async function registerAdminRoutes(
       });
       return { data: toAdminProcessingJobDto(retried), error: null };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -334,7 +309,7 @@ export async function registerAdminRoutes(
       });
       return { data: toAdminExportJobDto(retried), error: null };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -359,7 +334,7 @@ export async function registerAdminRoutes(
         error: null,
       };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -378,7 +353,7 @@ export async function registerAdminRoutes(
         error: null,
       };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -387,7 +362,7 @@ export async function registerAdminRoutes(
       await requireRole(request, dependencies.auth, ["support", "admin"]);
       return { data: await dependencies.auth.listUsers(), error: null };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -427,7 +402,7 @@ export async function registerAdminRoutes(
           );
       return { data: updated, error: null };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 
@@ -440,7 +415,7 @@ export async function registerAdminRoutes(
       ]);
       return { data: await dependencies.audit.list(200), error: null };
     } catch (error) {
-      return adminError(error, request, reply);
+      return sendAdminAuthError(error, request, reply);
     }
   });
 }

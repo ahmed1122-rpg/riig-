@@ -11,7 +11,7 @@ import {
 } from "../../lib/api";
 import type { Layer, PdfSegmentation, ProjectMode } from "../../types";
 import type { UploadState } from "./SourceUploadStatus";
-import { pdfApiModes } from "./pdfSegmentation";
+import { pdfApiModes } from "../../shared/pdfSegmentation";
 import {
   isAcceptedFile,
   loadRasterLayerPreviews,

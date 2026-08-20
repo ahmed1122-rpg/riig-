@@ -10,6 +10,8 @@ import { verifyProductionEnvironmentTemplate } from "./verify-production-environ
 import { verifyQaImageContract } from "./verify-qa-image-contract.mjs";
 import { verifyRuntimeImageContract } from "./verify-runtime-image-contract.mjs";
 import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
+import { verifyWorkerDeploymentContracts } from "./verify-worker-deployment-contracts.mjs";
+import { requireWorkflowTokens } from "./workflow-token-contract.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const violations = [];
@@ -88,7 +90,7 @@ const [
       "apps/web/src/lib/api/transport.ts",
       "apps/api/src/processing/processing-worker-runtime.ts",
       "apps/api/src/processing/processing-job-executor.ts",
-      "apps/api/src/processing/processing-job-claim.ts",
+      "apps/api/src/infrastructure/postgres/postgres-processing-job-claim.ts",
       "apps/api/src/processing/processing-worker-config.ts",
       "apps/worker-media/src/index.ts",
       "apps/worker-document/src/index.ts",
@@ -226,7 +228,7 @@ if (
   );
 }
 const providerWorkflow = workflowSources[3];
-requireWorkflowTokens(providerWorkflow, "Provider-readiness identity", [
+requireWorkflowTokens(violations, providerWorkflow, "Provider-readiness identity", [
   "Reject ambiguous or missing provider credentials",
   "AWS_ROLE_ARN",
   "AWS_REGION",
@@ -241,7 +243,7 @@ requireWorkflowTokens(providerWorkflow, "Provider-readiness identity", [
   ".tmp/provider-object-storage-evidence.json",
 ]);
 const stagingWorkflow = workflowSources[4];
-requireWorkflowTokens(stagingWorkflow, "Staging-readiness", [
+requireWorkflowTokens(violations, stagingWorkflow, "Staging-readiness", [
   "environment: production-readiness",
   "DATABASE_URL: ${{ secrets.DATABASE_URL }}",
   "REDIS_URL: ${{ secrets.REDIS_URL }}",
@@ -255,7 +257,7 @@ requireWorkflowTokens(stagingWorkflow, "Staging-readiness", [
   ".tmp/staging-object-storage-evidence.json",
 ]);
 const performanceWorkflow = workflowSources[5];
-requireWorkflowTokens(performanceWorkflow, "Performance-readiness", [
+requireWorkflowTokens(violations, performanceWorkflow, "Performance-readiness", [
   'LOAD_MIN_CONCURRENCY: "4"', 'LOAD_MIN_TOTAL_JOURNEYS: "12"',
   "LOAD_MAX_API_RSS_GROWTH_BYTES", "LOAD_MAX_WORKER_RSS_GROWTH_BYTES",
   "LOAD_MAX_QUEUE_AGE_SECONDS", 'LOAD_MAX_FINAL_QUEUE_DEPTH: "0"',
@@ -267,7 +269,7 @@ requireWorkflowTokens(performanceWorkflow, "Performance-readiness", [
   ".tmp/performance-release-evidence.json",
 ]);
 const stagingApplicationWorkflow = workflowSources[6];
-requireWorkflowTokens(stagingApplicationWorkflow, "Staging-application", [
+requireWorkflowTokens(violations, stagingApplicationWorkflow, "Staging-application", [
   "npm run verify:staging-application",
   'LOAD_REQUIRE_RELEASE_IDENTITY: "true"',
   "LOAD_RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}",
@@ -276,7 +278,7 @@ requireWorkflowTokens(stagingApplicationWorkflow, "Staging-application", [
   "LOAD_WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}",
 ]);
 const rollbackWorkflow = workflowSources[7];
-requireWorkflowTokens(rollbackWorkflow, "Release rollback", [
+requireWorkflowTokens(violations, rollbackWorkflow, "Release rollback", [
   "environment: production-readiness",
   "ROLLBACK_RUNTIME_IMAGE_REF",
   "ROLLBACK_WEB_IMAGE_REF",
@@ -420,100 +422,27 @@ if (!s3Storage.includes('ChecksumAlgorithm: "SHA256"')) {
 if (!s3Storage.includes("HeadObjectCommand")) {
   violations.push("S3 writes must verify the configured encryption mode.");
 }
-const processingRuntimeSources =
-  `${processingRuntime}\n${processingJobExecutor}\n${processingJobClaim}`;
-if (!processingRuntimeSources.includes("hasExpectedObjectIntegrity")) {
-  violations.push("Processing workers must verify stored source integrity.");
-}
-if (!exportWorkerEntry.includes("loadExportWorkerConfig")) {
-  violations.push("Export worker must use its validated storage configuration.");
-}
-if (
-  !characterWorkerEntry.includes("@motionprep/api/character-worker") ||
-  !characterWorkerEntry.includes("loadCharacterWorkerConfig")
-) {
-  violations.push("Character worker must use its validated shared runtime.");
-}
-for (const [name, runtime] of [
-  ["processing", `${processingWorkerConfig}\n${objectStorageEnvironment}`],
-  ["export", `${exportWorkerConfig}\n${objectStorageEnvironment}`],
-  ["character", `${characterWorkerConfig}\n${objectStorageEnvironment}`],
-]) {
-  if (!runtime.includes("OBJECT_STORAGE_SESSION_TOKEN")) {
-    violations.push(`${name} worker must support temporary S3 credentials.`);
-  }
-}
-for (const token of ["sources/", "derived/", "artifacts/", "24 hours"]) {
-  if (!objectStorageContract.includes(token)) {
-    violations.push(`Object-storage contract is missing retention token: ${token}`);
-  }
-}
-for (const token of [
-  "hasExpectedObjectIntegrity",
-  "storage.ready(false)",
-  "await storage.delete(key)",
-  "requireVersioning",
-]) {
-  if (!objectStorageSmoke.includes(token)) {
-    violations.push(`Provider storage probe is missing verification token: ${token}`);
-  }
-}
-if (!packageManifest.includes('"verify:object-storage"')) {
-  violations.push("Package scripts must expose the provider object-storage probe.");
-}
-if (!packageManifest.includes('"verify:incident"')) {
-  violations.push("Package scripts must expose the incident evidence verifier.");
-}
-if (!apiPackageManifest.includes('"verify:staging-dependencies"')) {
-  violations.push("API package scripts must expose the staging dependency probe.");
-}
-for (const token of [
-  "SEV1",
-  "Incident commander",
-  "PAYMENT_MODE=disabled",
-  "digest-qualified",
-  "MotionPrepUploadIntegrityFailure",
-  "disaster-recovery.md",
-  "npm run verify:incident",
-  "Ed25519",
-  "Post-incident review",
-]) {
-  if (!incidentResponseRunbook.includes(token)) {
-    violations.push(`Incident response runbook is missing contract token: ${token}`);
-  }
-}
-for (const [name, source] of [
-  ["deployment", deploymentContract],
-  ["security", securityPolicy],
-]) {
-  if (!source.includes("incident-response.md")) {
-    violations.push(`${name} documentation must link the incident response runbook.`);
-  }
-}
-if (nginx.includes("location /internal")) {
-  violations.push("Internal metrics must not be exposed by the public web proxy.");
-}
-for (const token of [
-  "FOR UPDATE SKIP LOCKED",
-  "lease_expires_at",
-  "renewLease",
-  "retryOrFail",
-]) {
-  if (!processingRuntimeSources.includes(token)) {
-    violations.push(`Processing worker runtime is missing reliability token: ${token}`);
-  }
-}
-for (const [name, entry] of [
-  ["media", mediaWorkerEntry],
-  ["document", documentWorkerEntry],
-]) {
-  if (!entry.includes("@motionprep/api/processing-worker")) {
-    violations.push(`${name} worker must use the shared processing runtime.`);
-  }
-  if (entry.includes("@aws-sdk") || entry.includes('from "pg"')) {
-    violations.push(`${name} worker entry duplicates runtime infrastructure.`);
-  }
-}
+violations.push(...verifyWorkerDeploymentContracts({
+  processingRuntime,
+  processingJobExecutor,
+  processingJobClaim,
+  processingWorkerConfig,
+  exportWorkerEntry,
+  exportWorkerConfig,
+  characterWorkerEntry,
+  characterWorkerConfig,
+  mediaWorkerEntry,
+  documentWorkerEntry,
+  objectStorageEnvironment,
+  objectStorageContract,
+  objectStorageSmoke,
+  packageManifest,
+  apiPackageManifest,
+  incidentResponseRunbook,
+  deploymentContract,
+  securityPolicy,
+  nginx,
+}));
 
 if (violations.length > 0) {
   console.error("Deployment readiness violations:");
@@ -521,10 +450,4 @@ if (violations.length > 0) {
   process.exitCode = 1;
 } else {
   console.log("Deployment artifacts verified.");
-}
-
-function requireWorkflowTokens(source, label, tokens) {
-  for (const token of tokens) {
-    if (!source.includes(token)) violations.push(`${label} workflow is missing token: ${token}`);
-  }
 }

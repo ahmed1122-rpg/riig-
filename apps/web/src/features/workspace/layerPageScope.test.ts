@@ -43,7 +43,7 @@ describe("layersForWorkspacePage", () => {
     expect(
       workspaceLayerCounts(
         "book",
-        [group, { ...layer("background", 1), kind: "page", parentId: group.id }, layer("two", 2)],
+        [group, { ...layer("background", 1), kind: "raster", presentationKind: "page", parentId: group.id }, layer("two", 2)],
         1,
         [{ pageNumber: 1 }, { pageNumber: 2 }, { pageNumber: 3 }],
       ),
