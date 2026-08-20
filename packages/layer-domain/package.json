@@ -20,7 +20,7 @@
     "coverage": "vitest run --coverage --coverage.thresholds.statements=90 --coverage.thresholds.branches=80 --coverage.thresholds.functions=90 --coverage.thresholds.lines=90"
   },
   "devDependencies": {
-    "typescript": "^5.8.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }
