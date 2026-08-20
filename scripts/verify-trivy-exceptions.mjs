@@ -94,18 +94,28 @@ function validateLedger(ledger, now) {
     if (typeof entry.approvedBy !== "string" || !entry.approvedBy.trim()) {
       violations.push(`${label} requires approvedBy.`);
     }
-    try {
-      if (new URL(entry.trackingUrl).protocol !== "https:") throw new Error();
-    } catch {
+    if (!isHttpsUrl(entry.trackingUrl)) {
       violations.push(`${label} requires an HTTPS trackingUrl.`);
     }
-    const expiry = new Date(entry.expiresAt);
-    const maximum = now.getTime() + 30 * 24 * 60 * 60_000;
-    if (!Number.isFinite(expiry.getTime()) || expiry <= now || expiry.getTime() > maximum) {
+    if (!expiresWithinThirtyDays(entry.expiresAt, now)) {
       violations.push(`${label} must expire within the next 30 days.`);
     }
   }
   return violations;
+}
+
+function isHttpsUrl(value) {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function expiresWithinThirtyDays(value, now) {
+  const expiry = new Date(value).getTime();
+  const maximum = now.getTime() + 30 * 24 * 60 * 60_000;
+  return Number.isFinite(expiry) && expiry > now.getTime() && expiry <= maximum;
 }
 
 async function main() {
