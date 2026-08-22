@@ -25,6 +25,9 @@ export function verifyQaImageContract({ dockerfile, ciWorkflow, dockerignore }) 
     "file: Dockerfile.qa",
     "tags: motionprep-qa:ci",
     "Run the complete source quality gate in the QA image",
+    "--user root",
+    '--volume "${GITHUB_WORKSPACE}/artifacts/qa:/workspace/artifacts/qa"',
+    "chown node:node /workspace/artifacts/qa",
     "artifacts/qa/quality-summary.json",
   ]) {
     if (!ciWorkflow.includes(token)) {

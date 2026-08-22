@@ -217,6 +217,11 @@ dependencies. Build and run it with:
 
 ```bash
 docker build --file Dockerfile.qa --tag motionprep-qa:local .
+mkdir -p artifacts/qa
+docker run --rm --user root \
+  --volume "$PWD/artifacts/qa:/workspace/artifacts/qa" \
+  motionprep-qa:local \
+  chown node:node /workspace/artifacts/qa
 docker run --rm \
   --volume "$PWD/artifacts/qa:/workspace/artifacts/qa" \
   motionprep-qa:local
