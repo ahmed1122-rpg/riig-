@@ -2,6 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { verifyDockerHardening } from "./verify-docker-hardening.mjs";
 import { verifyObservabilityArtifacts } from "./verify-observability-artifacts.mjs";
 import { requiredDeploymentFiles } from "./deployment-required-files.mjs";
 import { verifyNodeToolchain } from "./verify-node-toolchain.mjs";
@@ -156,6 +157,16 @@ violations.push(...verifyWorkerEnvironmentParity({
   security: securityWorkerExampleEnvironment,
 }));
 const ciWorkflow = workflowSources[0];
+violations.push(
+  ...verifyDockerHardening({
+    runtimeDockerfile,
+    webDockerfile,
+    qaDockerfile,
+    dockerignore,
+    localCompose,
+    integrationCompose,
+  }),
+);
 violations.push(...verifyQaImageContract({ dockerfile: qaDockerfile, ciWorkflow, dockerignore }));
 try {
   const ciDocument = parse(ciWorkflow);
