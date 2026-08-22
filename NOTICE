@@ -1,8 +1,10 @@
 MotionPrep Studio
 Copyright (c) 2026 MotionPrep Studio. All rights reserved.
 
-This is a private, proprietary repository. See LICENSE for the governing
-terms. Dependencies and bundled third-party materials retain their own
+This repository contains proprietary source code. Public availability does not
+grant rights to copy, modify, distribute, host, or create derivative works.
+See LICENSE for the governing terms. Dependencies and bundled third-party
+materials retain their own
 copyright notices and license terms; the generated software bill of materials
 and package lockfile provide the release-specific dependency inventory.
 
