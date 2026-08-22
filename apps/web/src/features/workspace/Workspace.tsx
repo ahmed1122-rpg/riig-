@@ -38,6 +38,7 @@ export function Workspace({
   onNavigationGuardChange,
   onNotify,
   initialProject,
+  onProjectAdopted,
 }: WorkspaceProps) {
   const maxUploadBytes = getWorkspaceMaxUploadBytes(mode, capabilities.limits);
   const review = useWorkspaceReviewState(mode);
@@ -242,6 +243,7 @@ export function Workspace({
     ...(sourcePreviewUrl ? { sourcePreviewUrl } : {}),
     pdfMode,
     initialProject,
+    onProjectAdopted,
     onRequireAuth,
     onNotify,
     requestConfirmation,

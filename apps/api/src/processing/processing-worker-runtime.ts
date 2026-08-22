@@ -11,6 +11,7 @@ import { loadProcessingWorkerConfig } from "./processing-worker-config.js";
 import { PostgresUsageMeter } from "../infrastructure/postgres/postgres-usage-meter.js";
 import { claimNextProcessingJob } from "../infrastructure/postgres/postgres-processing-job-claim.js";
 import { PostgresDerivedAssetRegistry } from "../infrastructure/postgres/postgres-derived-asset-registry.js";
+import { PostgresUploadRepository } from "../infrastructure/postgres/postgres-upload-repository.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
 import { releaseProcessingJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
 import {
@@ -101,6 +102,7 @@ export async function runProcessingWorker(
     config.USAGE_METERING_MODE,
   );
   const derivedAssets = new PostgresDerivedAssetRegistry(pool);
+  const readyUploads = new PostgresUploadRepository(pool, true);
   let running = true;
   const drain = new WorkerDrainCoordinator<{
     job: ProcessingJob;
@@ -179,6 +181,7 @@ export async function runProcessingWorker(
         Array.from({ length: concurrency }, (_, index) =>
           workerLoop({
             pool,
+            readyUploads,
             storage,
             serviceName: options.serviceName,
             projectKind: options.projectKind,
@@ -233,6 +236,7 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
         context.projectKind,
         context.workerId,
         context.leaseMilliseconds,
+        true,
       );
       if (!job) {
         await delay(jitteredPollingDelay(context.pollMilliseconds));

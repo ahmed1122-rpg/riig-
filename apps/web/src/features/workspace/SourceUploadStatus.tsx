@@ -97,7 +97,7 @@ export function SourceUploadStatus({
           <footer>
             {active && <button type="button" onClick={onCancel}>إلغاء</button>}
             {state === "error" && <button type="button" onClick={onRetry}><Icon name="refresh" size={13} /> إعادة المحاولة</button>}
-            {state === "ready" && <button type="button" onClick={onChoose}><Icon name="refresh" size={13} /> نسخة مصدر جديدة</button>}
+            {state === "ready" && <button type="button" onClick={onChoose}><Icon name="filePlus" size={13} /> نسخة مصدر جديدة</button>}
             {state === "empty" && <button type="button" onClick={onChoose}><Icon name="upload" size={13} /> اختيار المصدر</button>}
           </footer>
         </section>

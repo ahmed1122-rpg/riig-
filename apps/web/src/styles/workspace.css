@@ -610,7 +610,8 @@
 .pro-layer-copy { display: grid; min-width: 0; gap: 3px; text-align: start; }
 .pro-layer-copy > strong { overflow: hidden; font-size: var(--ws-text-base); font-weight: var(--ws-weight-bold); text-overflow: ellipsis; white-space: nowrap; }
 .pro-layer-copy > span { overflow: hidden; color: var(--text-muted); font-size: var(--ws-text-xs); text-overflow: ellipsis; white-space: nowrap; }
-.pro-layer-warning { color: var(--amber); }
+.pro-layer-row.is-duplicate { box-shadow: inset -2px 0 0 var(--amber); }
+.pro-layer-warning { display: inline-flex; align-items: center; gap: 3px; color: var(--amber); font-size: 8px; font-weight: 800; white-space: nowrap; }
 .pro-layer-actions { position: relative; z-index: 2; }
 .pro-layer-actions[open] { z-index: 12; }
 .pro-layer-actions summary {

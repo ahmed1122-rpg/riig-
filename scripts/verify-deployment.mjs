@@ -12,6 +12,7 @@ import {
   verifyWorkerEnvironmentParity,
 } from "./verify-production-environment-template.mjs";
 import { verifyQaImageContract } from "./verify-qa-image-contract.mjs";
+import { verifyPromotionWorkflowContract } from "./verify-promotion-workflow-contract.mjs";
 import { verifyRuntimeImageContract } from "./verify-runtime-image-contract.mjs";
 import { verifyWorkflowSecurity } from "./verify-workflow-security.mjs";
 import { verifyWorkerDeploymentContracts } from "./verify-worker-deployment-contracts.mjs";
@@ -136,6 +137,7 @@ const workflowSources = await Promise.all(
     ".github/workflows/staging-application-readiness.yml",
     ".github/workflows/release-rollback-drill.yml",
     ".github/workflows/dependency-audit.yml",
+    ".github/workflows/promote-release.yml",
   ].map((file) => readFile(join(root, file), "utf8")),
 );
 violations.push(...(await verifyObservabilityArtifacts(root)));
@@ -223,7 +225,7 @@ for (const token of [
   "npm run quality",
   "npm run verify:alerts",
   "npm run test:topology:full",
-  "release-source-evidence-${{ github.sha }}",
+  "release-source-evidence-${{ inputs.candidate_sha }}",
   "release-source-evidence/fault-recovery-report.json",
   "release-source-evidence/topology-pdf-load-report.json",
   "cosign sign --yes",
@@ -234,10 +236,20 @@ for (const token of [
   "@${{ steps.runtime.outputs.digest }}",
   "sbom: true",
   "provenance: mode=max",
+  "candidate_sha:",
+  "test \"$GITHUB_REF\" = \"refs/heads/main\"",
+  "RELEASE_SIGNATURE_WORKFLOW=release-images.yml",
+  "RELEASE_SIGNATURE_IDENTITY_REF=${GITHUB_REF}",
+  "No stable tag or GitHub Release was created.",
 ]) {
   if (!releaseWorkflow.includes(token)) {
     violations.push(`Release workflow is missing immutable supply-chain token: ${token}`);
   }
+}
+if (releaseWorkflow.includes("gh release create")) {
+  violations.push(
+    "The candidate image workflow must not create a tag or stable GitHub Release.",
+  );
 }
 if (
   releaseWorkflow.indexOf("publish:") <
@@ -266,9 +278,14 @@ requireWorkflowTokens(violations, providerWorkflow, "Provider-readiness identity
   "Choose AWS OIDC or explicit S3 credentials, not both.",
   "RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}",
   "RECOVERY_SIGNING_PUBLIC_KEY_PEM",
+  "RELEASE_SIGNATURE_WORKFLOW: ${{ vars.RELEASE_SIGNATURE_WORKFLOW }}",
   "--public-key recovery-public-key.pem",
-  "provider-readiness-evidence-${{ github.sha }}",
+  "--release-env provider-release.env",
+  "Remove raw recovery material",
+  "path: release-gate-evidence",
+  "provider-readiness-evidence-${{ vars.RELEASE_GIT_SHA }}",
   ".tmp/provider-object-storage-evidence.json",
+  "package-release-gate-evidence.mjs",
 ]);
 const stagingWorkflow = workflowSources[4];
 requireWorkflowTokens(violations, stagingWorkflow, "Staging-readiness", [
@@ -279,10 +296,13 @@ requireWorkflowTokens(violations, stagingWorkflow, "Staging-readiness", [
   "Configure short-lived AWS credentials through GitHub OIDC",
   "npm run verify:staging-dependencies --workspace @motionprep/api",
   "npm run verify:object-storage",
+  "RELEASE_SIGNATURE_WORKFLOW: ${{ vars.RELEASE_SIGNATURE_WORKFLOW }}",
+  "--candidate --verify-images",
   "Recovery evidence: intentionally remains in the production provider gate",
-  "staging-dependency-evidence-${{ github.sha }}",
+  "staging-dependency-evidence-${{ vars.RELEASE_GIT_SHA }}",
   ".tmp/staging-dependency-evidence.json",
   ".tmp/staging-object-storage-evidence.json",
+  "package-release-gate-evidence.mjs",
 ]);
 const performanceWorkflow = workflowSources[5];
 requireWorkflowTokens(violations, performanceWorkflow, "Performance-readiness", [
@@ -294,28 +314,48 @@ requireWorkflowTokens(violations, performanceWorkflow, "Performance-readiness", 
   "LOAD_RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}",
   "LOAD_EXPECTED_APPLICATION_VERSION: ${{ vars.EXPECTED_APPLICATION_VERSION }}",
   "Verify deployed release identity before the load run",
+  "RELEASE_SIGNATURE_WORKFLOW: ${{ vars.RELEASE_SIGNATURE_WORKFLOW }}",
+  "--candidate --verify-images",
   ".tmp/performance-release-evidence.json",
+  "package-release-gate-evidence.mjs",
 ]);
 const stagingApplicationWorkflow = workflowSources[6];
 requireWorkflowTokens(violations, stagingApplicationWorkflow, "Staging-application", [
   "npm run verify:staging-application",
+  "RELEASE_SIGNATURE_WORKFLOW: ${{ vars.RELEASE_SIGNATURE_WORKFLOW }}",
+  "--candidate --verify-images",
   'LOAD_REQUIRE_RELEASE_IDENTITY: "true"',
   "LOAD_RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}",
   "LOAD_EXPECTED_APPLICATION_VERSION: ${{ vars.EXPECTED_APPLICATION_VERSION }}",
   "LOAD_RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}",
   "LOAD_WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}",
+  "package-release-gate-evidence.mjs",
 ]);
 const rollbackWorkflow = workflowSources[7];
 requireWorkflowTokens(violations, rollbackWorkflow, "Release rollback", [
   "environment: production-readiness",
   "ROLLBACK_RUNTIME_IMAGE_REF",
   "ROLLBACK_WEB_IMAGE_REF",
+  "CANDIDATE_SIGNATURE_WORKFLOW",
+  "CANDIDATE_SIGNATURE_IDENTITY_REF",
+  "ROLLBACK_SIGNATURE_WORKFLOW",
+  "ROLLBACK_SIGNATURE_IDENTITY_REF",
+  "RELEASE_SIGNATURE_WORKFLOW=$ROLLBACK_SIGNATURE_WORKFLOW",
   "Install Cosign",
   "npm run test:release-rollback",
-  "release-rollback-evidence-${{ github.sha }}",
+  "release-rollback-evidence-${{ vars.RELEASE_GIT_SHA }}",
   ".tmp/release-rollback-evidence.json",
   ".tmp/release-drill-rollback-pdf.json",
+  "package-release-gate-evidence.mjs",
 ]);
+const promotionWorkflow = workflowSources[9];
+const dependencyWorkflow = workflowSources[8];
+violations.push(
+  ...verifyPromotionWorkflowContract({
+    promotionWorkflow,
+    dependencyWorkflow,
+  }),
+);
 
 if (!runtimeDockerfile.includes("USER node")) {
   violations.push("Runtime API image must run as the non-root node user.");
@@ -401,7 +441,7 @@ if (compose.includes("IMAGE_TAG") || /^\s+build:/mu.test(compose)) {
 for (const token of [
   "validateProductionEnvironment",
   'spawnSync("docker"',
-  'new Set(["config", "pull", "up", "ps", "run"])',
+  'new Set(["config", "pull", "up", "ps", "run", "stop"])',
 ]) {
   if (!productionComposeRunner.includes(token)) {
     violations.push(`Production Compose runner is missing safety token: ${token}`);
@@ -410,6 +450,16 @@ for (const token of [
 for (const token of ["no-new-privileges:true", "cap_drop:", "read_only: true"]) {
   if (!compose.includes(token)) {
     violations.push(`Production containers are missing hardening token: ${token}`);
+  }
+}
+for (const token of [
+  "MOTIONPREP_CLAMAV_SOCKET_DIR:?",
+  "target: /run/clamav",
+  "create_host_path: false",
+  "read_only: true",
+]) {
+  if (!compose.includes(token)) {
+    violations.push(`Production ClamAV socket topology is missing token: ${token}`);
   }
 }
 violations.push(...verifyNginxDeployment(nginx, securityHeaders));

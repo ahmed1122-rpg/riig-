@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -8,7 +8,7 @@ import type {
   ProcessingJob,
   SubscriptionView,
 } from "@motionprep/contracts";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { claimNextProcessingJob } from "../../processing/processing-worker-runtime.js";
 import { retryOrFailProcessingJob } from "../../processing/processing-job-settlement.js";
@@ -105,6 +105,330 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     expect(columns.rows).toHaveLength(14);
   });
 
+  it("migrates legacy ready/pending sources into a fail-closed scan backfill", async () => {
+    const fixture = await insertProjectFixture(pool, "image");
+    const uploadId = crypto.randomUUID();
+    const sourceVersionId = crypto.randomUUID();
+    const historicalUploadId = crypto.randomUUID();
+    const historicalSourceVersionId = crypto.randomUUID();
+    const sha256 = "e".repeat(64);
+    const timestamp = "2026-08-01T12:00:00.000Z";
+    await pool.query(
+      "ALTER TABLE upload_sessions DROP CONSTRAINT upload_sessions_ready_malware_scan_check",
+    );
+    await pool.query(
+      "ALTER TABLE source_versions DROP CONSTRAINT source_versions_ready_malware_scan_check",
+    );
+    await pool.query(
+      `INSERT INTO source_versions (
+         id, project_id, upload_id, version_number, filename, content_type,
+         size_bytes, status, sha256, created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, 1, 'legacy.png', 'image/png', 1, 'ready', $4, $5, $5
+       )`,
+      [sourceVersionId, fixture.projectId, uploadId, sha256, timestamp],
+    );
+    await pool.query(
+      `INSERT INTO upload_sessions (
+         upload_id, project_id, filename, content_type, expected_size_bytes,
+         status, source_version_id, sha256, object_key, expires_at, max_bytes,
+         upload_url, created_at, updated_at
+       ) VALUES (
+         $1, $2, 'legacy.png', 'image/png', 1, 'ready', $3, $4, $5,
+         $6, 31457280, $7, $8, $8
+       )`,
+      [
+        uploadId,
+        fixture.projectId,
+        sourceVersionId,
+        sha256,
+        `sources/${fixture.projectId}/${uploadId}.png`,
+        "2026-09-01T12:00:00.000Z",
+        `/v1/uploads/${uploadId}/content`,
+        timestamp,
+      ],
+    );
+    await pool.query(
+      `INSERT INTO source_versions (
+         id, project_id, upload_id, version_number, filename, content_type,
+         size_bytes, status, sha256, created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, 2, 'legacy-history.png', 'image/png', 1, 'ready', $4,
+         $5, $5
+       )`,
+      [
+        historicalSourceVersionId,
+        fixture.projectId,
+        historicalUploadId,
+        "f".repeat(64),
+        timestamp,
+      ],
+    );
+    await pool.query(
+      `INSERT INTO upload_sessions (
+         upload_id, project_id, filename, content_type, expected_size_bytes,
+         status, source_version_id, sha256, object_key, expires_at, max_bytes,
+         upload_url, created_at, updated_at
+       ) VALUES (
+         $1, $2, 'legacy-history.png', 'image/png', 1, 'ready', $3, $4, $5,
+         $6, 31457280, $7, $8, $8
+       )`,
+      [
+        historicalUploadId,
+        fixture.projectId,
+        historicalSourceVersionId,
+        "f".repeat(64),
+        `sources/${fixture.projectId}/${historicalUploadId}.png`,
+        "2026-09-01T12:00:00.000Z",
+        `/v1/uploads/${historicalUploadId}/content`,
+        timestamp,
+      ],
+    );
+    await pool.query(
+      "UPDATE projects SET current_source_version_id = $2, status = 'needs_review' WHERE id = $1",
+      [fixture.projectId, sourceVersionId],
+    );
+
+    const migration = await readFile(
+      path.join(migrationsDirectory, "045_malware_scan_invariants.sql"),
+      "utf8",
+    );
+    await pool.query(migration);
+
+    const migrated = await pool.query<{
+      upload_status: string;
+      source_status: string;
+      malware_scan_backfill: boolean;
+      scan_status: string;
+      attempt: number;
+    }>(
+      `SELECT upload.status AS upload_status, source.status AS source_status,
+         upload.malware_scan_backfill, scan.status AS scan_status, scan.attempt
+       FROM upload_sessions AS upload
+       JOIN source_versions AS source ON source.id = upload.source_version_id
+       JOIN malware_scan_jobs AS scan ON scan.upload_id = upload.upload_id
+       WHERE upload.upload_id = $1`,
+      [uploadId],
+    );
+    expect(migrated.rows[0]).toEqual({
+      upload_status: "scanning",
+      source_status: "scanning",
+      malware_scan_backfill: true,
+      scan_status: "queued",
+      attempt: 0,
+    });
+    const backfillCount = await pool.query<{ count: string }>(
+      `SELECT count(*) FROM upload_sessions
+       WHERE project_id = $1 AND status = 'scanning'
+         AND malware_scan_backfill = true`,
+      [fixture.projectId],
+    );
+    expect(Number(backfillCount.rows[0]?.count)).toBe(2);
+    await expect(
+      pool.query(
+        "UPDATE upload_sessions SET status = 'ready' WHERE upload_id = $1",
+        [uploadId],
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+  });
+
+  it("upgrades an isolated 044 schema without exposing or purging legacy sources", async () => {
+    const schema = `malware_upgrade_${crypto.randomUUID().replaceAll("-", "")}`;
+    const client = await pool.connect();
+    try {
+      await client.query(`CREATE SCHEMA "${schema}"`);
+      await client.query(`SET search_path TO "${schema}", public`);
+      const migrationFiles = (await readdir(migrationsDirectory))
+        .filter((filename) => filename.endsWith(".sql"))
+        .sort();
+      for (const filename of migrationFiles.filter((name) => name < "044_")) {
+        await client.query(
+          await readFile(path.join(migrationsDirectory, filename), "utf8"),
+        );
+      }
+
+      const actorUserId = crypto.randomUUID();
+      const projectId = crypto.randomUUID();
+      const queuedUploadId = crypto.randomUUID();
+      const queuedSourceId = crypto.randomUUID();
+      const retryUploadId = crypto.randomUUID();
+      const retrySourceId = crypto.randomUUID();
+      const restoredUploadId = crypto.randomUUID();
+      const restoredSourceId = crypto.randomUUID();
+      const invalidUploadId = crypto.randomUUID();
+      const invalidSourceId = crypto.randomUUID();
+      const timestamp = "2026-07-01T10:00:00.000Z";
+      await client.query(
+        `INSERT INTO users (
+           id, name, email, role, status, password_hash, created_at
+         ) VALUES ($1, 'Upgrade User', $2, 'creator', 'active', 'hash', $3)`,
+        [actorUserId, `${actorUserId}@example.test`, timestamp],
+      );
+      await client.query(
+        `INSERT INTO projects (
+           id, owner_user_id, name, kind, status, created_at, updated_at
+         ) VALUES ($1, $2, 'Upgrade Project', 'image', 'needs_review', $3, $3)`,
+        [projectId, actorUserId, timestamp],
+      );
+      await insertLegacyUpgradeUpload(client, {
+        projectId,
+        uploadId: queuedUploadId,
+        sourceVersionId: queuedSourceId,
+        versionNumber: 1,
+        sha256: "a".repeat(64),
+        timestamp,
+      });
+      await insertLegacyUpgradeUpload(client, {
+        projectId,
+        uploadId: retryUploadId,
+        sourceVersionId: retrySourceId,
+        versionNumber: 2,
+        sha256: "b".repeat(64),
+        timestamp,
+      });
+      await insertLegacyUpgradeUpload(client, {
+        projectId,
+        uploadId: restoredUploadId,
+        sourceVersionId: restoredSourceId,
+        versionNumber: 3,
+        sha256: "c".repeat(64),
+        timestamp,
+      });
+      await insertLegacyUpgradeUpload(client, {
+        projectId,
+        uploadId: invalidUploadId,
+        sourceVersionId: invalidSourceId,
+        versionNumber: 4,
+        sha256: "g".repeat(64),
+        timestamp,
+      });
+      await client.query(
+        `UPDATE projects SET current_source_version_id = $2 WHERE id = $1`,
+        [projectId, restoredSourceId],
+      );
+      await client.query(
+        `INSERT INTO source_version_restore_events (
+           id, project_id, actor_user_id, from_source_version_id,
+           to_source_version_id, reason, request_id, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          crypto.randomUUID(),
+          projectId,
+          actorUserId,
+          queuedSourceId,
+          restoredSourceId,
+          "Restore fixture retained across malware migration.",
+          "upgrade-restore-001",
+          timestamp,
+        ],
+      );
+
+      await client.query(
+        await readFile(
+          path.join(migrationsDirectory, "044_malware_scanning.sql"),
+          "utf8",
+        ),
+      );
+      await client.query(
+        `UPDATE malware_scan_jobs
+         SET status = 'retry_wait', attempt = 5,
+             error_code = 'LEGACY_RETRY', next_attempt_at = $2
+         WHERE upload_id = $1`,
+        [retryUploadId, "2026-07-02T10:00:00.000Z"],
+      );
+      await client.query(
+        await readFile(
+          path.join(migrationsDirectory, "045_malware_scan_invariants.sql"),
+          "utf8",
+        ),
+      );
+
+      const migrated = await client.query<{
+        upload_id: string;
+        upload_status: string;
+        upload_verdict: string;
+        upload_backfill: boolean;
+        source_status: string;
+        source_backfill: boolean;
+        scan_status: string;
+        attempt: number;
+        error_code: string | null;
+      }>(
+        `SELECT upload.upload_id, upload.status AS upload_status,
+           upload.malware_scan_verdict AS upload_verdict,
+           upload.malware_scan_backfill AS upload_backfill,
+           source.status AS source_status,
+           source.malware_scan_backfill AS source_backfill,
+           scan.status AS scan_status, scan.attempt, scan.error_code
+         FROM upload_sessions AS upload
+         JOIN source_versions AS source ON source.id = upload.source_version_id
+         JOIN malware_scan_jobs AS scan ON scan.upload_id = upload.upload_id
+         ORDER BY source.version_number`,
+      );
+      expect(migrated.rows.slice(0, 3)).toEqual(
+        [queuedUploadId, retryUploadId, restoredUploadId].map((uploadId) => ({
+          upload_id: uploadId,
+          upload_status: "scanning",
+          upload_verdict: "pending",
+          upload_backfill: true,
+          source_status: "scanning",
+          source_backfill: true,
+          scan_status: "queued",
+          attempt: 0,
+          error_code: null,
+        })),
+      );
+      expect(migrated.rows[3]).toEqual({
+        upload_id: invalidUploadId,
+        upload_status: "scan_failed",
+        upload_verdict: "error",
+        upload_backfill: true,
+        source_status: "scan_failed",
+        source_backfill: true,
+        scan_status: "failed",
+        attempt: 0,
+        error_code: "MIGRATION_INVALID_INTEGRITY_METADATA",
+      });
+      await expect(
+        client.query(
+          "SELECT count(*)::integer AS count FROM source_version_restore_events",
+        ),
+      ).resolves.toMatchObject({ rows: [{ count: 1 }] });
+
+      const retention = new PostgresRetentionStore(client as unknown as Pool);
+      await expect(
+        retention.listExpiredUploads("2026-09-01T00:00:00.000Z", 20),
+      ).resolves.toEqual([]);
+      const failedQuarantine = await retention.listExpiredMalwareQuarantines(
+        "2026-09-01T00:00:00.000Z",
+        20,
+      );
+      expect(failedQuarantine).toContainEqual({
+        scanJobId: expect.any(String),
+        objectKey: `sources/${projectId}/${invalidUploadId}.png`,
+        deleteObject: false,
+      });
+      await client.query(
+        `UPDATE malware_scan_jobs SET status = 'malicious'
+         WHERE upload_id = $1`,
+        [invalidUploadId],
+      );
+      const maliciousQuarantine = await retention.listExpiredMalwareQuarantines(
+        "2026-09-01T00:00:00.000Z",
+        20,
+      );
+      expect(maliciousQuarantine).toContainEqual({
+        scanJobId: expect.any(String),
+        objectKey: `sources/${projectId}/${invalidUploadId}.png`,
+        deleteObject: true,
+      });
+    } finally {
+      await client.query("SET search_path TO public");
+      await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      client.release();
+    }
+  }, 60_000);
+
   it("blocks live subscription deletion, then purges private objects and anonymizes the account", async () => {
     const fixture = await insertProjectFixture(pool, "image");
     const owner = await pool.query<{ owner_user_id: string }>(
@@ -124,9 +448,9 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       `INSERT INTO upload_sessions (
          upload_id, project_id, filename, content_type, expected_size_bytes,
          status, sha256, object_key, expires_at, max_bytes,
-         demo_upload_url, upload_url, created_at, updated_at
+         demo_upload_url, upload_url, malware_scan_required, created_at, updated_at
        ) VALUES ($1, $2, 'private.png', 'image/png', 3, 'ready', $3, $4,
-                 $5, 31457280, $6, $6, $5, $5)`,
+                 $5, 31457280, $6, $6, false, $5, $5)`,
       [
         crypto.randomUUID(),
         fixture.projectId,
@@ -395,6 +719,12 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     const command = new PostgresUploadFinalizationCommand(pool);
     const ready = await command.finalize({ session, sha256 });
     expect(ready).toMatchObject({ status: "ready", sha256 });
+    await expect(
+      new PostgresUploadRepository(pool, true).findReadyBySourceVersion(
+        fixture.projectId,
+        sourceVersionId,
+      ),
+    ).resolves.toBeNull();
     await pool.query(
       "UPDATE projects SET status = 'needs_review' WHERE id = $1",
       [fixture.projectId],
@@ -434,10 +764,10 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       `
         INSERT INTO source_versions (
           id, project_id, upload_id, version_number, filename, content_type,
-          size_bytes, status, sha256, created_at, updated_at
+          size_bytes, status, sha256, malware_scan_required, created_at, updated_at
         ) VALUES (
           $1, $2, $3, 2, 'newer.png', 'image/png', 1,
-          'ready', $4, $5, $5
+          'ready', $4, false, $5, $5
         )
       `,
       [
@@ -453,10 +783,10 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
         INSERT INTO upload_sessions (
           upload_id, project_id, filename, content_type, expected_size_bytes,
           status, source_version_id, sha256, object_key, expires_at, max_bytes,
-          upload_url, demo_upload_url, created_at, updated_at
+          upload_url, demo_upload_url, malware_scan_required, created_at, updated_at
         ) VALUES (
           $1, $2, 'newer.png', 'image/png', 1, 'ready', $3, $4,
-          $5, $6, 31457280, $7, $7, $8, $8
+          $5, $6, 31457280, $7, $7, false, $8, $8
         )
       `,
       [
@@ -472,9 +802,13 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     );
     await pool.query(
       `UPDATE projects
-       SET current_source_version_id = $2, status = 'needs_review'
+       SET current_source_version_id = $2, status = 'uploading'
        WHERE id = $1`,
       [fixture.projectId, newerSourceVersionId],
+    );
+    await pool.query(
+      "UPDATE upload_sessions SET malware_scan_backfill = true WHERE upload_id = $1",
+      [uploadId],
     );
 
     await command.finalize({ session: ready, sha256 });
@@ -492,7 +826,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     );
     expect(afterHistoricalReplay.rows[0]).toEqual({
       current_source_version_id: newerSourceVersionId,
-      status: "needs_review",
+      status: "uploading",
     });
   });
 
@@ -505,6 +839,35 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     if (!cleanSession) throw new Error("Clean scan fixture was not inserted.");
 
     await queue.enqueue({ session: cleanSession, sha256: cleanFixture.sha256 });
+    await pool.query(
+      `UPDATE malware_scan_jobs
+       SET status = 'failed', attempt = max_attempts,
+           lease_owner = 'stale-worker', lease_expires_at = now(),
+           error_code = 'STALE_FAILURE', completed_at = now()
+       WHERE upload_id = $1`,
+      [cleanFixture.uploadId],
+    );
+    const replaySession = await uploads.findById(cleanFixture.uploadId);
+    if (!replaySession) throw new Error("Replay scan fixture disappeared.");
+    await queue.enqueue({ session: replaySession, sha256: cleanFixture.sha256 });
+    const replayedJob = await pool.query<{
+      status: string;
+      attempt: number;
+      lease_owner: string | null;
+      error_code: string | null;
+      completed_at: Date | null;
+    }>(
+      `SELECT status, attempt, lease_owner, error_code, completed_at
+       FROM malware_scan_jobs WHERE upload_id = $1`,
+      [cleanFixture.uploadId],
+    );
+    expect(replayedJob.rows[0]).toEqual({
+      status: "queued",
+      attempt: 0,
+      lease_owner: null,
+      error_code: null,
+      completed_at: null,
+    });
     await expect(
       uploads.findReadyBySourceVersion(
         cleanFixture.projectId,
@@ -582,6 +945,150 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       status: "scan_failed",
       malwareScanVerdict: "error",
     });
+
+    const historicalFixture = await insertMalwareScanFixture(pool, "historical");
+    const currentSourceVersionId = crypto.randomUUID();
+    const historicalSession = await uploads.findById(historicalFixture.uploadId);
+    if (!historicalSession) throw new Error("Historical scan fixture disappeared.");
+    await queue.enqueue({
+      session: historicalSession,
+      sha256: historicalFixture.sha256,
+    });
+    await ensureJobSource(pool, {
+      ownerUserId: "unused",
+      projectId: historicalFixture.projectId,
+      sourceVersionId: currentSourceVersionId,
+      projectKind: "image",
+    });
+    await ensureReadyUpload(pool, {
+      ownerUserId: "unused",
+      projectId: historicalFixture.projectId,
+      sourceVersionId: currentSourceVersionId,
+      projectKind: "image",
+    });
+    await pool.query(
+      `UPDATE upload_sessions SET malware_scan_backfill = true
+       WHERE upload_id = $1`,
+      [historicalFixture.uploadId],
+    );
+    await pool.query(
+      `UPDATE projects SET current_source_version_id = $2,
+         status = 'needs_review' WHERE id = $1`,
+      [historicalFixture.projectId, currentSourceVersionId],
+    );
+    const historicalJob = await scans.claim("security-historical", 60_000);
+    if (!historicalJob) throw new Error("Historical scan job was not claimed.");
+    expect(historicalJob.backfill).toBe(true);
+    await scans.rejectMalicious(historicalJob, {
+      verdict: "malicious",
+      engine: "ClamAV 1.4.3",
+      definitionsVersion: "27999",
+      signatureName: "Historical.Test.Signature",
+    });
+    const historicalProject = await pool.query<{
+      current_source_version_id: string;
+      status: string;
+    }>(
+      "SELECT current_source_version_id, status FROM projects WHERE id = $1",
+      [historicalFixture.projectId],
+    );
+    expect(historicalProject.rows[0]).toEqual({
+      current_source_version_id: currentSourceVersionId,
+      status: "needs_review",
+    });
+
+    const currentBackfill = await insertMalwareScanFixture(pool, "backfill-now");
+    const currentBackfillSession = await uploads.findById(currentBackfill.uploadId);
+    if (!currentBackfillSession) throw new Error("Current backfill fixture disappeared.");
+    await queue.enqueue({
+      session: currentBackfillSession,
+      sha256: currentBackfill.sha256,
+    });
+    await pool.query(
+      `UPDATE upload_sessions SET malware_scan_backfill = true
+       WHERE upload_id = $1`,
+      [currentBackfill.uploadId],
+    );
+    await pool.query(
+      `UPDATE projects SET current_source_version_id = $2,
+         status = 'needs_review' WHERE id = $1`,
+      [currentBackfill.projectId, currentBackfill.sourceVersionId],
+    );
+    const unsafeSourceFixture: ProjectFixture = {
+      ownerUserId: "unused",
+      projectId: currentBackfill.projectId,
+      sourceVersionId: currentBackfill.sourceVersionId,
+      projectKind: "image",
+    };
+    const unsafeProcessingJob = createProcessingJob(unsafeSourceFixture, {
+      status: "processing",
+      attempt: 1,
+      leaseOwner: "unsafe-processing-worker",
+      leaseExpiresAt: "2099-08-22T00:00:00.000Z",
+    });
+    const unsafeExportJob = createExportJob(unsafeSourceFixture);
+    await new PostgresProcessingJobRepository(pool).save(unsafeProcessingJob);
+    await new PostgresExportRepository(pool).save(unsafeExportJob);
+    await activateJobFence(
+      pool,
+      unsafeSourceFixture,
+      "processing",
+      unsafeProcessingJob.id,
+    );
+    await pool.query(
+      "UPDATE malware_scan_jobs SET attempt = max_attempts - 1 WHERE upload_id = $1",
+      [currentBackfill.uploadId],
+    );
+    const currentBackfillJob = await scans.claim("security-current-backfill", 60_000);
+    if (!currentBackfillJob) throw new Error("Current backfill job was not claimed.");
+    await scans.retry(currentBackfillJob, "CLAMAV_UNAVAILABLE", 1_000);
+    await expect(
+      pool.query<{
+        status: string;
+        active_job_type: string | null;
+        active_job_id: string | null;
+      }>(
+        `SELECT status, active_job_type, active_job_id
+         FROM projects WHERE id = $1`,
+        [currentBackfill.projectId],
+      ),
+    ).resolves.toMatchObject({
+      rows: [{
+        status: "failed",
+        active_job_type: null,
+        active_job_id: null,
+      }],
+    });
+    await expect(
+      new PostgresProcessingJobRepository(pool).findById(
+        unsafeProcessingJob.id,
+      ),
+    ).resolves.toMatchObject({
+      status: "failed",
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      errorCode: "CLAMAV_UNAVAILABLE",
+    });
+    await expect(
+      new PostgresExportRepository(pool).findById(unsafeExportJob.id),
+    ).resolves.toMatchObject({
+      status: "failed",
+      errorCode: "CLAMAV_UNAVAILABLE",
+    });
+
+    const constraintFixture = await insertMalwareScanFixture(pool, "constraint");
+    await expect(
+      pool.query(
+        "UPDATE upload_sessions SET status = 'ready' WHERE upload_id = $1",
+        [constraintFixture.uploadId],
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+    await expect(
+      pool.query(
+        "UPDATE source_versions SET status = 'ready' WHERE id = $1",
+        [constraintFixture.sourceVersionId],
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
   });
 
   it("makes a proven upload integrity failure atomic and replay-safe", async () => {
@@ -756,20 +1263,42 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
       [firstId, 1],
       [secondId, 2],
     ] as const) {
+      const uploadId = crypto.randomUUID();
       await pool.query(
         `INSERT INTO source_versions (
            id, project_id, upload_id, version_number, filename, content_type,
-           size_bytes, status, sha256, created_at, updated_at
+           size_bytes, status, sha256, malware_scan_required, created_at, updated_at
          ) VALUES (
-           $1, $2, $3, $4, $5, 'image/png', 1, 'ready', $6, $7, $7
+           $1, $2, $3, $4, $5, 'image/png', 1, 'ready', $6, false, $7, $7
          )`,
         [
           id,
           projectId,
-          crypto.randomUUID(),
+          uploadId,
           versionNumber,
           `v${versionNumber}.png`,
           String(versionNumber).repeat(64),
+          timestamp,
+        ],
+      );
+      await pool.query(
+        `INSERT INTO upload_sessions (
+           upload_id, project_id, filename, content_type, expected_size_bytes,
+           status, source_version_id, sha256, object_key, expires_at, max_bytes,
+           upload_url, malware_scan_required, created_at, updated_at
+         ) VALUES (
+           $1, $2, $3, 'image/png', 1, 'ready', $4, $5, $6,
+           $7, 31457280, $8, false, $9, $9
+         )`,
+        [
+          uploadId,
+          projectId,
+          `v${versionNumber}.png`,
+          id,
+          String(versionNumber).repeat(64),
+          `sources/${projectId}/${uploadId}.png`,
+          "2026-07-29T09:00:00.000Z",
+          `/v1/uploads/${uploadId}/content`,
           timestamp,
         ],
       );
@@ -1022,6 +1551,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     });
     await repository.save(expiredJob);
     await activateJobFence(pool, fixture, "export", expiredJob.id);
+    await ensureReadyUpload(pool, fixture);
 
     const claims = await Promise.all([
       repository.claimNext(
@@ -1070,6 +1600,7 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     });
     await repository.save(expiredJob);
     await activateJobFence(pool, fixture, "processing", expiredJob.id);
+    await ensureReadyUpload(pool, fixture);
 
     const claims = await Promise.all([
       claimNextProcessingJob(pool, "book", "document-b", 60_000),
@@ -1467,8 +1998,8 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     await pool.query(
       `INSERT INTO source_versions (
          id, project_id, upload_id, version_number, filename, content_type,
-         size_bytes, status, sha256, created_at, updated_at
-       ) VALUES ($1, $2, $3, 1, 'ready.png', 'image/png', 1, 'ready', $4, $5, $5)`,
+         size_bytes, status, sha256, malware_scan_required, created_at, updated_at
+       ) VALUES ($1, $2, $3, 1, 'ready.png', 'image/png', 1, 'ready', $4, false, $5, $5)`,
       [
         fixture.sourceVersionId,
         fixture.projectId,
@@ -1623,7 +2154,8 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
 
   it("runs a queued text export through the real worker and object store", async () => {
     const fixture = await insertProjectFixture(pool, "book");
-    await ensureJobSource(pool, fixture);
+    await ensureJobSource(pool, fixture, true);
+    await ensureReadyUpload(pool, fixture, true);
     await pool.query(
       `UPDATE projects
        SET current_source_version_id = $2, status = 'needs_review'
@@ -1704,6 +2236,58 @@ interface ProjectFixture {
   projectId: string;
   sourceVersionId: string;
   projectKind: "image" | "book";
+}
+
+async function insertLegacyUpgradeUpload(
+  client: PoolClient,
+  input: {
+    projectId: string;
+    uploadId: string;
+    sourceVersionId: string;
+    versionNumber: number;
+    sha256: string;
+    timestamp: string;
+  },
+): Promise<void> {
+  const filename = `legacy-${input.versionNumber}.png`;
+  const uploadUrl = `/v1/uploads/${input.uploadId}/content`;
+  await client.query(
+    `INSERT INTO source_versions (
+       id, project_id, upload_id, version_number, filename, content_type,
+       size_bytes, status, sha256, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, 'image/png', 1, 'ready', $6, $7, $7)`,
+    [
+      input.sourceVersionId,
+      input.projectId,
+      input.uploadId,
+      input.versionNumber,
+      filename,
+      input.sha256,
+      input.timestamp,
+    ],
+  );
+  await client.query(
+    `INSERT INTO upload_sessions (
+       upload_id, project_id, filename, content_type, expected_size_bytes,
+       status, source_version_id, sha256, object_key, expires_at, max_bytes,
+       demo_upload_url, upload_url, project_status_before_upload,
+       created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, 'image/png', 1, 'ready', $4, $5, $6, $7,
+       31457280, $8, $8, 'needs_review', $9, $9
+     )`,
+    [
+      input.uploadId,
+      input.projectId,
+      filename,
+      input.sourceVersionId,
+      input.sha256,
+      `sources/${input.projectId}/${input.uploadId}.png`,
+      "2026-08-01T10:00:00.000Z",
+      uploadUrl,
+      input.timestamp,
+    ],
+  );
 }
 
 async function insertProjectFixture(
@@ -1820,15 +2404,17 @@ async function activateJobFence(
 async function ensureJobSource(
   pool: Pool,
   fixture: ProjectFixture,
+  malwareScanRequired = false,
 ): Promise<void> {
   const timestamp = "2026-07-28T09:00:00.000Z";
   await pool.query(
     `INSERT INTO source_versions (
        id, project_id, upload_id, version_number, filename, content_type,
-       size_bytes, status, sha256, created_at, updated_at
+       size_bytes, status, sha256, malware_scan_verdict,
+       malware_scan_required, created_at, updated_at
      )
      SELECT $1, $2, $3, COALESCE(MAX(version_number), 0) + 1,
-       'job-source.png', 'image/png', 1, 'ready', $4, $5, $5
+       'job-source.png', 'image/png', 1, 'ready', $4, $5, $6, $7, $7
      FROM source_versions
      WHERE project_id = $2
      ON CONFLICT (id) DO NOTHING`,
@@ -1837,6 +2423,8 @@ async function ensureJobSource(
       fixture.projectId,
       crypto.randomUUID(),
       "f".repeat(64),
+      malwareScanRequired ? "clean" : "pending",
+      malwareScanRequired,
       timestamp,
     ],
   );
@@ -1845,6 +2433,7 @@ async function ensureJobSource(
 async function ensureReadyUpload(
   pool: Pool,
   fixture: ProjectFixture,
+  malwareScanRequired = false,
 ): Promise<void> {
   const uploadId = crypto.randomUUID();
   const timestamp = "2026-07-28T09:00:00.000Z";
@@ -1852,10 +2441,11 @@ async function ensureReadyUpload(
     `INSERT INTO upload_sessions (
        upload_id, project_id, filename, content_type, expected_size_bytes,
        status, source_version_id, sha256, object_key, expires_at, max_bytes,
-       upload_url, created_at, updated_at
+       upload_url, malware_scan_verdict, malware_scan_required,
+       created_at, updated_at
      ) VALUES (
        $1, $2, 'job-source.png', 'image/png', 1, 'ready', $3, $4, $5,
-       '2026-07-29T09:00:00.000Z', 31457280, $6, $7, $7
+       '2026-07-29T09:00:00.000Z', 31457280, $6, $7, $8, $9, $9
      )`,
     [
       uploadId,
@@ -1864,6 +2454,8 @@ async function ensureReadyUpload(
       "f".repeat(64),
       `sources/${fixture.projectId}/${uploadId}.png`,
       `/v1/uploads/${uploadId}/content`,
+      malwareScanRequired ? "clean" : "pending",
+      malwareScanRequired,
       timestamp,
     ],
   );

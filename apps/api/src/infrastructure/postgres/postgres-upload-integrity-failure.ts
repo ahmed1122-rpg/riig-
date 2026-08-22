@@ -10,6 +10,7 @@ import {
 } from "./postgres-upload-record.js";
 import { rollbackTransaction } from "./database.js";
 import { lockUploadProject } from "./postgres-upload-project-lock.js";
+import { failJobsForUnsafeSource } from "./postgres-unsafe-source-job-settlement.js";
 
 interface SourceRow {
   id: string;
@@ -113,40 +114,12 @@ export class PostgresUploadIntegrityFailureCommand
       }
 
       if (current.source_version_id) {
-        await client.query(
-          `UPDATE processing_jobs
-           SET status = 'failed',
-               lease_owner = NULL,
-               lease_expires_at = NULL,
-               error_code = $3,
-               updated_at = $4
-           WHERE project_id = $1
-             AND source_version_id = $2
-             AND status IN ('queued', 'processing', 'verifying')`,
-          [
-            current.project_id,
-            current.source_version_id,
-            input.code,
-            failedAt,
-          ],
-        );
-        await client.query(
-          `UPDATE export_jobs
-           SET status = 'failed',
-               lease_owner = NULL,
-               lease_expires_at = NULL,
-               error_code = $3,
-               updated_at = $4
-           WHERE project_id = $1
-             AND source_version_id = $2
-             AND status IN ('queued', 'generating', 'verifying')`,
-          [
-            current.project_id,
-            current.source_version_id,
-            input.code,
-            failedAt,
-          ],
-        );
+        await failJobsForUnsafeSource(client, {
+          projectId: current.project_id,
+          sourceVersionId: current.source_version_id,
+          errorCode: input.code,
+          settledAt: failedAt,
+        });
       }
 
       await client.query(

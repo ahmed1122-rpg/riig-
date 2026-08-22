@@ -41,6 +41,10 @@ export class RetentionCleanup {
       checkedAt,
       failures,
     );
+    const malwareQuarantinesPurged = await this.purgeMalwareQuarantines(
+      checkedAt,
+      failures,
+    );
     const database = await this.store.pruneDatabase(
       checkedAt,
       this.config,
@@ -51,9 +55,41 @@ export class RetentionCleanup {
       artifactsPurged,
       characterReferencesPurged,
       derivedAssetsPurged,
+      malwareQuarantinesPurged,
       database,
       failures,
     };
+  }
+
+  private async purgeMalwareQuarantines(
+    now: string,
+    failures: RetentionCleanupReport["failures"],
+  ): Promise<number> {
+    const list = this.store.listExpiredMalwareQuarantines;
+    const claim = this.store.claimMalwareQuarantinePurge;
+    const mark = this.store.markMalwareQuarantinePurged;
+    if (!list || !claim || !mark) return 0;
+    const quarantines = await list.call(
+      this.store,
+      now,
+      this.config.RETENTION_BATCH_SIZE,
+    );
+    let purged = 0;
+    for (const quarantine of quarantines) {
+      try {
+        if (!await claim.call(this.store, quarantine, now)) continue;
+        if (quarantine.deleteObject) {
+          await this.storage.delete(quarantine.objectKey);
+        }
+        if (await mark.call(this.store, quarantine.scanJobId, now)) purged += 1;
+      } catch (error) {
+        failures.push({
+          key: quarantine.objectKey,
+          message: errorMessage(error),
+        });
+      }
+    }
+    return purged;
   }
 
   private async resumeAccountDeletions(

@@ -17,11 +17,15 @@ import {
   upsertProcessingJob,
 } from "./postgres-processing-job-write.js";
 import { availableProjectWorkFenceSql } from "./postgres-project-work-fence.js";
+import { readyUploadExistsSql } from "./postgres-malware-scan-policy.js";
 
 export class PostgresProcessingJobRepository
   implements ProcessingJobRepository
 {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly requireMalwareScan = false,
+  ) {}
 
   async findById(id: string): Promise<ProcessingJob | null> {
     const result = await this.pool.query<ProcessingRow>(
@@ -114,13 +118,11 @@ export class PostgresProcessingJobRepository
          WHERE project.id = $1
             AND project.current_source_version_id = $2
             ${availableProjectWorkFenceSql("project", "now()")}
-           AND EXISTS (
-             SELECT 1
-             FROM upload_sessions AS upload
-             WHERE upload.project_id = project.id
-               AND upload.source_version_id = $2
-               AND upload.status = 'ready'
-           )
+           AND ${readyUploadExistsSql(
+             "project.id",
+             "$2",
+             this.requireMalwareScan,
+           )}
            AND EXISTS (
              SELECT 1
              FROM users AS owner
@@ -173,13 +175,11 @@ export class PostgresProcessingJobRepository
            updated_at = $2
        WHERE job.id = $1
          AND job.status = 'failed'
-         AND EXISTS (
-           SELECT 1
-           FROM upload_sessions AS upload
-           WHERE upload.project_id = job.project_id
-             AND upload.source_version_id = job.source_version_id
-             AND upload.status = 'ready'
-         )
+         AND ${readyUploadExistsSql(
+           "job.project_id",
+           "job.source_version_id",
+           this.requireMalwareScan,
+         )}
          AND EXISTS (
            SELECT 1
            FROM projects AS project

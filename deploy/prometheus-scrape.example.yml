@@ -21,5 +21,10 @@ scrape_configs:
       - targets:
           - api:4000
 
+  - job_name: motionprep-host
+    static_configs:
+      - targets:
+          - node-exporter:9100
+
 # Receiver credentials remain deployment-owned. Mount the receiver URL as a
 # secret and start from deploy/alertmanager.example.yml; do not commit it.

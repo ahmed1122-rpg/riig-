@@ -33,6 +33,7 @@ export class PostgresUploadFinalizationCommand
   constructor(
     private readonly pool: Pool,
     private readonly testHooks: UploadFinalizationTestHooks = {},
+    private readonly requireMalwareScan = false,
   ) {}
 
   async finalize(input: FinalizeVerifiedUploadInput) {
@@ -46,6 +47,13 @@ export class PostgresUploadFinalizationCommand
       ) {
         throw new Error("Published upload checksum cannot be changed.");
       }
+      if (
+        this.requireMalwareScan &&
+        (current.malware_scan_required !== true ||
+          current.malware_scan_verdict !== "clean")
+      ) {
+        throw new Error("A clean malware scan verdict is required before publication.");
+      }
       const source = await this.lockSource(client, current);
       const project = await lockUploadProject<ProjectStateRow>(
         client,
@@ -54,20 +62,30 @@ export class PostgresUploadFinalizationCommand
       const published = await client.query<UploadRow>(
         `
           UPDATE upload_sessions
-          SET status = 'ready', sha256 = $2, updated_at = now()
+          SET status = 'ready', sha256 = $2,
+              malware_scan_required = $3, updated_at = now()
           WHERE upload_id = $1
           RETURNING ${uploadColumns}
         `,
-        [current.upload_id, input.sha256.toLowerCase()],
+        [
+          current.upload_id,
+          input.sha256.toLowerCase(),
+          current.malware_scan_verdict === "clean" || this.requireMalwareScan,
+        ],
       );
       await this.testHooks.afterUploadUpdated?.(client);
       await client.query(
         `
           UPDATE source_versions
-          SET status = 'ready', sha256 = $2, updated_at = now()
+          SET status = 'ready', sha256 = $2,
+              malware_scan_required = $3, updated_at = now()
           WHERE id = $1
         `,
-        [source.id, input.sha256.toLowerCase()],
+        [
+          source.id,
+          input.sha256.toLowerCase(),
+          current.malware_scan_verdict === "clean" || this.requireMalwareScan,
+        ],
       );
 
       const isUploadTransition = [
@@ -77,8 +95,12 @@ export class PostgresUploadFinalizationCommand
         "failed",
         "cancelled",
       ].includes(project.status);
+      const ownsUploadTransition =
+        isUploadTransition && !current.malware_scan_backfill;
       const mayPublishAsCurrent =
-        project.current_source_version_id === source.id || isUploadTransition;
+        project.current_source_version_id === source.id || ownsUploadTransition;
+      const shouldResetReview =
+        mayPublishAsCurrent && !current.malware_scan_backfill;
       await client.query(
         `
           UPDATE projects
@@ -86,7 +108,7 @@ export class PostgresUploadFinalizationCommand
                   WHEN $3 THEN $2 ELSE current_source_version_id END,
                 status = CASE WHEN $4 THEN 'queued' ELSE status END,
                 current_review_approval_id = CASE
-                  WHEN $3 THEN NULL ELSE current_review_approval_id END,
+                  WHEN $5 THEN NULL ELSE current_review_approval_id END,
                 active_job_type = CASE WHEN $4 THEN NULL ELSE active_job_type END,
               active_job_id = CASE WHEN $4 THEN NULL ELSE active_job_id END,
               updated_at = CASE WHEN $3 OR $4
@@ -97,7 +119,8 @@ export class PostgresUploadFinalizationCommand
           current.project_id,
           source.id,
           mayPublishAsCurrent,
-          isUploadTransition,
+          ownsUploadTransition,
+          shouldResetReview,
         ],
       );
       const row = published.rows[0];
@@ -122,6 +145,12 @@ export class PostgresUploadFinalizationCommand
         LEFT JOIN projects AS project
           ON project.id = upload.project_id
         WHERE upload.status IN ('verifying', 'ready')
+          AND NOT (
+            upload.status = 'ready' AND upload.malware_scan_backfill = true
+          )
+          AND ${this.requireMalwareScan
+            ? "upload.malware_scan_required = true AND upload.malware_scan_verdict = 'clean'"
+            : "(upload.status = 'verifying' OR (upload.malware_scan_required = false AND upload.malware_scan_verdict = 'pending') OR (upload.malware_scan_required = true AND upload.malware_scan_verdict = 'clean'))"}
           AND (
             upload.status = 'verifying'
             OR source.id IS NULL

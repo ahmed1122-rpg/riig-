@@ -20,6 +20,7 @@ const requiredAlerts = [
   "MotionPrepUploadReconciliationStalled",
   "MotionPrepContainerMemoryPressure",
   "MotionPrepContainerCpuSaturation",
+  "MotionPrepHostDiskSpaceLow",
   "MotionPrepHttpErrorRateHigh",
   "MotionPrepAuthenticationRejectionsHigh",
   "MotionPrepApiLatencyHigh",

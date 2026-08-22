@@ -145,6 +145,12 @@ export function LayerDock({
     () => duplicateLayerIds(layers, mode === "book"),
     [layers, mode],
   );
+  const lowConfidenceCount = useMemo(
+    () => layers.filter((layer) =>
+      matchesLayerFilter(layer, "", "low-confidence")
+    ).length,
+    [layers],
+  );
   const activeLayer = layers.find((layer) => layer.id === activeId);
 
   useEffect(() => {
@@ -376,7 +382,7 @@ export function LayerDock({
                 <option value="locked">مقفلة</option>
                 <option value="text">نص فقط</option>
                 <option value="raster">Raster فقط</option>
-                <option value="low-confidence">ثقة منخفضة</option>
+                <option value="low-confidence">ثقة منخفضة ({lowConfidenceCount})</option>
               </select>
               <span className={selectedIds.length > 1 ? "is-active" : ""}><b>{selectedIds.length}</b> محددة</span>
               <button type="button" aria-label={density === "dense" ? "صفوف مريحة" : "صفوف كثيفة"} onClick={() => setDensity(density === "dense" ? "comfortable" : "dense")}>

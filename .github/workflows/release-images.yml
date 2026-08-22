@@ -1,16 +1,15 @@
 name: release-images
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-character SHA currently at protected main
+        required: true
+        type: string
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
+  contents: read
 
 concurrency:
   group: release-images-${{ github.ref }}
@@ -18,6 +17,8 @@ concurrency:
 
 jobs:
   verify-source:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 75
     services:
@@ -43,11 +44,20 @@ jobs:
       INTEGRATION_S3_SECRET_KEY: motionprep-integration
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Prove the checkout is the immutable release SHA
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+      - name: Prove the candidate is the exact protected-main SHA
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$CANDIDATE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
           git diff --exit-code
+          test -z "$(git status --porcelain)"
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .node-version
@@ -81,20 +91,23 @@ jobs:
         run: docker rm --force motionprep-minio-release || true
       - name: Verify the production-shaped topology on the release SHA
         run: npm run test:topology:full
+      - name: Package visible, integrity-bound topology and fault evidence
+        run: >-
+          node scripts/package-release-gate-evidence.mjs release-source-evidence
+          .tmp/topology-pdf-load-report.json
+          .tmp/fault-recovery-report.json
       - name: Retain exact-SHA topology and fault evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-source-evidence-${{ github.sha }}
-          path: |
-            .tmp/topology-pdf-load-report.json
-            .tmp/fault-recovery-report.json
+          name: release-source-evidence-${{ inputs.candidate_sha }}
+          path: release-source-evidence
           if-no-files-found: error
           retention-days: 90
       - name: Upload exact-SHA failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-verification-${{ github.sha }}
+          name: release-verification-${{ inputs.candidate_sha }}
           path: |
             artifacts/playwright
             artifacts/playwright-report
@@ -103,23 +116,37 @@ jobs:
 
   publish:
     needs: verify-source
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: production-release
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .node-version
 
       - name: Resolve immutable image coordinates
         id: coordinates
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         shell: bash
         run: |
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$CANDIDATE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           echo "runtime=ghcr.io/${owner}/motionprep-runtime" >> "$GITHUB_OUTPUT"
           echo "web=ghcr.io/${owner}/motionprep-web" >> "$GITHUB_OUTPUT"
-          echo "tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "tag=candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
@@ -241,7 +268,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-container-security-${{ github.sha }}
+          name: release-container-security-${{ inputs.candidate_sha }}
           path: artifacts/security
           if-no-files-found: error
           retention-days: 90
@@ -274,6 +301,7 @@ jobs:
 
       - name: Write immutable deployment manifest
         env:
+          RELEASE_GIT_SHA: ${{ inputs.candidate_sha }}
           RUNTIME_IMAGE_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
           WEB_IMAGE_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
         shell: bash
@@ -281,59 +309,66 @@ jobs:
           {
             echo "RUNTIME_IMAGE_REF=${RUNTIME_IMAGE_REF}"
             echo "WEB_IMAGE_REF=${WEB_IMAGE_REF}"
-            echo "RELEASE_GIT_SHA=${GITHUB_SHA}"
+            echo "RELEASE_GIT_SHA=${RELEASE_GIT_SHA}"
+            echo "RELEASE_SIGNATURE_WORKFLOW=release-images.yml"
+            echo "RELEASE_SIGNATURE_IDENTITY_REF=${GITHUB_REF}"
           } > release.env
 
       - name: Write machine-readable release evidence bundle
         env:
+          RELEASE_GIT_SHA: ${{ inputs.candidate_sha }}
+          RELEASE_SIGNATURE_WORKFLOW: release-images.yml
+          RELEASE_SIGNATURE_IDENTITY_REF: ${{ github.ref }}
           RUNTIME_IMAGE_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
           WEB_IMAGE_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
         run: node scripts/create-release-evidence.mjs release-evidence.json
 
+      - name: Sign and verify candidate release evidence
+        shell: bash
+        run: |
+          cosign sign-blob --yes \
+            --bundle release-evidence.sigstore.json \
+            release-evidence.json
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-images.yml@${GITHUB_REF}"
+          cosign verify-blob \
+            --bundle release-evidence.sigstore.json \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            release-evidence.json
+
       - name: Download exact-SHA topology and fault evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: release-source-evidence-${{ github.sha }}
+          name: release-source-evidence-${{ inputs.candidate_sha }}
           path: release-source-evidence
 
       - name: Upload immutable deployment manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-${{ github.sha }}
+          name: release-${{ inputs.candidate_sha }}
           path: |
             release.env
             release-evidence.json
+            release-evidence.sigstore.json
+            release-source-evidence/artifact-manifest.json
             release-source-evidence/topology-pdf-load-report.json
             release-source-evidence/fault-recovery-report.json
           if-no-files-found: error
           retention-days: 90
 
-      - name: Publish the immutable GitHub Release after every gate passes
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --verify-tag \
-            --generate-notes \
-            --title "MotionPrep Studio ${GITHUB_REF_NAME}" \
-            release.env \
-            release-evidence.json \
-            release-source-evidence/topology-pdf-load-report.json \
-            release-source-evidence/fault-recovery-report.json
-
-      - name: Publish deployment coordinates
+      - name: Publish candidate deployment coordinates
         env:
           RUNTIME_IMAGE_REF: ${{ steps.coordinates.outputs.runtime }}@${{ steps.runtime.outputs.digest }}
           WEB_IMAGE_REF: ${{ steps.coordinates.outputs.web }}@${{ steps.web.outputs.digest }}
         shell: bash
         run: |
           {
-            echo "## Immutable release images"
+            echo "## Immutable release candidate images"
             echo
             echo '```dotenv'
             echo "RUNTIME_IMAGE_REF=${RUNTIME_IMAGE_REF}"
             echo "WEB_IMAGE_REF=${WEB_IMAGE_REF}"
             echo '```'
+            echo
+            echo "No stable tag or GitHub Release was created. Promote only after every external gate passes for these exact digests."
           } >> "$GITHUB_STEP_SUMMARY"

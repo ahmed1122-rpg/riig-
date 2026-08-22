@@ -50,6 +50,95 @@ export function evaluateAuditReport(report, ledger, now = new Date()) {
   return violations;
 }
 
+export function validateAuditExecution(audit, report) {
+  const violations = [];
+  const severityNames = ["info", "low", "moderate", "high", "critical"];
+  if (audit.signal) {
+    violations.push(`npm audit was terminated by signal ${audit.signal}.`);
+  }
+  if (![0, 1].includes(audit.status)) {
+    violations.push(
+      `npm audit exited with unexpected status ${audit.status ?? "unknown"}.`,
+    );
+  }
+  if (!report || typeof report !== "object" || Array.isArray(report)) {
+    violations.push("npm audit JSON must be an object.");
+    return violations;
+  }
+  if (report.error) {
+    const message =
+      typeof report.error === "string"
+        ? report.error
+        : report.error.message ?? report.error.summary ?? "unknown npm audit error";
+    violations.push(`npm audit reported an error: ${message}.`);
+  }
+  if (report.auditReportVersion !== 2) {
+    violations.push("npm audit must return auditReportVersion 2.");
+  }
+  const vulnerabilities = report.vulnerabilities;
+  if (!isRecord(vulnerabilities)) {
+    violations.push("npm audit report is missing the vulnerabilities object.");
+  }
+  const metadataCounts = report.metadata?.vulnerabilities;
+  if (!isRecord(report.metadata) || !isRecord(metadataCounts)) {
+    violations.push("npm audit report is missing metadata.vulnerabilities.");
+    return violations;
+  }
+
+  for (const severity of [...severityNames, "total"]) {
+    const count = metadataCounts[severity];
+    if (!Number.isSafeInteger(count) || count < 0) {
+      violations.push(
+        `npm audit metadata.vulnerabilities.${severity} must be a non-negative integer.`,
+      );
+    }
+  }
+  if (!isRecord(vulnerabilities)) return violations;
+
+  const observedCounts = Object.fromEntries(
+    severityNames.map((severity) => [severity, 0]),
+  );
+  for (const [name, vulnerability] of Object.entries(vulnerabilities)) {
+    const severity = vulnerability?.severity;
+    if (!severityNames.includes(severity)) {
+      violations.push(
+        `npm audit vulnerability ${name} has an unsupported severity.`,
+      );
+      continue;
+    }
+    observedCounts[severity] += 1;
+  }
+  for (const severity of severityNames) {
+    if (metadataCounts[severity] !== observedCounts[severity]) {
+      violations.push(
+        `npm audit metadata ${severity} count does not match vulnerabilities.`,
+      );
+    }
+  }
+  const observedTotal = Object.values(observedCounts).reduce(
+    (total, count) => total + count,
+    0,
+  );
+  if (metadataCounts.total !== observedTotal) {
+    violations.push(
+      "npm audit metadata total count does not match vulnerabilities.",
+    );
+  }
+
+  const blockingFindings = observedCounts.high + observedCounts.critical;
+  if (audit.status === 1 && blockingFindings === 0) {
+    violations.push(
+      "npm audit exited with status 1 without any High or Critical finding.",
+    );
+  }
+  if (audit.status === 0 && blockingFindings > 0) {
+    violations.push(
+      "npm audit exited with status 0 despite High or Critical findings.",
+    );
+  }
+  return violations;
+}
+
 function validateLedger(ledger, now) {
   const violations = [];
   if (ledger?.schemaVersion !== 1 || !Array.isArray(ledger?.exceptions)) {
@@ -91,6 +180,10 @@ function isBlockingSeverity(value) {
   return value === "high" || value === "critical";
 }
 
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 async function main() {
   const ledger = JSON.parse(await readFile(
     `${root}/security/dependency-audit-exceptions.json`,
@@ -115,6 +208,12 @@ async function main() {
     report = JSON.parse(audit.stdout);
   } catch {
     throw new Error(`npm audit did not return JSON: ${audit.stderr || "unknown error"}`);
+  }
+  const executionViolations = validateAuditExecution(audit, report);
+  if (executionViolations.length > 0) {
+    throw new Error(
+      `Dependency audit could not produce trustworthy evidence:\n- ${executionViolations.join("\n- ")}`,
+    );
   }
   const violations = evaluateAuditReport(report, ledger);
   if (violations.length > 0) {

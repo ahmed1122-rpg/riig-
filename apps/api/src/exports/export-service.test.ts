@@ -340,6 +340,43 @@ describe("ExportService worker execution", () => {
     });
   });
 
+  it("denies buffered and streamed downloads when source safety is revoked", async () => {
+    const repository = new SourceFencedExportRepository();
+    const storage = new InMemoryObjectStorage();
+    const documents = new InMemoryLayerDocumentRepository();
+    const document = createBookDocument();
+    await documents.save(document);
+    const service = new ExportService(
+      repository,
+      () => new Date(timestamp),
+      new InMemoryIdempotencyStore(),
+      undefined,
+      storage,
+      documents,
+      true,
+    );
+    const ready = await service.create(
+      createRequest(document, "txt"),
+      "book",
+      "artifact-source-safety-fence",
+    );
+
+    repository.sourceAvailable = false;
+    await expect(service.artifact(ready.id)).rejects.toMatchObject({
+      code: "EXPORT_ARTIFACT_NOT_READY",
+      jobId: ready.id,
+    });
+    await expect(service.artifactStream(ready.id)).rejects.toMatchObject({
+      code: "EXPORT_ARTIFACT_NOT_READY",
+      jobId: ready.id,
+    });
+
+    repository.sourceAvailable = true;
+    await expect(service.artifact(ready.id)).resolves.toMatchObject({
+      key: ready.artifact?.objectKey,
+    });
+  });
+
   it("rejects a cloud artifact whose bytes no longer match its saved hash", async () => {
     const repository = new InMemoryExportRepository();
     const storage = new InMemoryObjectStorage();
@@ -689,6 +726,14 @@ class FailingDeleteObjectStorage extends InMemoryObjectStorage {
 
   override async purge(): Promise<void> {
     throw new Error("storage purge unavailable");
+  }
+}
+
+class SourceFencedExportRepository extends InMemoryExportRepository {
+  sourceAvailable = true;
+
+  override async isSourceReadyForArtifact(): Promise<boolean> {
+    return this.sourceAvailable;
   }
 }
 

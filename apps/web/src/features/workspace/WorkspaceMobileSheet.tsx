@@ -102,6 +102,9 @@ export function WorkspaceMobileSheet({
   const pageFolders = createPdfPageFolders(layers, pdfPages, (layer) =>
     matchesLayerFilter(layer, deferredSearch, filter));
   const layerCounts = workspaceLayerCounts(mode, layers, activePdfPage, pdfPages);
+  const lowConfidenceCount = layers.filter((layer) =>
+    matchesLayerFilter(layer, "", "low-confidence")
+  ).length;
   const activeLayer = layers.find((layer) => layer.id === activeLayerId);
   const selectMobileLayer = (layer: Layer) => {
     if (!multiSelect || layer.kind === "group" || isPageLayer(layer)) {
@@ -178,7 +181,7 @@ export function WorkspaceMobileSheet({
                 <option value="locked">المقفلة</option>
                 <option value="text">النصوص</option>
                 <option value="raster">الصور</option>
-                <option value="low-confidence">ثقة منخفضة</option>
+                <option value="low-confidence">ثقة منخفضة ({lowConfidenceCount})</option>
               </select>
             </label>
             <button

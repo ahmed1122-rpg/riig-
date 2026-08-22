@@ -36,8 +36,11 @@ provider URL, and mutable image values are rejected by the existing verifiers.
 1. Merge the reviewed candidate and record its exact 40-character Git SHA.
 2. Run protected hosted CI, including the QA image, durable PostgreSQL/S3 suite,
    browser E2E, scans, and the three repeated Character race gates.
-3. Publish and verify signed, SBOM/provenance-bearing runtime and web images;
-   retain their digest-qualified references.
+3. From protected `main`, run `release-images` with the exact candidate SHA.
+   Publish and verify signed, SBOM/provenance-bearing candidate images; retain
+   their digest-qualified references and the descriptor identity
+   `release-images.yml@refs/heads/main`. This step must not create a tag or
+   stable GitHub Release.
 4. Deploy staging with those exact digests while Character, regional OCR, and
    live billing remain disabled.
 5. Run `staging-readiness` against managed PostgreSQL, Redis, S3, and SMTP, then
@@ -49,9 +52,19 @@ provider URL, and mutable image values are rejected by the existing verifiers.
 8. Configure the private Character inference provider and egress allowlist;
    verify timeout, retry, rate-limit, SHA, cleanup, heartbeat, and lease-loss
    behavior with non-production image fixtures.
-9. Validate the generated PSD/manifest with the approved Character Animator
+9. Replace the draft Terms and Privacy documents with owner/legal-approved
+   text, controller identity, contact, and approval metadata. Do not bypass
+   `verify:release-legal`.
+10. Run `promote-release` with the exact six successful run IDs. It must find
+    zero High/Critical container risk acceptances, verify every integrity
+    manifest and signature, re-sign the same digests without rebuilding, then
+    create the final tag and stable release. Retain the attached, signed stable
+    `release.env`; its image signature identity is
+    `promote-release.yml@refs/heads/main` and it is the only eligible source for
+    the next rollback baseline.
+11. Validate the generated PSD/manifest with the approved Character Animator
    Golden procedure and obtain the required product/legal approval.
-10. Start `worker-character`, enable the API flag for an internal image-only
+12. Start `worker-character`, enable the API flag for an internal image-only
     canary, observe dashboards and alerts, then expand gradually. The immediate
     rollback is to disable the flag and stop the worker without deleting durable
     state.
@@ -59,7 +72,8 @@ provider URL, and mutable image values are rejected by the existing verifiers.
 ## Evidence required for a Go decision
 
 - exact Git SHA and signed runtime/web image digests match every report;
-- protected CI and security scans pass with no waived High/Critical issue;
+- protected CI and security scans pass with zero High/Critical exception at
+  stable promotion time;
 - managed connectivity, migration, durable integration, restore RPO/RTO,
   representative load, fault recovery, and rollback all pass;
 - Character inference and Character Animator evidence is tied to the same

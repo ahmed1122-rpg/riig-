@@ -13,6 +13,7 @@ import { resolveEntryIntent, resolveRootSurface } from "../features/marketing/en
 import { useApplicationLifecycle } from "./useApplicationLifecycle";
 import { useAppDisplayPreferences } from "./useAppDisplayPreferences";
 import { useGuardedAppNavigation } from "./useGuardedAppNavigation";
+import { useAuthEntryNavigation } from "./useAuthEntryNavigation";
 
 const LandingPage = lazy(() => import("../features/marketing/LandingPage"));
 const AuthGateway = lazy(() => import("../features/auth/AuthGateway"));
@@ -89,7 +90,6 @@ export function App() {
       new URLSearchParams(window.location.search).get("debugStates") === "1",
   );
   const [notice, setNotice] = useState<string | null>(null);
-  const [authOpen, setAuthOpen] = useState(entryIntent.passwordReset);
   const [guestStudioOpen, setGuestStudioOpen] = useState(false);
   const [demoState, setDemoState] = useState<DemoState>("ready");
   const {
@@ -107,6 +107,7 @@ export function App() {
     view,
     projectMode,
     workspaceProject,
+    adoptWorkspaceProject,
     navigateView,
     registerWorkspaceNavigationGuard,
   } = useGuardedAppNavigation(entryIntent);
@@ -118,10 +119,16 @@ export function App() {
     toggleMobileNavigation,
     toggleTheme,
   } = useAppDisplayPreferences(view);
+  const {
+    authOpen,
+    authEntryRevision,
+    openAuth: showAuth,
+    closeAuth,
+  } = useAuthEntryNavigation(entryIntent);
   const openAuth = useCallback(() => {
     closeMobileNavigation();
-    setAuthOpen(true);
-  }, [closeMobileNavigation]);
+    showAuth();
+  }, [closeMobileNavigation, showAuth]);
 
   useEffect(() => {
     if (!notice) return;
@@ -160,15 +167,16 @@ export function App() {
     return (
       <Suspense fallback={<FeatureLoading />}>
         <AuthGateway
+          key={authEntryRevision}
           onAuthenticated={() => {
             void refreshSessionAfterAuthentication().then((refreshed) => {
               if (!refreshed) return;
               setGuestStudioOpen(false);
-              setAuthOpen(false);
+              closeAuth();
               closeMobileNavigation();
             });
           }}
-          onBack={() => setAuthOpen(false)}
+          onBack={closeAuth}
         />
       </Suspense>
     );
@@ -308,6 +316,9 @@ export function App() {
             );
           }}
           initialProject={workspaceProject}
+          onProjectAdopted={(project) =>
+            adoptWorkspaceProject({ mode: projectMode, project })
+          }
           onBack={() => navigateView("dashboard")}
           onNavigationGuardChange={registerWorkspaceNavigationGuard}
           onNotify={setNotice}

@@ -5,12 +5,14 @@ import type {
   SubscriptionSummary,
 } from "./models";
 
-export function getSubscription(): Promise<SubscriptionSummary> {
-  return request("/v1/billing/subscription");
+export function getSubscription(signal?: AbortSignal): Promise<SubscriptionSummary> {
+  return request("/v1/billing/subscription", { signal });
 }
 
-export function getBillingConfiguration(): Promise<BillingConfiguration> {
-  return request("/v1/billing/config");
+export function getBillingConfiguration(
+  signal?: AbortSignal,
+): Promise<BillingConfiguration> {
+  return request("/v1/billing/config", { signal });
 }
 
 export function getCheckout(

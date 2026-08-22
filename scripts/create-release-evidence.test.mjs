@@ -5,10 +5,14 @@ import { createReleaseEvidence } from "./create-release-evidence.mjs";
 const environment = {
   GITHUB_REPOSITORY: "example/motionprep",
   GITHUB_SHA: "a".repeat(40),
-  GITHUB_REF: "refs/tags/v0.1.1",
+  RELEASE_GIT_SHA: "a".repeat(40),
+  GITHUB_REF: "refs/heads/main",
   GITHUB_RUN_ID: "12345",
+  RELEASE_SIGNATURE_WORKFLOW: "release-images.yml",
+  RELEASE_SIGNATURE_IDENTITY_REF: "refs/heads/main",
   RUNTIME_IMAGE_REF: `ghcr.io/example/runtime@sha256:${"b".repeat(64)}`,
   WEB_IMAGE_REF: `ghcr.io/example/web@sha256:${"c".repeat(64)}`,
+  TRIVY_EXCEPTION_COUNT: "12",
 };
 
 test("creates immutable evidence while leaving external gates truthful", () => {
@@ -18,10 +22,22 @@ test("creates immutable evidence while leaving external gates truthful", () => {
   );
   assert.equal(evidence.source.gitSha, environment.GITHUB_SHA);
   assert.equal(evidence.images.runtime, environment.RUNTIME_IMAGE_REF);
+  assert.deepEqual(evidence.signingIdentity, {
+    workflow: "release-images.yml",
+    identityRef: "refs/heads/main",
+  });
   assert.equal(evidence.externalGates.rollbackDrill, "pending");
   assert.ok(evidence.completedGates.includes("dependency-fault-recovery"));
   assert.ok(evidence.completedGates.includes("licensed-adobe-golden"));
   assert.equal("licensedAdobeGolden" in evidence.externalGates, false);
+  assert.equal(
+    evidence.securityRiskAcceptances.trivyUnfixedHighCritical.count,
+    12,
+  );
+  assert.equal(
+    evidence.securityRiskAcceptances.trivyUnfixedHighCritical.stablePromotion,
+    "blocked-until-zero",
+  );
 });
 
 test("rejects mutable images and abbreviated commits", () => {
@@ -31,6 +47,14 @@ test("rejects mutable images and abbreviated commits", () => {
   );
   assert.throws(
     () => createReleaseEvidence({ ...environment, GITHUB_SHA: "abc123" }),
-    /40 lowercase hex/u,
+    /workflow SHA must equal/u,
+  );
+  assert.throws(
+    () =>
+      createReleaseEvidence({
+        ...environment,
+        RELEASE_SIGNATURE_WORKFLOW: "promote-release.yml",
+      }),
+    /release-images\.yml@refs\/heads\/main/u,
   );
 });

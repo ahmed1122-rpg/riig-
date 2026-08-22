@@ -34,6 +34,7 @@ export interface EntryIntent {
   initialView: ViewId;
   billingReturn: boolean;
   passwordReset: boolean;
+  emailVerification: boolean;
   workspace: WorkspaceEntry;
 }
 
@@ -59,6 +60,7 @@ export function resolveEntryIntent(search: string): EntryIntent {
     initialView,
     billingReturn,
     passwordReset: query.has("token"),
+    emailVerification: query.has("verificationToken"),
     workspace: {
       mode: query.get("mode") === "book" ? "book" : "image",
       project: projectId
@@ -91,6 +93,7 @@ export function buildViewSearch(
     "provider",
     "session_id",
     "token",
+    "verificationToken",
   ]) {
     query.delete(key);
   }

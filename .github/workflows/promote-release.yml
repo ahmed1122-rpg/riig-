@@ -1,0 +1,316 @@
+name: promote-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Final semantic version tag (must match package.json)
+        required: true
+        type: string
+      release_git_sha:
+        description: Exact candidate Git SHA
+        required: true
+        type: string
+      candidate_run_id:
+        description: Successful release-images candidate run ID
+        required: true
+        type: string
+      staging_dependencies_run_id:
+        description: Successful staging-readiness run ID
+        required: true
+        type: string
+      staging_application_run_id:
+        description: Successful staging-application-readiness run ID
+        required: true
+        type: string
+      performance_run_id:
+        description: Successful performance-readiness run ID
+        required: true
+        type: string
+      provider_run_id:
+        description: Successful provider-readiness run ID
+        required: true
+        type: string
+      rollback_run_id:
+        description: Successful release-rollback-drill run ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production-release
+    permissions:
+      actions: read
+      contents: write
+      packages: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_GIT_SHA: ${{ inputs.release_git_sha }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      STAGING_DEPENDENCIES_RUN_ID: ${{ inputs.staging_dependencies_run_id }}
+      STAGING_APPLICATION_RUN_ID: ${{ inputs.staging_application_run_id }}
+      PERFORMANCE_RUN_ID: ${{ inputs.performance_run_id }}
+      PROVIDER_RUN_ID: ${{ inputs.provider_run_id }}
+      ROLLBACK_RUN_ID: ${{ inputs.rollback_run_id }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.release_git_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+      - name: Constrain promotion to protected main history
+        shell: bash
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main"
+          [[ "$RELEASE_GIT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_GIT_SHA"
+          git fetch origin main
+          git merge-base --is-ancestor "$RELEASE_GIT_SHA" origin/main
+          for run_id in \
+            "$CANDIDATE_RUN_ID" "$STAGING_DEPENDENCIES_RUN_ID" \
+            "$STAGING_APPLICATION_RUN_ID" "$PERFORMANCE_RUN_ID" \
+            "$PROVIDER_RUN_ID" "$ROLLBACK_RUN_ID"; do
+            [[ "$run_id" =~ ^[0-9]+$ ]]
+          done
+          test -z "$(git status --porcelain)"
+      - name: Prove every referenced workflow run succeeded
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          verify_run() {
+            local run_id="$1"
+            local expected_workflow="$2"
+            local expected_path="$3"
+            local conclusion
+            local event
+            local head_branch
+            local head_repository
+            local workflow
+            local workflow_id
+            local workflow_path
+            conclusion="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq '.conclusion')"
+            workflow="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json workflowName --jq '.workflowName')"
+            event="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.event')"
+            head_branch="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_branch')"
+            head_repository="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.head_repository.full_name')"
+            workflow_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.workflow_id')"
+            workflow_path="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id" --jq '.path')"
+            test "$conclusion" = "success"
+            test "$workflow" = "$expected_workflow"
+            test "$head_branch" = "main"
+            test "$head_repository" = "$GITHUB_REPOSITORY"
+            [[ "$event" == "workflow_dispatch" || "$event" == "schedule" ]]
+            test "$workflow_path" = "$expected_path"
+          }
+          verify_run "$CANDIDATE_RUN_ID" release-images .github/workflows/release-images.yml
+          verify_run "$STAGING_DEPENDENCIES_RUN_ID" staging-readiness .github/workflows/staging-readiness.yml
+          verify_run "$STAGING_APPLICATION_RUN_ID" staging-application-readiness .github/workflows/staging-application-readiness.yml
+          verify_run "$PERFORMANCE_RUN_ID" performance-readiness .github/workflows/performance-readiness.yml
+          verify_run "$PROVIDER_RUN_ID" provider-readiness .github/workflows/provider-readiness.yml
+          verify_run "$ROLLBACK_RUN_ID" release-rollback-drill .github/workflows/release-rollback-drill.yml
+      - name: Download signed candidate evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          name: release-${{ inputs.release_git_sha }}
+          path: promotion-inputs/candidate
+      - name: Download managed dependency evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.staging_dependencies_run_id }}
+          name: staging-dependency-evidence-${{ inputs.release_git_sha }}
+          path: promotion-inputs/staging-dependencies
+      - name: Download staging application evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.staging_application_run_id }}
+          name: staging-application-evidence-${{ inputs.release_git_sha }}
+          path: promotion-inputs/staging-application
+      - name: Download performance evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.performance_run_id }}
+          name: pdf-load-evidence-${{ inputs.release_git_sha }}
+          path: promotion-inputs/performance
+      - name: Download provider and redacted recovery evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.provider_run_id }}
+          name: provider-readiness-evidence-${{ inputs.release_git_sha }}
+          path: promotion-inputs/provider
+      - name: Download rollback evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.rollback_run_id }}
+          name: release-rollback-evidence-${{ inputs.release_git_sha }}
+          path: promotion-inputs/rollback
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Authenticate for private registry signature verification
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify signed candidate evidence
+        shell: bash
+        run: |
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-images.yml@refs/heads/main"
+          cosign verify-blob \
+            --bundle promotion-inputs/candidate/release-evidence.sigstore.json \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            promotion-inputs/candidate/release-evidence.json
+      - name: Require approved public legal documents
+        run: npm run verify:release-legal
+      - name: Validate exact-digest promotion evidence and zero risk acceptances
+        run: npm run verify:release-promotion -- promotion-inputs promotion-evidence.json
+      - name: Re-verify and promotion-sign the same image digests without rebuilding
+        shell: bash
+        run: |
+          runtime_ref="$(sed -n 's/^RUNTIME_IMAGE_REF=//p' stable-release/release.env)"
+          web_ref="$(sed -n 's/^WEB_IMAGE_REF=//p' stable-release/release.env)"
+          grep -Fx 'RELEASE_SIGNATURE_WORKFLOW=promote-release.yml' stable-release/release.env
+          grep -Fx 'RELEASE_SIGNATURE_IDENTITY_REF=refs/heads/main' stable-release/release.env
+          candidate_identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-images.yml@refs/heads/main"
+          promotion_identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/promote-release.yml@refs/heads/main"
+          for image in "$runtime_ref" "$web_ref"; do
+            [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]]
+            cosign verify \
+              --certificate-identity "$candidate_identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$image"
+            if ! cosign verify \
+              --certificate-identity "$promotion_identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$image" >/dev/null 2>&1; then
+              cosign sign --yes "$image"
+            fi
+            cosign verify \
+              --certificate-identity "$promotion_identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$image"
+          done
+      - name: Sign and verify the combined promotion evidence
+        shell: bash
+        run: |
+          cosign sign-blob --yes \
+            --bundle promotion-evidence.sigstore.json \
+            promotion-evidence.json
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/promote-release.yml@refs/heads/main"
+          cosign verify-blob \
+            --bundle promotion-evidence.sigstore.json \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            promotion-evidence.json
+          cosign sign-blob --yes \
+            --bundle stable-release/release.env.sigstore.json \
+            stable-release/release.env
+          cosign verify-blob \
+            --bundle stable-release/release.env.sigstore.json \
+            --certificate-identity "$identity" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            stable-release/release.env
+      - name: Create the final tag and stable release without rebuilding
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          git fetch --tags --force
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")" = "$RELEASE_GIT_SHA"
+          fi
+
+          assets=(
+            stable-release/release.env
+            stable-release/release.env.sigstore.json
+            promotion-inputs/candidate/release-evidence.json
+            promotion-inputs/candidate/release-evidence.sigstore.json
+            promotion-evidence.json
+            promotion-evidence.sigstore.json
+          )
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+            is_prerelease="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')"
+            if [[ "$is_draft" == "false" && "$is_prerelease" == "false" ]]; then
+              mkdir existing-release-assets
+              for asset in \
+                stable-release/release.env \
+                promotion-inputs/candidate/release-evidence.json \
+                promotion-inputs/candidate/release-evidence.sigstore.json; do
+                name="$(basename "$asset")"
+                gh release download "$RELEASE_TAG" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --pattern "$name" \
+                  --dir existing-release-assets
+                cmp -- "$asset" "existing-release-assets/$name"
+              done
+              gh release download "$RELEASE_TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --pattern release.env.sigstore.json \
+                --dir existing-release-assets
+              cosign verify-blob \
+                --bundle existing-release-assets/release.env.sigstore.json \
+                --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/promote-release.yml@refs/heads/main" \
+                --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+                existing-release-assets/release.env
+              exit 0
+            fi
+            test "$is_draft" = "true"
+            gh release upload "$RELEASE_TAG" "${assets[@]}" \
+              --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+              gh release create "$RELEASE_TAG" "${assets[@]}" \
+                --repo "$GITHUB_REPOSITORY" \
+                --verify-tag \
+                --draft \
+                --generate-notes \
+                --title "MotionPrep Studio $RELEASE_TAG"
+            else
+              gh release create "$RELEASE_TAG" "${assets[@]}" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$RELEASE_GIT_SHA" \
+                --draft \
+                --generate-notes \
+                --title "MotionPrep Studio $RELEASE_TAG"
+            fi
+          fi
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --draft=false --prerelease=false
+      - name: Publish stable promotion summary
+        shell: bash
+        run: |
+          {
+            echo "## Stable release promoted"
+            echo
+            echo "- Tag: $RELEASE_TAG"
+            echo "- Git SHA: $RELEASE_GIT_SHA"
+            echo "- Images: promoted by digest without rebuild"
+            echo "- Candidate, staging, provider, recovery, load, rollback, legal, and zero-risk-acceptance gates: passed"
+          } >> "$GITHUB_STEP_SUMMARY"

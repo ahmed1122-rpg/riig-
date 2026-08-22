@@ -144,7 +144,7 @@ export function SourceVersionHistoryDialog({
             }
             onClick={() => void restore()}
           >
-            <Icon name="refresh" size={15} />
+            <Icon name="history" size={15} />
             {submitting
               ? "جارٍ الاستعادة…"
               : pendingHydration

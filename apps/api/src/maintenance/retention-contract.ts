@@ -21,7 +21,25 @@ export interface UnreferencedDerivedAsset {
   observedUpdatedAt: string;
 }
 
+export interface ExpiredMalwareQuarantine {
+  scanJobId: string;
+  objectKey: string;
+  deleteObject: boolean;
+}
+
 export interface RetentionStore {
+  listExpiredMalwareQuarantines?(
+    now: string,
+    limit: number,
+  ): Promise<ExpiredMalwareQuarantine[]>;
+  claimMalwareQuarantinePurge?(
+    quarantine: ExpiredMalwareQuarantine,
+    now: string,
+  ): Promise<boolean>;
+  markMalwareQuarantinePurged?(
+    scanJobId: string,
+    now: string,
+  ): Promise<boolean>;
   listExpiredUploads(now: string, limit: number): Promise<ExpiredUploadObject[]>;
   claimUploadPurge(upload: ExpiredUploadObject, now: string): Promise<boolean>;
   markUploadPurged(uploadId: string, now: string): Promise<boolean>;
@@ -56,6 +74,7 @@ export interface RetentionCleanupReport {
   artifactsPurged: number;
   characterReferencesPurged: number;
   derivedAssetsPurged: number;
+  malwareQuarantinesPurged: number;
   database: RetentionDatabaseCounts;
   failures: Array<{ key: string; message: string }>;
 }

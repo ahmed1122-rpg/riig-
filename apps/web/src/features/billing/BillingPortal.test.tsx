@@ -71,6 +71,47 @@ describe("BillingPortal checkout return", () => {
     expect(screen.getByRole("button", { name: /إعادة المحاولة/u })).toBeTruthy();
   });
 
+  it("aborts both initial billing requests when the portal unmounts", async () => {
+    vi.mocked(getBillingConfiguration).mockImplementationOnce(
+      (signal) =>
+        new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        }),
+    );
+    vi.mocked(getSubscription).mockImplementationOnce(
+      (signal) =>
+        new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        }),
+    );
+    const view = render(
+      <BillingPortal
+        authenticated
+        onRequireAuth={vi.fn()}
+        onNotify={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getBillingConfiguration).toHaveBeenCalledOnce();
+      expect(getSubscription).toHaveBeenCalledOnce();
+    });
+    const configurationSignal = vi.mocked(getBillingConfiguration).mock
+      .calls[0]?.[0];
+    const subscriptionSignal = vi.mocked(getSubscription).mock.calls[0]?.[0];
+    expect(configurationSignal).toBeInstanceOf(AbortSignal);
+    expect(subscriptionSignal).toBeInstanceOf(AbortSignal);
+
+    view.unmount();
+
+    expect(configurationSignal?.aborted).toBe(true);
+    expect(subscriptionSignal?.aborted).toBe(true);
+  });
+
   it("does not show success when the URL has no owned checkout id", async () => {
     window.history.replaceState(
       {},

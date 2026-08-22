@@ -99,7 +99,7 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
   }, [mobileNavigation]);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     const hasCachedData =
       effectiveView === "overview"
         ? overview !== null
@@ -123,27 +123,27 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
     setError(null);
     const operation =
       effectiveView === "overview"
-        ? getAdminOverview().then((data) => setOverview(data))
+        ? getAdminOverview(controller.signal).then(setOverview)
         : effectiveView === "processing"
-          ? getAdminProcessing().then(setJobs)
+          ? getAdminProcessing(controller.signal).then(setJobs)
           : effectiveView === "exports"
-            ? getAdminExports().then(setExportJobs)
-          : effectiveView === "users"
-            ? getAdminUsers().then(setUsers)
-            : effectiveView === "billing"
-              ? getAdminBilling().then(setBilling)
-              : effectiveView === "audit"
-                ? getAdminAudit().then(setAudit)
-                : effectiveView === "system"
-                  ? getAdminSystem().then(setSystem)
-                  : Promise.resolve();
+            ? getAdminExports(controller.signal).then(setExportJobs)
+            : effectiveView === "users"
+              ? getAdminUsers(controller.signal).then(setUsers)
+              : effectiveView === "billing"
+                ? getAdminBilling(controller.signal).then(setBilling)
+                : effectiveView === "audit"
+                  ? getAdminAudit(controller.signal).then(setAudit)
+                  : effectiveView === "system"
+                    ? getAdminSystem(controller.signal).then(setSystem)
+                    : Promise.resolve();
 
     void operation
       .then(() => {
-        if (!cancelled) setLastSuccessfulAt(new Date());
+        if (!controller.signal.aborted) setLastSuccessfulAt(new Date());
       })
       .catch((caught: unknown) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setError(
           caught instanceof ApiError
             ? caught.message
@@ -151,11 +151,9 @@ export default function AdminPanel({ role, onExit, onNotify }: AdminPanelProps) 
         );
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [effectiveView, reloadKey]);
 
   const retry = () => setReloadKey((value) => value + 1);

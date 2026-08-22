@@ -24,22 +24,28 @@ evidence of branded Chrome/Edge, Firefox, Safari, or iOS support.
 The `provider-readiness` GitHub environment is a release gate. Its protected
 workflow must pass against deployment-owned object storage and a completed
 isolated recovery manifest before production approval. Configure its
-environment variables with `RELEASE_GIT_SHA`, the matching immutable
-`RELEASE_TAG`, and the exact digest-qualified release references. Every
-readiness workflow checks out that SHA with tag history, rejects a dirty or
-mismatched checkout, and verifies both repository-bound Cosign identities
-before running local scripts. Configure the provider bucket settings and store
+environment variables with `RELEASE_GIT_SHA`,
+`RELEASE_SIGNATURE_WORKFLOW=release-images.yml`,
+`RELEASE_SIGNATURE_IDENTITY_REF=refs/heads/main`, and the exact
+digest-qualified candidate references. Every readiness workflow checks out
+that untagged candidate SHA, rejects a dirty or mismatched checkout, and
+verifies the repository-bound candidate Cosign identity before running local
+scripts. Configure the provider bucket settings and store
 the latest signed recovery-manifest JSON in
 the protected `RECOVERY_MANIFEST_JSON` secret and its Ed25519 public
-verification key in `RECOVERY_SIGNING_PUBLIC_KEY_PEM`. Static
+verification key in `RECOVERY_SIGNING_PUBLIC_KEY_PEM`. The raw manifest and
+key exist only in a mode-0600 runner file during verification and are deleted
+before artifacts are created. Only a redacted digest, RPO/RTO measurements,
+signature result, and exact candidate coordinates are retained. Static
 access keys are optional when the runner receives a workload identity. For AWS
 OIDC, set `AWS_ROLE_ARN` and `AWS_REGION` on the protected environment and
 leave the object-storage access/secret key pair unset. For another
 S3-compatible provider, leave `AWS_ROLE_ARN` unset and provide both secrets;
 the workflow rejects mixed or partial credential modes.
 
-Before a release exists, run the separate `staging-readiness` workflow on
-`main`. It performs live, non-destructive connectivity checks against
+After `release-images` has created signed candidate digests, but before a tag
+or stable release exists, run `staging-readiness` on `main`. It performs live,
+non-destructive connectivity checks against
 TLS-protected PostgreSQL, Redis, SMTP, and S3. Store `DATABASE_URL`,
 `REDIS_URL`, `SMTP_USER`, and `SMTP_PASSWORD` as protected environment secrets;
 store the non-secret SMTP and bucket coordinates as environment variables.
@@ -65,7 +71,9 @@ Use `/healthz` only for Nginx process liveness. Load balancers and canary gates
 must use `/readyz`, which proxies the API dependency and release-identity
 readiness contract. Prometheus must alert both when the API target is down and
 when application metrics disappear; dependency metrics alone cannot detect a
-dead scrape target.
+dead scrape target. Deploy Node Exporter on each application host and retain the
+`motionprep-host` scrape job so `MotionPrepHostDiskSpaceLow` can warn before
+container logs or artifacts exhaust the filesystem.
 
 ## Required services
 
@@ -76,6 +84,7 @@ dead scrape target.
 - Stripe account only when `PAYMENT_MODE=live`.
 - A load balancer terminating HTTPS before port 8080, with a stable private
   source CIDR and controlled `X-Forwarded-For`/`X-Forwarded-Proto` behavior.
+- Node Exporter plus Prometheus/Alertmanager with an owned private receiver.
 
 The application never accepts card numbers. Stripe Checkout is hosted by Stripe,
 subscription state is accepted only from signed webhooks, and account changes
@@ -231,24 +240,46 @@ blocks promotion until the lockfile is updated and the protected release gates
 pass again.
 
 Protect the `production-release` GitHub environment with required reviewers and
-restrict deployments to protected tags/branches. Before publication, the
-`release-images` workflow checks out the exact release SHA and re-runs
+restrict deployments to protected `main`. Start `release-images` manually from
+`main` with the exact current 40-character candidate SHA. The workflow refuses
+another branch or SHA and re-runs
 `npm run quality`, the complete dependency audit, and
 `npm run test:topology:full`. The publish job cannot start unless this source
 gate succeeds.
 
-The workflow then builds each image once, publishes it to GHCR,
+The candidate workflow then builds each image once, publishes it to GHCR,
 generates SBOM/provenance, scans it, signs the resulting digest with Cosign,
-and uploads `release.env` plus `release-evidence.json`. Copy its
+signs its evidence bundle, and uploads `release.env` plus
+`release-evidence.json`. It never creates a tag or GitHub Release. Copy its
 digest-qualified `RUNTIME_IMAGE_REF` and `WEB_IMAGE_REF` values and exact
-`RELEASE_GIT_SHA` into the deployment environment. Production Compose
+`RELEASE_GIT_SHA` into the protected readiness environment, set
+`RELEASE_SIGNATURE_WORKFLOW=release-images.yml` and
+`RELEASE_SIGNATURE_IDENTITY_REF=refs/heads/main`, and deploy those exact bytes
+to staging. Production Compose
 rejects missing references and does not contain build directives or tag
 fallbacks.
+
+Run `staging-readiness`, `staging-application-readiness`,
+`performance-readiness`, `provider-readiness`, and `release-rollback-drill`
+against the same SHA and digests. Each workflow packages only visible,
+integrity-manifested evidence; raw recovery material is never retained. Finally
+start `promote-release` from protected `main` with the six successful run IDs,
+candidate SHA, and final semantic tag. Promotion independently verifies every
+run conclusion, artifact manifest, release coordinate, candidate signature,
+staging/load/recovery/rollback result, approved legal documents, and zero
+unfixed High/Critical risk acceptances. It re-signs the same image digests with
+the protected promotion identity and only then creates the final tag and stable
+GitHub Release. The release attaches a promotion-signed stable `release.env`
+whose allowlisted identity is
+`promote-release.yml@refs/heads/main`; it does not reuse the candidate
+descriptor. It never rebuilds or substitutes an image.
 
 The application/package version, immutable source SHA, tag, and image digest
 serve different purposes and must not be substituted for one another. Follow
 [`VERSIONING.md`](VERSIONING.md); staging verification requires an explicit
 `EXPECTED_APPLICATION_VERSION` and never falls back to an old release number.
+The final tag does not exist during staging; it is an output of successful
+promotion, not an input to candidate qualification.
 
 ```bash
 node scripts/verify-release-environment.mjs .env.production
@@ -261,6 +292,11 @@ The wrapper revalidates the complete production environment before every
 approved Compose operation. This is the mandatory path: Compose's non-empty
 variable syntax alone accepts mutable tags, while the wrapper rejects anything
 other than digest-qualified runtime/web references and an exact release SHA.
+Production Compose uses Docker's bounded `local` log driver for every service.
+The defaults retain five 10 MiB segments per container; adjust
+`CONTAINER_LOG_MAX_SIZE` and `CONTAINER_LOG_MAX_FILE` only together with host
+capacity and retention policy. Log rotation does not replace centralized,
+access-controlled log shipping.
 
 Character Studio is a separately gated profile:
 
@@ -269,13 +305,15 @@ node scripts/run-production-compose.mjs .env.production \
   --profile character-rig up -d worker-character
 ```
 
-The `migrate` service applies all additive SQL migrations through migration 044
+The `migrate` service applies all additive SQL migrations through migration 045
 before the API and workers start. Migrations 038–041 add the Character Rig
 domain, worker observability, review decisions, and the derived-asset registry;
 migration 042 adds privacy/retention state machines and object-write leases,
-migration 043 adds single-use email verification, and migration 044 adds the
+Migration 043 adds single-use email verification, migration 044 adds the
 durable malware-scan queue, verdict metadata, leases, and security-worker
-observability;
+observability, and forward-only migration 045 fences legacy `ready/pending`
+rows, backfills scans, records the scan-required policy, and adds durable
+quarantine-cleanup obligations;
 earlier migrations 027 and 028 add the durable
 email outbox and job correlation. Upload publication is then
 committed atomically across the upload session, source version, and project;
@@ -288,8 +326,18 @@ objects only under `quarantine/`; `worker-security` verifies object size and
 SHA-256 while streaming it to ClamAV, rejects stale signature definitions,
 and alone promotes a clean object into `sources/`. Processing remains fenced
 until both upload state and malware verdict are ready/clean. Deploy ClamAV or
-a compatible private scanner on the endpoint in the security-worker secret
-file, and grant that worker the least-privilege policy in `OBJECT_STORAGE.md`.
+a compatible private scanner and grant that worker the least-privilege policy
+in `OBJECT_STORAGE.md`. The official Compose topology requires a host-local
+`clamd` Unix socket: set `MOTIONPREP_CLAMAV_SOCKET_DIR` to the directory that
+contains `clamd.sock`; Compose mounts it read-only at `/run/clamav`, and the
+security-worker environment must use `/run/clamav/clamd.sock`. Provision the
+socket with least-privilege ownership before deployment and monitor the local
+daemon independently. The production wrapper rejects remote raw ClamAV TCP;
+never expose port 3310 publicly. A different encrypted scanner topology needs
+a reviewed deployment-specific ADR and equivalent readiness tests. When migration 045 is
+first deployed over legacy data, fence new uploads and processing, run the
+backfill to zero pending required scans, validate the invariant, and only then
+restore traffic.
 
 The migration runner waits at most `MIGRATION_ADVISORY_LOCK_TIMEOUT_MS` for the
 single-runner advisory lock and applies `MIGRATION_LOCK_TIMEOUT_MS` to DDL lock

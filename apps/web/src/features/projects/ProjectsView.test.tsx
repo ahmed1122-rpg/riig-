@@ -9,7 +9,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deleteEmptyProject, listProjects } from "../../lib/api";
+import {
+  deleteEmptyProject,
+  listProjects,
+  listSourceVersions,
+} from "../../lib/api";
 import { ProjectsView } from "./ProjectsView";
 
 vi.mock("../../lib/api", () => ({
@@ -97,6 +101,42 @@ describe("ProjectsView", () => {
     await waitFor(() => expect(deleteEmptyProject).toHaveBeenCalledOnce());
     expect(deleteEmptyProject).toHaveBeenCalledWith("project-1");
     expect(screen.queryByText("مشروع تجريبي")).toBeNull();
+  });
+
+  it("aborts a source-version request when its project is collapsed", async () => {
+    vi.mocked(listProjects).mockResolvedValue([project("completed")] as never);
+    vi.mocked(listSourceVersions).mockImplementationOnce(
+      (_projectId, signal) =>
+        new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        }),
+    );
+    render(
+      <ProjectsView
+        demoState="ready"
+        authenticated
+        onRequireAuth={vi.fn()}
+        onOpenWorkspace={vi.fn()}
+      />,
+    );
+
+    const versionsButton = await screen.findByRole("button", {
+      name: "إصدارات المصدر",
+    });
+    fireEvent.click(versionsButton);
+    await waitFor(() => expect(listSourceVersions).toHaveBeenCalledOnce());
+    const signal = vi.mocked(listSourceVersions).mock.calls[0]?.[1];
+    expect(listSourceVersions).toHaveBeenCalledWith(
+      "project-1",
+      expect.any(AbortSignal),
+    );
+
+    fireEvent.click(versionsButton);
+
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByText("جارٍ تحميل الإصدارات…")).toBeNull();
   });
 
   it("explains an empty filtered result and clears every filter", async () => {

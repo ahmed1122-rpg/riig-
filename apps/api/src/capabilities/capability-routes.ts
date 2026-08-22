@@ -16,6 +16,7 @@ interface CapabilityRouteOptions {
   pdfRegionOcrEnabled: boolean;
   characterRigEnabled: boolean;
   operationalStatus?: OperationalStatusProvider;
+  expectedWorkerReleaseVersion?: string;
   requiredWorkers: ReadonlySet<
     "media" | "document" | "export" | "character" | "security"
   >;
@@ -101,7 +102,11 @@ async function resolveWorkerCapabilities(
       }
       const ready = options.operationalStatus
         ? snapshot
-          ? hasLiveWorker(snapshot, workerType)
+          ? hasLiveWorker(
+              snapshot,
+              workerType,
+              options.expectedWorkerReleaseVersion,
+            )
           : false
         : true;
       return [
@@ -110,7 +115,9 @@ async function resolveWorkerCapabilities(
           ? { status: "ready", reason: null }
           : {
               status: "degraded",
-              reason: `Required ${workerType} worker heartbeat is missing or stale.`,
+              reason: options.expectedWorkerReleaseVersion
+                ? `Required ${workerType} worker heartbeat is missing, stale, or running a different release.`
+                : `Required ${workerType} worker heartbeat is missing or stale.`,
             },
       ];
     }),

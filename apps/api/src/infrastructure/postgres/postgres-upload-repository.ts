@@ -13,6 +13,7 @@ import {
   uploadSelect,
   type UploadRow,
 } from "./postgres-upload-record.js";
+import { readyUploadMalwarePredicate } from "./postgres-malware-scan-policy.js";
 
 export class PostgresUploadRepository implements UploadRepository {
   constructor(
@@ -53,11 +54,12 @@ export class PostgresUploadRepository implements UploadRepository {
       `
         ${uploadSelect}
         WHERE project_id = $1
-          AND source_version_id = $2
-          AND status = 'ready'
-          ${this.requireMalwareScan
-            ? "AND malware_scan_verdict = 'clean'"
-            : ""}
+            AND source_version_id = $2
+            AND status = 'ready'
+            AND ${readyUploadMalwarePredicate(
+              "upload_sessions",
+              this.requireMalwareScan,
+            )}
         ORDER BY created_at DESC
         LIMIT 1
       `,

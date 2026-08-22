@@ -12,23 +12,87 @@ import {
   validateSignatureEvidenceUri,
 } from "./release-drill-config.mjs";
 
-function releaseSource(character, gitCharacter) {
+function releaseSource(
+  character,
+  gitCharacter,
+  signatureWorkflow,
+  signatureIdentityRef = "refs/heads/main",
+) {
   return [
     `RUNTIME_IMAGE_REF=ghcr.io/example/runtime@sha256:${character.repeat(64)}`,
     `WEB_IMAGE_REF=ghcr.io/example/web@sha256:${gitCharacter.repeat(64)}`,
     `RELEASE_GIT_SHA=${gitCharacter.repeat(40)}`,
+    `RELEASE_SIGNATURE_WORKFLOW=${signatureWorkflow}`,
+    `RELEASE_SIGNATURE_IDENTITY_REF=${signatureIdentityRef}`,
   ].join("\n");
 }
 
-test("loads immutable release coordinates and constructs the exact tag identity", async () => {
+test("loads immutable stable coordinates and constructs the promotion identity", async () => {
   const filename = join(tmpdir(), `motionprep-release-${crypto.randomUUID()}.env`);
-  await writeFile(filename, releaseSource("a", "b"), "utf8");
+  await writeFile(
+    filename,
+    releaseSource("a", "b", "promote-release.yml"),
+    "utf8",
+  );
   const release = await loadReleaseDescriptor(filename, "v1.2.3-rc.1");
   assert.equal(release.gitSha, "b".repeat(40));
+  assert.equal(release.signatureWorkflow, "promote-release.yml");
   assert.equal(
-    signatureIdentity("example/repository", release.releaseTag),
-    "https://github.com/example/repository/.github/workflows/release-images.yml@refs/tags/v1.2.3-rc.1",
+    signatureIdentity(
+      "example/repository",
+      release.signatureWorkflow,
+      release.signatureIdentityRef,
+    ),
+    "https://github.com/example/repository/.github/workflows/promote-release.yml@refs/heads/main",
   );
+});
+
+test("loads and constrains the protected candidate signature identity", async () => {
+  const filename = join(tmpdir(), `motionprep-candidate-${crypto.randomUUID()}.env`);
+  await writeFile(
+    filename,
+    releaseSource("a", "b", "release-images.yml"),
+    "utf8",
+  );
+  const release = await loadReleaseDescriptor(filename, "v1.2.3");
+  assert.equal(release.signatureWorkflow, "release-images.yml");
+  assert.equal(release.signatureIdentityRef, "refs/heads/main");
+  assert.equal(
+    signatureIdentity(
+      "example/repository",
+      release.signatureWorkflow,
+      release.signatureIdentityRef,
+    ),
+    "https://github.com/example/repository/.github/workflows/release-images.yml@refs/heads/main",
+  );
+  assert.throws(
+    () =>
+      signatureIdentity(
+        "example/repository",
+        "release-images.yml",
+        "refs/heads/feature",
+      ),
+    /invalid release metadata/u,
+  );
+});
+
+test("rejects missing, mixed, and tag-based signature descriptors", async () => {
+  for (const [workflow, identityRef] of [
+    ["", ""],
+    ["promote-release.yml", "refs/tags/v1.2.3"],
+    ["release-images.yml", "refs/tags/v1.2.3"],
+    ["unknown.yml", "refs/heads/main"],
+  ]) {
+    const filename = join(tmpdir(), `motionprep-invalid-${crypto.randomUUID()}.env`);
+    const source = [
+      releaseSource("a", "b", workflow, identityRef),
+    ].join("\n");
+    await writeFile(filename, source, "utf8");
+    await assert.rejects(
+      loadReleaseDescriptor(filename, "v1.2.3"),
+      /approved candidate or stable pair/u,
+    );
+  }
 });
 
 test("rejects a no-op rollback", () => {

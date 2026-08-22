@@ -315,6 +315,9 @@ export async function buildApp(
         : "ephemeral",
     pdfRegionOcrEnabled: config.PDF_REGION_OCR_ENABLED,
     characterRigEnabled: config.CHARACTER_RIG_ENABLED,
+    ...(config.NODE_ENV === "production"
+      ? { expectedWorkerReleaseVersion: config.RELEASE_VERSION }
+      : {}),
     requiredWorkers: new Set([
       ...(config.PROCESSING_EXECUTION_MODE === "worker"
         ? (["media", "document"] as const)

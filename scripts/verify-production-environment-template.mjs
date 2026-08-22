@@ -14,6 +14,7 @@ const requiredKeys = [
   "OBJECT_STORAGE_SESSION_TOKEN",
   "OBJECT_STORAGE_ENCRYPTION_MODE",
   "MALWARE_SCAN_MODE",
+  "MALWARE_SCANNER_SOCKET_PATH",
   "MALWARE_SCANNER_HOST",
   "MALWARE_SCANNER_PORT",
   "MALWARE_DEFINITIONS_MAX_AGE_HOURS",
@@ -38,6 +39,7 @@ const requiredKeys = [
   "MOTIONPREP_EXPORT_WORKER_ENV_FILE",
   "MOTIONPREP_SECURITY_WORKER_ENV_FILE",
   "MOTIONPREP_CHARACTER_WORKER_ENV_FILE",
+  "MOTIONPREP_CLAMAV_SOCKET_DIR",
 ];
 
 export function verifyProductionEnvironmentTemplate(source) {
@@ -55,6 +57,16 @@ export function verifyProductionEnvironmentTemplate(source) {
   if (!/^MALWARE_SCAN_MODE=required$/mu.test(source)) {
     violations.push(
       "Production uploads must keep fail-closed malware scanning required.",
+    );
+  }
+  if (!/^MALWARE_SCANNER_SOCKET_PATH=\/run\/clamav\/clamd\.sock$/mu.test(source)) {
+    violations.push(
+      "The production security worker must use the mounted local ClamAV Unix socket.",
+    );
+  }
+  if (!/^MOTIONPREP_CLAMAV_SOCKET_DIR=\/.+$/mu.test(source)) {
+    violations.push(
+      "Production Compose must receive an absolute host-local ClamAV socket directory.",
     );
   }
   if (!/^CHARACTER_RIG_ENABLED=false$/mu.test(source)) {
