@@ -56,30 +56,16 @@ export function verifyDockerHardening({
 }) {
   const violations = [];
 
-  if (/\bapt-get\s+upgrade\b/u.test(runtimeDockerfile)) {
+  if (/\b(?:apt-get|apk)\s+upgrade\b/u.test(runtimeDockerfile)) {
     violations.push(
-      "Runtime Dockerfile must not run apt-get upgrade; base-image updates must remain digest-controlled.",
+      "Runtime Dockerfile must not run package-manager upgrades; base-image updates must remain digest-controlled.",
     );
   }
 
-  for (const token of [
-    "ARG DEBIAN_UTIL_LINUX_VERSION=2.41.5-0+deb13u1",
-    "ARG DEBIAN_LOGIN_VERSION=1:4.16.0-2+really2.41.5-0+deb13u1",
-    'bsdutils="${DEBIAN_UTIL_LINUX_VERSION}"',
-    'libblkid1="${DEBIAN_UTIL_LINUX_VERSION}"',
-    'liblastlog2-2="${DEBIAN_UTIL_LINUX_VERSION}"',
-    'libmount1="${DEBIAN_UTIL_LINUX_VERSION}"',
-    'libsmartcols1="${DEBIAN_UTIL_LINUX_VERSION}"',
-    'libuuid1="${DEBIAN_UTIL_LINUX_VERSION}"',
-    'login="${DEBIAN_LOGIN_VERSION}"',
-    'mount="${DEBIAN_UTIL_LINUX_VERSION}"',
-    'util-linux="${DEBIAN_UTIL_LINUX_VERSION}"',
-  ]) {
-    if (!runtimeDockerfile.includes(token)) {
-      violations.push(
-        `Runtime Dockerfile is missing the reviewed util-linux security pin: ${token}`,
-      );
-    }
+  if (!runtimeDockerfile.includes("RUN apk add --no-cache fontconfig")) {
+    violations.push(
+      "Runtime Dockerfile must install fontconfig without retaining an Alpine package index.",
+    );
   }
 
   const qaStage = qaDockerfile.split(/^FROM\s+.+\s+AS\s+qa\s*$/imu).at(-1) ?? "";

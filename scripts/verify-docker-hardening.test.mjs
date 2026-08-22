@@ -35,20 +35,22 @@ test("rejects non-deterministic upgrades and a root QA runtime", () => {
     runtimeDockerfile: `${valid.runtimeDockerfile}\nRUN apt-get upgrade --yes\n`,
     qaDockerfile: valid.qaDockerfile.replace("USER node", "USER root"),
   });
-  assert.ok(violations.some((message) => message.includes("apt-get upgrade")));
+  assert.ok(
+    violations.some((message) => message.includes("package-manager upgrades")),
+  );
   assert.ok(violations.some((message) => message.includes("non-root node user")));
 });
 
-test("rejects a stale util-linux security revision", () => {
+test("rejects a retained Alpine package index", () => {
   const violations = verifyDockerHardening({
     ...valid,
     runtimeDockerfile: valid.runtimeDockerfile.replace(
-      "ARG DEBIAN_UTIL_LINUX_VERSION=2.41.5-0+deb13u1",
-      "ARG DEBIAN_UTIL_LINUX_VERSION=2.41-5",
+      "RUN apk add --no-cache fontconfig",
+      "RUN apk add fontconfig",
     ),
   });
   assert.ok(
-    violations.some((message) => message.includes("util-linux security pin")),
+    violations.some((message) => message.includes("Alpine package index")),
   );
 });
 
