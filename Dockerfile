@@ -35,11 +35,27 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000
 
+# The digest-pinned Node image predates Debian's fixed util-linux build. Pin
+# every affected binary/library to the reviewed security revision so rebuilds
+# fail closed instead of silently accepting a different package set.
+ARG DEBIAN_UTIL_LINUX_VERSION=2.41.5-0+deb13u1
+ARG DEBIAN_LOGIN_VERSION=1:4.16.0-2+really2.41.5-0+deb13u1
+
 # Sharp/Pango requires a fontconfig configuration even when every exported
 # text layer supplies its own reviewed font file. Keep discovery deterministic
 # and avoid production warnings from the slim base image.
 RUN apt-get update \
-  && apt-get install --yes --no-install-recommends fontconfig \
+  && apt-get install --yes --no-install-recommends \
+    bsdutils="${DEBIAN_UTIL_LINUX_VERSION}" \
+    fontconfig \
+    libblkid1="${DEBIAN_UTIL_LINUX_VERSION}" \
+    liblastlog2-2="${DEBIAN_UTIL_LINUX_VERSION}" \
+    libmount1="${DEBIAN_UTIL_LINUX_VERSION}" \
+    libsmartcols1="${DEBIAN_UTIL_LINUX_VERSION}" \
+    libuuid1="${DEBIAN_UTIL_LINUX_VERSION}" \
+    login="${DEBIAN_LOGIN_VERSION}" \
+    mount="${DEBIAN_UTIL_LINUX_VERSION}" \
+    util-linux="${DEBIAN_UTIL_LINUX_VERSION}" \
   && rm -rf /var/lib/apt/lists/*
 
 # Generates the reviewed Adobe fixtures in the exact Linux/font stack used by

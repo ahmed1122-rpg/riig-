@@ -39,6 +39,19 @@ test("rejects non-deterministic upgrades and a root QA runtime", () => {
   assert.ok(violations.some((message) => message.includes("non-root node user")));
 });
 
+test("rejects a stale util-linux security revision", () => {
+  const violations = verifyDockerHardening({
+    ...valid,
+    runtimeDockerfile: valid.runtimeDockerfile.replace(
+      "ARG DEBIAN_UTIL_LINUX_VERSION=2.41.5-0+deb13u1",
+      "ARG DEBIAN_UTIL_LINUX_VERSION=2.41-5",
+    ),
+  });
+  assert.ok(
+    violations.some((message) => message.includes("util-linux security pin")),
+  );
+});
+
 test("rejects an incomplete QA dependency-cache manifest set", () => {
   const violations = verifyDockerHardening({
     ...valid,

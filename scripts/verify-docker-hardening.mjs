@@ -62,6 +62,26 @@ export function verifyDockerHardening({
     );
   }
 
+  for (const token of [
+    "ARG DEBIAN_UTIL_LINUX_VERSION=2.41.5-0+deb13u1",
+    "ARG DEBIAN_LOGIN_VERSION=1:4.16.0-2+really2.41.5-0+deb13u1",
+    'bsdutils="${DEBIAN_UTIL_LINUX_VERSION}"',
+    'libblkid1="${DEBIAN_UTIL_LINUX_VERSION}"',
+    'liblastlog2-2="${DEBIAN_UTIL_LINUX_VERSION}"',
+    'libmount1="${DEBIAN_UTIL_LINUX_VERSION}"',
+    'libsmartcols1="${DEBIAN_UTIL_LINUX_VERSION}"',
+    'libuuid1="${DEBIAN_UTIL_LINUX_VERSION}"',
+    'login="${DEBIAN_LOGIN_VERSION}"',
+    'mount="${DEBIAN_UTIL_LINUX_VERSION}"',
+    'util-linux="${DEBIAN_UTIL_LINUX_VERSION}"',
+  ]) {
+    if (!runtimeDockerfile.includes(token)) {
+      violations.push(
+        `Runtime Dockerfile is missing the reviewed util-linux security pin: ${token}`,
+      );
+    }
+  }
+
   const qaStage = qaDockerfile.split(/^FROM\s+.+\s+AS\s+qa\s*$/imu).at(-1) ?? "";
   if (!/^USER\s+node\s*$/imu.test(qaStage)) {
     violations.push("QA image must run as the non-root node user.");
