@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,6 +11,12 @@ import {
   validateDrillInputs,
   validateSignatureEvidenceUri,
 } from "./release-drill-config.mjs";
+
+async function createTemporaryReleaseFile(testContext, filename) {
+  const directory = await mkdtemp(join(tmpdir(), "motionprep-release-test-"));
+  testContext.after(() => rm(directory, { recursive: true, force: true }));
+  return join(directory, filename);
+}
 
 function releaseSource(
   character,
@@ -27,8 +33,8 @@ function releaseSource(
   ].join("\n");
 }
 
-test("loads immutable stable coordinates and constructs the promotion identity", async () => {
-  const filename = join(tmpdir(), `motionprep-release-${crypto.randomUUID()}.env`);
+test("loads immutable stable coordinates and constructs the promotion identity", async (testContext) => {
+  const filename = await createTemporaryReleaseFile(testContext, "stable.env");
   await writeFile(
     filename,
     releaseSource("a", "b", "promote-release.yml"),
@@ -47,8 +53,8 @@ test("loads immutable stable coordinates and constructs the promotion identity",
   );
 });
 
-test("loads and constrains the protected candidate signature identity", async () => {
-  const filename = join(tmpdir(), `motionprep-candidate-${crypto.randomUUID()}.env`);
+test("loads and constrains the protected candidate signature identity", async (testContext) => {
+  const filename = await createTemporaryReleaseFile(testContext, "candidate.env");
   await writeFile(
     filename,
     releaseSource("a", "b", "release-images.yml"),
@@ -76,14 +82,16 @@ test("loads and constrains the protected candidate signature identity", async ()
   );
 });
 
-test("rejects missing, mixed, and tag-based signature descriptors", async () => {
+test("rejects missing, mixed, and tag-based signature descriptors", async (testContext) => {
+  const directory = await mkdtemp(join(tmpdir(), "motionprep-release-test-"));
+  testContext.after(() => rm(directory, { recursive: true, force: true }));
   for (const [workflow, identityRef] of [
     ["", ""],
     ["promote-release.yml", "refs/tags/v1.2.3"],
     ["release-images.yml", "refs/tags/v1.2.3"],
     ["unknown.yml", "refs/heads/main"],
   ]) {
-    const filename = join(tmpdir(), `motionprep-invalid-${crypto.randomUUID()}.env`);
+    const filename = join(directory, `invalid-${crypto.randomUUID()}.env`);
     const source = [
       releaseSource("a", "b", workflow, identityRef),
     ].join("\n");

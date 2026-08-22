@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -128,8 +128,10 @@ test("accepts complete exact-digest promotion evidence", () => {
   });
 });
 
-test("emits a rollback-verifiable stable descriptor for the promotion identity", async () => {
-  const filename = join(tmpdir(), `motionprep-stable-${crypto.randomUUID()}.env`);
+test("emits a rollback-verifiable stable descriptor for the promotion identity", async (testContext) => {
+  const directory = await mkdtemp(join(tmpdir(), "motionprep-promotion-test-"));
+  testContext.after(() => rm(directory, { recursive: true, force: true }));
+  const filename = join(directory, "stable.env");
   await writeFile(filename, createStableReleaseEnvironment(expected), "utf8");
   const descriptor = await loadReleaseDescriptor(filename, expected.releaseTag);
   assert.equal(descriptor.signatureWorkflow, "promote-release.yml");
