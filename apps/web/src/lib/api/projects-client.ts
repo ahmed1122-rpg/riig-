@@ -13,11 +13,14 @@ import type {
   ProjectSummary,
   UploadResult,
 } from "./models";
+import type { UploadSession } from "@motionprep/contracts";
 
 type ProcessingProgress = Pick<
   ProcessingSummary,
   "id" | "status" | "progress" | "errorCode"
 >;
+
+const scanFailureMessage = "تعذر إكمال تجهيز الملف.";
 
 export {
   applyGuidedRefinement,
@@ -148,78 +151,85 @@ export async function createAndUploadSource(
     uploadId: intent.uploadId,
   });
   try {
-    const uploaded = await uploadSourceFile(
+    const received = await uploadSourceFile(
       intent.uploadUrl,
       file,
       contentType,
       signal,
       options.onUploadProgress,
     );
-  options.onLifecycleUpdate?.({
-    projectId: project.id,
-    uploadId: intent.uploadId,
-    sourceVersionId: uploaded.sourceVersionId,
-  });
-  const processing = await request<ProcessingProgress>("/v1/processing/jobs", {
-    method: "POST",
-    signal,
-    headers: { "x-idempotency-key": crypto.randomUUID() },
-    body: JSON.stringify({
+    const uploaded = await waitForMalwareScan(
+      intent.uploadId,
+      received,
+      signal,
+    );
+    const sourceVersionId = uploaded.sourceVersionId!;
+    const sha256 = uploaded.sha256!;
+    options.onLifecycleUpdate?.({
       projectId: project.id,
-      sourceVersionId: uploaded.sourceVersionId,
-      ...(mode === "book"
-        ? { pdfSeparationMode: options.pdfSeparationMode ?? "sentence" }
+      uploadId: intent.uploadId,
+      sourceVersionId,
+    });
+    const processing = await request<ProcessingProgress>("/v1/processing/jobs", {
+      method: "POST",
+      signal,
+      headers: { "x-idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({
+        projectId: project.id,
+        sourceVersionId,
+        ...(mode === "book"
+          ? { pdfSeparationMode: options.pdfSeparationMode ?? "sentence" }
+          : {}),
+      }),
+    });
+    options.onLifecycleUpdate?.({
+      projectId: project.id,
+      uploadId: intent.uploadId,
+      sourceVersionId,
+      processingJobId: processing.id,
+    });
+    await waitForJob({
+      initial: processing,
+      load: () =>
+        request<typeof processing>(
+          `/v1/processing/jobs/${encodeURIComponent(processing.id)}`,
+          { signal },
+        ),
+      isComplete: (job) => job.status === "ready",
+      failure: processingFailure,
+      timeoutMs: 2 * 60_000,
+      timeoutCode: "PROCESSING_TIMEOUT",
+      timeoutMessage:
+        "استغرقت المعالجة وقتًا أطول من المتوقع. ستظل المهمة محفوظة ويمكن متابعتها لاحقًا.",
+      ...(signal ? { signal } : {}),
+      ...(options.onProcessingProgress
+        ? { onProgress: options.onProcessingProgress }
         : {}),
-    }),
-  });
-  options.onLifecycleUpdate?.({
-    projectId: project.id,
-    uploadId: intent.uploadId,
-    sourceVersionId: uploaded.sourceVersionId,
-    processingJobId: processing.id,
-  });
-  await waitForJob({
-    initial: processing,
-    load: () =>
-      request<typeof processing>(
-        `/v1/processing/jobs/${encodeURIComponent(processing.id)}`,
+    });
+    const [document, versions] = await Promise.all([
+      request<LayerDocumentView>(
+        `/v1/projects/${project.id}/layer-document?sourceVersionId=${sourceVersionId}`,
         { signal },
       ),
-    isComplete: (job) => job.status === "ready",
-    failure: processingFailure,
-    timeoutMs: 2 * 60_000,
-    timeoutCode: "PROCESSING_TIMEOUT",
-    timeoutMessage:
-      "استغرقت المعالجة وقتًا أطول من المتوقع. ستظل المهمة محفوظة ويمكن متابعتها لاحقًا.",
-    ...(signal ? { signal } : {}),
-    ...(options.onProcessingProgress
-      ? { onProgress: options.onProcessingProgress }
-      : {}),
-  });
-  const [document, versions] = await Promise.all([
-    request<LayerDocumentView>(
-      `/v1/projects/${project.id}/layer-document?sourceVersionId=${uploaded.sourceVersionId}`,
-      { signal },
-    ),
-    listSourceVersions(project.id, signal),
-  ]);
-  const sourceVersion = versions.find(
-    (version) => version.id === uploaded.sourceVersionId,
-  );
-  if (!sourceVersion) {
-    throw new ApiError(
-      "SOURCE_VERSION_NOT_FOUND",
-      "تعذر تحديد رقم إصدار المصدر بعد اكتمال الرفع.",
-      409,
+      listSourceVersions(project.id, signal),
+    ]);
+    const sourceVersion = versions.find(
+      (version) => version.id === sourceVersionId,
     );
-  }
-  return {
-    projectId: project.id,
-    sourceVersionId: uploaded.sourceVersionId,
-    sourceVersionNumber: sourceVersion.versionNumber,
-    sha256: uploaded.sha256,
-    document,
-  };
+    if (!sourceVersion) {
+      throw new ApiError(
+        "SOURCE_VERSION_NOT_FOUND",
+        "تعذر تحديد رقم إصدار المصدر بعد اكتمال الرفع.",
+        409,
+      );
+    }
+    return {
+      projectId: project.id,
+      sourceVersionId,
+      sourceVersionNumber: sourceVersion.versionNumber,
+      sha256,
+      document,
+    };
   } catch (error) {
     if (signal?.aborted || isAbortError(error)) {
       await cancelUploadSession(intent.uploadId);
@@ -289,7 +299,7 @@ function uploadSourceFile(
   contentType: string,
   signal?: AbortSignal,
   onProgress?: (progress: number) => void,
-): Promise<{ sourceVersionId: string; sha256: string }> {
+): Promise<UploadSession> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const abort = () => xhr.abort();
@@ -306,10 +316,7 @@ function uploadSourceFile(
     });
     xhr.addEventListener("load", () => {
       cleanup();
-      let payload: ApiEnvelope<{
-        sourceVersionId: string;
-        sha256: string;
-      }>;
+      let payload: ApiEnvelope<UploadSession>;
       try {
         payload = JSON.parse(xhr.responseText) as typeof payload;
       } catch {
@@ -369,6 +376,57 @@ function uploadSourceFile(
     signal?.addEventListener("abort", abort, { once: true });
     xhr.send(file);
   });
+}
+
+async function waitForMalwareScan(
+  uploadId: string,
+  initial: UploadSession,
+  signal?: AbortSignal,
+): Promise<UploadSession> {
+  return waitForJob({
+    initial,
+    load: async () => request<UploadSession>(
+      `/v1/uploads/${encodeURIComponent(uploadId)}`,
+      { signal },
+    ),
+    isComplete: (session) => session.status === "ready",
+    failure: uploadScanFailure,
+    timeoutMs: 3 * 60_000,
+    timeoutCode: "MALWARE_SCAN_TIMEOUT",
+    timeoutMessage: scanFailureMessage,
+    initialIntervalMs: 500,
+    maximumIntervalMs: 3_000,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+function uploadScanFailure(session: UploadSession): ApiError | undefined {
+  if (session.status === "rejected") {
+    return new ApiError(
+      "MALWARE_DETECTED",
+      "الملف ضار. اختر ملفًا آخر.",
+      422,
+    );
+  }
+  if (session.status === "scan_failed") {
+    return new ApiError(
+      "MALWARE_SCAN_FAILED",
+      scanFailureMessage,
+      503,
+      undefined,
+      true,
+    );
+  }
+  if (session.status === "failed" || session.status === "cancelled") {
+    return new ApiError(
+      session.status === "cancelled" ? "UPLOAD_CANCELLED" : "UPLOAD_FAILED",
+      session.status === "cancelled"
+        ? "أُلغيت عملية رفع الملف."
+        : "تعذر إكمال رفع الملف.",
+      409,
+    );
+  }
+  return undefined;
 }
 
 async function cancelUploadSession(uploadId: string): Promise<void> {

@@ -150,6 +150,12 @@ const dependencyReadiness: Record<string, () => Promise<void>> = {
           assertLiveWorker(persistence.operationalStatus, "character"),
       }
     : {}),
+  ...(config.MALWARE_SCAN_MODE === "required" && persistence
+    ? {
+        security_worker: () =>
+          assertLiveWorker(persistence.operationalStatus, "security"),
+      }
+    : {}),
 };
 const operationalReadiness = new OperationalReadiness(dependencyReadiness);
 const ready = () => operationalReadiness.assertReady();
@@ -192,6 +198,9 @@ const emailOutboxDispatcher =
 emailOutboxDispatcher?.start();
 const app = await buildApp(config, {
   ...persistence?.repositories,
+  ...(config.MALWARE_SCAN_MODE === "required" && persistence
+    ? { uploadScanQueue: persistence.uploadScanQueue }
+    : {}),
   ...(persistence ? { adminAccess: persistence.adminAccess } : {}),
   ...(persistence ? { usageMeter: persistence.usageMeter } : {}),
   ...(persistence

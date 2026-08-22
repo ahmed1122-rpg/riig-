@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2025-69720",
+      "packages": ["libtinfo6", "ncurses-base", "ncurses-bin"],
+      "severity": "high",
+      "justification": "The production entrypoints do not expose a terminal UI or pass attacker input to ncurses; containers run non-root, read-only, and without added capabilities while Debian prepares a fix.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2025-69720",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-13221",
+      "packages": ["perl-base"],
+      "severity": "critical",
+      "justification": "Perl is not invoked by any API or worker entrypoint and no attacker-controlled regular expression reaches it; containers run non-root, read-only, and with no-new-privileges until Debian ships a fix.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-13221",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-14456",
+      "packages": ["libssl3t64", "openssl-provider-legacy"],
+      "severity": "high",
+      "justification": "The application does not enable a QUIC server and TLS is terminated at the controlled ingress; the runtime is additionally bounded by non-root, read-only, and no-new-privileges controls.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-14456",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-41992",
+      "packages": ["gzip"],
+      "severity": "high",
+      "justification": "Production code never invokes the gzip executable for uploaded or attacker-controlled data; compression is handled inside reviewed Node paths and the container filesystem is read-only.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-41992",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-42496",
+      "packages": ["perl-base"],
+      "severity": "critical",
+      "justification": "Perl and Archive::Tar are not invoked by API or worker entrypoints, so uploaded archives never reach the affected path; containers remain non-root, read-only, and no-new-privileges.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-42496",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-42497",
+      "packages": ["perl-base"],
+      "severity": "high",
+      "justification": "Perl and Archive::Tar are not invoked by API or worker entrypoints, so uploaded archives never reach the affected path; containers remain non-root, read-only, and no-new-privileges.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-42497",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-48962",
+      "packages": ["perl-base"],
+      "severity": "high",
+      "justification": "Perl IO::Compress is not invoked by application entrypoints and attacker-controlled glob patterns cannot reach it; containers run non-root, read-only, and without added capabilities.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-48962",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-54369",
+      "packages": ["libacl1"],
+      "severity": "high",
+      "justification": "The application does not call libacl mutation APIs, runs as an unprivileged user, and receives a read-only root filesystem with no added Linux capabilities.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-54369",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-57432",
+      "packages": ["perl-base"],
+      "severity": "high",
+      "justification": "Perl pack and unpack operations are not invoked by any production entrypoint and receive no attacker input; the runtime remains non-root, read-only, and no-new-privileges.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-57432",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-57433",
+      "packages": ["perl-base"],
+      "severity": "critical",
+      "justification": "Perl Storable is not invoked by any production entrypoint and receives no attacker-controlled serialized input; the runtime remains non-root, read-only, and no-new-privileges.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-57433",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-8376",
+      "packages": ["perl-base"],
+      "severity": "critical",
+      "justification": "The affected condition targets 32-bit Perl regular-expression compilation, while the image is amd64 and Perl is not invoked by production entrypoints; runtime controls remain fail-closed.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-8376",
+      "approvedBy": "ahmed1122-rpg"
+    },
+    {
+      "target": "runtime",
+      "vulnerabilityId": "CVE-2026-9538",
+      "packages": ["perl-base"],
+      "severity": "high",
+      "justification": "Perl Archive::Tar is not invoked by any production entrypoint and uploaded archives cannot reach it; containers run non-root, read-only, and with no-new-privileges.",
+      "expiresAt": "2026-09-18T23:59:59.000Z",
+      "trackingUrl": "https://security-tracker.debian.org/tracker/CVE-2026-9538",
+      "approvedBy": "ahmed1122-rpg"
+    }
+  ]
+}

@@ -79,6 +79,7 @@ function completeEnvironment() {
     "SMTP_SECURE=false",
     "SMTP_REQUIRE_TLS=true",
     "OBJECT_STORAGE_MODE=s3",
+    "MALWARE_SCAN_MODE=required",
     "OBJECT_STORAGE_REGION=eu-central-1",
     "OBJECT_STORAGE_BUCKET=motionprep-production",
     "OBJECT_STORAGE_ENCRYPTION_MODE=bucket-default",

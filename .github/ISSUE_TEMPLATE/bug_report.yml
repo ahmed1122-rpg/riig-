@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a reproducible, non-sensitive defect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities or include credentials, customer data, private URLs, uploads, exports, or unredacted logs. Use the private security link below instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What failed, and who is affected?
+      placeholder: Describe the observed problem and its impact.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Release tag, image digest, or commit SHA.
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local development
+        - CI
+        - Staging
+        - Production
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide deterministic, redacted steps and safe sample data.
+      placeholder: |
+        1. Start from...
+        2. Perform...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Include correlation IDs or short log excerpts only after removing sensitive data.
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Low - workaround exists
+        - Medium - core workflow is degraded
+        - High - core workflow is unavailable or data integrity is at risk
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Safety checks
+      options:
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I removed credentials, personal data, customer content, and private URLs.
+          required: true

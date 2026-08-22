@@ -7,7 +7,11 @@ export function sendAdminAuthError(
   reply: FastifyReply,
 ) {
   if (!(error instanceof AuthDomainError)) throw error;
-  const status = error.code === "USER_NOT_FOUND" ? 404 : 403;
+  const status = error.code === "USER_NOT_FOUND"
+    ? 404
+    : error.code === "SESSION_INVALID"
+      ? 401
+      : 403;
   return reply.status(status).send({
     data: null,
     error: {

@@ -84,6 +84,15 @@ export class PostgresUploadCancellationCommand
           [source.id],
         );
       }
+      await client.query(
+        `UPDATE malware_scan_jobs
+         SET status = 'failed', error_code = 'UPLOAD_CANCELLED',
+             lease_owner = NULL, lease_expires_at = NULL,
+             completed_at = now(), updated_at = now()
+         WHERE upload_id = $1
+           AND status IN ('queued', 'retry_wait', 'scanning')`,
+        [current.upload_id],
+      );
 
       if (await this.mayRestoreProject(client, current, project)) {
         const baseline =
@@ -166,7 +175,7 @@ export class PostgresUploadCancellationCommand
          SELECT 1 FROM upload_sessions
          WHERE project_id = $1
            AND upload_id <> $2
-           AND status IN ('validating', 'uploading', 'verifying')
+           AND status IN ('validating', 'uploading', 'verifying', 'scanning')
        ) AS exists`,
       [upload.project_id, upload.upload_id],
     );

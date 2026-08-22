@@ -16,7 +16,9 @@ interface CapabilityRouteOptions {
   pdfRegionOcrEnabled: boolean;
   characterRigEnabled: boolean;
   operationalStatus?: OperationalStatusProvider;
-  requiredWorkers: ReadonlySet<"media" | "document" | "export" | "character">;
+  requiredWorkers: ReadonlySet<
+    "media" | "document" | "export" | "character" | "security"
+  >;
 }
 
 export async function registerCapabilityRoutes(
@@ -77,7 +79,13 @@ export async function registerCapabilityRoutes(
 async function resolveWorkerCapabilities(
   options: CapabilityRouteOptions,
 ): Promise<ApplicationCapabilities["runtime"]["workers"]> {
-  const workerTypes = ["media", "document", "export", "character"] as const;
+  const workerTypes = [
+    "media",
+    "document",
+    "export",
+    "character",
+    "security",
+  ] as const;
   let snapshot: Awaited<ReturnType<OperationalStatusProvider["snapshot"]>> | null = null;
   try {
     snapshot = options.operationalStatus

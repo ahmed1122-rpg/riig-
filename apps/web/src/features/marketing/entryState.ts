@@ -1,7 +1,12 @@
 import type { ViewId } from "../../types";
 
-export type SessionPhase = "checking" | "resolved";
-export type RootSurface = "auth" | "splash" | "marketing" | "studio";
+export type SessionPhase = "checking" | "resolved" | "unavailable";
+export type RootSurface =
+  | "auth"
+  | "splash"
+  | "session-unavailable"
+  | "marketing"
+  | "studio";
 
 const viewIds: readonly ViewId[] = [
   "dashboard",
@@ -133,6 +138,7 @@ export function resolveRootSurface(input: {
 }): RootSurface {
   if (input.authOpen) return "auth";
   if (input.sessionPhase === "checking") return "splash";
+  if (input.sessionPhase === "unavailable") return "session-unavailable";
   if (
     !input.authenticated &&
     !input.guestStudioOpen &&

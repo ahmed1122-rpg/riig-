@@ -2,6 +2,8 @@ name: release-rollback-drill
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "27 6 1 * *"
 
 permissions:
   contents: read

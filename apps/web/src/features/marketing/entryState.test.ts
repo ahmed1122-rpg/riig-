@@ -37,6 +37,18 @@ describe("marketing entry state", () => {
     ).toBe("splash");
   });
 
+  it("keeps a server outage distinct from an anonymous session", () => {
+    expect(
+      resolveRootSurface({
+        sessionPhase: "unavailable",
+        authenticated: false,
+        guestStudioOpen: false,
+        authOpen: false,
+        billingReturn: false,
+      }),
+    ).toBe("session-unavailable");
+  });
+
   it.each([
     "?billingReturn=1",
     "?sandbox_checkout=checkout_123&provider=sandbox-card",

@@ -17,10 +17,9 @@ export async function requireRole(
   const user = await requireUser(request, auth);
   if (!roles.includes(user.role)) {
     throw new AuthDomainError(
-      "SESSION_INVALID",
+      "AUTHORIZATION_DENIED",
       "ليس لديك صلاحية لتنفيذ هذا الإجراء.",
     );
   }
   return user;
 }
-

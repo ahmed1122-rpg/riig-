@@ -45,6 +45,9 @@ function Harness({
       >
         retry capabilities
       </button>
+      <button type="button" onClick={() => void lifecycle.refreshSession()}>
+        retry session
+      </button>
     </>
   );
 }
@@ -55,7 +58,7 @@ afterEach(() => {
 });
 
 describe("application lifecycle", () => {
-  it("resolves an initial session failure and can refresh after authentication", async () => {
+  it("keeps an initial session transport failure explicit and recovers", async () => {
     const user = {
       id: "user-1",
       name: "Creator",
@@ -74,9 +77,34 @@ describe("application lifecycle", () => {
     const view = render(<Harness onNotify={onNotify} controls={controls} />);
 
     await waitFor(() =>
-      expect(view.getByTestId("phase").textContent).toBe("resolved"),
+      expect(view.getByTestId("phase").textContent).toBe("unavailable"),
     );
     expect(onNotify).toHaveBeenCalledWith("تعذر التحقق من جلسة الخادم.");
+
+    view.getByRole("button", { name: "retry session" }).click();
+    await waitFor(() =>
+      expect(view.getByTestId("phase").textContent).toBe("resolved"),
+    );
+    expect(controls.current?.sessionUser).toEqual(user);
+  });
+
+  it("can refresh the session after authentication", async () => {
+    const user = {
+      id: "user-1",
+      name: "Creator",
+      email: "creator@example.test",
+      role: "creator" as const,
+      mfaEnabled: false,
+    };
+    vi.mocked(getSession).mockResolvedValue(user);
+    vi.mocked(getApplicationCapabilities).mockResolvedValue(
+      unavailableApplicationCapabilities,
+    );
+    const onNotify = vi.fn();
+    const controls = { current: null } as MutableRefObject<Lifecycle | null>;
+    render(<Harness onNotify={onNotify} controls={controls} />);
+
+    await waitFor(() => expect(controls.current?.sessionUser).toEqual(user));
 
     await act(async () => {
       await expect(

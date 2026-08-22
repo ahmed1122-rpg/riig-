@@ -8,7 +8,7 @@ import {
 } from "@motionprep/contracts";
 import { uploadLimitLabel } from "./uploadLimit";
 
-export type UploadState = "empty" | "validating" | "uploading" | "verifying" | "ready" | "error";
+export type UploadState = "empty" | "validating" | "uploading" | "scanning" | "verifying" | "ready" | "error";
 
 interface SourceUploadStatusProps {
   mode: ProjectMode;
@@ -30,6 +30,7 @@ const labels: Record<UploadState, string> = {
   empty: "اختر ملف المصدر",
   validating: "التحقق من الملف",
   uploading: "رفع المصدر",
+  scanning: "فحص الملف",
   verifying: "التحقق من النسخة",
   ready: "المصدر جاهز",
   error: "تعذر تجهيز الملف",
@@ -88,6 +89,7 @@ export function SourceUploadStatus({
           <header><span><strong>{labels[state]}</strong><small>عملية واحدة · ملف واحد</small></span>{state !== "empty" && <b dir="ltr">{progress}%</b>}</header>
           <div className="pro-upload-track"><i style={{ width: `${progress}%` }} /></div>
           {state === "uploading" && <p><span>اكتمل {progress}% من العملية</span><span>يستمر التحقق بعد اكتمال النقل</span></p>}
+          {state === "scanning" && <p><span>فحص قبل النشر</span></p>}
           {state === "verifying" && <p><span>فحص سلامة الملف</span><span>SHA-256</span></p>}
           {state === "ready" && <p className="is-success"><Icon name="badgeCheck" size={13} /> المصدر جاهز · بصمة SHA-256: {hash ? `${hash.slice(0, 4)}…${hash.slice(-4)}` : "بانتظار رفع حقيقي"}</p>}
           {state === "empty" && <p><span>لم يبدأ الرفع</span><span>اختر ملفًا للمتابعة</span></p>}

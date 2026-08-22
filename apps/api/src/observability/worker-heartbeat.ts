@@ -9,7 +9,7 @@ export async function startWorkerHeartbeat(
   pool: Pool,
   input: {
     instanceId: string;
-    workerType: "media" | "document" | "export" | "character";
+    workerType: "media" | "document" | "export" | "character" | "security";
     releaseVersion: string;
     concurrency: number;
     healthInstanceFile?: string;

@@ -24,7 +24,8 @@ matrix is:
 
 | Runtime | Read | Write/delete | Prohibited |
 |---|---|---|---|
-| API | Exact authorized keys under `sources/`, `derived/`, `artifacts/`, and character paths | `sources/` uploads and exact cleanup/purge operations | Bucket creation, policy changes, unrestricted listing |
+| API | Exact authorized metadata and keys required by authenticated routes | New uploads under `quarantine/` and exact cleanup/purge operations | Publishing quarantine bytes into `sources/`, bucket creation, policy changes, unrestricted listing |
+| Security worker | Job-owned `quarantine/` and the exact promoted `sources/` key | Promote clean bytes to `sources/`; delete the exact quarantined version | `derived/`, `artifacts/`, character paths, unrestricted listing, bucket administration |
 | Media worker | Job-owned `sources/` | Job-owned `derived/` | `artifacts/`, character paths, bucket administration |
 | Document worker | Job-owned `sources/` and `derived/` | Job-owned `derived/` | `artifacts/`, character paths, bucket administration |
 | Export worker | Job-owned `sources/` and `derived/` | Job-owned `artifacts/` | Broad `projects/` access, bucket administration |
@@ -39,6 +40,7 @@ the workload-specific env-file checks are a second guard, not a substitute.
 
 | Prefix | Contents | Required retention |
 |---|---|---|
+| `quarantine/` | Newly uploaded bytes awaiting a clean malware verdict | Never process; purge immediately after clean promotion, malicious rejection, cancellation, or terminal scan failure |
 | `sources/` | Validated image or PDF bytes for a source version | Retain while the source-version record exists |
 | `derived/` | Immutable normalized raster layers and guided refinements | Register ownership before every write; retain while a current or revision `LayerDocument` references the key |
 | `artifacts/` | Generated PSD, TIFF, ZIP, or text exports | Application access expires after 24 hours |

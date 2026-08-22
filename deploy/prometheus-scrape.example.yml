@@ -5,6 +5,12 @@ global:
 rule_files:
   - /etc/prometheus/motionprep-alerts.yml
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
 scrape_configs:
   - job_name: motionprep-api
     metrics_path: /internal/metrics
@@ -15,6 +21,5 @@ scrape_configs:
       - targets:
           - api:4000
 
-# Alertmanager routing is deployment-owned because receiver credentials and
-# escalation policies differ by organization. Do not place webhook, SMTP, or
-# paging credentials in this repository.
+# Receiver credentials remain deployment-owned. Mount the receiver URL as a
+# secret and start from deploy/alertmanager.example.yml; do not commit it.

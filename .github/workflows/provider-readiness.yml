@@ -2,6 +2,8 @@ name: provider-readiness
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "47 5 * * 1"
 
 permissions:
   contents: read

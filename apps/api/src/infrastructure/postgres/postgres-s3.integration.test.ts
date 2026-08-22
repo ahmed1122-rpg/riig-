@@ -30,6 +30,8 @@ import { PostgresSourceVersionRestoreCommand } from "./postgres-source-version-r
 import { PostgresUploadFinalizationCommand } from "./postgres-upload-finalization.js";
 import { PostgresUploadIntegrityFailureCommand } from "./postgres-upload-integrity-failure.js";
 import { PostgresUploadRepository } from "./postgres-upload-repository.js";
+import { PostgresUploadScanQueueCommand } from "./postgres-upload-scan-queue.js";
+import { PostgresMalwareScanRepository } from "./postgres-malware-scan-repository.js";
 import { PostgresAuthRepository } from "./postgres-auth-repository.js";
 import { PostgresEmailOutboxRepository } from "./postgres-email-outbox.js";
 import { PostgresAccountPrivacyRepository } from "./postgres-account-privacy-repository.js";
@@ -491,6 +493,94 @@ describe("PostgreSQL and S3-compatible infrastructure", () => {
     expect(afterHistoricalReplay.rows[0]).toEqual({
       current_source_version_id: newerSourceVersionId,
       status: "needs_review",
+    });
+  });
+
+  it("gates publication on a leased malware verdict and fails closed", async () => {
+    const cleanFixture = await insertMalwareScanFixture(pool, "clean");
+    const uploads = new PostgresUploadRepository(pool, true);
+    const queue = new PostgresUploadScanQueueCommand(pool);
+    const scans = new PostgresMalwareScanRepository(pool);
+    const cleanSession = await uploads.findById(cleanFixture.uploadId);
+    if (!cleanSession) throw new Error("Clean scan fixture was not inserted.");
+
+    await queue.enqueue({ session: cleanSession, sha256: cleanFixture.sha256 });
+    await expect(
+      uploads.findReadyBySourceVersion(
+        cleanFixture.projectId,
+        cleanFixture.sourceVersionId,
+      ),
+    ).resolves.toBeNull();
+    const cleanJob = await scans.claim("security-clean", 60_000);
+    if (!cleanJob) throw new Error("Clean scan job was not claimed.");
+    await expect(scans.renewLease(cleanJob, 60_000)).resolves.toBe(true);
+    await scans.markCleanMetadata(
+      cleanJob,
+      cleanFixture.publishedObjectKey,
+      {
+        verdict: "clean",
+        engine: "ClamAV 1.4.3",
+        definitionsVersion: "27999",
+      },
+    );
+    const cleanMetadata = await uploads.findById(cleanFixture.uploadId);
+    if (!cleanMetadata) throw new Error("Clean upload metadata disappeared.");
+    await new PostgresUploadFinalizationCommand(pool).finalize({
+      session: cleanMetadata,
+      sha256: cleanFixture.sha256,
+    });
+    await scans.completeClean(cleanJob);
+    await expect(
+      uploads.findReadyBySourceVersion(
+        cleanFixture.projectId,
+        cleanFixture.sourceVersionId,
+      ),
+    ).resolves.toMatchObject({
+      status: "ready",
+      malwareScanVerdict: "clean",
+      objectKey: cleanFixture.publishedObjectKey,
+    });
+
+    const maliciousFixture = await insertMalwareScanFixture(pool, "malicious");
+    const maliciousSession = await uploads.findById(maliciousFixture.uploadId);
+    if (!maliciousSession) throw new Error("Malicious scan fixture was not inserted.");
+    await queue.enqueue({
+      session: maliciousSession,
+      sha256: maliciousFixture.sha256,
+    });
+    const maliciousJob = await scans.claim("security-malicious", 60_000);
+    if (!maliciousJob) throw new Error("Malicious scan job was not claimed.");
+    await scans.rejectMalicious(maliciousJob, {
+      verdict: "malicious",
+      engine: "ClamAV 1.4.3",
+      definitionsVersion: "27999",
+      signatureName: "Win.Test.EICAR_HDB-1",
+    });
+    await expect(uploads.findById(maliciousFixture.uploadId)).resolves.toMatchObject({
+      status: "rejected",
+      malwareScanVerdict: "malicious",
+    });
+    await expect(
+      uploads.findReadyBySourceVersion(
+        maliciousFixture.projectId,
+        maliciousFixture.sourceVersionId,
+      ),
+    ).resolves.toBeNull();
+
+    const failureFixture = await insertMalwareScanFixture(pool, "failure");
+    const failureSession = await uploads.findById(failureFixture.uploadId);
+    if (!failureSession) throw new Error("Failure scan fixture was not inserted.");
+    await queue.enqueue({ session: failureSession, sha256: failureFixture.sha256 });
+    await pool.query(
+      "UPDATE malware_scan_jobs SET attempt = max_attempts - 1 WHERE upload_id = $1",
+      [failureFixture.uploadId],
+    );
+    const failureJob = await scans.claim("security-failure", 60_000);
+    if (!failureJob) throw new Error("Terminal failure scan job was not claimed.");
+    await scans.retry(failureJob, "CLAMAV_UNAVAILABLE", 1_000);
+    await expect(uploads.findById(failureFixture.uploadId)).resolves.toMatchObject({
+      status: "scan_failed",
+      malwareScanVerdict: "error",
     });
   });
 
@@ -1639,6 +1729,65 @@ async function insertProjectFixture(
     [projectId, userId, projectKind, timestamp],
   );
   return { ownerUserId: userId, projectId, sourceVersionId, projectKind };
+}
+
+async function insertMalwareScanFixture(
+  pool: Pool,
+  suffix: string,
+): Promise<{
+  projectId: string;
+  uploadId: string;
+  sourceVersionId: string;
+  sha256: string;
+  publishedObjectKey: string;
+}> {
+  const fixture = await insertProjectFixture(pool, "image");
+  const uploadId = crypto.randomUUID();
+  const sourceVersionId = crypto.randomUUID();
+  const sha256 = "a".repeat(63) + suffix.length.toString(16);
+  const quarantineObjectKey =
+    `quarantine/${fixture.projectId}/${uploadId}-${suffix}.png`;
+  const publishedObjectKey =
+    `sources/${fixture.projectId}/${uploadId}-${suffix}.png`;
+  await pool.query(
+    "UPDATE projects SET status = 'uploading' WHERE id = $1",
+    [fixture.projectId],
+  );
+  await pool.query(
+    `INSERT INTO source_versions (
+       id, project_id, upload_id, version_number, filename, content_type,
+       size_bytes, status, created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, 1, $4, 'image/png', 1, 'uploading', now(), now()
+     )`,
+    [sourceVersionId, fixture.projectId, uploadId, `${suffix}.png`],
+  );
+  await pool.query(
+    `INSERT INTO upload_sessions (
+       upload_id, project_id, filename, content_type, expected_size_bytes,
+       status, source_version_id, object_key, expires_at, max_bytes,
+       upload_url, demo_upload_url, project_status_before_upload,
+       created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, 'image/png', 1, 'uploading', $4, $5,
+       now() + interval '1 hour', 31457280, $6, $6, 'needs_review', now(), now()
+     )`,
+    [
+      uploadId,
+      fixture.projectId,
+      `${suffix}.png`,
+      sourceVersionId,
+      quarantineObjectKey,
+      `/v1/uploads/${uploadId}/content`,
+    ],
+  );
+  return {
+    projectId: fixture.projectId,
+    uploadId,
+    sourceVersionId,
+    sha256,
+    publishedObjectKey,
+  };
 }
 
 async function activateJobFence(

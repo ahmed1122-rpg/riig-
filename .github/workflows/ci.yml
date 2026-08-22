@@ -53,7 +53,7 @@ jobs:
           --volume "${GITHUB_WORKSPACE}/artifacts/qa:/workspace/artifacts/qa"
           motionprep-qa:ci
       - name: Audit the complete dependency tree in the QA image
-        run: docker run --rm motionprep-qa:ci npm audit --audit-level=high
+        run: docker run --rm motionprep-qa:ci npm run verify:dependency-audit
       - name: Upload QA execution summary
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -115,6 +115,15 @@ jobs:
             motionprep-web:ci
           timeout 30 bash -c \
             'until curl --fail --silent http://127.0.0.1:18080/healthz >/dev/null; do sleep 1; done'
+      - name: Reject an invalid trusted proxy before Nginx starts
+        shell: bash
+        run: |
+          if docker run --rm \
+            --env TRUSTED_PROXY_CIDR=invalid \
+            motionprep-web:ci; then
+            echo "Web image accepted an invalid trusted proxy CIDR." >&2
+            exit 1
+          fi
       - name: Scan runtime image
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
@@ -133,6 +142,41 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
+      - name: Prepare container security evidence
+        run: mkdir -p artifacts/security
+      - name: Capture all runtime findings
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: motionprep-runtime:ci
+          format: json
+          output: artifacts/security/runtime-trivy.json
+          exit-code: "0"
+          ignore-unfixed: false
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+      - name: Capture all web findings
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: motionprep-web:ci
+          format: json
+          output: artifacts/security/web-trivy.json
+          exit-code: "0"
+          ignore-unfixed: false
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+      - name: Reject unapproved unfixed container findings
+        run: >-
+          node scripts/verify-trivy-exceptions.mjs
+          runtime=artifacts/security/runtime-trivy.json
+          web=artifacts/security/web-trivy.json
+      - name: Retain container security evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: container-security-${{ github.sha }}
+          path: artifacts/security
+          if-no-files-found: ignore
+          retention-days: 30
 
   release-fixtures:
     runs-on: ubuntu-latest

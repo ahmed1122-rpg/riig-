@@ -65,7 +65,10 @@ export class PostgresOperationalStatusProvider
 {
   constructor(
     private readonly pool: Pool,
-    private readonly options: { characterWorkerExpected?: boolean } = {},
+    private readonly options: {
+      characterWorkerExpected?: boolean;
+      securityWorkerExpected?: boolean;
+    } = {},
   ) {}
 
   async snapshot(): Promise<OperationalStatusSnapshot> {
@@ -122,6 +125,7 @@ export class PostgresOperationalStatusProvider
              0
            ) AS oldest_queued_seconds
          FROM export_jobs
+         ${this.options.securityWorkerExpected ? malwareScanQueueUnion : ""}
          ${this.options.characterWorkerExpected ? characterQueueUnion : ""}`,
         ),
         this.pool.query<RecentWorkerEventRow>(
@@ -200,7 +204,9 @@ export class PostgresOperationalStatusProvider
             ? "document"
             : row.queue === "export"
               ? "export"
-              : "character";
+              : row.queue === "malware-scan"
+                ? "security"
+                : "character";
       const event = (type: RecentWorkerEventRow["event_type"]) =>
         recentWorkerEvents.rows.find(
           (candidate) =>
@@ -237,6 +243,7 @@ export class PostgresOperationalStatusProvider
       "media",
       "document",
       "export",
+      ...(this.options.securityWorkerExpected ? (["security"] as const) : []),
       ...(this.options.characterWorkerExpected ? (["character"] as const) : []),
     ]);
     const expectedWorkerTypes = new Set(requiredWorkerTypes);
@@ -302,6 +309,22 @@ const characterQueueUnion = `
       0
     ) AS oldest_queued_seconds
   FROM character_jobs
+`;
+
+const malwareScanQueueUnion = `
+  UNION ALL
+  SELECT
+    'malware-scan' AS queue,
+    count(*) FILTER (WHERE status IN ('queued', 'retry_wait')) AS queued,
+    count(*) FILTER (WHERE status = 'scanning') AS active,
+    count(*) FILTER (WHERE status IN ('malicious', 'failed')) AS failed,
+    COALESCE(
+      extract(epoch FROM now() - min(created_at) FILTER (
+        WHERE status IN ('queued', 'retry_wait')
+      )),
+      0
+    ) AS oldest_queued_seconds
+  FROM malware_scan_jobs
 `;
 
 function optionalIso(value: Date | string | null): string | null {

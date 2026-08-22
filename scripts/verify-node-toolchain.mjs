@@ -25,7 +25,7 @@ export function verifyNodeToolchain({
     violations.push("package.json must be valid JSON before deployment.");
   }
 
-  const expectedNodeImage = `node:${nodeVersion}-bookworm-slim@sha256:`;
+  const expectedNodeImage = `node:${nodeVersion}-trixie-slim@sha256:`;
   const nodeImageReferences = new Set();
   for (const dockerfile of dockerfiles) {
     const definedStages = new Set();

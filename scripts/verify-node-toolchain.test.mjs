@@ -20,7 +20,7 @@ const validManifest = JSON.stringify({
 const validNpmConfig = "engine-strict=true\nstrict-allow-scripts=true\n";
 const nodeImageDigest = "a".repeat(64);
 const validDockerfile = [
-  `FROM node:24.18.1-bookworm-slim@sha256:${nodeImageDigest} AS build`,
+  `FROM node:24.18.1-trixie-slim@sha256:${nodeImageDigest} AS build`,
   "FROM build AS runtime-base",
   "FROM runtime-base AS runtime",
   "",

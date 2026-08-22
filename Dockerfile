@@ -2,7 +2,7 @@
 
 # Keep the explicit image version aligned with .node-version. The deployment
 # verifier rejects drift while the digest preserves immutable builds.
-FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS build
+FROM node:24.18.1-trixie-slim@sha256:ac39e4b5fcb2b1b34b20364fd58b2e898f3bb80731ee6f62a7536f9df3d6aadc AS build
 WORKDIR /workspace
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
@@ -14,6 +14,7 @@ COPY apps/worker-document/package.json ./apps/worker-document/package.json
 COPY apps/worker-export/package.json ./apps/worker-export/package.json
 COPY apps/worker-character/package.json ./apps/worker-character/package.json
 COPY apps/worker-media/package.json ./apps/worker-media/package.json
+COPY apps/worker-security/package.json ./apps/worker-security/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY packages/document-processing/package.json ./packages/document-processing/package.json
 COPY packages/export-adapters/package.json ./packages/export-adapters/package.json
@@ -29,7 +30,7 @@ RUN npm run build
 RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 COPY scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
-FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS runtime-base
+FROM node:24.18.1-trixie-slim@sha256:ac39e4b5fcb2b1b34b20364fd58b2e898f3bb80731ee6f62a7536f9df3d6aadc AS runtime-base
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000
@@ -38,6 +39,7 @@ ENV API_PORT=4000
 # text layer supplies its own reviewed font file. Keep discovery deterministic
 # and avoid production warnings from the slim base image.
 RUN apt-get update \
+  && apt-get upgrade --yes \
   && apt-get install --yes --no-install-recommends fontconfig \
   && rm -rf /var/lib/apt/lists/*
 
@@ -72,6 +74,8 @@ COPY --from=build /workspace/apps/worker-export/package.json ./apps/worker-expor
 COPY --from=build /workspace/apps/worker-export/dist ./apps/worker-export/dist
 COPY --from=build /workspace/apps/worker-character/package.json ./apps/worker-character/package.json
 COPY --from=build /workspace/apps/worker-character/dist ./apps/worker-character/dist
+COPY --from=build /workspace/apps/worker-security/package.json ./apps/worker-security/package.json
+COPY --from=build /workspace/apps/worker-security/dist ./apps/worker-security/dist
 COPY --from=build /workspace/scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
 COPY --from=build /workspace/packages/contracts/package.json ./packages/contracts/package.json

@@ -15,7 +15,10 @@ import {
 } from "./postgres-upload-record.js";
 
 export class PostgresUploadRepository implements UploadRepository {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly requireMalwareScan = false,
+  ) {}
 
   async findById(id: string): Promise<UploadSession | null> {
     const result = await this.pool.query<UploadRow>(
@@ -32,7 +35,7 @@ export class PostgresUploadRepository implements UploadRepository {
       `
         ${uploadSelect}
         WHERE project_id = $1
-          AND status IN ('validating', 'uploading', 'verifying')
+          AND status IN ('validating', 'uploading', 'verifying', 'scanning')
           AND expires_at > now()
         ORDER BY created_at DESC
         LIMIT 1
@@ -52,6 +55,9 @@ export class PostgresUploadRepository implements UploadRepository {
         WHERE project_id = $1
           AND source_version_id = $2
           AND status = 'ready'
+          ${this.requireMalwareScan
+            ? "AND malware_scan_verdict = 'clean'"
+            : ""}
         ORDER BY created_at DESC
         LIMIT 1
       `,
@@ -68,7 +74,7 @@ export class PostgresUploadRepository implements UploadRepository {
       `
         ${uploadSelect}
         WHERE project_id = $1
-          AND status IN ('validating', 'uploading', 'verifying')
+          AND status IN ('validating', 'uploading', 'verifying', 'scanning')
           AND expires_at <= $2
         ORDER BY expires_at, upload_id
       `,
@@ -106,9 +112,11 @@ export class PostgresUploadRepository implements UploadRepository {
     }>(`SELECT
           count(*) AS total,
           count(*) FILTER (
-            WHERE status IN ('validating', 'uploading', 'verifying')
+            WHERE status IN ('validating', 'uploading', 'verifying', 'scanning')
           ) AS active,
-          count(*) FILTER (WHERE status = 'failed') AS failed
+          count(*) FILTER (
+            WHERE status IN ('failed', 'rejected', 'scan_failed')
+          ) AS failed
         FROM upload_sessions`);
     const row = result.rows[0];
     return {
@@ -123,7 +131,8 @@ export class PostgresUploadRepository implements UploadRepository {
       `UPDATE upload_sessions
        SET object_purged_at = COALESCE(object_purged_at, $2),
            updated_at = GREATEST(updated_at, $2)
-       WHERE upload_id = $1 AND status IN ('failed', 'cancelled')`,
+       WHERE upload_id = $1
+         AND status IN ('failed', 'rejected', 'scan_failed', 'cancelled')`,
       [uploadId, purgedAt],
     );
   }

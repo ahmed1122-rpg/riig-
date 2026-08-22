@@ -1,6 +1,6 @@
 {
   "name": "motionprep-studio",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "packageManager": "npm@11.16.0",
   "allowScripts": {
@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "dev": "concurrently --kill-others --names api,web \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:stack": "concurrently --kill-others --names api,web,media,document,export \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\"",
+    "dev:stack": "concurrently --kill-others --names api,web,security,media,document,export \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-security\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\"",
     "dev:durable": "node scripts/run-durable-dev.mjs",
     "dev:stack:character": "concurrently --kill-others --names api,web,media,document,export,character \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\" \"npm:dev:worker-character\"",
     "dev:api": "npm run dev --workspace @motionprep/api",
@@ -27,6 +27,7 @@
     "dev:worker-document": "npm run dev --workspace @motionprep/worker-document",
     "dev:worker-export": "npm run dev --workspace @motionprep/worker-export",
     "dev:worker-character": "npm run dev --workspace @motionprep/worker-character",
+    "dev:worker-security": "npm run dev --workspace @motionprep/worker-security",
     "clean": "node scripts/clean.mjs",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -62,12 +63,13 @@
     "verify:architecture": "node --test scripts/import-cycle-detector.test.mjs && node scripts/verify-architecture.mjs",
     "verify:contracts": "node --import tsx --test scripts/verify-contract-baseline.test.mjs && node --import tsx scripts/verify-contract-baseline.mjs",
     "verify:maintainability": "node --test scripts/verify-maintainability.test.mjs && node scripts/verify-maintainability.mjs",
-    "verify:deployment": "node --test scripts/check-worker-health.test.mjs scripts/run-webkit-e2e.test.mjs scripts/verify-browser-matrix.test.mjs scripts/verify-character-race-script.test.mjs scripts/verify-nginx-deployment.test.mjs scripts/verify-node-toolchain.test.mjs scripts/verify-qa-image-contract.test.mjs scripts/verify-runtime-image-contract.test.mjs scripts/verify-worker-build-contract.test.mjs scripts/verify-workflow-security.test.mjs && node --import tsx scripts/verify-browser-matrix.mjs && node scripts/verify-worker-build-contract.mjs && node scripts/verify-deployment.mjs",
+    "verify:deployment": "node --test scripts/check-worker-health.test.mjs scripts/run-webkit-e2e.test.mjs scripts/verify-browser-matrix.test.mjs scripts/verify-character-race-script.test.mjs scripts/verify-nginx-deployment.test.mjs scripts/verify-node-toolchain.test.mjs scripts/verify-production-environment-template.test.mjs scripts/verify-qa-image-contract.test.mjs scripts/verify-runtime-image-contract.test.mjs scripts/verify-trivy-exceptions.test.mjs scripts/verify-worker-build-contract.test.mjs scripts/verify-workflow-security.test.mjs && node --import tsx scripts/verify-browser-matrix.mjs && node scripts/verify-worker-build-contract.mjs && node scripts/verify-deployment.mjs",
     "verify:alerts": "node scripts/verify-prometheus-rules.mjs",
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
     "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
     "verify:incident": "node --test scripts/verify-incident-manifest.test.mjs && node scripts/verify-incident-manifest.mjs docs/runbooks/incident-manifest.example.json",
     "verify:security-license": "node --test scripts/verify-security-license.test.mjs && node scripts/verify-security-license.mjs",
+    "verify:dependency-audit": "node --test scripts/verify-dependency-audit.test.mjs && node scripts/verify-dependency-audit.mjs",
     "verify:paths": "node --test scripts/verify-repository-paths.test.mjs && node scripts/verify-repository-paths.mjs",
     "verify:css": "node scripts/verify-css-architecture.mjs && node --test scripts/verify-css-usage.test.mjs && node scripts/verify-css-usage.mjs",
     "verify:icons": "node --test scripts/verify-icon-usage.test.mjs && node scripts/verify-icon-usage.mjs",
@@ -117,7 +119,7 @@
     "eslint": "^10.8.0",
     "globals": "^17.8.0",
     "knip": "^6.29.0",
-    "pdf-lib": "^1.17.1",
+    "pdf-lib": "1.17.1",
     "pg": "8.22.0",
     "sharp": "^0.35.3",
     "stripe": "22.3.2",
@@ -126,5 +128,9 @@
     "tsx": "^4.20.3",
     "typescript-eslint": "^8.65.0",
     "yaml": "^2.9.0"
+  },
+  "overrides": {
+    "pdf-lib": "1.17.1",
+    "stripe": "22.3.2"
   }
 }

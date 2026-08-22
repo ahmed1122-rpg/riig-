@@ -319,7 +319,10 @@ const sourceStatusLabel: Record<SourceVersionSummary["status"], string> = {
   validating: "تحقق",
   uploading: "رفع",
   verifying: "مراجعة",
+  scanning: "فحص أمني",
   ready: "جاهز",
+  rejected: "مرفوض أمنيًا",
+  scan_failed: "تعذر الفحص",
   failed: "فشل",
   cancelled: "ملغى",
 };

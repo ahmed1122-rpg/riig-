@@ -1,6 +1,6 @@
 export interface WorkerStatus {
   instanceId: string;
-  workerType: "media" | "document" | "export" | "character";
+  workerType: "media" | "document" | "export" | "character" | "security";
   releaseVersion: string;
   concurrency: number;
   residentMemoryBytes: number;
@@ -12,7 +12,12 @@ export interface WorkerStatus {
 }
 
 export interface QueueStatus {
-  queue: "processing-media" | "processing-document" | "export" | "character";
+  queue:
+    | "processing-media"
+    | "processing-document"
+    | "export"
+    | "character"
+    | "malware-scan";
   queued: number;
   active: number;
   failed: number;

@@ -1,4 +1,5 @@
 import type {
+  MalwareScanVerdict,
   SourceType,
   UploadSession,
   UploadStatus,
@@ -14,6 +15,7 @@ export interface UploadRow {
   status: UploadStatus;
   source_version_id: string | null;
   sha256: string | null;
+  malware_scan_verdict: MalwareScanVerdict;
   object_key: string;
   expires_at: Date | string;
   max_bytes: number;
@@ -25,6 +27,7 @@ export interface UploadRow {
 export const uploadColumns = `
   upload_id, project_id, filename, content_type, expected_size_bytes,
   status, source_version_id, sha256, object_key, expires_at, max_bytes,
+  malware_scan_verdict,
   COALESCE(upload_url, demo_upload_url) AS upload_url, created_at, updated_at
 `;
 
@@ -36,6 +39,7 @@ export function qualifiedUploadColumns(alias: string): string {
     ${alias}.upload_id, ${alias}.project_id, ${alias}.filename,
     ${alias}.content_type, ${alias}.expected_size_bytes, ${alias}.status,
     ${alias}.source_version_id, ${alias}.sha256, ${alias}.object_key,
+    ${alias}.malware_scan_verdict,
     ${alias}.expires_at, ${alias}.max_bytes,
     COALESCE(${alias}.upload_url, ${alias}.demo_upload_url) AS upload_url,
     ${alias}.created_at, ${alias}.updated_at
@@ -54,6 +58,7 @@ export function mapUpload(row: UploadRow): UploadSession {
     status: row.status,
     sourceVersionId: row.source_version_id,
     sha256: row.sha256,
+    malwareScanVerdict: row.malware_scan_verdict,
     objectKey: row.object_key,
     expiresAt: toIso(row.expires_at),
     maxBytes: row.max_bytes,

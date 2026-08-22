@@ -51,8 +51,8 @@ export async function isWorkerInstanceHealthy(pool, input) {
 
 async function main() {
   const workerType = process.argv[2];
-  if (!["media", "document", "export", "character"].includes(workerType)) {
-    throw new Error("Usage: node scripts/check-worker-health.mjs <media|document|export|character>");
+  if (!["media", "document", "export", "character", "security"].includes(workerType)) {
+    throw new Error("Usage: node scripts/check-worker-health.mjs <media|document|export|character|security>");
   }
   const databaseUrl = process.env.DATABASE_URL;
   const violations = validateWorkerHealthDatabaseUrl(
