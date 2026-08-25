@@ -21,7 +21,8 @@ secret manager, never through a committed `.env` file:
   preferably a workload identity instead of static keys;
 - dedicated SMTP host/account with required TLS;
 - private HTTPS Character inference base URL and API key, including any genuine
-  provider path prefix;
+  provider path prefix; select the GPU vendor, account, region, base model,
+  private networking, retention terms, and billing cap outside source control;
 - Stripe live credentials and webhook secret only after the business enables
   billing;
 - approved RPO/RTO, incident owners and alert destinations, privacy/legal
@@ -49,9 +50,13 @@ provider URL, and mutable image values are rejected by the existing verifiers.
    recovery manifest, and pass `provider-readiness` against that exact release.
 7. Run fault injection, representative load/memory, alert, and application-only
    rollback drills. Retain release-bound reports and prove queues drain to zero.
-8. Configure the private Character inference provider and egress allowlist;
-   verify timeout, retry, rate-limit, SHA, cleanup, heartbeat, and lease-loss
-   behavior with non-production image fixtures.
+8. Configure the private Character GPU Serverless provider and egress allowlist.
+   Implement `async-v1`, the capability/conformance endpoints, scale-to-zero,
+   min/max replica and concurrency limits from
+   `config/gpu-serverless-readiness-policy.json`; run
+   `npm run verify:character-provider`, then verify cold/warm latency, timeout,
+   retry, rate-limit, cost, SHA, cleanup, heartbeat, and lease-loss behavior with
+   non-production image fixtures.
 9. Replace the draft Terms and Privacy documents with owner/legal-approved
    text, controller identity, contact, and approval metadata. Do not bypass
    `verify:release-legal`.

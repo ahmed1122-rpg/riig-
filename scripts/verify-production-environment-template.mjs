@@ -27,6 +27,13 @@ const requiredKeys = [
   "CHARACTER_RIG_ENABLED",
   "CHARACTER_INFERENCE_URL",
   "CHARACTER_INFERENCE_API_KEY",
+  "CHARACTER_INFERENCE_PROTOCOL",
+  "CHARACTER_INFERENCE_TIMEOUT_MS",
+  "CHARACTER_INFERENCE_OPERATION_TIMEOUT_MS",
+  "CHARACTER_INFERENCE_POLL_INTERVAL_MS",
+  "CHARACTER_INFERENCE_MAX_POLL_INTERVAL_MS",
+  "CHARACTER_INFERENCE_ALLOW_INSECURE_LOCALHOST",
+  "CHARACTER_CONCURRENCY",
   "CHARACTER_LEASE_MS",
   "WORKER_EVENT_RETENTION_DAYS",
   "RUNTIME_IMAGE_REF",
@@ -72,6 +79,16 @@ export function verifyProductionEnvironmentTemplate(source) {
   if (!/^CHARACTER_RIG_ENABLED=false$/mu.test(source)) {
     violations.push(
       "Character Studio must remain disabled in the production template until its private-provider and Golden gates pass.",
+    );
+  }
+  if (!/^CHARACTER_INFERENCE_PROTOCOL=async-v1$/mu.test(source)) {
+    violations.push(
+      "The production Character worker must use the bounded async-v1 provider protocol.",
+    );
+  }
+  if (!/^CHARACTER_INFERENCE_ALLOW_INSECURE_LOCALHOST=false$/mu.test(source)) {
+    violations.push(
+      "The production Character provider cannot allow insecure localhost transport.",
     );
   }
   for (const key of requiredKeys) {

@@ -41,7 +41,12 @@ access keys are optional when the runner receives a workload identity. For AWS
 OIDC, set `AWS_ROLE_ARN` and `AWS_REGION` on the protected environment and
 leave the object-storage access/secret key pair unset. For another
 S3-compatible provider, leave `AWS_ROLE_ARN` unset and provide both secrets;
-the workflow rejects mixed or partial credential modes.
+   the workflow rejects mixed or partial credential modes. Set the protected
+   `CHARACTER_RIG_ENABLED` variable explicitly. While it is `false`, the same
+   workflow retains a release-bound fail-closed record. When it is `true`, also
+   provide `CHARACTER_INFERENCE_URL` and `CHARACTER_INFERENCE_API_KEY`; the
+   workflow verifies the live GPU Serverless async contract and packages its
+   redacted evidence for stable promotion.
 
 After `release-images` has created signed candidate digests, but before a tag
 or stable release exists, run `staging-readiness` on `main`. It performs live,
@@ -148,7 +153,8 @@ use Stripe Customer Portal.
     explicit S3 credentials. Do not commit any of them.
 14. Keep `CHARACTER_RIG_ENABLED=false` by default. To enable the optional
     identity-preserving pipeline, configure the private HTTPS inference
-    endpoint and secret, pass the Character benchmark and Adobe Golden, then
+    endpoint and secret, set `CHARACTER_INFERENCE_PROTOCOL=async-v1`, pass
+    `npm run verify:character-provider`, the Character benchmark, and Adobe Golden, then
     start `worker-character` with the `character-rig` Compose profile. Follow
      [`runbooks/character-rig-operations.md`](runbooks/character-rig-operations.md).
     `CHARACTER_INFERENCE_URL` may include a provider path prefix; both
@@ -156,6 +162,10 @@ use Stripe Customer Portal.
     requests below `/private-api/`. Credentials, query strings, and fragments
     are rejected. Do not include `/v1` unless it is genuinely part of the
     provider's prefix, because the adapter appends its own versioned routes.
+    The initial provider policy requires scale-to-zero, zero minimum replicas,
+    at most two replicas, and target concurrency one. See
+    [`CHARACTER_GPU_SERVERLESS.md`](CHARACTER_GPU_SERVERLESS.md); these settings
+    govern the external GPU endpoint, not the CPU Compose worker.
     The API advertises Character Studio only after both the flag is enabled and
     a fresh `worker-character` heartbeat is visible. Keep
     `CHARACTER_DRAIN_TIMEOUT_MS=30000` below the Compose stop grace period so an

@@ -24,7 +24,14 @@ export async function main(
         objectStorage: createS3ObjectStorageOptions(config),
         inferenceBaseUrl: config.CHARACTER_INFERENCE_URL,
         inferenceApiKey: config.CHARACTER_INFERENCE_API_KEY,
+        inferenceProtocol: config.CHARACTER_INFERENCE_PROTOCOL,
         inferenceTimeoutMilliseconds: config.CHARACTER_INFERENCE_TIMEOUT_MS,
+        inferenceOperationTimeoutMilliseconds:
+          config.CHARACTER_INFERENCE_OPERATION_TIMEOUT_MS,
+        inferencePollIntervalMilliseconds:
+          config.CHARACTER_INFERENCE_POLL_INTERVAL_MS,
+        inferenceMaxPollIntervalMilliseconds:
+          config.CHARACTER_INFERENCE_MAX_POLL_INTERVAL_MS,
         allowInsecureLocalhost:
           config.CHARACTER_INFERENCE_ALLOW_INSECURE_LOCALHOST,
         pollMilliseconds: config.CHARACTER_POLL_MS,

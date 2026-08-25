@@ -359,6 +359,7 @@
     "verify:alerts",
     "verify:architecture",
     "verify:bundle",
+    "verify:character-provider",
     "verify:character-rig:benchmark",
     "verify:clean",
     "verify:contracts",

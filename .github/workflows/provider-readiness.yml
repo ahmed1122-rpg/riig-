@@ -37,9 +37,14 @@ jobs:
       RELEASE_SIGNATURE_WORKFLOW: ${{ vars.RELEASE_SIGNATURE_WORKFLOW }}
       RELEASE_SIGNATURE_IDENTITY_REF: ${{ vars.RELEASE_SIGNATURE_IDENTITY_REF }}
       PDF_REGION_OCR_ENABLED: ${{ vars.PDF_REGION_OCR_ENABLED }}
+      CHARACTER_RIG_ENABLED: ${{ vars.CHARACTER_RIG_ENABLED }}
+      CHARACTER_INFERENCE_URL: ${{ vars.CHARACTER_INFERENCE_URL }}
+      CHARACTER_INFERENCE_PROTOCOL: async-v1
+      CHARACTER_INFERENCE_API_KEY: ${{ secrets.CHARACTER_INFERENCE_API_KEY }}
       RECOVERY_MANIFEST_JSON: ${{ secrets.RECOVERY_MANIFEST_JSON }}
       RECOVERY_SIGNING_PUBLIC_KEY_PEM: ${{ secrets.RECOVERY_SIGNING_PUBLIC_KEY_PEM }}
       OBJECT_STORAGE_EVIDENCE_PATH: .tmp/provider-object-storage-evidence.json
+      CHARACTER_PROVIDER_EVIDENCE_PATH: .tmp/character-provider-evidence.json
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -86,13 +91,16 @@ jobs:
       - name: Verify immutable release coordinates
         shell: bash
         run: |
-          printf 'RELEASE_GIT_SHA=%s\nRUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\nRELEASE_SIGNATURE_WORKFLOW=%s\nRELEASE_SIGNATURE_IDENTITY_REF=%s\n' \
+          printf 'RELEASE_GIT_SHA=%s\nRUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\nRELEASE_SIGNATURE_WORKFLOW=%s\nRELEASE_SIGNATURE_IDENTITY_REF=%s\nCHARACTER_RIG_ENABLED=%s\n' \
             "$RELEASE_GIT_SHA" "$RUNTIME_IMAGE_REF" "$WEB_IMAGE_REF" \
             "$RELEASE_SIGNATURE_WORKFLOW" "$RELEASE_SIGNATURE_IDENTITY_REF" \
+            "$CHARACTER_RIG_ENABLED" \
             > provider-release.env
           node scripts/verify-release-environment.mjs provider-release.env --references-only
       - name: Probe the deployment-owned object store
         run: npm run verify:object-storage
+      - name: Verify the Character GPU Serverless provider or record fail-closed disablement
+        run: npm run verify:character-provider
       - name: Verify regional OCR release evidence when enabled
         if: ${{ vars.PDF_REGION_OCR_ENABLED == 'true' }}
         run: npm run verify:ocr-corpus
@@ -124,6 +132,7 @@ jobs:
             echo "- Object storage write/read/integrity/delete probe: verified"
             echo "- Versioning requirement: verified by application readiness"
             echo "- Regional OCR evidence: $PDF_REGION_OCR_ENABLED"
+            echo "- Character GPU Serverless gate: $CHARACTER_RIG_ENABLED"
             echo "- Latest RPO/RTO recovery manifest and Ed25519 signature: verified"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Package visible, redacted, integrity-bound provider evidence
@@ -131,6 +140,7 @@ jobs:
           node scripts/package-release-gate-evidence.mjs release-gate-evidence
           provider-release.env
           .tmp/provider-object-storage-evidence.json
+          .tmp/character-provider-evidence.json
           .tmp/recovery-verification-evidence.json
       - name: Retain provider and redacted recovery verification evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
