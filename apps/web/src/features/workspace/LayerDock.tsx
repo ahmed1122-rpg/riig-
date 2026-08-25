@@ -6,10 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  canonicalLayerName,
-  normalizeLayerName,
-} from "@motionprep/layer-domain";
+import { canonicalLayerName, normalizeLayerName } from "@motionprep/layer-domain";
 import { Icon } from "../../shared/Icon";
 import type { Layer } from "../../types";
 import { ChecksPanel, LayerSkeleton } from "./LayerDockPanels";
@@ -48,7 +45,7 @@ import {
   navigateLayerSelection,
   openLayerDiagnostic,
 } from "./layerDockNavigation";
-import { isPageLayer } from "./workspaceLayerKinds";
+import { isLayerContentEditable, isPageLayer } from "./workspaceLayerKinds";
 import type { LayerDensity, LayerDockProps } from "./layerDockTypes";
 import { resolveLayerSelection } from "./layerDockSelection";
 
@@ -466,8 +463,4 @@ export function LayerDock({
       )}
     </aside>
   );
-}
-
-function isLayerContentEditable(layer: Layer): boolean {
-  return !isPageLayer(layer) && layer.kind !== "group" && !layer.fixed && !layer.locked;
 }

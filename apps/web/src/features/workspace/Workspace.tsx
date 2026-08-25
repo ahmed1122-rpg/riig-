@@ -3,11 +3,7 @@ import { useConfirmation } from "../../shared/useConfirmation";
 import { ShortcutsModal } from "../../shared/ShortcutsModal";
 import type { Layer, ProjectMode } from "../../types";
 import type { LayerDocumentCommand } from "@motionprep/contracts";
-import {
-  WorkspaceHeader,
-  WorkspacePipeline,
-  WorkspaceStatusBar,
-} from "./WorkspaceChrome";
+import { WorkspaceHeader, WorkspacePipeline, WorkspaceStatusBar } from "./WorkspaceChrome";
 import { useWorkspaceReviewAutosave } from "./useWorkspaceReviewAutosave";
 import { useWorkspaceToolController } from "./useWorkspaceToolController";
 import { WorkspaceEditorLayout } from "./WorkspaceEditorLayout";

@@ -17,6 +17,11 @@ import {
 } from "./auth/secret-protector.js";
 import { databaseUrlRequiresTls } from "./config/database-url-policy.js";
 
+const falseByDefaultBoolean = z
+  .enum(["true", "false"])
+  .default("false")
+  .transform((value) => value === "true");
+
 const environmentSchema = z
   .object({
     NODE_ENV: z
@@ -61,10 +66,7 @@ const environmentSchema = z
       .min(900)
       .max(30 * 24 * 60 * 60)
       .default(8 * 60 * 60),
-    COOKIE_SECURE: z
-      .enum(["true", "false"])
-      .default("false")
-      .transform((value) => value === "true"),
+    COOKIE_SECURE: falseByDefaultBoolean,
     PAYMENT_MODE: z.enum(["disabled", "sandbox", "live"]).default("sandbox"),
     USAGE_METERING_MODE: z
       .enum(["off", "shadow", "soft", "hard-jobs", "hard"])
@@ -92,14 +94,8 @@ const environmentSchema = z
       .enum(["inline", "worker"])
       .default("inline"),
     PDF_OCR_MODE: z.enum(["disabled", "local"]).default("disabled"),
-    PDF_REGION_OCR_ENABLED: z
-      .enum(["true", "false"])
-      .default("false")
-      .transform((value) => value === "true"),
-    CHARACTER_RIG_ENABLED: z
-      .enum(["true", "false"])
-      .default("false")
-      .transform((value) => value === "true"),
+    PDF_REGION_OCR_ENABLED: falseByDefaultBoolean,
+    CHARACTER_RIG_ENABLED: falseByDefaultBoolean,
     LOGIN_MAX_FAILURES: z.coerce.number().int().min(3).max(20).default(5),
     LOGIN_ATTEMPT_WINDOW_SECONDS: z.coerce
       .number()
@@ -136,10 +132,7 @@ const environmentSchema = z
     ),
     TOTP_ISSUER: z.string().trim().min(2).max(50).default("MotionPrep"),
     PASSWORD_RESET_URL: optionalUrl,
-    EMAIL_VERIFICATION_REQUIRED: z
-      .enum(["true", "false"])
-      .default("false")
-      .transform((value) => value === "true"),
+    EMAIL_VERIFICATION_REQUIRED: falseByDefaultBoolean,
     EMAIL_VERIFICATION_URL: optionalUrl,
     ADMIN_BOOTSTRAP_EMAIL: z.preprocess(
       blankToUndefined,
@@ -155,14 +148,8 @@ const environmentSchema = z
       z.string().trim().min(1).optional(),
     ),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
-    SMTP_SECURE: z
-      .enum(["true", "false"])
-      .default("false")
-      .transform((value) => value === "true"),
-    SMTP_REQUIRE_TLS: z
-      .enum(["true", "false"])
-      .default("false")
-      .transform((value) => value === "true"),
+    SMTP_SECURE: falseByDefaultBoolean,
+    SMTP_REQUIRE_TLS: falseByDefaultBoolean,
     SMTP_USER: optionalText(),
     SMTP_PASSWORD: optionalText(),
     SMTP_FROM: z.preprocess(

@@ -1,0 +1,36 @@
+.pro-status-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-muted);
+  direction: rtl;
+  font-size: var(--ws-text-xs);
+  grid-row: 4;
+}
+.pro-status-bar span { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pro-status-bar i { width: 6px; height: 6px; border-radius: 50%; }
+.pro-status-bar i.is-saved,
+.pro-status-bar i.is-ready { background: var(--success); }
+.pro-status-bar i.is-dirty,
+.pro-status-bar i.is-conflict { background: var(--amber); }
+.pro-status-bar i.is-error { background: var(--danger); }
+.pro-status-bar i.is-unavailable { background: var(--text-muted); }
+.pro-status-bar strong { margin-inline-start: auto; max-width: 260px; overflow: hidden; color: var(--text-soft); font-size: var(--ws-text-xs); text-overflow: ellipsis; white-space: nowrap; }
+
+.pro-workspace.is-preview-focus {
+  position: fixed;
+  z-index: 150;
+  inset: 0;
+  height: 100dvh;
+  grid-template-rows: 0 0 minmax(0, 1fr) 25px;
+}
+.pro-workspace.is-preview-focus .pro-workspace-header,
+.pro-workspace.is-preview-focus .pro-workspace-progress,
+.pro-workspace.is-preview-focus .pro-tool-rail,
+.pro-workspace.is-preview-focus .pro-layer-dock { display: none; }
+.pro-workspace.is-preview-focus .pro-workspace-body { grid-template-columns: 1fr; }
+.pro-workspace.is-preview-focus .pro-preview-column { grid-column: 1; }

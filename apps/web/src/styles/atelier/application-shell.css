@@ -1,0 +1,136 @@
+/* Application shell */
+.app-shell {
+  background:
+    linear-gradient(90deg, transparent 0 70%, color-mix(in srgb, var(--atelier-indigo) 2%, transparent)),
+    var(--bg);
+}
+
+.sidebar {
+  border-inline-start-color: color-mix(in srgb, var(--atelier-indigo) 18%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, var(--atelier-cyan)), var(--surface) 30%),
+    var(--surface);
+  box-shadow: -10px 0 36px rgba(7, 16, 31, .05);
+}
+
+.brand {
+  min-height: 74px;
+  border-bottom-color: color-mix(in srgb, var(--atelier-indigo) 16%, var(--line));
+}
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+}
+
+.brand-copy strong {
+  font-size: 15px;
+  letter-spacing: .01em;
+}
+
+.nav-list {
+  gap: 6px;
+  padding-block: 20px;
+}
+
+.nav-item {
+  border-radius: 10px;
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.nav-item::after {
+  inset-block: 9px;
+  width: 3px;
+  border-radius: 4px;
+  background: var(--gradient-atelier);
+}
+
+.nav-item:hover {
+  transform: translateX(-2px);
+}
+
+.nav-item.is-active {
+  background: linear-gradient(90deg, rgba(32, 217, 238, .12), rgba(113, 103, 255, .09));
+  color: color-mix(in srgb, var(--atelier-indigo) 76%, var(--text));
+}
+
+.sidebar-note {
+  border-color: color-mix(in srgb, var(--atelier-cyan) 20%, var(--line));
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(32, 217, 238, .07), rgba(113, 103, 255, .06));
+}
+
+.avatar {
+  background: var(--gradient-campaign);
+  color: white;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--atelier-indigo) 12%, transparent);
+}
+
+.topbar {
+  min-height: var(--topbar-height);
+  border-bottom-color: color-mix(in srgb, var(--atelier-indigo) 14%, var(--line));
+  background: color-mix(in srgb, var(--surface) 93%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+
+.page-content:not(.is-workspace) {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--atelier-indigo) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--atelier-indigo) 3%, transparent) 1px, transparent 1px);
+  background-size: 36px 36px;
+  background-position: center -1px;
+}
+
+.dashboard-hero,
+.page-title-row,
+.admin-page-heading {
+  position: relative;
+}
+
+.dashboard-hero::before,
+.page-title-row::before,
+.admin-page-heading::before {
+  position: absolute;
+  width: 72px;
+  height: 5px;
+  inset: -8px 0 auto auto;
+  border-radius: 8px;
+  background: var(--gradient-atelier);
+  content: "";
+}
+
+.time-saved,
+.creation-path,
+.data-state,
+.settings-card {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--atelier-rim) border-box;
+  box-shadow: var(--atelier-shadow);
+}
+
+.creation-path:hover {
+  border-color: transparent;
+  box-shadow: 0 22px 48px rgba(7, 16, 31, .13);
+  transform: translateY(-3px);
+}
+
+.recent-project,
+.project-row,
+.export-row {
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.recent-project:hover,
+.project-row:hover,
+.export-row:hover {
+  background: linear-gradient(90deg, rgba(32, 217, 238, .055), rgba(113, 103, 255, .035));
+}
+
+.status {
+  min-height: 28px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 7px;
+}
