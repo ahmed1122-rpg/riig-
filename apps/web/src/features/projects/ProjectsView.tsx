@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useDebounce } from "../../shared/hooks/useDebounce";
 import { useResourcePolling } from "../../shared/hooks/useResourcePolling";
 import { DataState } from "../../shared/DataState";
@@ -74,22 +74,30 @@ export function ProjectsView({
     authenticated ? "loading" : "empty",
   );
   const [actionError, setActionError] = useState<string>();
+  const versionRequestRef = useRef<AbortController | undefined>(undefined);
   const { requestConfirmation, confirmationDialog } = useConfirmation();
 
   useEffect(() => {
     if (authenticated) {
       setState("loading");
     } else {
+      versionRequestRef.current?.abort();
+      versionRequestRef.current = undefined;
+      setExpandedProjectId(undefined);
+      setLoadingVersions(undefined);
       setItems([]);
       setState("empty");
     }
   }, [authenticated]);
+
+  useEffect(() => () => versionRequestRef.current?.abort(), []);
 
   useResourcePolling({
     enabled: authenticated,
     resourceKey: "projects:list",
     revision: reloadVersion,
     intervalMs: 3_000,
+    initialRetryLimit: 3,
     load: listProjects,
     shouldPoll: (projects) =>
       projects.some((project) => liveProjectStatuses.has(project.status)),
@@ -115,6 +123,9 @@ export function ProjectsView({
   );
 
   const loadVersions = async (projectId: string) => {
+    versionRequestRef.current?.abort();
+    const controller = new AbortController();
+    versionRequestRef.current = controller;
     setVersionErrors((current) => {
       const next = { ...current };
       delete next[projectId];
@@ -122,12 +133,14 @@ export function ProjectsView({
     });
     setLoadingVersions(projectId);
     try {
-      const versions = await listSourceVersions(projectId);
+      const versions = await listSourceVersions(projectId, controller.signal);
+      if (controller.signal.aborted) return;
       setVersionsByProject((current) => ({
         ...current,
         [projectId]: versions,
       }));
     } catch (error) {
+      if (controller.signal.aborted) return;
       setVersionErrors((current) => ({
         ...current,
         [projectId]:
@@ -136,14 +149,23 @@ export function ProjectsView({
             : "تعذر تحميل إصدارات المصدر.",
       }));
     } finally {
-      setLoadingVersions((current) =>
-        current === projectId ? undefined : current,
-      );
+      if (versionRequestRef.current === controller) {
+        versionRequestRef.current = undefined;
+        setLoadingVersions((current) =>
+          current === projectId ? undefined : current,
+        );
+      }
     }
   };
 
   const toggleVersions = async (projectId: string) => {
     if (expandedProjectId === projectId) {
+      if (versionRequestRef.current) {
+        const controller = versionRequestRef.current;
+        versionRequestRef.current = undefined;
+        controller.abort();
+        setLoadingVersions(undefined);
+      }
       setExpandedProjectId(undefined);
       return;
     }
@@ -319,7 +341,10 @@ const sourceStatusLabel: Record<SourceVersionSummary["status"], string> = {
   validating: "تحقق",
   uploading: "رفع",
   verifying: "مراجعة",
+  scanning: "فحص أمني",
   ready: "جاهز",
+  rejected: "مرفوض أمنيًا",
+  scan_failed: "تعذر الفحص",
   failed: "فشل",
   cancelled: "ملغى",
 };

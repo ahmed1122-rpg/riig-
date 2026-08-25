@@ -1,0 +1,155 @@
+/* Admin — operational density with product identity */
+.admin-shell {
+  background:
+    radial-gradient(circle at 90% 0, rgba(32, 217, 238, .07), transparent 28rem),
+    var(--atelier-midnight);
+}
+
+.app-shell--admin .page-content {
+  min-width: 0;
+  padding: 0;
+  background: var(--atelier-midnight);
+}
+
+.admin-shell,
+.admin-main,
+.admin-content,
+.admin-view,
+.admin-page-heading,
+.admin-page-heading > div {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-sidebar,
+.admin-topbar {
+  border-color: rgba(113, 103, 255, .2);
+  background: color-mix(in srgb, var(--atelier-navy) 95%, transparent);
+}
+
+.admin-topbar {
+  color: #e2e8f0;
+}
+
+.admin-topbar__leading > span {
+  color: #86efac;
+}
+
+.admin-shell .secondary-button {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  color: #17201e;
+}
+
+.admin-shell .secondary-button:hover:not(:disabled) {
+  border-color: var(--atelier-cyan);
+  background: #f8fafc;
+  color: #07101f;
+}
+
+.admin-page-heading h1 {
+  color: var(--atelier-porcelain);
+}
+
+.admin-page-heading p {
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.admin-page-heading .eyebrow {
+  color: var(--atelier-cyan);
+}
+
+.admin-updated,
+.bounded-note {
+  color: #a7f3d0;
+  font-size: 12px;
+}
+
+.operational-rail__head > div > small {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.admin-shell .status--danger {
+  border-color: #f2a7b4;
+  background: #ffedf0;
+  color: #8a1c2f;
+  font-size: 12px;
+}
+
+.admin-shell .status--processing {
+  color: #075f73;
+  font-size: 12px;
+}
+
+.billing-admin-list > header > div > small,
+.system-settings-list article > div > small {
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.admin-data-row {
+  min-height: 52px;
+  color: #37443f;
+  font-size: 12px;
+}
+
+.admin-stat {
+  color: #17201e;
+}
+
+.admin-stat small,
+.admin-stat em {
+  color: #52615c;
+  font-size: 12px;
+}
+
+.admin-data-head {
+  color: #52615c;
+  font-size: 12px;
+}
+
+.admin-data-row > span:first-child strong,
+.user-cell strong {
+  color: #17201e;
+  font-size: 12px;
+}
+
+.admin-data-row > span:first-child small,
+.user-cell small {
+  color: #52615c;
+  font-size: 11px;
+}
+
+@media (max-width: 800px) {
+  .admin-content {
+    padding: 22px 14px 42px;
+  }
+
+  .admin-page-heading {
+    gap: 10px;
+    margin-bottom: 20px;
+    padding-top: 6px;
+  }
+
+  .admin-page-heading h1 {
+    font-size: clamp(26px, 8vw, 32px);
+    line-height: 1.25;
+  }
+
+  .admin-page-heading p {
+    max-width: 42ch;
+    font-size: 13px;
+  }
+
+  .admin-overview-grid {
+    gap: 14px;
+  }
+
+  .admin-stat {
+    min-height: 112px;
+    padding: 17px;
+  }
+}

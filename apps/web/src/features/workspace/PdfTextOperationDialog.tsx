@@ -23,6 +23,7 @@ export function PdfTextOperationDialog({
   onApply,
 }: PdfTextOperationDialogProps) {
   const text = layers[0]?.fullText ?? "";
+  const textDirection = layers[0]?.direction ?? "auto";
   const characters = useMemo(() => Array.from(text), [text]);
   const wordTargets = useMemo(() => pdfSplitWordTargets(text), [text]);
   const [offset, setOffset] = useState(() => suggestedOffset(characters));
@@ -97,7 +98,7 @@ export function PdfTextOperationDialog({
         <div className="pdf-text-split-control">
           <fieldset className="pdf-word-picker">
             <legend>انقر على الكلمة التي يبدأ عندها الجزء الثاني</legend>
-            <div dir={layers[0]?.direction ?? "rtl"}>
+            <div dir={textDirection}>
               {wordTargets.map((word) => (
                 <button
                   type="button"
@@ -131,11 +132,11 @@ export function PdfTextOperationDialog({
           <div className="pdf-text-preview-grid">
             <section>
               <strong>الجزء الأول</strong>
-              <p dir={layers[0]?.direction ?? "rtl"}>{firstPart || "—"}</p>
+              <p dir={textDirection}>{firstPart || "—"}</p>
             </section>
             <section>
               <strong>الجزء الثاني</strong>
-              <p dir={layers[0]?.direction ?? "rtl"}>{secondPart || "—"}</p>
+              <p dir={textDirection}>{secondPart || "—"}</p>
             </section>
           </div>
         </div>
@@ -144,7 +145,12 @@ export function PdfTextOperationDialog({
           <p>{layers.length} وحدات محددة بالترتيب الحالي للقراءة:</p>
           <ol>
             {layers.map((layer) => (
-              <li key={layer.id}>{layer.fullText ?? layer.name}</li>
+              <li
+                key={layer.id}
+                dir={layer.direction ?? "auto"}
+              >
+                {layer.fullText ?? layer.name}
+              </li>
             ))}
           </ol>
           <label>

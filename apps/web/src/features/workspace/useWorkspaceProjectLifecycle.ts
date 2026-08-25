@@ -42,6 +42,7 @@ interface WorkspaceProjectLifecycleOptions {
   sourcePreviewUrl?: string;
   pdfMode: PdfSegmentation;
   initialProject: WorkspaceProps["initialProject"];
+  onProjectAdopted: WorkspaceProps["onProjectAdopted"];
   onRequireAuth: () => void;
   onNotify: (message: string) => void;
   requestConfirmation: (
@@ -87,8 +88,13 @@ export function useWorkspaceProjectLifecycle(
   options: WorkspaceProjectLifecycleOptions,
 ) {
   const layerAssetUrlsRef = useRef<string[]>([]);
+  const locallyAdoptedProjectIdRef = useRef<string | undefined>(undefined);
   const [projectToHydrate, setProjectToHydrate] =
     useState<ProjectSummary>();
+  const initialProjectToHydrate =
+    options.initialProject?.id === locallyAdoptedProjectIdRef.current
+      ? null
+      : options.initialProject;
 
   const replaceLayerAssetUrls = useCallback((urls: string[]) => {
     for (const url of layerAssetUrlsRef.current) {
@@ -160,8 +166,22 @@ export function useWorkspaceProjectLifecycle(
     onNotify: options.onNotify,
     confirmSourceReplacement: options.requestConfirmation,
     onLayerAssetUrls: replaceLayerAssetUrls,
-    onLifecycleUpdate: (update) => {
+    onLifecycleUpdate: (update, file) => {
+      locallyAdoptedProjectIdRef.current = update.projectId;
       options.setProjectId(update.projectId);
+      options.onProjectAdopted({
+        id: update.projectId,
+        name:
+          options.initialProject?.name ??
+          file.name.replace(/\.[^.]+$/u, ""),
+        currentSourceVersionId:
+          update.sourceVersionId ??
+          options.initialProject?.currentSourceVersionId ??
+          null,
+        currentSourceVersionNumber: update.sourceVersionId
+          ? null
+          : options.initialProject?.currentSourceVersionNumber ?? null,
+      });
       if (update.uploadId) options.setPendingUploadId(update.uploadId);
       if (update.sourceVersionId) {
         options.setPendingSourceVersionId(update.sourceVersionId);
@@ -172,6 +192,14 @@ export function useWorkspaceProjectLifecycle(
     },
     onDocumentReady: (file, result, preparedLayers) => {
       options.setProjectId(result.projectId);
+      options.onProjectAdopted({
+        id: result.projectId,
+        name:
+          options.initialProject?.name ??
+          file.name.replace(/\.[^.]+$/u, ""),
+        currentSourceVersionId: result.sourceVersionId,
+        currentSourceVersionNumber: result.sourceVersionNumber,
+      });
       options.setSourceVersionId(result.sourceVersionId);
       options.setSourceHash(result.sha256);
       applyPreparedDocument(result.document, preparedLayers);
@@ -223,19 +251,19 @@ export function useWorkspaceProjectLifecycle(
   );
 
   useEffect(() => {
-    if (!options.initialProject || !options.authenticated) {
+    if (!initialProjectToHydrate || !options.authenticated) {
       setProjectToHydrate(undefined);
       return;
     }
     options.setUploadState("verifying");
     options.setUploadProgress(0);
     options.setUploadError(undefined);
-    options.setSourceName(options.initialProject.name);
-    options.setProjectId(options.initialProject.id);
+    options.setSourceName(initialProjectToHydrate.name);
+    options.setProjectId(initialProjectToHydrate.id);
     setProjectToHydrate(undefined);
   }, [
     options.authenticated,
-    options.initialProject,
+    initialProjectToHydrate,
     options.setProjectId,
     options.setSourceName,
     options.setUploadError,
@@ -244,13 +272,13 @@ export function useWorkspaceProjectLifecycle(
   ]);
 
   useResourcePolling({
-    enabled: Boolean(options.initialProject && options.authenticated),
-    resourceKey: `workspace-project:${options.initialProject?.id ?? "none"}`,
-    revision: options.initialProject?.currentSourceVersionNumber ?? 0,
+    enabled: Boolean(initialProjectToHydrate && options.authenticated),
+    resourceKey: `workspace-project:${initialProjectToHydrate?.id ?? "none"}`,
+    revision: initialProjectToHydrate?.currentSourceVersionNumber ?? 0,
     intervalMs: 1_500,
     maximumRetryIntervalMs: 15_000,
     load: async (signal) => {
-      const project = await getProject(options.initialProject!.id, signal);
+      const project = await getProject(initialProjectToHydrate!.id, signal);
       if (project.kind !== options.mode) {
         throw new ApiError(
           "PROJECT_KIND_MISMATCH",

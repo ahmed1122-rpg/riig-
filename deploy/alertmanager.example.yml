@@ -1,0 +1,17 @@
+route:
+  receiver: motionprep-pager
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 2h
+
+receivers:
+  - name: motionprep-pager
+    webhook_configs:
+      - url_file: /run/secrets/motionprep_alert_receiver_url
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: [alertname]

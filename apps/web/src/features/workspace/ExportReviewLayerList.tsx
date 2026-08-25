@@ -22,7 +22,7 @@ export function ExportReviewLayerList({
         >
           <Icon name="grip" size={15} />
           <span className="layer-swatch" style={{ "--layer-color": layer.color } as React.CSSProperties}>{layer.kind === "text" ? "ن" : ""}</span>
-          <span><strong dir={/^[A-Za-z0-9]/.test(layer.name.slice(1)) ? "ltr" : "rtl"}>{layer.name}</strong><small>{isPageLayer(layer) ? "خلفية بيضاء ثابتة" : `${layer.opacity}% · ${layer.visible ? "ظاهرة" : "مخفية"}`}</small></span>
+          <span><strong dir="auto">{layer.name}</strong><small>{isPageLayer(layer) ? "خلفية بيضاء ثابتة" : `${layer.opacity}% · ${layer.visible ? "ظاهرة" : "مخفية"}`}</small></span>
           {isPageLayer(layer) && <Icon name="lock" size={14} />}
         </button>
       ))}

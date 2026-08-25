@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "requiredProtocol": "async-v1",
+  "autoscaling": {
+    "requireScaleToZero": true,
+    "requiredMinReplicas": 0,
+    "maximumReplicas": 2,
+    "maximumTargetConcurrency": 1
+  },
+  "operations": {
+    "maximumColdStartMilliseconds": 180000,
+    "maximumQueueMilliseconds": 300000,
+    "maximumOperationMilliseconds": 900000
+  },
+  "privacy": {
+    "maximumInputRetentionSeconds": 3600,
+    "maximumOutputRetentionSeconds": 3600,
+    "requireCustomerDataTrainingDisabled": true
+  }
+}

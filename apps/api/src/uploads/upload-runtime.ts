@@ -21,6 +21,7 @@ import {
   type UploadCancellationCommand,
 } from "./upload-cancellation.js";
 import { UploadOperationLock } from "./upload-operation-lock.js";
+import type { UploadScanQueueCommand } from "./upload-scan-queue.js";
 
 export function createUploadRuntime(options: {
   uploads: UploadRepository;
@@ -35,6 +36,7 @@ export function createUploadRuntime(options: {
   finalization?: UploadFinalizationCommand;
   integrityFailures?: UploadIntegrityFailureCommand;
   cancellations?: UploadCancellationCommand;
+  scanQueue?: UploadScanQueueCommand;
 }) {
   const uploadOperations = new UploadOperationLock();
   const finalization =
@@ -81,6 +83,7 @@ export function createUploadRuntime(options: {
       );
     },
     options.maxImageUploadBytes ?? MAX_IMAGE_UPLOAD_BYTES,
+    options.scanQueue,
   );
   const reconciler = new UploadReconciler(
     finalization,

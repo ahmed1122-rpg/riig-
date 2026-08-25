@@ -14,10 +14,12 @@ COPY apps/worker-document/package.json ./apps/worker-document/package.json
 COPY apps/worker-export/package.json ./apps/worker-export/package.json
 COPY apps/worker-character/package.json ./apps/worker-character/package.json
 COPY apps/worker-media/package.json ./apps/worker-media/package.json
+COPY apps/worker-security/package.json ./apps/worker-security/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY packages/document-processing/package.json ./packages/document-processing/package.json
 COPY packages/export-adapters/package.json ./packages/export-adapters/package.json
 COPY packages/guidance/package.json ./packages/guidance/package.json
+COPY packages/layer-domain/package.json ./packages/layer-domain/package.json
 COPY packages/media-processing/package.json ./packages/media-processing/package.json
 COPY packages/presets/package.json ./packages/presets/package.json
 RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
@@ -29,8 +31,9 @@ ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
 RUN git --version && fc-list --version
 
-COPY --from=qa-dependencies /workspace/node_modules ./node_modules
-COPY --from=qa-dependencies /workspace/apps ./apps
-COPY --from=qa-dependencies /workspace/packages ./packages
-COPY . .
+COPY --chown=node:node --from=qa-dependencies /workspace/node_modules ./node_modules
+COPY --chown=node:node --from=qa-dependencies /workspace/apps ./apps
+COPY --chown=node:node --from=qa-dependencies /workspace/packages ./packages
+COPY --chown=node:node . .
+USER node
 CMD ["node", "scripts/run-quality-qa.mjs"]

@@ -8,7 +8,7 @@ export const MAX_UPLOAD_MEBIBYTES = MAX_PDF_UPLOAD_MEBIBYTES;
 export const MAX_UPLOAD_BYTES = MAX_PDF_UPLOAD_BYTES;
 export const MAX_PDF_PAGES = 250;
 export const MAX_PDF_TEXT_ITEMS = 100_000;
-export const APPLICATION_CAPABILITIES_SCHEMA_VERSION = "1.1";
+export const APPLICATION_CAPABILITIES_SCHEMA_VERSION = "1.2";
 export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_LENGTH = 128;
 
@@ -76,7 +76,7 @@ export interface ApplicationCapabilities {
   runtime: {
     storageProfile: "unknown" | "ephemeral" | "durable";
     workers: Record<
-      "media" | "document" | "export" | "character",
+      "media" | "document" | "export" | "character" | "security",
       {
         status: "ready" | "degraded" | "not_required";
         reason: string | null;
@@ -153,10 +153,18 @@ export type UploadStatus =
   | "validating"
   | "uploading"
   | "verifying"
+  | "scanning"
   | "ready"
+  | "rejected"
+  | "scan_failed"
   | "failed"
   | "cancelled";
 export type SourceVersionStatus = UploadStatus;
+export type MalwareScanVerdict =
+  | "pending"
+  | "clean"
+  | "malicious"
+  | "error";
 export type ExportJobStatus =
   | "queued"
   | "generating"

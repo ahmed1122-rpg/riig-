@@ -208,6 +208,26 @@ groups:
           summary: A MotionPrep container is CPU-saturated
           runbook: docs/runbooks/processing-job-recovery.md
 
+      - alert: MotionPrepHostDiskSpaceLow
+        expr: |
+          min by (instance) (
+            node_filesystem_avail_bytes{
+              fstype!~"tmpfs|overlay|squashfs",
+              mountpoint!~"/run($|/.*)|/var/lib/docker/overlay2($|/.*)"
+            }
+            /
+            node_filesystem_size_bytes{
+              fstype!~"tmpfs|overlay|squashfs",
+              mountpoint!~"/run($|/.*)|/var/lib/docker/overlay2($|/.*)"
+            }
+          ) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: A MotionPrep host has less than 15% filesystem space available
+          runbook: docs/runbooks/production-dependency-recovery.md
+
       - alert: MotionPrepHttpErrorRateHigh
         expr: |
           sum(rate(motionprep_http_requests_total{status=~"5.."}[5m]))

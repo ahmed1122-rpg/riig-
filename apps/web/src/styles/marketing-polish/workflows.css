@@ -1,0 +1,183 @@
+.workflow-composition {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vp-space-5);
+}
+
+.workflow-panel {
+  position: relative;
+  min-height: 455px;
+  overflow: hidden;
+  padding: clamp(24px, 3vw, 38px);
+  border: 1px solid var(--mk-line);
+  border-radius: var(--vp-radius-lg);
+  background: linear-gradient(150deg, rgba(21, 31, 56, 0.92), rgba(12, 20, 38, 0.82));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.workflow-panel::before {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  background: linear-gradient(var(--vp-cyan), var(--vp-violet));
+  content: "";
+}
+
+.workflow-panel--pdf::before {
+  background: linear-gradient(var(--vp-amber), var(--vp-coral));
+}
+
+.workflow-panel > header {
+  display: grid;
+  grid-template-columns: 38px 48px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--vp-space-3);
+}
+
+.workflow-number {
+  color: #73839f;
+  font: 700 11px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+.workflow-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: var(--vp-radius-sm);
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--vp-cyan);
+}
+
+.workflow-panel--pdf .workflow-icon {
+  background: rgba(246, 196, 83, 0.1);
+  color: var(--vp-amber);
+}
+.workflow-panel header div {
+  display: grid;
+  gap: 4px;
+}
+
+.workflow-panel header small {
+  color: var(--mk-muted);
+  font-size: 10px;
+}
+
+.workflow-panel h3 {
+  font-size: 19px;
+}
+
+.workflow-panel > p {
+  max-width: 520px;
+  margin: var(--vp-space-6) 38px 0 0;
+  color: var(--mk-muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.workflow-panel ol {
+  display: grid;
+  gap: var(--vp-space-3);
+  width: 58%;
+  margin: var(--vp-space-6) 38px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-panel li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #dce6f5;
+  font-size: 12px;
+}
+
+.workflow-panel li svg {
+  color: var(--vp-mint);
+}
+
+.workflow-cutout {
+  position: absolute;
+  inset-inline-end: -17px;
+  inset-block-end: -44px;
+  width: 47%;
+  aspect-ratio: 1;
+}
+
+.workflow-cutout::before {
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+  background: rgba(34, 211, 238, 0.13);
+  filter: blur(24px);
+  content: "";
+}
+
+.workflow-cutout img {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 20px 25px rgba(0, 0, 0, 0.34));
+}
+
+.workflow-cutout span {
+  position: absolute;
+  z-index: 3;
+  padding: 5px 7px;
+  border: 1px solid rgba(103, 232, 249, 0.25);
+  border-radius: 6px;
+  background: rgba(7, 13, 27, 0.84);
+  color: #aeeef5;
+  font: 700 8px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+.workflow-cutout span:first-of-type {
+  inset-block-start: 25%;
+  inset-inline-start: 2%;
+}
+
+.workflow-cutout span:last-of-type {
+  inset-block-end: 25%;
+  inset-inline-end: 3%;
+}
+
+.pdf-mode-map {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--vp-space-2);
+  margin: var(--vp-space-6) 38px 0 0;
+}
+
+.pdf-mode-map span {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: var(--vp-space-2);
+  padding-inline: 11px;
+  border: 1px solid rgba(246, 196, 83, 0.14);
+  border-radius: 9px;
+  background: rgba(246, 196, 83, 0.035);
+  color: #e7e0d2;
+  font-size: 11px;
+}
+
+.pdf-mode-map b {
+  color: var(--vp-amber);
+  font: 750 9px/1 "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+.pdf-lock-note {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-space-2);
+  margin: var(--vp-space-5) 38px 0 0;
+  color: #aebbd0;
+  font-size: 11px;
+}
+
+.pdf-lock-note svg {
+  color: var(--vp-amber);
+}

@@ -4,12 +4,33 @@ import { z } from "zod";
 const configSchema = createWorkerEnvironmentSchema({
   CHARACTER_INFERENCE_URL: z.string().url(),
   CHARACTER_INFERENCE_API_KEY: z.string().min(16),
+  CHARACTER_INFERENCE_PROTOCOL: z
+    .enum(["direct-v1", "async-v1"])
+    .default("direct-v1"),
   CHARACTER_INFERENCE_TIMEOUT_MS: z.coerce
     .number()
     .int()
     .min(1_000)
     .max(15 * 60_000)
     .default(5 * 60_000),
+  CHARACTER_INFERENCE_OPERATION_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(30 * 60_000)
+    .default(15 * 60_000),
+  CHARACTER_INFERENCE_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(250)
+    .max(30_000)
+    .default(1_000),
+  CHARACTER_INFERENCE_MAX_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(250)
+    .max(60_000)
+    .default(10_000),
   CHARACTER_INFERENCE_ALLOW_INSECURE_LOCALHOST: z
     .enum(["true", "false"])
     .default("false")
@@ -46,6 +67,28 @@ const configSchema = createWorkerEnvironmentSchema({
       path: ["CHARACTER_INFERENCE_URL"],
       message:
         "Character inference requires HTTPS; insecure HTTP is allowed only for explicitly enabled localhost development.",
+    });
+  }
+  if (
+    value.CHARACTER_INFERENCE_OPERATION_TIMEOUT_MS <
+    value.CHARACTER_INFERENCE_TIMEOUT_MS
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["CHARACTER_INFERENCE_OPERATION_TIMEOUT_MS"],
+      message:
+        "Character inference operation timeout must be at least the per-request timeout.",
+    });
+  }
+  if (
+    value.CHARACTER_INFERENCE_MAX_POLL_INTERVAL_MS <
+    value.CHARACTER_INFERENCE_POLL_INTERVAL_MS
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["CHARACTER_INFERENCE_MAX_POLL_INTERVAL_MS"],
+      message:
+        "Character inference maximum poll interval must be at least the initial poll interval.",
     });
   }
 });

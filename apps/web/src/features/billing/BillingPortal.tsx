@@ -87,11 +87,12 @@ export default function BillingPortal({
     : 0;
   const paymentMode = configuration?.mode ?? "disabled";
 
-  const refreshBilling = async () => {
+  const refreshBilling = async (signal?: AbortSignal) => {
     const [nextConfiguration, nextSubscription] = await Promise.all([
-      getBillingConfiguration(),
-      getSubscription(),
+      getBillingConfiguration(signal),
+      getSubscription(signal),
     ]);
+    if (signal?.aborted) return;
     setConfiguration(nextConfiguration);
     setSubscription(nextSubscription);
     setLoadState("ready");
@@ -103,9 +104,11 @@ export default function BillingPortal({
 
   useEffect(() => {
     if (!authenticated) return;
+    const controller = new AbortController();
     setLoadState("loading");
     setPageError(null);
-    void refreshBilling().catch((error) => {
+    void refreshBilling(controller.signal).catch((error) => {
+      if (controller.signal.aborted) return;
       if (error instanceof ApiError && error.status === 401) {
         onRequireAuth();
         return;
@@ -115,6 +118,7 @@ export default function BillingPortal({
         error instanceof Error ? error.message : "تعذر تحميل بيانات الفوترة.",
       );
     });
+    return () => controller.abort();
   }, [authenticated, reloadVersion]);
 
   useEffect(() => {
@@ -136,12 +140,12 @@ export default function BillingPortal({
     setReturnedCheckoutId(checkoutId ?? undefined);
     const finalize = async () => {
       if (paymentResult === "cancelled") {
-        await refreshBilling();
+        await refreshBilling(controller.signal);
         if (!controller.signal.aborted) setCheckoutState("failure");
         return;
       }
       if (!checkoutId) {
-        await refreshBilling();
+        await refreshBilling(controller.signal);
         if (!controller.signal.aborted) setCheckoutState("delayed");
         return;
       }
@@ -150,7 +154,7 @@ export default function BillingPortal({
         getCheckout,
         signal: controller.signal,
       });
-      await refreshBilling();
+      await refreshBilling(controller.signal);
       if (!controller.signal.aborted) setCheckoutState(resolution);
     };
     const cleanReturnUrl = () => {

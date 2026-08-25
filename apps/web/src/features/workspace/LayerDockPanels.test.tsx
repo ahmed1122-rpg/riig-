@@ -16,13 +16,13 @@ const rasterLayer: Layer = {
   color: "#2563eb",
 };
 
-function renderLayerRow(layer: Layer) {
+function renderLayerRow(layer: Layer, duplicate = false) {
   const noop = vi.fn();
   const props: LayerRowProps = {
     layer,
     selected: false,
     active: true,
-    duplicate: false,
+    duplicate,
     renaming: false,
     renameDraft: layer.name,
     renameError: "",
@@ -62,4 +62,24 @@ describe("LayerRow raster confidence", () => {
 
     expect(screen.getByText("87% · جزء صورة")).toBeTruthy();
   });
+
+  it("makes duplicate names visible in both text and row semantics", () => {
+    renderLayerRow(rasterLayer, true);
+
+    expect(screen.getByText("اسم مكرر")).toBeTruthy();
+    const row = screen.getByRole("group", { name: /\+جزء_01/u });
+    expect(row.classList.contains("is-duplicate")).toBe(true);
+    expect(row.getAttribute("aria-label")).toContain(
+      "اسم مكرر",
+    );
+  });
+
+  it.each(["+Right_Arm", "+ذراع_يمين"])(
+    "renders %s using browser-native direction detection",
+    (name) => {
+      renderLayerRow({ ...rasterLayer, name });
+
+      expect(screen.getByText(name).getAttribute("dir")).toBe("auto");
+    },
+  );
 });

@@ -20,6 +20,7 @@ const requiredAlerts = [
   "MotionPrepUploadReconciliationStalled",
   "MotionPrepContainerMemoryPressure",
   "MotionPrepContainerCpuSaturation",
+  "MotionPrepHostDiskSpaceLow",
   "MotionPrepHttpErrorRateHigh",
   "MotionPrepAuthenticationRejectionsHigh",
   "MotionPrepApiLatencyHigh",
@@ -67,6 +68,24 @@ export async function verifyObservabilityArtifacts(root) {
     violations.push(
       `Prometheus alert rules are invalid YAML: ${message(error)}`,
     );
+  }
+  try {
+    const alertmanager = parse(await readFile(
+      join(root, "deploy/alertmanager.example.yml"),
+      "utf8",
+    ));
+    const receiverName = alertmanager?.route?.receiver;
+    const receiver = (alertmanager?.receivers ?? []).find(
+      (candidate) => candidate?.name === receiverName,
+    );
+    const webhook = receiver?.webhook_configs?.[0];
+    if (!receiverName || !webhook?.url_file || webhook?.send_resolved !== true) {
+      violations.push(
+        "Alertmanager must route to a secret-backed receiver and send resolutions.",
+      );
+    }
+  } catch (error) {
+    violations.push(`Alertmanager example is invalid YAML: ${message(error)}`);
   }
   try {
     const dashboard = JSON.parse(

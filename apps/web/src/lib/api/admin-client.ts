@@ -9,12 +9,12 @@ import type {
   AdminUser,
 } from "./models";
 
-export function getAdminOverview(): Promise<AdminOverview> {
-  return request("/v1/admin/overview");
+export function getAdminOverview(signal?: AbortSignal): Promise<AdminOverview> {
+  return request("/v1/admin/overview", { signal });
 }
 
-export function getAdminUsers(): Promise<AdminUser[]> {
-  return request("/v1/admin/users");
+export function getAdminUsers(signal?: AbortSignal): Promise<AdminUser[]> {
+  return request("/v1/admin/users", { signal });
 }
 
 export function updateAdminUserAccess(
@@ -31,16 +31,18 @@ export function updateAdminUserAccess(
   });
 }
 
-export function getAdminAudit(): Promise<AdminAuditEvent[]> {
-  return request("/v1/admin/audit");
+export function getAdminAudit(signal?: AbortSignal): Promise<AdminAuditEvent[]> {
+  return request("/v1/admin/audit", { signal });
 }
 
-export function getAdminProcessing(): Promise<AdminProcessingJob[]> {
-  return request("/v1/admin/processing");
+export function getAdminProcessing(
+  signal?: AbortSignal,
+): Promise<AdminProcessingJob[]> {
+  return request("/v1/admin/processing", { signal });
 }
 
-export function getAdminExports(): Promise<AdminExportJob[]> {
-  return request("/v1/admin/exports");
+export function getAdminExports(signal?: AbortSignal): Promise<AdminExportJob[]> {
+  return request("/v1/admin/exports", { signal });
 }
 
 export function retryAdminProcessing(
@@ -66,10 +68,10 @@ export function retryAdminExport(
   });
 }
 
-export function getAdminBilling(): Promise<AdminBillingData> {
-  return request("/v1/admin/billing");
+export function getAdminBilling(signal?: AbortSignal): Promise<AdminBillingData> {
+  return request("/v1/admin/billing", { signal });
 }
 
-export function getAdminSystem(): Promise<AdminSystemStatus> {
-  return request("/v1/admin/system");
+export function getAdminSystem(signal?: AbortSignal): Promise<AdminSystemStatus> {
+  return request("/v1/admin/system", { signal });
 }

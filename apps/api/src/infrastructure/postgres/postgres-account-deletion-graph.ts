@@ -9,6 +9,7 @@ export async function collectAccountObjectPrefixes(
     [userId],
   );
   return result.rows.flatMap(({ id }) => [
+    `quarantine/${encodeURIComponent(id)}/`,
     `sources/${encodeURIComponent(id)}/`,
     `artifacts/${encodeURIComponent(id)}/`,
     `derived/${encodeURIComponent(id)}/`,
@@ -24,6 +25,14 @@ export async function collectAccountObjectKeys(
     `SELECT DISTINCT object_key FROM (
        SELECT upload.object_key FROM upload_sessions upload
        JOIN projects project ON project.id = upload.project_id
+       WHERE project.owner_user_id = $1
+       UNION ALL
+       SELECT scan.object_key FROM malware_scan_jobs scan
+       JOIN projects project ON project.id = scan.project_id
+       WHERE project.owner_user_id = $1
+       UNION ALL
+       SELECT scan.quarantine_object_key FROM malware_scan_jobs scan
+       JOIN projects project ON project.id = scan.project_id
        WHERE project.owner_user_id = $1
        UNION ALL
        SELECT job.artifact->>'objectKey' FROM export_jobs job

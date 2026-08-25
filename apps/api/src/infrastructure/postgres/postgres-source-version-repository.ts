@@ -1,4 +1,5 @@
 import type {
+  MalwareScanVerdict,
   SourceType,
   SourceVersionStatus,
   SourceVersionSummary,
@@ -20,6 +21,7 @@ interface SourceVersionRow {
   size_bytes: number;
   status: SourceVersionStatus;
   sha256: string | null;
+  malware_scan_verdict: MalwareScanVerdict;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -95,6 +97,7 @@ export class PostgresSourceVersionRepository
     changes: {
       status?: SourceVersionStatus;
       sha256?: string | null;
+      malwareScanVerdict?: MalwareScanVerdict;
     },
   ): Promise<SourceVersionSummary | null> {
     const result = await this.pool.query<SourceVersionRow>(
@@ -103,6 +106,7 @@ export class PostgresSourceVersionRepository
         SET
           status = COALESCE($2, status),
           sha256 = CASE WHEN $3::boolean THEN $4 ELSE sha256 END,
+          malware_scan_verdict = COALESCE($5, malware_scan_verdict),
           updated_at = now()
         WHERE id = $1
         RETURNING ${sourceVersionColumns}
@@ -112,6 +116,7 @@ export class PostgresSourceVersionRepository
         changes.status ?? null,
         Object.prototype.hasOwnProperty.call(changes, "sha256"),
         changes.sha256 ?? null,
+        changes.malwareScanVerdict ?? null,
       ],
     );
     return result.rows[0] ? mapSourceVersion(result.rows[0]) : null;
@@ -135,7 +140,7 @@ async function nextVersionNumber(
 
 const sourceVersionColumns = `
   id, project_id, upload_id, version_number, filename, content_type, size_bytes,
-  status, sha256, created_at, updated_at
+  status, sha256, malware_scan_verdict, created_at, updated_at
 `;
 
 function mapSourceVersion(row: SourceVersionRow): SourceVersionSummary {
@@ -149,6 +154,7 @@ function mapSourceVersion(row: SourceVersionRow): SourceVersionSummary {
     sizeBytes: row.size_bytes,
     status: row.status,
     sha256: row.sha256,
+    malwareScanVerdict: row.malware_scan_verdict,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };

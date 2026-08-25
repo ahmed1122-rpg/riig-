@@ -14,6 +14,10 @@ export interface ExportStatusSummary {
 
 export interface ExportRepository {
   findById(id: string): Promise<ExportJob | null>;
+  isSourceReadyForArtifact(
+    projectId: string,
+    sourceVersionId: string,
+  ): Promise<boolean>;
   list(limit: number): Promise<ExportJob[]>;
   listByProjectIds(
     projectIds: string[],
@@ -63,6 +67,12 @@ export class InMemoryExportRepository implements ExportRepository {
 
   async findById(id: string): Promise<ExportJob | null> {
     return this.#jobs.get(id) ?? null;
+  }
+
+  async isSourceReadyForArtifact(): Promise<boolean> {
+    // The in-memory application runs with malware scanning explicitly disabled.
+    // PostgreSQL applies the persisted production/development scan policy.
+    return true;
   }
 
   async list(limit: number): Promise<ExportJob[]> {

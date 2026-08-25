@@ -14,6 +14,7 @@ import { InMemoryUploadRepository } from "./upload-repository.js";
 import { UploadService } from "./upload-service.js";
 import { InMemoryUploadFinalizationCommand } from "./upload-finalization.js";
 import { InMemoryUploadIntegrityFailureCommand } from "./upload-integrity-failure.js";
+import { InMemoryUploadScanQueueCommand } from "./upload-scan-queue.js";
 
 class MismatchedObjectStorage extends InMemoryObjectStorage {
   override async put(object: StoredObject): Promise<StoredObjectMetadata> {
@@ -40,6 +41,55 @@ class StreamingObservedStorage extends InMemoryObjectStorage {
 }
 
 describe("UploadService", () => {
+  it("quarantines verified bytes and blocks them until a clean scan verdict", async () => {
+    const projects = new InMemoryProjectRepository();
+    const uploads = new InMemoryUploadRepository();
+    const sources = new InMemorySourceVersionRepository();
+    const storage = new InMemoryObjectStorage();
+    const project = await projects.create(crypto.randomUUID(), {
+      name: "Quarantined source",
+      kind: "image",
+    });
+    const service = new UploadService(
+      uploads,
+      () => new Date("2026-08-20T12:00:00.000Z"),
+      new InMemoryIdempotencyStore(),
+      storage,
+      sources,
+      new InMemoryUploadFinalizationCommand(uploads, sources, projects),
+      30 * 1024 * 1024,
+      undefined,
+      undefined,
+      undefined,
+      10 * 1024 * 1024,
+      new InMemoryUploadScanQueueCommand(
+        uploads,
+        sources,
+        () => new Date("2026-08-20T12:00:01.000Z"),
+      ),
+    );
+    const png = onePixelPng();
+    const intent = await service.createIntent({
+      projectId: project.id,
+      filename: "quarantine.png",
+      contentType: "image/png",
+      sizeBytes: png.byteLength,
+    }, "quarantine-upload");
+
+    expect(intent.objectKey).toMatch(/^quarantine\//u);
+    await expect(service.receive(intent.uploadId, png)).resolves.toMatchObject({
+      status: "scanning",
+      malwareScanVerdict: "pending",
+    });
+    await expect(
+      uploads.findReadyBySourceVersion(project.id, intent.sourceVersionId!),
+    ).resolves.toBeNull();
+    await expect(service.cancel(intent.uploadId)).resolves.toMatchObject({
+      status: "cancelled",
+    });
+    await expect(storage.inspect(intent.objectKey)).resolves.toBeNull();
+  });
+
   it("publishes prepared content through the streaming storage contract", async () => {
     const projects = new InMemoryProjectRepository();
     const uploads = new InMemoryUploadRepository();

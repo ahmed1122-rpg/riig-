@@ -177,6 +177,9 @@ export async function registerHttpMetrics(
           "media",
           "document",
           "export",
+          ...(snapshot.queues.some((queue) => queue.queue === "malware-scan")
+            ? ["security"]
+            : []),
           ...(snapshot.queues.some((queue) => queue.queue === "character")
             ? ["character"]
             : []),

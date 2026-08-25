@@ -1,9 +1,4 @@
-import {
-  API_ORIGIN,
-  ApiError,
-  request,
-  type ApiEnvelope,
-} from "./transport";
+import { ApiError, request } from "./transport";
 import { waitForJob } from "./job-polling";
 import { getProjectLayerDocument } from "./layer-document-client";
 import { listSourceVersions } from "./source-versions-client";
@@ -13,6 +8,13 @@ import type {
   ProjectSummary,
   UploadResult,
 } from "./models";
+import {
+  cancelUploadSession,
+  isAbortError,
+  sourceContentType,
+  uploadSourceFile,
+  waitForMalwareScan,
+} from "./project-upload-transport";
 
 type ProcessingProgress = Pick<
   ProcessingSummary,
@@ -81,22 +83,6 @@ export function approveProjectReview(
   );
 }
 
-function sourceContentType(file: File): string {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-  const byExtension: Record<string, string> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    webp: "image/webp",
-    avif: "image/avif",
-    tif: "image/tiff",
-    tiff: "image/tiff",
-    bmp: "image/bmp",
-    pdf: "application/pdf",
-  };
-  return byExtension[extension ?? ""] ?? file.type;
-}
-
 export async function createAndUploadSource(
   file: File,
   mode: "image" | "book",
@@ -148,78 +134,85 @@ export async function createAndUploadSource(
     uploadId: intent.uploadId,
   });
   try {
-    const uploaded = await uploadSourceFile(
+    const received = await uploadSourceFile(
       intent.uploadUrl,
       file,
       contentType,
       signal,
       options.onUploadProgress,
     );
-  options.onLifecycleUpdate?.({
-    projectId: project.id,
-    uploadId: intent.uploadId,
-    sourceVersionId: uploaded.sourceVersionId,
-  });
-  const processing = await request<ProcessingProgress>("/v1/processing/jobs", {
-    method: "POST",
-    signal,
-    headers: { "x-idempotency-key": crypto.randomUUID() },
-    body: JSON.stringify({
+    const uploaded = await waitForMalwareScan(
+      intent.uploadId,
+      received,
+      signal,
+    );
+    const sourceVersionId = uploaded.sourceVersionId!;
+    const sha256 = uploaded.sha256!;
+    options.onLifecycleUpdate?.({
       projectId: project.id,
-      sourceVersionId: uploaded.sourceVersionId,
-      ...(mode === "book"
-        ? { pdfSeparationMode: options.pdfSeparationMode ?? "sentence" }
+      uploadId: intent.uploadId,
+      sourceVersionId,
+    });
+    const processing = await request<ProcessingProgress>("/v1/processing/jobs", {
+      method: "POST",
+      signal,
+      headers: { "x-idempotency-key": crypto.randomUUID() },
+      body: JSON.stringify({
+        projectId: project.id,
+        sourceVersionId,
+        ...(mode === "book"
+          ? { pdfSeparationMode: options.pdfSeparationMode ?? "sentence" }
+          : {}),
+      }),
+    });
+    options.onLifecycleUpdate?.({
+      projectId: project.id,
+      uploadId: intent.uploadId,
+      sourceVersionId,
+      processingJobId: processing.id,
+    });
+    await waitForJob({
+      initial: processing,
+      load: () =>
+        request<typeof processing>(
+          `/v1/processing/jobs/${encodeURIComponent(processing.id)}`,
+          { signal },
+        ),
+      isComplete: (job) => job.status === "ready",
+      failure: processingFailure,
+      timeoutMs: 2 * 60_000,
+      timeoutCode: "PROCESSING_TIMEOUT",
+      timeoutMessage:
+        "استغرقت المعالجة وقتًا أطول من المتوقع. ستظل المهمة محفوظة ويمكن متابعتها لاحقًا.",
+      ...(signal ? { signal } : {}),
+      ...(options.onProcessingProgress
+        ? { onProgress: options.onProcessingProgress }
         : {}),
-    }),
-  });
-  options.onLifecycleUpdate?.({
-    projectId: project.id,
-    uploadId: intent.uploadId,
-    sourceVersionId: uploaded.sourceVersionId,
-    processingJobId: processing.id,
-  });
-  await waitForJob({
-    initial: processing,
-    load: () =>
-      request<typeof processing>(
-        `/v1/processing/jobs/${encodeURIComponent(processing.id)}`,
+    });
+    const [document, versions] = await Promise.all([
+      request<LayerDocumentView>(
+        `/v1/projects/${project.id}/layer-document?sourceVersionId=${sourceVersionId}`,
         { signal },
       ),
-    isComplete: (job) => job.status === "ready",
-    failure: processingFailure,
-    timeoutMs: 2 * 60_000,
-    timeoutCode: "PROCESSING_TIMEOUT",
-    timeoutMessage:
-      "استغرقت المعالجة وقتًا أطول من المتوقع. ستظل المهمة محفوظة ويمكن متابعتها لاحقًا.",
-    ...(signal ? { signal } : {}),
-    ...(options.onProcessingProgress
-      ? { onProgress: options.onProcessingProgress }
-      : {}),
-  });
-  const [document, versions] = await Promise.all([
-    request<LayerDocumentView>(
-      `/v1/projects/${project.id}/layer-document?sourceVersionId=${uploaded.sourceVersionId}`,
-      { signal },
-    ),
-    listSourceVersions(project.id, signal),
-  ]);
-  const sourceVersion = versions.find(
-    (version) => version.id === uploaded.sourceVersionId,
-  );
-  if (!sourceVersion) {
-    throw new ApiError(
-      "SOURCE_VERSION_NOT_FOUND",
-      "تعذر تحديد رقم إصدار المصدر بعد اكتمال الرفع.",
-      409,
+      listSourceVersions(project.id, signal),
+    ]);
+    const sourceVersion = versions.find(
+      (version) => version.id === sourceVersionId,
     );
-  }
-  return {
-    projectId: project.id,
-    sourceVersionId: uploaded.sourceVersionId,
-    sourceVersionNumber: sourceVersion.versionNumber,
-    sha256: uploaded.sha256,
-    document,
-  };
+    if (!sourceVersion) {
+      throw new ApiError(
+        "SOURCE_VERSION_NOT_FOUND",
+        "تعذر تحديد رقم إصدار المصدر بعد اكتمال الرفع.",
+        409,
+      );
+    }
+    return {
+      projectId: project.id,
+      sourceVersionId,
+      sourceVersionNumber: sourceVersion.versionNumber,
+      sha256,
+      document,
+    };
   } catch (error) {
     if (signal?.aborted || isAbortError(error)) {
       await cancelUploadSession(intent.uploadId);
@@ -281,109 +274,6 @@ export async function reanalyzePdfSource(
     options.signal,
     sourceVersionId,
   );
-}
-
-function uploadSourceFile(
-  uploadUrl: string,
-  file: File,
-  contentType: string,
-  signal?: AbortSignal,
-  onProgress?: (progress: number) => void,
-): Promise<{ sourceVersionId: string; sha256: string }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const abort = () => xhr.abort();
-    const cleanup = () => signal?.removeEventListener("abort", abort);
-    xhr.open("PUT", `${API_ORIGIN}${uploadUrl}`);
-    xhr.timeout = 5 * 60_000;
-    xhr.withCredentials = true;
-    xhr.setRequestHeader("content-type", contentType);
-    xhr.upload.addEventListener("progress", (event) => {
-      if (!event.lengthComputable || event.total <= 0) return;
-      onProgress?.(
-        Math.min(100, Math.round((event.loaded / event.total) * 100)),
-      );
-    });
-    xhr.addEventListener("load", () => {
-      cleanup();
-      let payload: ApiEnvelope<{
-        sourceVersionId: string;
-        sha256: string;
-      }>;
-      try {
-        payload = JSON.parse(xhr.responseText) as typeof payload;
-      } catch {
-        reject(
-          new ApiError(
-            "UPLOAD_RESPONSE_INVALID",
-            "تعذر قراءة استجابة خادم الرفع.",
-            xhr.status,
-          ),
-        );
-        return;
-      }
-      if (xhr.status < 200 || xhr.status >= 300 || !payload.data) {
-        reject(
-          new ApiError(
-            payload.error?.code ?? "UPLOAD_FAILED",
-            payload.error?.message ?? "تعذر رفع الملف إلى الخادم.",
-            xhr.status,
-          ),
-        );
-        return;
-      }
-      onProgress?.(100);
-      resolve(payload.data);
-    });
-    xhr.addEventListener("error", () => {
-      cleanup();
-      reject(
-        new ApiError(
-          "UPLOAD_NETWORK_ERROR",
-          "انقطع الاتصال أثناء رفع الملف. أعد المحاولة.",
-          0,
-        ),
-      );
-    });
-    xhr.addEventListener("timeout", () => {
-      cleanup();
-      reject(
-        new ApiError(
-          "UPLOAD_TIMEOUT",
-          "انتهت مهلة رفع الملف. تحقق من سرعة الاتصال ثم أعد المحاولة.",
-          408,
-          undefined,
-          true,
-        ),
-      );
-    });
-    xhr.addEventListener("abort", () => {
-      cleanup();
-      reject(new DOMException("Aborted", "AbortError"));
-    });
-    if (signal?.aborted) {
-      cleanup();
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    signal?.addEventListener("abort", abort, { once: true });
-    xhr.send(file);
-  });
-}
-
-async function cancelUploadSession(uploadId: string): Promise<void> {
-  try {
-    await request(`/v1/uploads/${encodeURIComponent(uploadId)}/cancel`, {
-      method: "POST",
-      timeoutMs: 5_000,
-    });
-  } catch {
-    // The upload may have completed just before the abort signal won.
-  }
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function processingFailure(job: {

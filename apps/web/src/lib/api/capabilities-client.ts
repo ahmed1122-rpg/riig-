@@ -4,7 +4,7 @@ import { request } from "./transport";
 export type { ApplicationCapabilities } from "@motionprep/contracts";
 
 export const unavailableApplicationCapabilities: ApplicationCapabilities = {
-  schemaVersion: "1.1",
+  schemaVersion: "1.2",
   limits: {
     maxUploadBytes: 0,
     maxImageUploadBytes: 0,
@@ -20,6 +20,7 @@ export const unavailableApplicationCapabilities: ApplicationCapabilities = {
       document: { status: "degraded", reason: "تعذر التحقق من عامل المستندات." },
       export: { status: "degraded", reason: "تعذر التحقق من عامل التصدير." },
       character: { status: "degraded", reason: "تعذر التحقق من عامل الشخصيات." },
+      security: { status: "degraded", reason: "تعذر التحقق من عامل فحص الملفات." },
     },
   },
   features: {

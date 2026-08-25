@@ -98,6 +98,10 @@ describe("migration integrity", () => {
       path.join(directory, "042_privacy_retention_state_machines.sql"),
       "utf8",
     );
+    const malwareInvariantMigration = await readFile(
+      path.join(directory, "045_malware_scan_invariants.sql"),
+      "utf8",
+    );
 
     expect(() => assertMigrationNames(files)).not.toThrow();
     expect(sourceVersionMigration).not.toMatch(
@@ -256,5 +260,26 @@ describe("migration integrity", () => {
     );
     expect(privacyRetentionMigration).toContain("layer_documents_lock_object_keys");
     expect(privacyRetentionMigration).toContain("purge_claimed_at");
+    expect(malwareInvariantMigration).not.toMatch(
+      /DROP\s+(TABLE|COLUMN)/iu,
+    );
+    expect(malwareInvariantMigration).toContain(
+      "upload_sessions_ready_malware_scan_check",
+    );
+    expect(malwareInvariantMigration).toContain(
+      "source_versions_ready_malware_scan_check",
+    );
+    expect(malwareInvariantMigration).toContain(
+      "malware_scan_backfill = true",
+    );
+    expect(malwareInvariantMigration).toContain(
+      "malware_scan_required = false AND malware_scan_verdict = 'pending'",
+    );
+    expect(malwareInvariantMigration).toContain(
+      "WHERE status = 'ready' AND malware_scan_verdict = 'pending'",
+    );
+    expect(malwareInvariantMigration).toContain(
+      "quarantine_object_purged_at",
+    );
   });
 });

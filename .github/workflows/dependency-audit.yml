@@ -23,4 +23,13 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - name: Reject known high or critical dependency vulnerabilities
-        run: npm audit --audit-level=high
+        run: npm run verify:dependency-audit
+      - name: Record private escalation instructions
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## Dependency security gate failed"
+            echo
+            echo "Do not open a public issue. The security owner must inspect this protected workflow run and coordinate remediation through the repository's private vulnerability-reporting channel."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -5,12 +5,14 @@ import {
 } from "./postgres-export-columns.js";
 import { mapExportRow as mapExport, type ExportRow } from "./postgres-export-row.js";
 import { availableProjectWorkFenceSql } from "./postgres-project-work-fence.js";
+import { readyUploadExistsSql } from "./postgres-malware-scan-policy.js";
 
 export async function retryFailedExport(
   pool: Pool,
   id: string,
   retriedAt: string,
   _activateProject?: (job: ExportJob) => Promise<boolean>,
+  requireMalwareScan = false,
 ): Promise<ExportJob | null> {
   const client = await pool.connect();
   try {
@@ -38,13 +40,11 @@ export async function retryFailedExport(
            AND owner.deletion_requested_at IS NULL
            AND owner.deleted_at IS NULL
        )
-       AND EXISTS (
-         SELECT 1
-         FROM upload_sessions AS upload
-         WHERE upload.project_id = job.project_id
-           AND upload.source_version_id = job.source_version_id
-           AND upload.status = 'ready'
-       )
+       AND ${readyUploadExistsSql(
+         "job.project_id",
+         "job.source_version_id",
+         requireMalwareScan,
+       )}
        AND EXISTS (
          SELECT 1
          FROM layer_document_revisions AS revision

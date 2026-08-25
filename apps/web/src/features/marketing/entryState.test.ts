@@ -12,6 +12,7 @@ describe("marketing entry state", () => {
       initialView: "dashboard",
       billingReturn: false,
       passwordReset: false,
+      emailVerification: false,
       workspace: { mode: "image", project: null },
     });
     expect(
@@ -35,6 +36,18 @@ describe("marketing entry state", () => {
         billingReturn: false,
       }),
     ).toBe("splash");
+  });
+
+  it("keeps a server outage distinct from an anonymous session", () => {
+    expect(
+      resolveRootSurface({
+        sessionPhase: "unavailable",
+        authenticated: false,
+        guestStudioOpen: false,
+        authOpen: false,
+        billingReturn: false,
+      }),
+    ).toBe("session-unavailable");
   });
 
   it.each([
@@ -65,6 +78,22 @@ describe("marketing entry state", () => {
         authenticated: false,
         guestStudioOpen: false,
         authOpen: intent.passwordReset,
+        billingReturn: false,
+      }),
+    ).toBe("auth");
+  });
+
+  it("opens an email verification link directly before session resolution", () => {
+    const intent = resolveEntryIntent(
+      "?verificationToken=email-verification-token",
+    );
+    expect(intent.emailVerification).toBe(true);
+    expect(
+      resolveRootSurface({
+        sessionPhase: "checking",
+        authenticated: false,
+        guestStudioOpen: false,
+        authOpen: intent.emailVerification,
         billingReturn: false,
       }),
     ).toBe("auth");
@@ -120,5 +149,14 @@ describe("marketing entry state", () => {
     expect(search).not.toContain("payment");
     expect(search).not.toContain("checkout_id");
     expect(search).not.toContain("secret");
+  });
+
+  it("removes authentication callback tokens from a navigated view URL", () => {
+    const search = buildViewSearch(
+      "?token=reset-secret&verificationToken=verify-secret",
+      "projects",
+    );
+
+    expect(search).toBe("?view=projects");
   });
 });

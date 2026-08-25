@@ -34,6 +34,10 @@ describe("LeaseGuardedObjectStorage", () => {
       projectId,
       writerType: "upload",
     });
+    expect(objectWriteScope(`quarantine/${projectId}/one`)).toEqual({
+      projectId,
+      writerType: "upload",
+    });
     expect(objectWriteScope(`artifacts/${projectId}/one`)).toEqual({
       projectId,
       writerType: "export",

@@ -1,0 +1,55 @@
+name: Product or engineering proposal
+description: Propose the smallest testable change for a verified need.
+title: "[Proposal]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and evidence
+      description: What user or operational problem exists, and what evidence supports it?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Measurable outcome
+      description: What observable result would define success?
+    validations:
+      required: true
+  - type: textarea
+    id: minimum_scope
+    attributes:
+      label: Minimum scope
+      description: What is the smallest version that tests the core hypothesis?
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: What is deliberately excluded?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: Use testable statements.
+    validations:
+      required: true
+  - type: textarea
+    id: operations
+    attributes:
+      label: Risk, operations, and disablement
+      description: Cover security, privacy, dependencies, monitoring, support burden, rollback, and safe disablement.
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Safety checks
+      options:
+        - label: This proposal contains no credentials, customer data, private URLs, or security exploit details.
+          required: true

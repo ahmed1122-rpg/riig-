@@ -73,6 +73,7 @@ export function ExportsView({
     resourceKey: "exports:list",
     revision: reloadVersion,
     intervalMs: 1_500,
+    initialRetryLimit: 3,
     load: listExports,
     shouldPoll: (exports) =>
       exports.some((item) =>

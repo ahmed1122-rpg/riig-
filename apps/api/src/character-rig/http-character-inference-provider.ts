@@ -7,6 +7,12 @@ import type {
   CharacterInferenceProvider,
 } from "./character-inference-provider.js";
 import { CharacterProviderError } from "./character-inference-provider.js";
+import {
+  abortableDelay,
+  normalizeCharacterProviderBaseUrl,
+  parseProviderJson,
+  parseRetryAfterMilliseconds,
+} from "./http-character-inference-provider-support.js";
 
 const trainingResponseSchema = z.object({
   providerModelReference: z.string().min(1).max(500),
@@ -47,21 +53,69 @@ const generationResponseSchema = z.object({
   qualityReport: qualityReportSchema,
 });
 
+const asyncSubmissionSchema = z.object({
+  operationId: z.string().min(1).max(200),
+  statusUrl: z.string().min(1).max(2_048),
+  retryAfterMilliseconds: z.number().int().min(0).max(60_000).optional(),
+});
+
+const asyncPendingSchema = z.object({
+  status: z.enum(["queued", "running"]),
+  retryAfterMilliseconds: z.number().int().min(0).max(60_000).optional(),
+});
+
+const asyncSucceededSchema = z.object({
+  status: z.literal("succeeded"),
+  result: z.unknown(),
+});
+
+const asyncFailedSchema = z.object({
+  status: z.literal("failed"),
+  errorCode: z.enum([
+    "CAPACITY_EXHAUSTED",
+    "INPUT_REJECTED",
+    "MODEL_REJECTED",
+    "OPERATION_EXPIRED",
+    "PROVIDER_INTERNAL",
+  ]),
+});
+
+export type CharacterInferenceProtocol = "direct-v1" | "async-v1";
+
+export interface CharacterProviderOperationEvent {
+  phase: "submitted" | "poll" | "completed";
+  status: "accepted" | "queued" | "running" | "succeeded";
+  pollCount: number;
+  durationMilliseconds: number;
+  retryAfterMilliseconds?: number;
+}
+
 export interface HttpCharacterInferenceProviderOptions {
   baseUrl: string;
   apiKey: string;
   timeoutMilliseconds: number;
+  protocol?: CharacterInferenceProtocol;
+  operationTimeoutMilliseconds?: number;
+  pollIntervalMilliseconds?: number;
+  maxPollIntervalMilliseconds?: number;
   allowInsecureLocalhost?: boolean;
   fetch?: typeof fetch;
+  delay?: typeof abortableDelay;
+  onOperationEvent?: (event: CharacterProviderOperationEvent) => void;
 }
 
 export class HttpCharacterInferenceProvider implements CharacterInferenceProvider {
   readonly key = "private-http";
   readonly #baseUrl: URL;
   readonly #fetch: typeof fetch;
+  readonly #protocol: CharacterInferenceProtocol;
+  readonly #operationTimeoutMilliseconds: number;
+  readonly #pollIntervalMilliseconds: number;
+  readonly #maxPollIntervalMilliseconds: number;
+  readonly #delay: typeof abortableDelay;
 
   constructor(private readonly options: HttpCharacterInferenceProviderOptions) {
-    this.#baseUrl = normalizeBaseUrl(options.baseUrl);
+    this.#baseUrl = normalizeCharacterProviderBaseUrl(options.baseUrl);
     if (
       this.#baseUrl.protocol !== "https:" &&
       !(
@@ -81,7 +135,41 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
     ) {
       throw new Error("Character inference timeout must be between 1 second and 15 minutes.");
     }
+    this.#protocol = options.protocol ?? "direct-v1";
+    this.#operationTimeoutMilliseconds =
+      options.operationTimeoutMilliseconds ?? options.timeoutMilliseconds;
+    if (
+      !Number.isSafeInteger(this.#operationTimeoutMilliseconds) ||
+      this.#operationTimeoutMilliseconds < options.timeoutMilliseconds ||
+      this.#operationTimeoutMilliseconds > 30 * 60_000
+    ) {
+      throw new Error(
+        "Character inference operation timeout must be at least the request timeout and no more than 30 minutes.",
+      );
+    }
+    this.#pollIntervalMilliseconds = options.pollIntervalMilliseconds ?? 1_000;
+    this.#maxPollIntervalMilliseconds =
+      options.maxPollIntervalMilliseconds ?? 10_000;
+    if (
+      !Number.isSafeInteger(this.#pollIntervalMilliseconds) ||
+      this.#pollIntervalMilliseconds < 250 ||
+      this.#pollIntervalMilliseconds > 30_000
+    ) {
+      throw new Error(
+        "Character inference poll interval must be between 250 milliseconds and 30 seconds.",
+      );
+    }
+    if (
+      !Number.isSafeInteger(this.#maxPollIntervalMilliseconds) ||
+      this.#maxPollIntervalMilliseconds < this.#pollIntervalMilliseconds ||
+      this.#maxPollIntervalMilliseconds > 60_000
+    ) {
+      throw new Error(
+        "Character inference maximum poll interval must be between the initial interval and 60 seconds.",
+      );
+    }
     this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#delay = options.delay ?? abortableDelay;
   }
 
   async trainIdentity(
@@ -145,28 +233,141 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
     operationId: string,
     signal?: AbortSignal,
   ): Promise<unknown> {
+    const operationTimeoutSignal = AbortSignal.timeout(
+      this.#operationTimeoutMilliseconds,
+    );
+    const operationSignal = signal
+      ? AbortSignal.any([signal, operationTimeoutSignal])
+      : operationTimeoutSignal;
+    const startedAt = performance.now();
+    const response = await this.request(
+      "POST",
+      new URL(path, this.#baseUrl),
+      operationId,
+      operationSignal,
+      body,
+      signal,
+      operationTimeoutSignal,
+    );
+    if (this.#protocol === "direct-v1") {
+      return parseProviderJson(response);
+    }
+    if (response.status !== 202) {
+      throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
+    }
+    const submission = asyncSubmissionSchema.safeParse(
+      await parseProviderJson(response),
+    );
+    if (!submission.success) {
+      throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
+    }
+    const statusUrl = this.resolveStatusUrl(submission.data.statusUrl);
+    let pollCount = 0;
+    let pollDelay = this.nextPollDelay(
+      response,
+      submission.data.retryAfterMilliseconds,
+      this.#pollIntervalMilliseconds,
+    );
+    this.emitOperationEvent({
+      phase: "submitted",
+      status: "accepted",
+      pollCount,
+      durationMilliseconds: Math.round(performance.now() - startedAt),
+      retryAfterMilliseconds: pollDelay,
+    });
+
+    while (true) {
+      try {
+        await this.#delay(pollDelay, operationSignal);
+      } catch {
+        throw new CharacterProviderError(
+          signal?.aborted
+            ? "CHARACTER_JOB_ABORTED"
+            : "CHARACTER_PROVIDER_TIMEOUT",
+        );
+      }
+      const pollResponse = await this.request(
+        "GET",
+        statusUrl,
+        operationId,
+        operationSignal,
+        undefined,
+        signal,
+        operationTimeoutSignal,
+      );
+      pollCount += 1;
+      const statusBody = await parseProviderJson(pollResponse);
+      const pending = asyncPendingSchema.safeParse(statusBody);
+      if (pollResponse.status === 202 && pending.success) {
+        pollDelay = this.nextPollDelay(
+          pollResponse,
+          pending.data.retryAfterMilliseconds,
+          Math.min(
+            this.#maxPollIntervalMilliseconds,
+            Math.ceil(pollDelay * 1.5),
+          ),
+        );
+        this.emitOperationEvent({
+          phase: "poll",
+          status: pending.data.status,
+          pollCount,
+          durationMilliseconds: Math.round(performance.now() - startedAt),
+          retryAfterMilliseconds: pollDelay,
+        });
+        continue;
+      }
+      const succeeded = asyncSucceededSchema.safeParse(statusBody);
+      if (pollResponse.status === 200 && succeeded.success) {
+        this.emitOperationEvent({
+          phase: "completed",
+          status: "succeeded",
+          pollCount,
+          durationMilliseconds: Math.round(performance.now() - startedAt),
+        });
+        return succeeded.data.result;
+      }
+      const failed = asyncFailedSchema.safeParse(statusBody);
+      if (pollResponse.status === 200 && failed.success) {
+        throw new CharacterProviderError(
+          mapAsyncFailureCode(failed.data.errorCode),
+        );
+      }
+      throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
+    }
+  }
+
+  private async request(
+    method: "GET" | "POST",
+    url: URL,
+    operationId: string,
+    operationSignal: AbortSignal,
+    body: unknown,
+    callerSignal: AbortSignal | undefined,
+    operationTimeoutSignal: AbortSignal,
+  ): Promise<Response> {
     let response: Response;
     try {
-      response = await this.#fetch(new URL(path, this.#baseUrl), {
-        method: "POST",
+      const requestTimeoutSignal = AbortSignal.timeout(
+        this.options.timeoutMilliseconds,
+      );
+      response = await this.#fetch(url, {
+        method,
         headers: {
           authorization: `Bearer ${this.options.apiKey}`,
-          "content-type": "application/json",
+          accept: "application/json",
+          ...(method === "POST" ? { "content-type": "application/json" } : {}),
           "x-idempotency-key": operationId,
+          "x-motionprep-protocol-version": "1",
         },
-        body: JSON.stringify(body),
-        signal: signal
-          ? AbortSignal.any([
-              signal,
-              AbortSignal.timeout(this.options.timeoutMilliseconds),
-            ])
-          : AbortSignal.timeout(this.options.timeoutMilliseconds),
+        ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.any([operationSignal, requestTimeoutSignal]),
       });
     } catch (error) {
       throw new CharacterProviderError(
-        signal?.aborted
+        callerSignal?.aborted
           ? "CHARACTER_JOB_ABORTED"
-          : error instanceof DOMException && error.name === "TimeoutError"
+          : operationTimeoutSignal.aborted ||
+              (error instanceof DOMException && error.name === "TimeoutError")
           ? "CHARACTER_PROVIDER_TIMEOUT"
           : "CHARACTER_PROVIDER_UNAVAILABLE",
       );
@@ -180,12 +381,57 @@ export class HttpCharacterInferenceProvider implements CharacterInferenceProvide
             : "CHARACTER_PROVIDER_REJECTED",
       );
     }
+    return response;
+  }
+
+  private resolveStatusUrl(value: string): URL {
+    let statusUrl: URL;
     try {
-      return await response.json();
+      statusUrl = new URL(value, this.#baseUrl);
     } catch {
       throw new CharacterProviderError("CHARACTER_PROVIDER_RESPONSE_INVALID");
     }
+    if (
+      statusUrl.origin !== this.#baseUrl.origin ||
+      !statusUrl.pathname.startsWith(this.#baseUrl.pathname) ||
+      statusUrl.username ||
+      statusUrl.password ||
+      statusUrl.search ||
+      statusUrl.hash
+    ) {
+      throw new CharacterProviderError("CHARACTER_PROVIDER_STATUS_URL_INVALID");
+    }
+    return statusUrl;
   }
+
+  private nextPollDelay(
+    response: Response,
+    bodyDelay: number | undefined,
+    fallback: number,
+  ): number {
+    const retryAfter = parseRetryAfterMilliseconds(response.headers.get("retry-after"));
+    return Math.min(
+      this.#maxPollIntervalMilliseconds,
+      Math.max(
+        this.#pollIntervalMilliseconds,
+        retryAfter ?? bodyDelay ?? fallback,
+      ),
+    );
+  }
+
+  private emitOperationEvent(event: CharacterProviderOperationEvent): void {
+    try {
+      this.options.onOperationEvent?.(event);
+    } catch {
+      // Observability must never change provider settlement behavior.
+    }
+  }
+}
+
+function mapAsyncFailureCode(code: z.infer<typeof asyncFailedSchema>["errorCode"]): string {
+  if (code === "CAPACITY_EXHAUSTED") return "CHARACTER_PROVIDER_RATE_LIMITED";
+  if (code === "PROVIDER_INTERNAL") return "CHARACTER_PROVIDER_UNAVAILABLE";
+  return "CHARACTER_PROVIDER_REJECTED";
 }
 
 function validGeometry(
@@ -198,17 +444,6 @@ function validGeometry(
     geometry.bounds.x + geometry.bounds.width <= geometry.canvas.width &&
     geometry.bounds.y + geometry.bounds.height <= geometry.canvas.height
   );
-}
-
-function normalizeBaseUrl(value: string): URL {
-  const url = new URL(value);
-  if (url.username || url.password || url.search || url.hash) {
-    throw new Error(
-      "Character inference base URL cannot contain credentials, a query, or a fragment.",
-    );
-  }
-  if (!url.pathname.endsWith("/")) url.pathname += "/";
-  return url;
 }
 
 function inferenceBible(input: CharacterIdentityTrainingInput | CharacterGenerationInput) {

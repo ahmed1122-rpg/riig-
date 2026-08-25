@@ -1,0 +1,52 @@
+/* Auth */
+.auth-context {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--atelier-indigo) 20%, var(--line));
+  background:
+    linear-gradient(145deg, rgba(32, 217, 238, .08), transparent 38%),
+    linear-gradient(160deg, var(--atelier-navy), var(--atelier-midnight));
+  color: white;
+  box-shadow: var(--atelier-shadow-dark);
+}
+
+.auth-context__presenter {
+  position: absolute;
+  width: 55%;
+  inset: auto -4% -8% auto;
+  height: 78%;
+  object-fit: contain;
+  object-position: bottom center;
+  pointer-events: none;
+  filter: drop-shadow(0 18px 24px rgba(0, 0, 0, .28));
+  opacity: .9;
+}
+
+.auth-context__copy,
+.auth-trace,
+.auth-context footer {
+  position: relative;
+  z-index: 1;
+  max-width: 62%;
+}
+
+.auth-field input,
+.auth-field select {
+  min-height: 46px;
+  border-radius: 9px;
+}
+
+.auth-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.auth-gateway .auth-helper {
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.auth-gateway .auth-demo-note > span {
+  color: #4b5563;
+  font-size: 12px;
+}

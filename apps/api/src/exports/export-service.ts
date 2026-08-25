@@ -250,7 +250,7 @@ export class ExportService {
       this.storage,
       this.now,
       this.onArtifactCleanupError,
-    ).read(await this.find(id));
+    ).read(await this.findDownloadableArtifact(id));
   }
 
   async artifactStream(
@@ -261,7 +261,24 @@ export class ExportService {
       this.storage,
       this.now,
       this.onArtifactCleanupError,
-    ).stream(await this.find(id), signal);
+    ).stream(await this.findDownloadableArtifact(id), signal);
+  }
+
+  private async findDownloadableArtifact(id: string): Promise<ExportJob> {
+    const job = await this.find(id);
+    if (
+      !await this.repository.isSourceReadyForArtifact(
+        job.projectId,
+        job.sourceVersionId,
+      )
+    ) {
+      throw new ExportDomainError(
+        "EXPORT_ARTIFACT_NOT_READY",
+        "لا يمكن تنزيل ناتج مشتق من مصدر لم يجتز سياسة فحص البرمجيات الضارة.",
+        job.id,
+      );
+    }
+    return job;
   }
 
   async find(id: string): Promise<ExportJob> {

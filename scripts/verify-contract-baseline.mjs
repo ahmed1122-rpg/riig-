@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
@@ -157,20 +157,27 @@ async function collectComposeServices(workspace) {
 }
 
 async function collectFeatureFlags(workspace) {
-  const source = await readFile(
-    path.join(workspace, "apps/api/src/config.ts"),
-    "utf8",
+  const configModule = await import(
+    pathToFileURL(path.join(workspace, "apps/api/src/config.ts")).href
   );
+  return collectBooleanFeatureFlags(
+    configModule.loadConfig({ NODE_ENV: "test" }),
+  );
+}
+
+export function collectBooleanFeatureFlags(config) {
   const flags = {};
-  for (const match of source.matchAll(
-    /^\s{4}([A-Z][A-Z0-9_]*_ENABLED):\s+z[\s\S]{0,220}?\.default\("([^"]+)"\)/gmu,
-  )) {
-    flags[match[1]] = match[2];
+  for (const [key, value] of Object.entries(config)) {
+    if (key.endsWith("_ENABLED") && typeof value === "boolean") {
+      flags[key] = String(value);
+    }
   }
   if (Object.keys(flags).length === 0) {
-    throw new Error("No feature flags were discovered in apps/api/src/config.ts.");
+    throw new Error("No boolean feature flags were discovered in the API configuration.");
   }
-  return flags;
+  return Object.fromEntries(
+    Object.entries(flags).sort(([left], [right]) => compareStrings(left, right)),
+  );
 }
 
 function compareValues(actual, expected, currentPath, differences) {
@@ -227,14 +234,19 @@ function compareStrings(left, right) {
 async function main() {
   const workspace = process.cwd();
   const actual = await collectContractSnapshot(workspace);
-  if (process.argv.includes("--measure")) {
-    process.stdout.write(`${JSON.stringify(actual, null, 2)}\n`);
-    return;
-  }
   const baselinePath = path.resolve(
     workspace,
     process.env.CONTRACT_BASELINE ?? DEFAULT_BASELINE,
   );
+  if (process.argv.includes("--update")) {
+    await writeFile(baselinePath, `${JSON.stringify(actual, null, 2)}\n`, "utf8");
+    process.stdout.write(`Contract baseline updated: ${path.relative(workspace, baselinePath)}.\n`);
+    return;
+  }
+  if (process.argv.includes("--measure")) {
+    process.stdout.write(`${JSON.stringify(actual, null, 2)}\n`);
+    return;
+  }
   const expected = JSON.parse(await readFile(baselinePath, "utf8"));
   const differences = findContractDrift(actual, expected);
   if (differences.length > 0) {

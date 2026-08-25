@@ -54,6 +54,8 @@ import { registerCharacterRigFeature } from "./character-rig/character-rig-featu
 import { createHttpLoggerOptions } from "./http/logger-options.js";
 import { registerCspReportRoutes } from "./security/csp-report-routes.js";
 import { ClientTelemetryMetrics } from "./observability/client-telemetry-metrics.js";
+import { assertProductionDependencies } from "./app-production-dependencies.js";
+export { assertProductionDependencies } from "./app-production-dependencies.js";
 
 const require = createRequire(import.meta.url);
 const rootManifest = require("../../../package.json") as { version?: unknown };
@@ -66,6 +68,7 @@ export async function buildApp(
   config: AppConfig,
   dependencies: AppDependencies = {},
 ): Promise<FastifyInstance> {
+  assertProductionDependencies(config, dependencies);
   const app = Fastify({
     logger: createHttpLoggerOptions(config.NODE_ENV),
     bodyLimit: config.MAX_UPLOAD_BYTES,
@@ -147,6 +150,7 @@ export async function buildApp(
     metrics: uploadReconciliationMetrics,
     logger: app.log,
     ...(dependencies.uploadFinalization ? { finalization: dependencies.uploadFinalization } : {}),
+    ...(dependencies.uploadScanQueue ? { scanQueue: dependencies.uploadScanQueue } : {}),
     ...(dependencies.uploadIntegrityFailures ? { integrityFailures: dependencies.uploadIntegrityFailures } : {}),
     ...(dependencies.uploadCancellations ? { cancellations: dependencies.uploadCancellations } : {}),
   });
@@ -313,6 +317,9 @@ export async function buildApp(
         : "ephemeral",
     pdfRegionOcrEnabled: config.PDF_REGION_OCR_ENABLED,
     characterRigEnabled: config.CHARACTER_RIG_ENABLED,
+    ...(config.NODE_ENV === "production"
+      ? { expectedWorkerReleaseVersion: config.RELEASE_VERSION }
+      : {}),
     requiredWorkers: new Set([
       ...(config.PROCESSING_EXECUTION_MODE === "worker"
         ? (["media", "document"] as const)
@@ -321,6 +328,9 @@ export async function buildApp(
         ? (["export"] as const)
         : []),
       ...(config.CHARACTER_RIG_ENABLED ? (["character"] as const) : []),
+      ...(config.MALWARE_SCAN_MODE === "required"
+        ? (["security"] as const)
+        : []),
     ]),
     ...(dependencies.operationalStatus
       ? { operationalStatus: dependencies.operationalStatus }

@@ -3,6 +3,8 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getProject } from "../../lib/api";
+import type { UploadLifecycleUpdate } from "../../lib/api";
+import type { WorkspaceProps } from "./Workspace.types";
 import { useWorkspaceProjectLifecycle } from "./useWorkspaceProjectLifecycle";
 import { loadWorkspaceProjectDocument } from "./workspaceDocument";
 
@@ -21,11 +23,22 @@ vi.mock("./workspaceDocument", () => ({
   loadWorkspaceProjectDocument: vi.fn(),
 }));
 
+const uploadHarness = vi.hoisted(() => ({
+  onLifecycleUpdate: undefined as
+    | ((update: UploadLifecycleUpdate, file: File) => void)
+    | undefined,
+}));
+
 vi.mock("./useWorkspaceUpload", () => ({
-  useWorkspaceUpload: () => ({
-    chooseSource: vi.fn(),
-    cancelUpload: vi.fn(),
-  }),
+  useWorkspaceUpload: (options: {
+    onLifecycleUpdate: (update: UploadLifecycleUpdate, file: File) => void;
+  }) => {
+    uploadHarness.onLifecycleUpdate = options.onLifecycleUpdate;
+    return {
+      chooseSource: vi.fn(),
+      cancelUpload: vi.fn(),
+    };
+  },
 }));
 
 function project(status: string, kind: "image" | "book" = "image") {
@@ -54,6 +67,7 @@ function makeOptions() {
       currentSourceVersionId: null,
       currentSourceVersionNumber: null,
     },
+    onProjectAdopted: vi.fn(),
     onRequireAuth: vi.fn(),
     onNotify: vi.fn(),
     requestConfirmation: vi.fn().mockResolvedValue(true),
@@ -94,9 +108,40 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.clearAllMocks();
+  uploadHarness.onLifecycleUpdate = undefined;
 });
 
 describe("useWorkspaceProjectLifecycle", () => {
+  it("publishes a newly created project identity as soon as the API returns it", () => {
+    const options = makeOptions();
+    options.sourceName = "صورة قديمة";
+    let initialProject: WorkspaceProps["initialProject"] = null;
+    const hook = renderHook(() =>
+      useWorkspaceProjectLifecycle({ ...options, initialProject }),
+    );
+
+    act(() => {
+      uploadHarness.onLifecycleUpdate?.(
+        { projectId: "project-created" },
+        new File(["source"], "شخصية.psd", {
+          type: "image/vnd.adobe.photoshop",
+        }),
+      );
+    });
+
+    expect(options.setProjectId).toHaveBeenCalledWith("project-created");
+    expect(options.onProjectAdopted).toHaveBeenCalledWith({
+      id: "project-created",
+      name: "شخصية",
+      currentSourceVersionId: null,
+      currentSourceVersionNumber: null,
+    });
+
+    initialProject = options.onProjectAdopted.mock.calls[0]?.[0] ?? null;
+    hook.rerender();
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
   it("reopens an empty draft without trying to hydrate a missing document", async () => {
     const options = makeOptions();
     vi.mocked(getProject).mockResolvedValue(project("draft") as never);

@@ -26,10 +26,12 @@ const checks = {
   rollbackImages: "pending",
   candidateReadiness: "pending",
   candidateWebHealth: "pending",
+  candidateWorkerIdentity: "pending",
   candidatePdfJourney: "pending",
   applicationOnlyRollback: "pending",
   rollbackReadiness: "pending",
   rollbackWebHealth: "pending",
+  rollbackWorkerIdentity: "pending",
   rollbackPdfJourney: "pending",
 };
 let candidate;
@@ -72,6 +74,8 @@ try {
   await verifyHealthIdentity(candidate);
   checks.candidateReadiness = "passed";
   checks.candidateWebHealth = "passed";
+  verifyWorkerReleaseIdentities(candidate);
+  checks.candidateWorkerIdentity = "passed";
   runPdfJourney("candidate");
   checks.candidatePdfJourney = "passed";
 
@@ -89,6 +93,7 @@ try {
       "api-a",
       "api-b",
       "worker-media",
+      "worker-security",
       "worker-document",
       "worker-export",
       "release-web",
@@ -102,6 +107,8 @@ try {
   await verifyHealthIdentity(rollback);
   checks.rollbackReadiness = "passed";
   checks.rollbackWebHealth = "passed";
+  verifyWorkerReleaseIdentities(rollback);
+  checks.rollbackWorkerIdentity = "passed";
   runPdfJourney("rollback");
   checks.rollbackPdfJourney = "passed";
 } catch (error) {
@@ -152,7 +159,11 @@ function verifySignatures(release, externalEvidenceUri) {
     );
     return "passed-external-evidence";
   }
-  const identity = signatureIdentity(options.repository, release.releaseTag);
+  const identity = signatureIdentity(
+    options.repository,
+    release.signatureWorkflow,
+    release.signatureIdentityRef,
+  );
   for (const image of [release.runtimeImage, release.webImage]) {
     run(
       process.env.COSIGN_BIN ?? "cosign",
@@ -168,6 +179,31 @@ function verifySignatures(release, externalEvidenceUri) {
     );
   }
   return "passed";
+}
+
+function verifyWorkerReleaseIdentities(release) {
+  for (const [service, workerType] of [
+    ["worker-security", "security"],
+    ["worker-media", "media"],
+    ["worker-document", "document"],
+    ["worker-export", "export"],
+  ]) {
+    runDocker(
+      [
+        ...compose,
+        "exec",
+        "--no-TTY",
+        service,
+        "node",
+        "scripts/check-worker-health.mjs",
+        workerType,
+      ],
+      {
+        env: releaseEnvironment(release),
+        label: `${release.releaseTag} ${workerType} worker release identity`,
+      },
+    );
+  }
 }
 
 function pullRelease(release) {

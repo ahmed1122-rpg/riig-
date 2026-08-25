@@ -24,19 +24,35 @@ export function useApplicationLifecycle(
   const [capabilitiesErrorRequestId, setCapabilitiesErrorRequestId] =
     useState<string>();
 
+  const refreshSession = useCallback(async () => {
+    setSessionPhase("checking");
+    try {
+      const user = await getSession();
+      setSessionUser(user);
+      setSessionPhase("resolved");
+      return true;
+    } catch {
+      onNotify("تعذر التحقق من جلسة الخادم.");
+      setSessionPhase("unavailable");
+      return false;
+    }
+  }, [onNotify]);
+
   useEffect(() => {
     let active = true;
-    void getSession()
-      .then((user) => {
+    void (async () => {
+      setSessionPhase("checking");
+      try {
+        const user = await getSession();
         if (!active) return;
         setSessionUser(user);
         setSessionPhase("resolved");
-      })
-      .catch(() => {
+      } catch {
         if (!active) return;
         onNotify("تعذر التحقق من جلسة الخادم.");
-        setSessionPhase("resolved");
-      });
+        setSessionPhase("unavailable");
+      }
+    })();
     return () => {
       active = false;
     };
@@ -84,6 +100,7 @@ export function useApplicationLifecycle(
     capabilities,
     capabilitiesPhase,
     capabilitiesErrorRequestId,
+    refreshSession,
     refreshCapabilities,
     refreshSessionAfterAuthentication,
     clearSession,

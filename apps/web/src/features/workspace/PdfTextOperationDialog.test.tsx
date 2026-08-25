@@ -39,4 +39,33 @@ describe("PDF text split selection", () => {
     fireEvent.click(screen.getByRole("button", { name: /تقسيم وحفظ مراجعة/u }));
     await waitFor(() => expect(onApply).toHaveBeenCalledWith({ operation: "split", offset: 6 }));
   });
+
+  it("uses browser-native direction detection consistently", () => {
+    const view = render(
+      <PdfTextOperationDialog
+        operation="split"
+        layers={[{
+          id: "text-2",
+          name: "+Body",
+          kind: "text",
+          visible: true,
+          locked: false,
+          opacity: 100,
+          color: "#fff",
+          fullText: "Hello production world",
+        }]}
+        onClose={vi.fn()}
+        onApply={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(
+      view.container.querySelector(".pdf-word-picker > div")?.getAttribute("dir"),
+    ).toBe("auto");
+    for (const preview of view.container.querySelectorAll(
+      ".pdf-text-preview-grid p",
+    )) {
+      expect(preview.getAttribute("dir")).toBe("auto");
+    }
+  });
 });

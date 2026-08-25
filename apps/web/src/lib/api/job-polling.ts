@@ -2,7 +2,7 @@ import { ApiError, abortableDelay } from "./transport";
 
 export interface PollableJob {
   status: string;
-  progress: number;
+  progress?: number;
 }
 
 interface WaitForJobOptions<T extends PollableJob> {
@@ -30,9 +30,10 @@ export async function waitForJob<T extends PollableJob>(
   let lastProgress = -1;
 
   while (true) {
-    if (current.progress !== lastProgress) {
-      lastProgress = current.progress;
-      options.onProgress?.(current.progress);
+    const progress = current.progress ?? 0;
+    if (progress !== lastProgress) {
+      lastProgress = progress;
+      options.onProgress?.(progress);
     }
     const failure = options.failure(current);
     if (failure) throw failure;
@@ -46,10 +47,10 @@ export async function waitForJob<T extends PollableJob>(
     }
 
     await abortableDelay(interval, options.signal);
-    const previousProgress = current.progress;
+    const previousProgress = progress;
     current = await options.load();
     interval =
-      current.progress > previousProgress
+      (current.progress ?? 0) > previousProgress
         ? initialInterval
         : Math.min(maximumInterval, Math.round(interval * 1.5));
   }

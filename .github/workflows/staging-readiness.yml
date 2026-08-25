@@ -2,6 +2,8 @@ name: staging-readiness
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * *"
 
 permissions:
   contents: read
@@ -40,7 +42,8 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       PDF_REGION_OCR_ENABLED: ${{ vars.PDF_REGION_OCR_ENABLED }}
       RELEASE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
-      RELEASE_TAG: ${{ vars.RELEASE_TAG }}
+      RELEASE_SIGNATURE_WORKFLOW: ${{ vars.RELEASE_SIGNATURE_WORKFLOW }}
+      RELEASE_SIGNATURE_IDENTITY_REF: ${{ vars.RELEASE_SIGNATURE_IDENTITY_REF }}
       RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
       WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
       STAGING_DEPENDENCY_EVIDENCE_PATH: ../../.tmp/staging-dependency-evidence.json
@@ -56,8 +59,8 @@ jobs:
           cache: npm
       - run: npm ci
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-      - name: Verify exact checkout, tag, and signed image digests
-        run: npm run verify:release-checkout -- --verify-images
+      - name: Verify exact candidate checkout and signed image digests
+        run: npm run verify:release-checkout -- --candidate --verify-images
       - name: Reject ambiguous or missing provider credentials
         shell: bash
         run: |
@@ -93,8 +96,10 @@ jobs:
       - name: Verify immutable release coordinates
         shell: bash
         run: |
-          printf 'RELEASE_GIT_SHA=%s\nRUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\n' \
-            "$RELEASE_GIT_SHA" "$RUNTIME_IMAGE_REF" "$WEB_IMAGE_REF" > staging-release.env
+          printf 'RELEASE_GIT_SHA=%s\nRUNTIME_IMAGE_REF=%s\nWEB_IMAGE_REF=%s\nRELEASE_SIGNATURE_WORKFLOW=%s\nRELEASE_SIGNATURE_IDENTITY_REF=%s\n' \
+            "$RELEASE_GIT_SHA" "$RUNTIME_IMAGE_REF" "$WEB_IMAGE_REF" \
+            "$RELEASE_SIGNATURE_WORKFLOW" "$RELEASE_SIGNATURE_IDENTITY_REF" \
+            > staging-release.env
           node scripts/verify-release-environment.mjs staging-release.env --references-only
       - name: Probe the deployment-owned object store
         run: npm run verify:object-storage
@@ -113,13 +118,16 @@ jobs:
             echo "- Object storage write/read/integrity/delete: verified"
             echo "- Recovery evidence: intentionally remains in the production provider gate"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Package visible, integrity-bound staging evidence
+        run: >-
+          node scripts/package-release-gate-evidence.mjs release-gate-evidence
+          staging-release.env
+          .tmp/staging-dependency-evidence.json
+          .tmp/staging-object-storage-evidence.json
       - name: Retain managed dependency evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: staging-dependency-evidence-${{ github.sha }}
-          path: |
-            staging-release.env
-            .tmp/staging-dependency-evidence.json
-            .tmp/staging-object-storage-evidence.json
+          name: staging-dependency-evidence-${{ vars.RELEASE_GIT_SHA }}
+          path: release-gate-evidence
           if-no-files-found: error
           retention-days: 90

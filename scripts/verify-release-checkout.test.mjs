@@ -10,6 +10,8 @@ const valid = {
   packageVersion: "0.1.7",
   headGitSha: "a".repeat(40),
   tagGitSha: "a".repeat(40),
+  releaseSignatureWorkflow: "promote-release.yml",
+  releaseSignatureIdentityRef: "refs/heads/main",
   status: "",
 };
 
@@ -34,4 +36,56 @@ test("rejects mutable image tags", () => {
     runtimeImageRef: "ghcr.io/example/runtime:latest",
   });
   assert.match(violations.join(" "), /RUNTIME_IMAGE_REF.*sha256/u);
+});
+
+test("accepts an untagged candidate signed only from protected main", () => {
+  assert.deepEqual(
+    validateReleaseCheckout(
+      {
+        ...valid,
+        releaseTag: "",
+        tagGitSha: "",
+        releaseSignatureWorkflow: "release-images.yml",
+        releaseSignatureIdentityRef: "refs/heads/main",
+      },
+      { mode: "candidate" },
+    ),
+    [],
+  );
+});
+
+test("rejects candidate signatures from an arbitrary branch", () => {
+  const violations = validateReleaseCheckout(
+    {
+      ...valid,
+      releaseTag: "",
+      tagGitSha: "",
+      releaseSignatureWorkflow: "release-images.yml",
+      releaseSignatureIdentityRef: "refs/heads/feature",
+    },
+    { mode: "candidate" },
+  );
+  assert.match(
+    violations.join("\n"),
+    /release-images\.yml@refs\/heads\/main/u,
+  );
+});
+
+test("rejects a candidate/stable workflow identity mix-up", () => {
+  const candidateViolations = validateReleaseCheckout(
+    {
+      ...valid,
+      releaseTag: "",
+      tagGitSha: "",
+      releaseSignatureWorkflow: "promote-release.yml",
+    },
+    { mode: "candidate" },
+  );
+  assert.match(candidateViolations.join("\n"), /release-images\.yml/u);
+
+  const stableViolations = validateReleaseCheckout({
+    ...valid,
+    releaseSignatureWorkflow: "release-images.yml",
+  });
+  assert.match(stableViolations.join("\n"), /promote-release\.yml/u);
 });

@@ -1,5 +1,8 @@
 # MotionPrep Studio
 
+> **ترخيص مملوك:** إتاحة المستودع للعامة لا تجعله مفتوح المصدر ولا تمنح حق
+> النسخ أو التوزيع أو الاستضافة أو إنشاء أعمال مشتقة. راجع [LICENSE](LICENSE).
+
 ## Durable local development
 
 Use `npm run dev:durable` for QA or work that must survive API restarts. It
@@ -16,6 +19,10 @@ The release-qualified browser matrix and its evidence boundary are documented
 in [docs/BROWSER_SUPPORT.md](docs/BROWSER_SUPPORT.md).
 
 خريطة التنفيذ الحالية والوحيدة: [docs/BUILD_MAP.md](docs/BUILD_MAP.md).
+
+إرشادات العمل والحوكمة: [المساهمة](CONTRIBUTING.md)،
+[الدعم](SUPPORT.md)، [الأمان](SECURITY.md)، و
+[خط أساس إدارة المستودع](docs/REPOSITORY_ADMINISTRATION.md).
 
 منصة عربية أولًا لتجهيز الصور والشخصيات والكتب كأصول طبقية جاهزة للتحريك.
 

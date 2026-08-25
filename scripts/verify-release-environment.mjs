@@ -60,6 +60,7 @@ export function validateProductionEnvironment(
     "SMTP_PASSWORD",
     "SMTP_FROM",
     "OBJECT_STORAGE_MODE",
+    "MALWARE_SCAN_MODE",
     "OBJECT_STORAGE_REGION",
     "OBJECT_STORAGE_BUCKET",
     "OBJECT_STORAGE_ENCRYPTION_MODE",
@@ -84,6 +85,7 @@ export function validateProductionEnvironment(
   requireExact(values, violations, "EMAIL_DELIVERY_MODE", "smtp");
   requireExact(values, violations, "EMAIL_VERIFICATION_REQUIRED", "true");
   requireExact(values, violations, "OBJECT_STORAGE_MODE", "s3");
+  requireExact(values, violations, "MALWARE_SCAN_MODE", "required");
   requireExact(values, violations, "OBJECT_STORAGE_REQUIRE_VERSIONING", "true");
   requireExact(values, violations, "PROCESSING_EXECUTION_MODE", "worker");
   requireExact(values, violations, "EXPORT_EXECUTION_MODE", "worker");

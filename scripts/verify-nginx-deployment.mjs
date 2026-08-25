@@ -57,6 +57,7 @@ export function verifyNginxRuntimeWiring({
   const workflowTokens = [
     "--add-host api:127.0.0.1",
     "--env TRUSTED_PROXY_CIDR=127.0.0.1/32",
+    "--env TRUSTED_PROXY_CIDR=invalid",
     "--tmpfs /etc/nginx/conf.d:rw,size=1m,mode=1777",
   ];
   for (const token of workflowTokens) {

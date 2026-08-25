@@ -117,7 +117,84 @@ const uploaded = await api(0, `/v1/uploads/${uploadId}/content`, {
 if (uploaded.body.data.sha256 !== sha256) {
   throw new Error("Uploaded object SHA-256 does not match the source.");
 }
-const sourceVersionId = uploaded.body.data.sourceVersionId;
+if (uploaded.body.data.status !== "scanning") {
+  throw new Error("An uploaded object bypassed the malware quarantine gate.");
+}
+let scannedUpload;
+await waitFor(async (attempt) => {
+  const status = await api(attempt % 2, `/v1/uploads/${uploadId}`, {
+    expectedStatus: 200,
+  });
+  if (["rejected", "scan_failed", "failed", "cancelled"].includes(
+    status.body.data.status,
+  )) {
+    throw new Error(`Clean fixture scan failed: ${status.body.data.status}`);
+  }
+  if (status.body.data.status !== "ready") return false;
+  scannedUpload = status.body.data;
+  return status.body.data.malwareScanVerdict === "clean";
+}, "malware scan and quarantine promotion");
+const sourceVersionId = scannedUpload.sourceVersionId;
+
+const eicarSignature = Buffer.from([
+  "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-",
+  "ANTIVIRUS-TEST-FILE!$H+H*",
+].join(""));
+const maliciousFixture = Buffer.concat([fixture, eicarSignature]);
+const maliciousProject = await api(0, "/v1/projects", {
+  method: "POST",
+  json: { name: "Malware Gate EICAR", kind: "image" },
+  expectedStatus: 201,
+});
+const maliciousProjectId = maliciousProject.body.data.id;
+const maliciousIntent = await api(1, "/v1/uploads/intents", {
+  method: "POST",
+  json: {
+    projectId: maliciousProjectId,
+    filename: "eicar-topology.png",
+    contentType: "image/png",
+    sizeBytes: maliciousFixture.byteLength,
+  },
+  headers: { "x-idempotency-key": `eicar-${maliciousProjectId}` },
+  expectedStatus: 201,
+});
+const maliciousUpload = await api(
+  0,
+  `/v1/uploads/${maliciousIntent.body.data.uploadId}/content`,
+  {
+    method: "PUT",
+    body: maliciousFixture,
+    headers: { "content-type": "image/png" },
+    expectedStatus: 200,
+  },
+);
+if (maliciousUpload.body.data.status !== "scanning") {
+  throw new Error("EICAR fixture bypassed the malware quarantine gate.");
+}
+await waitFor(async (attempt) => {
+  const status = await api(
+    attempt % 2,
+    `/v1/uploads/${maliciousIntent.body.data.uploadId}`,
+    { expectedStatus: 200 },
+  );
+  if (status.body.data.status === "scan_failed") {
+    throw new Error("EICAR scan failed instead of producing a malicious verdict.");
+  }
+  return status.body.data.status === "rejected" &&
+    status.body.data.malwareScanVerdict === "malicious";
+}, "EICAR rejection and quarantine purge");
+const blockedProcessing = await api(1, "/v1/processing/jobs", {
+  method: "POST",
+  json: {
+    projectId: maliciousProjectId,
+    sourceVersionId: maliciousUpload.body.data.sourceVersionId,
+  },
+  headers: { "x-idempotency-key": `blocked-eicar-${maliciousProjectId}` },
+  expectedStatus: 409,
+});
+if (!blockedProcessing.body.error?.code) {
+  throw new Error("Rejected EICAR source returned no processing error code.");
+}
 const processing = await api(1, "/v1/processing/jobs", {
   method: "POST",
   json: { projectId, sourceVersionId },

@@ -8,7 +8,7 @@ import {
 } from "./verify-release-environment.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const allowedCommands = new Set(["config", "pull", "up", "ps", "run"]);
+const allowedCommands = new Set(["config", "pull", "up", "ps", "run", "stop"]);
 const allowedProfiles = new Set(["character-rig", "maintenance"]);
 const serviceEnvironmentVariables = [
   "MOTIONPREP_MIGRATION_ENV_FILE",
@@ -17,6 +17,7 @@ const serviceEnvironmentVariables = [
   "MOTIONPREP_MEDIA_WORKER_ENV_FILE",
   "MOTIONPREP_DOCUMENT_WORKER_ENV_FILE",
   "MOTIONPREP_EXPORT_WORKER_ENV_FILE",
+  "MOTIONPREP_SECURITY_WORKER_ENV_FILE",
   "MOTIONPREP_CHARACTER_WORKER_ENV_FILE",
 ];
 
@@ -24,7 +25,7 @@ export function buildProductionComposeInvocation(arguments_) {
   const [environmentFile, ...remaining] = arguments_;
   if (!environmentFile) {
     throw new Error(
-      "Usage: node scripts/run-production-compose.mjs <environment-file> [--profile <name>] <config|pull|up|ps|run> [...arguments]",
+      "Usage: node scripts/run-production-compose.mjs <environment-file> [--profile <name>] <config|pull|up|ps|run|stop> [...arguments]",
     );
   }
   const composeArguments = [
@@ -150,6 +151,29 @@ export function validateServiceEnvironmentIsolation(sources) {
   return violations;
 }
 
+export function validateSecurityScannerTopology(controlSource, securitySource) {
+  const violations = [];
+  const control = parseEnvironment(controlSource);
+  const security = parseEnvironment(securitySource);
+  const socketDirectory = control.get("MOTIONPREP_CLAMAV_SOCKET_DIR")?.trim();
+  if (!socketDirectory?.startsWith("/")) {
+    violations.push(
+      "MOTIONPREP_CLAMAV_SOCKET_DIR must be an absolute host-local directory.",
+    );
+  }
+  if (security.get("MALWARE_SCANNER_SOCKET_PATH")?.trim() !== "/run/clamav/clamd.sock") {
+    violations.push(
+      "The production security worker must connect through /run/clamav/clamd.sock.",
+    );
+  }
+  if (security.get("MALWARE_SCANNER_ALLOW_REMOTE_TCP")?.trim() === "true") {
+    violations.push(
+      "The official production Compose topology cannot enable remote raw ClamAV TCP.",
+    );
+  }
+  return violations;
+}
+
 async function main() {
   const invocation = buildProductionComposeInvocation(process.argv.slice(2));
   const environmentSource = await readFile(invocation.environmentFile, "utf8");
@@ -174,6 +198,12 @@ async function main() {
     },
   );
   violations.push(...validateServiceEnvironmentIsolation(serviceSources));
+  violations.push(
+    ...validateSecurityScannerTopology(
+      environmentSource,
+      serviceSources.get("MOTIONPREP_SECURITY_WORKER_ENV_FILE") ?? "",
+    ),
+  );
   if (violations.length > 0) {
     for (const violation of violations) process.stderr.write(`- ${violation}\n`);
     process.exitCode = 1;

@@ -8,12 +8,12 @@ const ICON_NAMES = [
   "home", "folder", "help", "settings", "search", "menu", "close",
   "chevron", "plus", "image", "layers", "review", "spark",
   "eye", "eyeOff", "lock", "unlock", "upload", "zoomIn", "zoomOut",
-  "pointer", "undo", "check", "warning", "info", "sun", "moon",
+  "pointer", "undo", "redo", "check", "warning", "info", "sun", "moon",
   "arrow", "filter", "grid", "list", "download", "refresh", "turntable", "fitCanvas", "merge",
   "split", "scan", "panelClose", "panelOpen", "arrowUp", "arrowDown",
-  "grip", "packageCheck", "brush", "eraser", "target", "highlighter",
+  "grip", "packageCheck", "brush", "brushOff", "eraser", "target", "highlighter",
   "boxSelect", "scanText", "ocrZone", "badgeCheck", "activity", "creditCard",
-  "database", "external", "fileSearch", "gauge", "history", "key",
+  "database", "external", "fileSearch", "gauge", "history", "save", "filePlus", "key",
   "login", "logout", "mail", "server", "shield", "shieldCheck",
   "smartphone", "users", "wallet",
 ] as const satisfies readonly IconName[];
@@ -40,6 +40,8 @@ describe("Icon", () => {
       ["arrowUp", "arrowDown"],
       ["login", "logout"],
       ["eye", "eyeOff"],
+      ["undo", "redo"],
+      ["brush", "brushOff"],
     ] as const;
 
     for (const [first, second] of pairs) {
@@ -60,12 +62,12 @@ describe("Icon", () => {
       renderToStaticMarkup(<Icon name={name} />),
     );
 
-    expect(ICON_NAMES).toHaveLength(69);
+    expect(ICON_NAMES).toHaveLength(73);
     expect(ALL_ICONS_COVERED).toBe(true);
     expect(new Set(catalog)).toHaveLength(ICON_NAMES.length);
     expect(catalog.every((markup) => !markup.includes("undefined"))).toBe(true);
     expect(createHash("sha256").update(catalog.join("\n")).digest("hex")).toBe(
-      "9cfe353d840c54e77c4bbec546cffd13e93fba878d2bdf31a9723761875f996b",
+      "e292cbf0c2f31f0d65b993615364610ccf48f9648cafe7dcc32fc51a29ce8d23",
     );
   });
 });

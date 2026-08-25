@@ -1,6 +1,6 @@
 {
   "name": "motionprep-studio",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "packageManager": "npm@11.16.0",
   "allowScripts": {
@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "dev": "concurrently --kill-others --names api,web \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:stack": "concurrently --kill-others --names api,web,media,document,export \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\"",
+    "dev:stack": "concurrently --kill-others --names api,web,security,media,document,export \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-security\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\"",
     "dev:durable": "node scripts/run-durable-dev.mjs",
     "dev:stack:character": "concurrently --kill-others --names api,web,media,document,export,character \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:worker-media\" \"npm:dev:worker-document\" \"npm:dev:worker-export\" \"npm:dev:worker-character\"",
     "dev:api": "npm run dev --workspace @motionprep/api",
@@ -27,6 +27,7 @@
     "dev:worker-document": "npm run dev --workspace @motionprep/worker-document",
     "dev:worker-export": "npm run dev --workspace @motionprep/worker-export",
     "dev:worker-character": "npm run dev --workspace @motionprep/worker-character",
+    "dev:worker-security": "npm run dev --workspace @motionprep/worker-security",
     "clean": "node scripts/clean.mjs",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -62,12 +63,14 @@
     "verify:architecture": "node --test scripts/import-cycle-detector.test.mjs && node scripts/verify-architecture.mjs",
     "verify:contracts": "node --import tsx --test scripts/verify-contract-baseline.test.mjs && node --import tsx scripts/verify-contract-baseline.mjs",
     "verify:maintainability": "node --test scripts/verify-maintainability.test.mjs && node scripts/verify-maintainability.mjs",
-    "verify:deployment": "node --test scripts/check-worker-health.test.mjs scripts/run-webkit-e2e.test.mjs scripts/verify-browser-matrix.test.mjs scripts/verify-character-race-script.test.mjs scripts/verify-nginx-deployment.test.mjs scripts/verify-node-toolchain.test.mjs scripts/verify-qa-image-contract.test.mjs scripts/verify-runtime-image-contract.test.mjs scripts/verify-worker-build-contract.test.mjs scripts/verify-workflow-security.test.mjs && node --import tsx scripts/verify-browser-matrix.mjs && node scripts/verify-worker-build-contract.mjs && node scripts/verify-deployment.mjs",
+    "verify:deployment": "node --test scripts/check-worker-health.test.mjs scripts/run-webkit-e2e.test.mjs scripts/verify-browser-matrix.test.mjs scripts/verify-character-provider.test.mjs scripts/verify-character-race-script.test.mjs scripts/verify-docker-hardening.test.mjs scripts/verify-nginx-deployment.test.mjs scripts/verify-node-toolchain.test.mjs scripts/verify-production-environment-template.test.mjs scripts/verify-promotion-workflow-contract.test.mjs scripts/verify-qa-image-contract.test.mjs scripts/verify-runtime-image-contract.test.mjs scripts/verify-trivy-exceptions.test.mjs scripts/verify-worker-build-contract.test.mjs scripts/verify-workflow-security.test.mjs && node --import tsx scripts/verify-browser-matrix.mjs && node scripts/verify-worker-build-contract.mjs && node scripts/verify-deployment.mjs",
     "verify:alerts": "node scripts/verify-prometheus-rules.mjs",
     "verify:object-storage": "npm run build --workspace @motionprep/api && node --conditions=production scripts/verify-object-storage.mjs",
+    "verify:character-provider": "node scripts/verify-character-provider.mjs",
     "verify:recovery": "node --test scripts/canonical-json.test.mjs scripts/verify-recovery-manifest.test.mjs && node scripts/verify-recovery-manifest.mjs docs/runbooks/recovery-manifest.example.json",
     "verify:incident": "node --test scripts/verify-incident-manifest.test.mjs && node scripts/verify-incident-manifest.mjs docs/runbooks/incident-manifest.example.json",
     "verify:security-license": "node --test scripts/verify-security-license.test.mjs && node scripts/verify-security-license.mjs",
+    "verify:dependency-audit": "node --test scripts/verify-dependency-audit.test.mjs && node scripts/verify-dependency-audit.mjs",
     "verify:paths": "node --test scripts/verify-repository-paths.test.mjs && node scripts/verify-repository-paths.mjs",
     "verify:css": "node scripts/verify-css-architecture.mjs && node --test scripts/verify-css-usage.test.mjs && node scripts/verify-css-usage.mjs",
     "verify:icons": "node --test scripts/verify-icon-usage.test.mjs && node scripts/verify-icon-usage.mjs",
@@ -77,17 +80,20 @@
     "verify:bundle": "node scripts/verify-bundle-budget.mjs",
     "verify:release-env:test": "node --test scripts/run-production-compose.test.mjs scripts/verify-release-environment.test.mjs scripts/verify-release-checkout.test.mjs",
     "verify:release-evidence:test": "node --test scripts/create-release-evidence.test.mjs",
+    "verify:release-legal": "node --test scripts/verify-release-legal.test.mjs && node scripts/verify-release-legal.mjs",
+    "verify:release-promotion:test": "node --test scripts/package-release-gate-evidence.test.mjs scripts/verify-release-legal.test.mjs scripts/verify-release-promotion.test.mjs",
     "test:release-drill:utils": "node --test scripts/release-drill-config.test.mjs",
     "test:release-rollback": "node scripts/run-release-rollback-drill.mjs",
     "verify:release-env": "node scripts/verify-release-environment.mjs",
     "verify:release-checkout": "node scripts/verify-release-checkout.mjs",
+    "verify:release-promotion": "node scripts/verify-release-promotion.mjs",
     "production:compose": "node scripts/run-production-compose.mjs",
     "verify:staging-application": "node scripts/verify-staging-application.mjs",
     "verify:clean": "node --test scripts/clean.test.mjs",
     "test:topology": "node scripts/verify-production-topology.mjs",
     "test:faults:topology": "node scripts/verify-runtime-fault-recovery.mjs",
     "test:topology:full": "node scripts/run-production-topology.mjs",
-    "quality": "npm run verify:architecture && npm run verify:contracts && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:security-license && npm run verify:paths && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:icons && npm run verify:fixtures && npm run verify:visuals && npm run verify:adobe-golden && npm run test:character-rig:benchmark && npm run verify:character-rig:benchmark && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
+    "quality": "npm run verify:architecture && npm run verify:contracts && npm run verify:maintainability && npm run verify:deployment && npm run verify:recovery && npm run verify:incident && npm run verify:security-license && npm run verify:paths && npm run verify:release-env:test && npm run verify:release-evidence:test && npm run verify:release-promotion:test && npm run test:release-drill:utils && npm run test:representative-pdf && npm run test:load:utils && npm run verify:clean && npm run verify:css && npm run verify:icons && npm run verify:fixtures && npm run verify:visuals && npm run verify:adobe-golden && npm run test:character-rig:benchmark && npm run verify:character-rig:benchmark && npm run lint && npm run lint:css && npm run deadcode && npm run typecheck && npm run coverage && npm run build && npm run verify:bundle"
   },
   "engines": {
     "node": ">=24.18.1 <25",
@@ -117,7 +123,7 @@
     "eslint": "^10.8.0",
     "globals": "^17.8.0",
     "knip": "^6.29.0",
-    "pdf-lib": "^1.17.1",
+    "pdf-lib": "1.17.1",
     "pg": "8.22.0",
     "sharp": "^0.35.3",
     "stripe": "22.3.2",
@@ -126,5 +132,9 @@
     "tsx": "^4.20.3",
     "typescript-eslint": "^8.65.0",
     "yaml": "^2.9.0"
+  },
+  "overrides": {
+    "pdf-lib": "1.17.1",
+    "stripe": "22.3.2"
   }
 }

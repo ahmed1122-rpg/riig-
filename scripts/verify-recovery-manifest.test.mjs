@@ -5,9 +5,11 @@ import {
 } from "node:crypto";
 import test from "node:test";
 import {
+  createRecoveryVerificationEvidence,
   recoveryManifestSigningPayload,
   validateRecoveryManifest,
   validateRecoveryManifestSignature,
+  validateRecoveryReleaseCoordinates,
 } from "./verify-recovery-manifest.mjs";
 
 const validManifest = {
@@ -69,6 +71,21 @@ test("rejects a missed RTO and integrity failure", () => {
   assert.match(violations.join("\n"), /restoredJourneyPassed/u);
 });
 
+test("rejects impossible recovery chronology instead of masking negative RPO or RTO", () => {
+  const violations = validateRecoveryManifest({
+    ...validManifest,
+    recoveryStartedAt: "2026-07-29T00:10:00.000Z",
+    databaseRestoreAt: "2026-07-29T00:16:00.000Z",
+    objectRestoreAt: "2026-07-29T00:17:00.000Z",
+    apiReadyAt: "2026-07-29T00:09:00.000Z",
+    smokeCompletedAt: "2026-07-29T00:08:00.000Z",
+  });
+  assert.match(violations.join("\n"), /Recovery cannot start before/u);
+  assert.match(violations.join("\n"), /recovery point cannot be after/u);
+  assert.match(violations.join("\n"), /API readiness cannot occur before/u);
+  assert.match(violations.join("\n"), /smoke journey cannot complete before recovery/u);
+});
+
 test("requires the object-store bucket and attestation metadata", () => {
   const violations = validateRecoveryManifest({
     ...validManifest,
@@ -97,13 +114,29 @@ test("verifies an Ed25519-attested recovery manifest", () => {
     privateKey,
   ).toString("base64");
 
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" });
   assert.deepEqual(
     validateRecoveryManifestSignature(
       manifest,
-      publicKey.export({ type: "spki", format: "pem" }),
+      publicKeyPem,
     ),
     [],
   );
+
+  const manifestSource = JSON.stringify(manifest);
+  const evidence = createRecoveryVerificationEvidence(
+    manifestSource,
+    publicKeyPem,
+    manifest,
+    new Date("2026-07-29T01:21:00.000Z"),
+  );
+  assert.match(evidence.manifestDigest, /^sha256:[a-f0-9]{64}$/u);
+  assert.match(evidence.verificationKeyDigest, /^sha256:[a-f0-9]{64}$/u);
+  assert.equal(evidence.checks.ed25519Signature, "passed");
+  assert.equal(evidence.measurements.rpoMinutes, 10);
+  assert.equal(evidence.measurements.rtoMinutes, 55);
+  assert.equal("databaseBackupId" in evidence, false);
+  assert.equal(JSON.stringify(evidence).includes("pitr-20260729-0005"), false);
 });
 
 test("rejects a tampered or unsigned recovery manifest", () => {
@@ -141,4 +174,30 @@ test("rejects a tampered or unsigned recovery manifest", () => {
     ).join("\n"),
     /algorithm|signature/u,
   );
+});
+
+test("binds recovery evidence to the exact candidate image digests", () => {
+  const releaseSource = [
+    `RELEASE_GIT_SHA=${"c".repeat(40)}`,
+    `RUNTIME_IMAGE_REF=${validManifest.runtimeImageRef}`,
+    `WEB_IMAGE_REF=${validManifest.webImageRef}`,
+  ].join("\n");
+  const valid = validateRecoveryReleaseCoordinates(validManifest, releaseSource);
+  assert.deepEqual(valid.violations, []);
+  assert.equal(valid.coordinates.gitSha, "c".repeat(40));
+  const redacted = createRecoveryVerificationEvidence(
+    JSON.stringify(validManifest),
+    "public-key-placeholder",
+    validManifest,
+    new Date("2026-07-29T01:21:00.000Z"),
+    valid.coordinates,
+  );
+  assert.deepEqual(redacted.release, valid.coordinates);
+  assert.equal("databaseBackupId" in redacted, false);
+
+  const drift = validateRecoveryReleaseCoordinates(
+    { ...validManifest, webImageRef: `web@sha256:${"d".repeat(64)}` },
+    releaseSource,
+  );
+  assert.match(drift.violations.join("\n"), /web image.*candidate digest/u);
 });

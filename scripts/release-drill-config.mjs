@@ -3,6 +3,12 @@ import { validateReleaseEnvironment } from "./verify-release-environment.mjs";
 
 const releaseTagPattern = /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const repositoryPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
+const allowedSignatureIdentities = new Set([
+  "release-images.yml@refs/heads/main",
+  "promote-release.yml@refs/heads/main",
+]);
+const candidateSignatureIdentity = "release-images.yml@refs/heads/main";
+const stableSignatureIdentity = "promote-release.yml@refs/heads/main";
 
 export async function loadReleaseDescriptor(filename, releaseTag) {
   const source = await readFile(filename, "utf8");
@@ -14,8 +20,22 @@ export async function loadReleaseDescriptor(filename, releaseTag) {
     throw new Error(`${filename}: release tag is invalid.`);
   }
   const values = parseEnvironment(source);
+  const signatureWorkflow = values.get("RELEASE_SIGNATURE_WORKFLOW") ?? "";
+  const signatureIdentityRef =
+    values.get("RELEASE_SIGNATURE_IDENTITY_REF") ?? "";
+  if (
+    !allowedSignatureIdentities.has(
+      `${signatureWorkflow}@${signatureIdentityRef}`,
+    )
+  ) {
+    throw new Error(
+      `${filename}: signature workflow and identity must be an approved candidate or stable pair.`,
+    );
+  }
   return {
     releaseTag,
+    signatureWorkflow,
+    signatureIdentityRef,
     gitSha: values.get("RELEASE_GIT_SHA"),
     runtimeImage: values.get("RUNTIME_IMAGE_REF"),
     webImage: values.get("WEB_IMAGE_REF"),
@@ -36,14 +56,33 @@ export function validateDrillInputs(candidate, rollback, repository) {
   if (candidate.webImage === rollback.webImage) {
     violations.push("candidate and rollback web digests must differ.");
   }
+  if (
+    `${candidate.signatureWorkflow}@${candidate.signatureIdentityRef}` !==
+    candidateSignatureIdentity
+  ) {
+    violations.push(
+      `candidate signatures must use ${candidateSignatureIdentity}.`,
+    );
+  }
+  if (
+    `${rollback.signatureWorkflow}@${rollback.signatureIdentityRef}` !==
+    stableSignatureIdentity
+  ) {
+    violations.push(
+      `rollback signatures must use ${stableSignatureIdentity}.`,
+    );
+  }
   if (violations.length > 0) throw new Error(violations.join(" "));
 }
 
-export function signatureIdentity(repository, releaseTag) {
-  if (!repositoryPattern.test(repository) || !releaseTagPattern.test(releaseTag)) {
+export function signatureIdentity(repository, workflow, identityReference) {
+  if (
+    !repositoryPattern.test(repository) ||
+    !allowedSignatureIdentities.has(`${workflow}@${identityReference}`)
+  ) {
     throw new Error("Cannot construct an identity from invalid release metadata.");
   }
-  return `https://github.com/${repository}/.github/workflows/release-images.yml@refs/tags/${releaseTag}`;
+  return `https://github.com/${repository}/.github/workflows/${workflow}@${identityReference}`;
 }
 
 export function reviewFlowForDrillStage(stage) {

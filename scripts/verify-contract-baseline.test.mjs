@@ -1,6 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findContractDrift } from "./verify-contract-baseline.mjs";
+import {
+  collectBooleanFeatureFlags,
+  findContractDrift,
+} from "./verify-contract-baseline.mjs";
+
+test("discovers feature flags from parsed configuration instead of schema formatting", () => {
+  assert.deepEqual(
+    collectBooleanFeatureFlags({
+      PDF_REGION_OCR_ENABLED: false,
+      CHARACTER_RIG_ENABLED: true,
+      COOKIE_SECURE: true,
+    }),
+    {
+      CHARACTER_RIG_ENABLED: "true",
+      PDF_REGION_OCR_ENABLED: "false",
+    },
+  );
+  assert.throws(
+    () => collectBooleanFeatureFlags({ COOKIE_SECURE: true }),
+    /No boolean feature flags/u,
+  );
+});
 
 test("accepts an exact contract snapshot", () => {
   const snapshot = {
@@ -29,4 +50,3 @@ test("reports additions, removals, and changed contract values", () => {
   assert.match(differences.join("\n"), /scripts\.test: added/u);
   assert.match(differences.join("\n"), /CHARACTER_RIG_ENABLED/u);
 });
-

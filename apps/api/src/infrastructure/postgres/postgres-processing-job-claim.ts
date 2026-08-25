@@ -2,12 +2,14 @@ import type { ProcessingJob, ProjectKind } from "@motionprep/contracts";
 import type { Pool } from "pg";
 import { updateProjectStatusForJob } from "../../projects/project-job-status.js";
 import { mapProcessingRow, type ProcessingRow } from "./processing-row.js";
+import { readyUploadExistsSql } from "./postgres-malware-scan-policy.js";
 
 export async function claimNextProcessingJob(
   pool: Pool,
   projectKind: ProjectKind,
   workerId: string,
   leaseMilliseconds: number,
+  requireMalwareScan = false,
 ): Promise<ProcessingJob | null> {
   const client = await pool.connect();
   try {
@@ -69,6 +71,11 @@ export async function claimNextProcessingJob(
                AND owner.deletion_requested_at IS NULL
                AND owner.deleted_at IS NULL
            )
+           AND ${readyUploadExistsSql(
+             "queued_job.project_id",
+             "queued_job.source_version_id",
+             requireMalwareScan,
+           )}
          ORDER BY queued_job.next_attempt_at, queued_job.created_at
          FOR UPDATE SKIP LOCKED
          LIMIT 1

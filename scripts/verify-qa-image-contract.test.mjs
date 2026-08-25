@@ -12,6 +12,7 @@ CMD ["node", "scripts/run-quality-qa.mjs"]
 const workflow = `file: Dockerfile.qa
 tags: motionprep-qa:ci
 name: Run the complete source quality gate in the QA image
+run: docker run --user root --volume "\${GITHUB_WORKSPACE}/artifacts/qa:/workspace/artifacts/qa" motionprep-qa:ci chown node:node /workspace/artifacts/qa
 path: artifacts/qa/quality-summary.json
 `;
 const dockerignore = `!.env.production.example
@@ -20,6 +21,7 @@ const dockerignore = `!.env.production.example
 !.env.production.maintenance.example
 !.env.production.worker.example
 !.env.production.worker-character.example
+!.env.production.worker-security.example
 !artifacts/adobe-golden/photoshop-result.txt
 !artifacts/adobe-golden/after-effects-result.txt
 `;

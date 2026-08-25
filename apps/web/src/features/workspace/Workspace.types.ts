@@ -6,6 +6,14 @@ import type { ProjectMode } from "../../types";
 
 export type WorkspaceSetState<Value> = Dispatch<SetStateAction<Value>>;
 
+type WorkspaceProjectReference = Pick<
+  ProjectSummary,
+  | "id"
+  | "name"
+  | "currentSourceVersionId"
+  | "currentSourceVersionNumber"
+>;
+
 export interface WorkspaceProps {
   mode: ProjectMode;
   capabilities: ApplicationCapabilities;
@@ -17,11 +25,6 @@ export interface WorkspaceProps {
   onNotify: (message: string) => void;
   authenticated: boolean;
   onRequireAuth: () => void;
-  initialProject: Pick<
-    ProjectSummary,
-    | "id"
-    | "name"
-    | "currentSourceVersionId"
-    | "currentSourceVersionNumber"
-  > | null;
+  initialProject: WorkspaceProjectReference | null;
+  onProjectAdopted: (project: WorkspaceProjectReference) => void;
 }

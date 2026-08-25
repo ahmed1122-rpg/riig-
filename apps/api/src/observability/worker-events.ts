@@ -1,6 +1,11 @@
 import type { Pool } from "pg";
 
-export type WorkerType = "media" | "document" | "export" | "character";
+export type WorkerType =
+  | "media"
+  | "document"
+  | "export"
+  | "character"
+  | "security";
 export type WorkerEventType = "completed" | "retry" | "failed" | "lease_lost";
 
 export async function recordWorkerEvent(

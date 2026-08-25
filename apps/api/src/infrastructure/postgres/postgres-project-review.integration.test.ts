@@ -156,9 +156,9 @@ async function insertFixture(pool: Pool) {
   await pool.query(
     `INSERT INTO source_versions (
        id, project_id, upload_id, version_number, filename, content_type,
-       size_bytes, status, sha256, created_at, updated_at
+       size_bytes, status, sha256, malware_scan_required, created_at, updated_at
      ) VALUES (
-       $1, $2, $3, 1, 'source.png', 'image/png', 64, 'ready', $4, $5, $5
+       $1, $2, $3, 1, 'source.png', 'image/png', 64, 'ready', $4, false, $5, $5
      )`,
     [sourceVersionId, projectId, uploadId, "a".repeat(64), timestamp],
   );

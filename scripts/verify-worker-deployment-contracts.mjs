@@ -14,16 +14,25 @@ export function verifyWorkerDeploymentContracts(input) {
   ) {
     violations.push("Character worker must use its validated shared runtime.");
   }
+  if (
+    !input.securityWorkerEntry.includes("@motionprep/api/malware-scan-worker") ||
+    !input.securityWorkerConfig.includes("loadMalwareScanWorkerConfig") ||
+    !input.securityWorkerRuntime.includes("LeaseGuardedObjectStorage") ||
+    !input.securityWorkerRuntime.includes("scanner.ready()")
+  ) {
+    violations.push("Security worker must use the validated fail-closed malware runtime.");
+  }
   for (const [name, runtime] of [
     ["processing", `${input.processingWorkerConfig}\n${input.objectStorageEnvironment}`],
     ["export", `${input.exportWorkerConfig}\n${input.objectStorageEnvironment}`],
     ["character", `${input.characterWorkerConfig}\n${input.objectStorageEnvironment}`],
+    ["security", `${input.securityWorkerConfig}\n${input.objectStorageEnvironment}`],
   ]) {
     if (!runtime.includes("OBJECT_STORAGE_SESSION_TOKEN")) {
       violations.push(`${name} worker must support temporary S3 credentials.`);
     }
   }
-  for (const token of ["sources/", "derived/", "artifacts/", "24 hours"]) {
+  for (const token of ["quarantine/", "sources/", "derived/", "artifacts/", "24 hours"]) {
     if (!input.objectStorageContract.includes(token)) {
       violations.push(`Object-storage contract is missing retention token: ${token}`);
     }

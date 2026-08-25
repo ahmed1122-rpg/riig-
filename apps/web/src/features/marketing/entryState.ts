@@ -1,7 +1,12 @@
 import type { ViewId } from "../../types";
 
-export type SessionPhase = "checking" | "resolved";
-export type RootSurface = "auth" | "splash" | "marketing" | "studio";
+export type SessionPhase = "checking" | "resolved" | "unavailable";
+export type RootSurface =
+  | "auth"
+  | "splash"
+  | "session-unavailable"
+  | "marketing"
+  | "studio";
 
 const viewIds: readonly ViewId[] = [
   "dashboard",
@@ -29,6 +34,7 @@ export interface EntryIntent {
   initialView: ViewId;
   billingReturn: boolean;
   passwordReset: boolean;
+  emailVerification: boolean;
   workspace: WorkspaceEntry;
 }
 
@@ -54,6 +60,7 @@ export function resolveEntryIntent(search: string): EntryIntent {
     initialView,
     billingReturn,
     passwordReset: query.has("token"),
+    emailVerification: query.has("verificationToken"),
     workspace: {
       mode: query.get("mode") === "book" ? "book" : "image",
       project: projectId
@@ -86,6 +93,7 @@ export function buildViewSearch(
     "provider",
     "session_id",
     "token",
+    "verificationToken",
   ]) {
     query.delete(key);
   }
@@ -133,6 +141,7 @@ export function resolveRootSurface(input: {
 }): RootSurface {
   if (input.authOpen) return "auth";
   if (input.sessionPhase === "checking") return "splash";
+  if (input.sessionPhase === "unavailable") return "session-unavailable";
   if (
     !input.authenticated &&
     !input.guestStudioOpen &&

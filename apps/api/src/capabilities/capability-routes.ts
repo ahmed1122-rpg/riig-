@@ -16,7 +16,10 @@ interface CapabilityRouteOptions {
   pdfRegionOcrEnabled: boolean;
   characterRigEnabled: boolean;
   operationalStatus?: OperationalStatusProvider;
-  requiredWorkers: ReadonlySet<"media" | "document" | "export" | "character">;
+  expectedWorkerReleaseVersion?: string;
+  requiredWorkers: ReadonlySet<
+    "media" | "document" | "export" | "character" | "security"
+  >;
 }
 
 export async function registerCapabilityRoutes(
@@ -77,7 +80,13 @@ export async function registerCapabilityRoutes(
 async function resolveWorkerCapabilities(
   options: CapabilityRouteOptions,
 ): Promise<ApplicationCapabilities["runtime"]["workers"]> {
-  const workerTypes = ["media", "document", "export", "character"] as const;
+  const workerTypes = [
+    "media",
+    "document",
+    "export",
+    "character",
+    "security",
+  ] as const;
   let snapshot: Awaited<ReturnType<OperationalStatusProvider["snapshot"]>> | null = null;
   try {
     snapshot = options.operationalStatus
@@ -93,7 +102,11 @@ async function resolveWorkerCapabilities(
       }
       const ready = options.operationalStatus
         ? snapshot
-          ? hasLiveWorker(snapshot, workerType)
+          ? hasLiveWorker(
+              snapshot,
+              workerType,
+              options.expectedWorkerReleaseVersion,
+            )
           : false
         : true;
       return [
@@ -102,7 +115,9 @@ async function resolveWorkerCapabilities(
           ? { status: "ready", reason: null }
           : {
               status: "degraded",
-              reason: `Required ${workerType} worker heartbeat is missing or stale.`,
+              reason: options.expectedWorkerReleaseVersion
+                ? `Required ${workerType} worker heartbeat is missing, stale, or running a different release.`
+                : `Required ${workerType} worker heartbeat is missing or stale.`,
             },
       ];
     }),

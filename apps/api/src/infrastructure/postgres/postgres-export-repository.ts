@@ -15,9 +15,13 @@ import { mapExportRow as mapExport, type ExportRow } from "./postgres-export-row
 import { availableProjectWorkFenceSql } from "./postgres-project-work-fence.js";
 import { exportReturningColumns, exportSelect } from "./postgres-export-columns.js";
 import { retryFailedExport } from "./postgres-export-retry-command.js";
+import { readyUploadExistsSql } from "./postgres-malware-scan-policy.js";
 
 export class PostgresExportRepository implements ExportRepository {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly requireMalwareScan = false,
+  ) {}
 
   async findById(id: string): Promise<ExportJob | null> {
     const result = await this.pool.query<ExportRow>(
@@ -25,6 +29,21 @@ export class PostgresExportRepository implements ExportRepository {
       [id],
     );
     return result.rows[0] ? mapExport(result.rows[0]) : null;
+  }
+
+  async isSourceReadyForArtifact(
+    projectId: string,
+    sourceVersionId: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query<{ available: boolean }>(
+      `SELECT ${readyUploadExistsSql(
+        "$1",
+        "$2",
+        this.requireMalwareScan,
+      )} AS available`,
+      [projectId, sourceVersionId],
+    );
+    return result.rows[0]?.available === true;
   }
 
   async list(limit: number): Promise<ExportJob[]> {
@@ -92,13 +111,11 @@ export class PostgresExportRepository implements ExportRepository {
          WHERE project.id = $1
             AND project.current_source_version_id = $2
             ${availableProjectWorkFenceSql("project", "now()")}
-           AND EXISTS (
-             SELECT 1
-             FROM upload_sessions AS upload
-             WHERE upload.project_id = project.id
-               AND upload.source_version_id = $2
-               AND upload.status = 'ready'
-           )
+           AND ${readyUploadExistsSql(
+             "project.id",
+             "$2",
+             this.requireMalwareScan,
+           )}
            AND EXISTS (
              SELECT 1
              FROM layer_document_revisions AS revision
@@ -181,6 +198,11 @@ export class PostgresExportRepository implements ExportRepository {
                 AND owner.deletion_requested_at IS NULL
                 AND owner.deleted_at IS NULL
             )
+            AND ${readyUploadExistsSql(
+              "queued_job.project_id",
+              "queued_job.source_version_id",
+              this.requireMalwareScan,
+            )}
           ORDER BY queued_job.created_at
           FOR UPDATE SKIP LOCKED
           LIMIT 1
@@ -372,7 +394,13 @@ export class PostgresExportRepository implements ExportRepository {
     retriedAt: string,
     _activateProject?: (job: ExportJob) => Promise<boolean>,
   ): Promise<ExportJob | null> {
-    return retryFailedExport(this.pool, id, retriedAt, _activateProject);
+    return retryFailedExport(
+      this.pool,
+      id,
+      retriedAt,
+      _activateProject,
+      this.requireMalwareScan,
+    );
   }
 
   async requestCancel(

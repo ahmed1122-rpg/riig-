@@ -65,10 +65,10 @@ export const LayerRow = memo(function LayerRow({
 
   return (
     <div
-      className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${isPageLayer(layer) ? "is-fixed" : ""} ${dragging ? "is-dragging" : ""} ${dragOverPosition ? `is-drag-over-${dragOverPosition}` : ""}`}
+      className={`pro-layer-row ${selected ? "is-selected" : ""} ${active ? "is-active" : ""} ${duplicate ? "is-duplicate" : ""} ${isPageLayer(layer) ? "is-fixed" : ""} ${dragging ? "is-dragging" : ""} ${dragOverPosition ? `is-drag-over-${dragOverPosition}` : ""}`}
       data-layer-id={layer.id}
       role="group"
-      aria-label={`${layer.name}، ${selected ? "محددة" : "غير محددة"}`}
+      aria-label={`${layer.name}، ${selected ? "محددة" : "غير محددة"}${duplicate ? "، اسم مكرر" : ""}`}
       aria-current={active ? "true" : undefined}
       tabIndex={active ? 0 : -1}
       onClick={onSelect}
@@ -183,7 +183,7 @@ export const LayerRow = memo(function LayerRow({
         ) : (
           <>
             <strong
-              dir={/^[A-Za-z0-9]/.test(layer.name.slice(1)) ? "ltr" : "rtl"}
+              dir="auto"
             >
               {layer.name}
             </strong>
@@ -201,7 +201,7 @@ export const LayerRow = memo(function LayerRow({
       </div>
       {duplicate && (
         <span className="pro-layer-warning" title="اسم مكرر">
-          <Icon name="warning" size={13} />
+          <Icon name="warning" size={13} /> اسم مكرر
         </span>
       )}
       <details

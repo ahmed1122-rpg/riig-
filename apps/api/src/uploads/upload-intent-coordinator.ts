@@ -24,6 +24,7 @@ export interface UploadIntentContext {
   limitFor: (contentType: SourceType) => number;
   cancelSession: (session: UploadSession) => Promise<UploadSession>;
   domainError: (code: UploadIntentErrorCode, message: string) => Error;
+  objectKeyPrefix?: "quarantine" | "sources";
 }
 
 function safeExtension(contentType: SourceType): string {
@@ -129,7 +130,7 @@ export async function createUploadIntent(
     status: "uploading",
     sourceVersionId: sourceVersion.id,
     sha256: null,
-    objectKey: `sources/${input.projectId}/${uploadId}.${safeExtension(input.contentType)}`,
+    objectKey: `${context.objectKeyPrefix ?? "sources"}/${input.projectId}/${uploadId}.${safeExtension(input.contentType)}`,
     expiresAt,
     maxBytes: uploadLimit,
     uploadUrl: `/v1/uploads/${uploadId}/content`,

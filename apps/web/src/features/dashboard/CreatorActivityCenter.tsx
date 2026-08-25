@@ -121,6 +121,7 @@ export function CreatorActivityCenter({
     revision: retryVersion,
     intervalMs: ACTIVITY_POLL_INTERVAL_MS,
     maximumRetryIntervalMs: 30_000,
+    initialRetryLimit: 3,
     load: (signal) => listWorkflowActivity({ signal }),
     shouldPoll: (nextFeed) => nextFeed.items.some(isActiveActivity),
     onSuccess: (nextFeed) => {

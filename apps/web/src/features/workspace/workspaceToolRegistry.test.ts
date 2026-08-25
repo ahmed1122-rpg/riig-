@@ -35,6 +35,11 @@ describe("workspace tool registry", () => {
       label: "استوديو تدوير الشخصية",
       icon: "turntable",
     });
+    expect(tools.find((tool) => tool.id === "image.keep")?.icon).toBe("brush");
+    expect(tools.find((tool) => tool.id === "image.exclude")?.icon).toBe("brushOff");
+    expect(tools.find((tool) => tool.id === "image.erase")?.icon).toBe("eraser");
+    expect(tools.find((tool) => tool.id === "image.undo")?.icon).toBe("undo");
+    expect(tools.find((tool) => tool.id === "image.redo")?.icon).toBe("redo");
   });
 
   it("never exposes Character Turntable for PDF projects", () => {

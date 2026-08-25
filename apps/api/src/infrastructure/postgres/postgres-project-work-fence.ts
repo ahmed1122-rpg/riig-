@@ -14,7 +14,7 @@ export function availableProjectWorkFenceSql(
     AND NOT EXISTS (
       SELECT 1 FROM upload_sessions AS active_upload
       WHERE active_upload.project_id = ${projectAlias}.id
-        AND active_upload.status IN ('validating', 'uploading', 'verifying')
+        AND active_upload.status IN ('validating', 'uploading', 'verifying', 'scanning')
         AND active_upload.expires_at > ${timestampExpression}
     )`;
 }

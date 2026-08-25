@@ -8,6 +8,12 @@ export function trySendAuthDomainError(
   reply: FastifyReply,
 ) {
   return error instanceof AuthDomainError
-    ? sendApiError(reply, request.id, 401, error.code, error.message)
+    ? sendApiError(
+        reply,
+        request.id,
+        error.code === "AUTHORIZATION_DENIED" ? 403 : 401,
+        error.code,
+        error.message,
+      )
     : undefined;
 }

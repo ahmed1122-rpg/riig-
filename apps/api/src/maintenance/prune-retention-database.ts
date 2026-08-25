@@ -21,6 +21,7 @@ export interface RetentionDatabaseCounts {
   sourceVersions: number;
   uploadIntegrityEvents: number;
   characterJobs: number;
+  malwareScanJobs: number;
 }
 
 export async function pruneRetentionDatabase(
@@ -225,6 +226,16 @@ export async function pruneRetentionDatabase(
           LIMIT $2
         )`,
         [jobCutoff, config.RETENTION_BATCH_SIZE],
+      ),
+      malwareScanJobs: await count(
+        `DELETE FROM malware_scan_jobs WHERE ctid IN (
+          SELECT ctid FROM malware_scan_jobs
+          WHERE completed_at <= $1
+            AND status IN ('clean', 'malicious', 'failed')
+            AND quarantine_object_purged_at IS NOT NULL
+          LIMIT $2
+        )`,
+        [auditCutoff, config.RETENTION_BATCH_SIZE],
       ),
     };
     await client.query("COMMIT");

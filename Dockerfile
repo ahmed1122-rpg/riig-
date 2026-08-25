@@ -2,7 +2,7 @@
 
 # Keep the explicit image version aligned with .node-version. The deployment
 # verifier rejects drift while the digest preserves immutable builds.
-FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS build
+FROM node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110 AS build
 WORKDIR /workspace
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
@@ -14,6 +14,7 @@ COPY apps/worker-document/package.json ./apps/worker-document/package.json
 COPY apps/worker-export/package.json ./apps/worker-export/package.json
 COPY apps/worker-character/package.json ./apps/worker-character/package.json
 COPY apps/worker-media/package.json ./apps/worker-media/package.json
+COPY apps/worker-security/package.json ./apps/worker-security/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY packages/document-processing/package.json ./packages/document-processing/package.json
 COPY packages/export-adapters/package.json ./packages/export-adapters/package.json
@@ -29,7 +30,7 @@ RUN npm run build
 RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 COPY scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
-FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS runtime-base
+FROM node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110 AS runtime-base
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000
@@ -37,9 +38,7 @@ ENV API_PORT=4000
 # Sharp/Pango requires a fontconfig configuration even when every exported
 # text layer supplies its own reviewed font file. Keep discovery deterministic
 # and avoid production warnings from the slim base image.
-RUN apt-get update \
-  && apt-get install --yes --no-install-recommends fontconfig \
-  && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache fontconfig
 
 # Generates the reviewed Adobe fixtures in the exact Linux/font stack used by
 # production. The host command targets this stage so Windows and macOS cannot
@@ -72,6 +71,8 @@ COPY --from=build /workspace/apps/worker-export/package.json ./apps/worker-expor
 COPY --from=build /workspace/apps/worker-export/dist ./apps/worker-export/dist
 COPY --from=build /workspace/apps/worker-character/package.json ./apps/worker-character/package.json
 COPY --from=build /workspace/apps/worker-character/dist ./apps/worker-character/dist
+COPY --from=build /workspace/apps/worker-security/package.json ./apps/worker-security/package.json
+COPY --from=build /workspace/apps/worker-security/dist ./apps/worker-security/dist
 COPY --from=build /workspace/scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
 COPY --from=build /workspace/packages/contracts/package.json ./packages/contracts/package.json

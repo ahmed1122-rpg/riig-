@@ -42,7 +42,10 @@ interface WorkspaceUploadOptions {
     confirmLabel: string;
   }) => Promise<boolean>;
   onLayerAssetUrls: (urls: string[]) => void;
-  onLifecycleUpdate: (update: UploadLifecycleUpdate) => void;
+  onLifecycleUpdate: (
+    update: UploadLifecycleUpdate,
+    file: File,
+  ) => void;
   onDocumentReady: (
     file: File,
     result: UploadResult,
@@ -175,7 +178,7 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
               : {}),
             onUploadProgress: (progress) => {
               if (!isCurrent()) return;
-              options.setUploadState("uploading");
+              options.setUploadState(progress === 100 ? "scanning" : "uploading");
               options.setUploadProgress(Math.round(progress * 0.65));
             },
             onProcessingProgress: (progress) => {
@@ -186,7 +189,7 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
               );
             },
             onLifecycleUpdate: (update) => {
-              if (isCurrent()) options.onLifecycleUpdate(update);
+              if (isCurrent()) options.onLifecycleUpdate(update, file);
             },
             ...(options.mode === "book"
               ? {

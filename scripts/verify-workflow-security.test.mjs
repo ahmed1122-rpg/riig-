@@ -30,7 +30,7 @@ const auditWorkflow = [
   `      - uses: actions/setup-node@${approvedGitHubActionPins["actions/setup-node"]}`,
   "        with:",
   "          node-version-file: .node-version",
-  "      - run: npm audit --audit-level=high",
+  "      - run: npm run verify:dependency-audit",
 ].join("\n");
 
 test("accepts pinned workflows using the shared Node version and scheduled audit", () => {
@@ -160,7 +160,7 @@ test("reads action pins and scheduled audits from the YAML graph, not comments",
     "# uses: untrusted/action@" + "1".repeat(40),
     "# schedule:",
     '#   - cron: "17 4 * * *"',
-    "# run: npm audit --audit-level=high",
+    "# run: npm run verify:dependency-audit",
   ].join("\n");
 
   const violations = verifyWorkflowSecurity([commentOnly]);

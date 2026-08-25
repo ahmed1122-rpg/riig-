@@ -11,11 +11,14 @@
 /apps/worker-document/ @ahmed1122-rpg
 /apps/worker-media/ @ahmed1122-rpg
 /apps/worker-export/ @ahmed1122-rpg
+/apps/worker-security/ @ahmed1122-rpg
 /apps/worker-character/ @ahmed1122-rpg
 /apps/web/src/features/workspace/ @ahmed1122-rpg
 /packages/contracts/ @ahmed1122-rpg
 /packages/export-adapters/ @ahmed1122-rpg
 /apps/api/migrations/ @ahmed1122-rpg
+/security/ @ahmed1122-rpg
+/apps/web/public/legal/ @ahmed1122-rpg
 /.github/workflows/ @ahmed1122-rpg
 /compose.production.yaml @ahmed1122-rpg
 /deploy/ @ahmed1122-rpg

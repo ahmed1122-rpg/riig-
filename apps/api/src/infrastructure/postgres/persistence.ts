@@ -26,6 +26,7 @@ import { PostgresCharacterRigRepository } from "./postgres-character-rig-reposit
 import { PostgresCharacterJobRepository } from "./postgres-character-job-repository.js";
 import { PostgresDerivedAssetRegistry } from "./postgres-derived-asset-registry.js";
 import { PostgresObjectWriteLeaseCoordinator } from "./postgres-object-write-lease.js";
+import { PostgresUploadScanQueueCommand } from "./postgres-upload-scan-queue.js";
 
 export function createPostgresPersistence(config: AppConfig) {
   if (!config.DATABASE_URL) {
@@ -40,8 +41,15 @@ export function createPostgresPersistence(config: AppConfig) {
     repositories: {
       projects: new PostgresProjectRepository(database.pool),
       projectReviews: new PostgresProjectReviewCommand(database.pool),
-      uploads: new PostgresUploadRepository(database.pool),
-      uploadFinalization: new PostgresUploadFinalizationCommand(database.pool),
+      uploads: new PostgresUploadRepository(
+        database.pool,
+        config.MALWARE_SCAN_MODE === "required",
+      ),
+      uploadFinalization: new PostgresUploadFinalizationCommand(
+        database.pool,
+        {},
+        config.MALWARE_SCAN_MODE === "required",
+      ),
       uploadIntegrityFailures: new PostgresUploadIntegrityFailureCommand(
         database.pool,
       ),
@@ -49,19 +57,27 @@ export function createPostgresPersistence(config: AppConfig) {
       sourceVersions: new PostgresSourceVersionRepository(database.pool),
       sourceVersionRestores: new PostgresSourceVersionRestoreCommand(
         database.pool,
+        config.MALWARE_SCAN_MODE === "required",
       ),
-      exports: new PostgresExportRepository(database.pool),
+      exports: new PostgresExportRepository(
+        database.pool,
+        config.MALWARE_SCAN_MODE === "required",
+      ),
       auth: new PostgresAuthRepository(database.pool),
       audit: new PostgresAuditRepository(database.pool),
       billing: new PostgresBillingRepository(database.pool),
       idempotency: new PostgresIdempotencyStore(database.pool),
-      processingJobs: new PostgresProcessingJobRepository(database.pool),
+      processingJobs: new PostgresProcessingJobRepository(
+        database.pool,
+        config.MALWARE_SCAN_MODE === "required",
+      ),
       layerDocuments: new PostgresLayerDocumentRepository(database.pool),
       accountPrivacy: new PostgresAccountPrivacyRepository(database.pool),
       characterRigs: new PostgresCharacterRigRepository(database.pool),
       characterJobs: new PostgresCharacterJobRepository(database.pool),
       derivedAssets: new PostgresDerivedAssetRegistry(database.pool),
     },
+    uploadScanQueue: new PostgresUploadScanQueueCommand(database.pool),
     adminAccess: new PostgresAdminAccessCommand(database.pool),
     usageMeter: new PostgresUsageMeter(
       database.pool,
@@ -69,6 +85,7 @@ export function createPostgresPersistence(config: AppConfig) {
     ),
     operationalStatus: new PostgresOperationalStatusProvider(database.pool, {
       characterWorkerExpected: config.CHARACTER_RIG_ENABLED,
+      securityWorkerExpected: config.MALWARE_SCAN_MODE === "required",
     }),
     emailOutbox: new PostgresEmailOutboxRepository(database.pool),
     objectWriteLeases: new PostgresObjectWriteLeaseCoordinator(database.pool),

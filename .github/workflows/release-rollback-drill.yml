@@ -2,6 +2,8 @@ name: release-rollback-drill
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "27 6 1 * *"
 
 permissions:
   contents: read
@@ -21,10 +23,14 @@ jobs:
       CANDIDATE_GIT_SHA: ${{ vars.RELEASE_GIT_SHA }}
       CANDIDATE_RUNTIME_IMAGE_REF: ${{ vars.RUNTIME_IMAGE_REF }}
       CANDIDATE_WEB_IMAGE_REF: ${{ vars.WEB_IMAGE_REF }}
+      CANDIDATE_SIGNATURE_WORKFLOW: ${{ vars.RELEASE_SIGNATURE_WORKFLOW }}
+      CANDIDATE_SIGNATURE_IDENTITY_REF: ${{ vars.RELEASE_SIGNATURE_IDENTITY_REF }}
       ROLLBACK_RELEASE_TAG: ${{ vars.ROLLBACK_RELEASE_TAG }}
       ROLLBACK_GIT_SHA: ${{ vars.ROLLBACK_GIT_SHA }}
       ROLLBACK_RUNTIME_IMAGE_REF: ${{ vars.ROLLBACK_RUNTIME_IMAGE_REF }}
       ROLLBACK_WEB_IMAGE_REF: ${{ vars.ROLLBACK_WEB_IMAGE_REF }}
+      ROLLBACK_SIGNATURE_WORKFLOW: ${{ vars.ROLLBACK_SIGNATURE_WORKFLOW }}
+      ROLLBACK_SIGNATURE_IDENTITY_REF: ${{ vars.ROLLBACK_SIGNATURE_IDENTITY_REF }}
       ROLLBACK_EVIDENCE_PATH: .tmp/release-rollback-evidence.json
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -42,19 +48,25 @@ jobs:
           for name in \
             CANDIDATE_RELEASE_TAG CANDIDATE_GIT_SHA \
             CANDIDATE_RUNTIME_IMAGE_REF CANDIDATE_WEB_IMAGE_REF \
+            CANDIDATE_SIGNATURE_WORKFLOW CANDIDATE_SIGNATURE_IDENTITY_REF \
             ROLLBACK_RELEASE_TAG ROLLBACK_GIT_SHA \
-            ROLLBACK_RUNTIME_IMAGE_REF ROLLBACK_WEB_IMAGE_REF; do
+            ROLLBACK_RUNTIME_IMAGE_REF ROLLBACK_WEB_IMAGE_REF \
+            ROLLBACK_SIGNATURE_WORKFLOW ROLLBACK_SIGNATURE_IDENTITY_REF; do
             test -n "${!name}" || { echo "$name is required" >&2; exit 1; }
           done
           {
             echo "RELEASE_GIT_SHA=$CANDIDATE_GIT_SHA"
             echo "RUNTIME_IMAGE_REF=$CANDIDATE_RUNTIME_IMAGE_REF"
             echo "WEB_IMAGE_REF=$CANDIDATE_WEB_IMAGE_REF"
+            echo "RELEASE_SIGNATURE_WORKFLOW=$CANDIDATE_SIGNATURE_WORKFLOW"
+            echo "RELEASE_SIGNATURE_IDENTITY_REF=$CANDIDATE_SIGNATURE_IDENTITY_REF"
           } > candidate-release.env
           {
             echo "RELEASE_GIT_SHA=$ROLLBACK_GIT_SHA"
             echo "RUNTIME_IMAGE_REF=$ROLLBACK_RUNTIME_IMAGE_REF"
             echo "WEB_IMAGE_REF=$ROLLBACK_WEB_IMAGE_REF"
+            echo "RELEASE_SIGNATURE_WORKFLOW=$ROLLBACK_SIGNATURE_WORKFLOW"
+            echo "RELEASE_SIGNATURE_IDENTITY_REF=$ROLLBACK_SIGNATURE_IDENTITY_REF"
           } > rollback-release.env
       - name: Install Cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
@@ -65,14 +77,18 @@ jobs:
           --repository "${{ github.repository }}"
           --candidate-tag "$CANDIDATE_RELEASE_TAG"
           --rollback-tag "$ROLLBACK_RELEASE_TAG"
+      - name: Package visible, integrity-bound rollback evidence
+        if: always()
+        run: >-
+          node scripts/package-release-gate-evidence.mjs release-gate-evidence
+          .tmp/release-rollback-evidence.json
+          .tmp/release-drill-candidate-pdf.json
+          .tmp/release-drill-rollback-pdf.json
       - name: Retain rollback evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-rollback-evidence-${{ github.sha }}
-          path: |
-            .tmp/release-rollback-evidence.json
-            .tmp/release-drill-candidate-pdf.json
-            .tmp/release-drill-rollback-pdf.json
+          name: release-rollback-evidence-${{ vars.RELEASE_GIT_SHA }}
+          path: release-gate-evidence
           if-no-files-found: error
           retention-days: 90

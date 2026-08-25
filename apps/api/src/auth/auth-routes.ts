@@ -92,6 +92,8 @@ function authError(
         ? 409
       : error.code === "SESSION_INVALID"
         ? 401
+      : error.code === "AUTHORIZATION_DENIED"
+        ? 403
       : error.code === "MFA_CHALLENGE_INVALID"
           ? 401
         : error.code === "ADMIN_BOOTSTRAP_DENIED"
@@ -188,7 +190,13 @@ export async function registerAuthRoutes(
   });
 
   app.post("/v1/auth/admin-bootstrap", {
-    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "15 minutes",
+        keyGenerator: () => "admin-bootstrap-global",
+      },
+    },
   }, async (request, reply) => {
     const body = adminBootstrapSchema.safeParse(request.body);
     if (!body.success) return validationError(request, reply);

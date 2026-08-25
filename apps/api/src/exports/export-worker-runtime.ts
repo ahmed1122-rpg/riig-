@@ -80,12 +80,12 @@ export async function runExportWorker(
     rawStorage,
     new PostgresObjectWriteLeaseCoordinator(database.pool),
   );
-  const repository = new PostgresExportRepository(database.pool);
+  const repository = new PostgresExportRepository(database.pool, true);
   const service = new ExportService(
     repository,
     () => new Date(),
     new InMemoryIdempotencyStore(),
-    new PostgresUploadRepository(database.pool),
+    new PostgresUploadRepository(database.pool, true),
     storage,
     new PostgresLayerDocumentRepository(database.pool),
     false,
