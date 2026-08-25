@@ -14,6 +14,7 @@ import {
 } from "../../sources/source-version-restore.js";
 import { toIso } from "./database.js";
 import { mapPostgresProject } from "./postgres-project-mapper.js";
+import { readyUploadMalwarePredicate } from "./postgres-malware-scan-policy.js";
 
 interface ProjectRestoreRow {
   id: string;
@@ -30,6 +31,7 @@ interface TargetVersionRow {
   id: string;
   version_number: number;
   status: string;
+  malware_ready: boolean;
 }
 
 interface RestoreEventRow {
@@ -49,7 +51,10 @@ interface RestoreEventRow {
 export class PostgresSourceVersionRestoreCommand
   implements SourceVersionRestoreCommand
 {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly requireMalwareScan = false,
+  ) {}
 
   async restore(
     input: RestoreSourceVersionInput,
@@ -114,9 +119,20 @@ export class PostgresSourceVersionRestoreCommand
 
       const targetResult = await client.query<TargetVersionRow>(
         `
-          SELECT id, version_number, status
-          FROM source_versions
-          WHERE id = $1 AND project_id = $2
+          SELECT source.id, source.version_number, source.status,
+            EXISTS (
+              SELECT 1
+              FROM upload_sessions AS upload
+              WHERE upload.project_id = source.project_id
+                AND upload.source_version_id = source.id
+                AND upload.status = 'ready'
+                AND ${readyUploadMalwarePredicate(
+                  "upload",
+                  this.requireMalwareScan,
+                )}
+            ) AS malware_ready
+          FROM source_versions AS source
+          WHERE source.id = $1 AND source.project_id = $2
         `,
         [input.targetSourceVersionId, input.projectId],
       );
@@ -127,7 +143,7 @@ export class PostgresSourceVersionRestoreCommand
           "إصدار المصدر المطلوب غير موجود.",
         );
       }
-      if (target.status !== "ready") {
+      if (target.status !== "ready" || !target.malware_ready) {
         throw new SourceVersionRestoreDomainError(
           "SOURCE_VERSION_NOT_READY",
           "لا يمكن استعادة إصدار مصدر غير مكتمل أو غير جاهز.",

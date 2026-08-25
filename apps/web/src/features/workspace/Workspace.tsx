@@ -3,11 +3,7 @@ import { useConfirmation } from "../../shared/useConfirmation";
 import { ShortcutsModal } from "../../shared/ShortcutsModal";
 import type { Layer, ProjectMode } from "../../types";
 import type { LayerDocumentCommand } from "@motionprep/contracts";
-import {
-  WorkspaceHeader,
-  WorkspacePipeline,
-  WorkspaceStatusBar,
-} from "./WorkspaceChrome";
+import { WorkspaceHeader, WorkspacePipeline, WorkspaceStatusBar } from "./WorkspaceChrome";
 import { useWorkspaceReviewAutosave } from "./useWorkspaceReviewAutosave";
 import { useWorkspaceToolController } from "./useWorkspaceToolController";
 import { WorkspaceEditorLayout } from "./WorkspaceEditorLayout";
@@ -38,6 +34,7 @@ export function Workspace({
   onNavigationGuardChange,
   onNotify,
   initialProject,
+  onProjectAdopted,
 }: WorkspaceProps) {
   const maxUploadBytes = getWorkspaceMaxUploadBytes(mode, capabilities.limits);
   const review = useWorkspaceReviewState(mode);
@@ -242,6 +239,7 @@ export function Workspace({
     ...(sourcePreviewUrl ? { sourcePreviewUrl } : {}),
     pdfMode,
     initialProject,
+    onProjectAdopted,
     onRequireAuth,
     onNotify,
     requestConfirmation,

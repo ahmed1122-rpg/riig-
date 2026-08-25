@@ -157,20 +157,27 @@ async function collectComposeServices(workspace) {
 }
 
 async function collectFeatureFlags(workspace) {
-  const source = await readFile(
-    path.join(workspace, "apps/api/src/config.ts"),
-    "utf8",
+  const configModule = await import(
+    pathToFileURL(path.join(workspace, "apps/api/src/config.ts")).href
   );
+  return collectBooleanFeatureFlags(
+    configModule.loadConfig({ NODE_ENV: "test" }),
+  );
+}
+
+export function collectBooleanFeatureFlags(config) {
   const flags = {};
-  for (const match of source.matchAll(
-    /^\s{4}([A-Z][A-Z0-9_]*_ENABLED):\s+z[\s\S]{0,220}?\.default\("([^"]+)"\)/gmu,
-  )) {
-    flags[match[1]] = match[2];
+  for (const [key, value] of Object.entries(config)) {
+    if (key.endsWith("_ENABLED") && typeof value === "boolean") {
+      flags[key] = String(value);
+    }
   }
   if (Object.keys(flags).length === 0) {
-    throw new Error("No feature flags were discovered in apps/api/src/config.ts.");
+    throw new Error("No boolean feature flags were discovered in the API configuration.");
   }
-  return flags;
+  return Object.fromEntries(
+    Object.entries(flags).sort(([left], [right]) => compareStrings(left, right)),
+  );
 }
 
 function compareValues(actual, expected, currentPath, differences) {

@@ -4,6 +4,7 @@
       "api-a": [],
       "api-b": [],
       "clamav": [],
+      "clamav-db-init": [],
       "mailpit": [],
       "migrate": [],
       "minio": [],
@@ -45,11 +46,11 @@
   "dockerTargets": {
     "Dockerfile": [
       {
-        "base": "node:24.18.1-trixie-slim@sha256:ac39e4b5fcb2b1b34b20364fd58b2e898f3bb80731ee6f62a7536f9df3d6aadc",
+        "base": "node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110",
         "target": "build"
       },
       {
-        "base": "node:24.18.1-trixie-slim@sha256:ac39e4b5fcb2b1b34b20364fd58b2e898f3bb80731ee6f62a7536f9df3d6aadc",
+        "base": "node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110",
         "target": "runtime-base"
       },
       {
@@ -73,7 +74,7 @@
     ],
     "Dockerfile.web": [
       {
-        "base": "node:24.18.1-trixie-slim@sha256:ac39e4b5fcb2b1b34b20364fd58b2e898f3bb80731ee6f62a7536f9df3d6aadc",
+        "base": "node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110",
         "target": "build"
       },
       {
@@ -145,7 +146,8 @@
     "041_derived_asset_registry.sql": "7fd69b491a1f54b188f72a08765f17473d457d63fb4a2cc5cc85e69ff44d0e38",
     "042_privacy_retention_state_machines.sql": "86f207a49b163b9c1d83d7bc17e9d4519fb0f798ed9ef0522325a0f253cd357d",
     "043_email_verification.sql": "d19cea9b810f21d81db6327cea13c6eba6567c03d52c5f4c83ad17acda3a4702",
-    "044_malware_scanning.sql": "e2587305fb93667092825a92c83613c208bea7fdf03ce114a194be65592d720b"
+    "044_malware_scanning.sql": "e2587305fb93667092825a92c83613c208bea7fdf03ce114a194be65592d720b",
+    "045_malware_scan_invariants.sql": "c92e934816ff970c1e782aef82e780cfd674c4221a80d4436dd61dc105229030"
   },
   "openApiOperations": [
     "DELETE /v1/account",
@@ -357,6 +359,7 @@
     "verify:alerts",
     "verify:architecture",
     "verify:bundle",
+    "verify:character-provider",
     "verify:character-rig:benchmark",
     "verify:clean",
     "verify:contracts",
@@ -375,6 +378,9 @@
     "verify:release-env",
     "verify:release-env:test",
     "verify:release-evidence:test",
+    "verify:release-legal",
+    "verify:release-promotion",
+    "verify:release-promotion:test",
     "verify:security-license",
     "verify:staging-application",
     "verify:visuals"

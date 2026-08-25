@@ -36,6 +36,19 @@ export function useGuardedAppNavigation(entryIntent: EntryIntent) {
     [],
   );
 
+  const adoptWorkspaceProject = useCallback((workspace: WorkspaceEntry) => {
+    setProjectMode(workspace.mode);
+    setWorkspaceProject(workspace.project);
+    const nextLocation = buildAppViewLocation({
+      pathname: window.location.pathname,
+      currentSearch: window.location.search,
+      nextView: "workspace",
+      workspace,
+    });
+    window.history.replaceState(null, "", nextLocation);
+    committedLocationRef.current = nextLocation;
+  }, []);
+
   useEffect(() => {
     const restoreLocation = () => {
       const intent = resolveEntryIntent(window.location.search);
@@ -127,6 +140,7 @@ export function useGuardedAppNavigation(entryIntent: EntryIntent) {
     view,
     projectMode,
     workspaceProject,
+    adoptWorkspaceProject,
     navigateView,
     registerWorkspaceNavigationGuard,
   };

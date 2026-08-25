@@ -128,7 +128,7 @@ export function CharacterStudioDialog({
                 </div>
                 {bible?.status !== "approved" && (
                   <div className="character-stage-actions is-wide">
-                    <button type="button" className="button button--ghost" disabled={submitting || !bibleComplete} onClick={() => void saveBible()}><Icon name="refresh" size={15} />حفظ المسودة</button>
+                    <button type="button" className="button button--ghost" disabled={submitting || !bibleComplete} onClick={() => void saveBible()}><Icon name="save" size={15} />حفظ المسودة</button>
                     <button type="button" className="button button--primary" disabled={submitting || !bibleComplete} onClick={() => void approveBible()}><Icon name="lock" size={15} />{bibleDirty ? "حفظ واعتماد الهوية" : "اعتماد وقفل الهوية"}</button>
                   </div>
                 )}

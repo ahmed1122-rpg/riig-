@@ -17,6 +17,58 @@ const workspaceFoundation = await readFile(
 );
 const visualSystem = await readFile(join(styles, "visual-polish.css"), "utf8");
 const violations = [];
+const atelierFragments = [
+  "foundation.css",
+  "application-shell.css",
+  "marketing.css",
+  "auth.css",
+  "help.css",
+  "admin.css",
+  "workspace.css",
+  "responsive-refinements.css",
+  "restrained-overrides.css",
+];
+const workspaceFragments = [
+  "shell-tools.css",
+  "dialogs.css",
+  "preview.css",
+  "layers.css",
+  "status-focus.css",
+  "mobile-panels.css",
+  "responsive.css",
+];
+const exportReviewFragments = [
+  "shell-preview.css",
+  "layer-review.css",
+  "setup-actions.css",
+  "responsive.css",
+];
+const accountAdminFragments = [
+  "primitives.css",
+  "auth.css",
+  "billing-security.css",
+  "admin.css",
+  "responsive.css",
+];
+const guidedEditorFragments = [
+  "guidance.css",
+  "pdf-editing.css",
+  "responsive.css",
+];
+const marketingPolishFragments = [
+  "navigation-hero.css",
+  "pipeline.css",
+  "capabilities.css",
+  "workflows.css",
+];
+const fragmentGroups = [
+  ["Atelier", "atelier", atelierFragments],
+  ["workspace", "workspace", workspaceFragments],
+  ["export review", "export-review", exportReviewFragments],
+  ["account/admin", "account-admin", accountAdminFragments],
+  ["guided editor", "guided-editors", guidedEditorFragments],
+  ["marketing polish", "marketing-polish", marketingPolishFragments],
+];
 
 for (const token of [
   "@layer tokens, base, primitives, shells, features, overrides;",
@@ -45,9 +97,26 @@ if (!workspaceFoundation.includes("gap: var(--vp-space-1)")) {
     "Workspace foundation must consume the compact spacing token before broader migration.",
   );
 }
+for (const [label, directory, fragments] of fragmentGroups) {
+  const positions = fragments.map((fragment) =>
+    main.indexOf(`./${directory}/${fragment}`),
+  );
+  if (positions.some((position) => position < 0)) {
+    violations.push(`main.css must import every ${label} fragment.`);
+  }
+  if (
+    positions.some(
+      (position, index) => index > 0 && position <= positions[index - 1],
+    )
+  ) {
+    violations.push(
+      `${label} fragments must preserve their documented cascade order.`,
+    );
+  }
+}
 if (
   main.lastIndexOf("./overrides/accessibility-responsive.css") <
-  main.lastIndexOf("./atelier.css")
+  main.lastIndexOf("./atelier/restrained-overrides.css")
 ) {
   violations.push(
     "The accessibility contract must be the final override import.",
@@ -78,6 +147,9 @@ for (const token of [
 for (const relative of [
   "features/workspace-foundation.css",
   "overrides/accessibility-responsive.css",
+  ...fragmentGroups.flatMap(([, directory, fragments]) =>
+    fragments.map((fragment) => `${directory}/${fragment}`),
+  ),
 ]) {
   try {
     await access(join(styles, relative));

@@ -59,7 +59,9 @@ export class PostgresUploadScanQueueCommand implements UploadScanQueueCommand {
       const scanning = await client.query<UploadRow>(
         `UPDATE upload_sessions
          SET status = 'scanning', sha256 = $2,
-             malware_scan_verdict = 'pending', updated_at = now()
+             malware_scan_verdict = 'pending', malware_scan_required = true,
+             malware_scan_backfill = false,
+             updated_at = now()
          WHERE upload_id = $1
          RETURNING ${uploadColumns}`,
         [current.upload_id, input.sha256.toLowerCase()],
@@ -67,7 +69,9 @@ export class PostgresUploadScanQueueCommand implements UploadScanQueueCommand {
       await client.query(
         `UPDATE source_versions
          SET status = 'scanning', sha256 = $2,
-             malware_scan_verdict = 'pending', updated_at = now()
+             malware_scan_verdict = 'pending', malware_scan_required = true,
+             malware_scan_backfill = false,
+             updated_at = now()
          WHERE id = $1`,
         [source.id, input.sha256.toLowerCase()],
       );
@@ -86,11 +90,18 @@ export class PostgresUploadScanQueueCommand implements UploadScanQueueCommand {
            content_type = EXCLUDED.content_type,
            size_bytes = EXCLUDED.size_bytes,
            sha256 = EXCLUDED.sha256,
-           status = CASE
-             WHEN malware_scan_jobs.status = 'clean' THEN 'clean'
-             ELSE 'queued'
-           END,
+           status = 'queued',
+           attempt = 0,
            next_attempt_at = now(),
+           lease_owner = NULL,
+           lease_expires_at = NULL,
+           engine = NULL,
+           definitions_version = NULL,
+           signature_name = NULL,
+           error_code = NULL,
+           completed_at = NULL,
+           quarantine_purge_claimed_at = NULL,
+           quarantine_object_purged_at = NULL,
            updated_at = now()`,
         [
           crypto.randomUUID(),

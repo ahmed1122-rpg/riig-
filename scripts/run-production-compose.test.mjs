@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildProductionComposeInvocation,
   resolveServiceEnvironmentPaths,
+  validateSecurityScannerTopology,
   validateServiceEnvironmentIsolation,
 } from "./run-production-compose.mjs";
 
@@ -40,6 +41,20 @@ test("rejects destructive commands and unknown profiles", () => {
       ]),
     /profile is not approved/u,
   );
+});
+
+test("allows a named graceful stop for maintenance rollouts", () => {
+  const invocation = buildProductionComposeInvocation([
+    ".env.production",
+    "stop",
+    "api",
+    "worker-security",
+  ]);
+  assert.deepEqual(invocation.composeArguments.slice(-3), [
+    "stop",
+    "api",
+    "worker-security",
+  ]);
 });
 
 test("requires distinct environment files for every workload boundary", () => {
@@ -90,4 +105,25 @@ test("rejects shared identities and API secrets in worker environments", () => {
   assert.equal(violations.some((entry) => entry.includes("API-only secret")), true);
   assert.equal(violations.some((entry) => entry.includes("reuses workload identity")), true);
   assert.equal(violations.some((entry) => entry.includes("reuses database role")), true);
+});
+
+test("requires the mounted local ClamAV socket and rejects remote raw TCP", () => {
+  const control = "MOTIONPREP_CLAMAV_SOCKET_DIR=/var/run/clamav\n";
+  const safe = [
+    "MALWARE_SCANNER_SOCKET_PATH=/run/clamav/clamd.sock",
+    "MALWARE_SCANNER_ALLOW_REMOTE_TCP=false",
+    "",
+  ].join("\n");
+  assert.deepEqual(validateSecurityScannerTopology(control, safe), []);
+
+  const violations = validateSecurityScannerTopology(
+    "MOTIONPREP_CLAMAV_SOCKET_DIR=relative/path\n",
+    safe.replace(
+      "MALWARE_SCANNER_SOCKET_PATH=/run/clamav/clamd.sock",
+      "MALWARE_SCANNER_HOST=clamav.internal",
+    ).replace("MALWARE_SCANNER_ALLOW_REMOTE_TCP=false", "MALWARE_SCANNER_ALLOW_REMOTE_TCP=true"),
+  );
+  assert.match(violations.join("\n"), /absolute host-local/u);
+  assert.match(violations.join("\n"), /\/run\/clamav\/clamd\.sock/u);
+  assert.match(violations.join("\n"), /remote raw ClamAV TCP/u);
 });

@@ -2,15 +2,29 @@
 
 # Keep the explicit image version aligned with .node-version. The deployment
 # verifier rejects drift while the digest preserves immutable builds.
-FROM node:24.18.1-trixie-slim@sha256:ac39e4b5fcb2b1b34b20364fd58b2e898f3bb80731ee6f62a7536f9df3d6aadc AS build
+FROM node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110 AS build
 WORKDIR /workspace
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
 
 COPY package.json package-lock.json .npmrc ./
+COPY apps/api/package.json ./apps/api/package.json
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/worker-document/package.json ./apps/worker-document/package.json
+COPY apps/worker-export/package.json ./apps/worker-export/package.json
+COPY apps/worker-character/package.json ./apps/worker-character/package.json
+COPY apps/worker-media/package.json ./apps/worker-media/package.json
+COPY apps/worker-security/package.json ./apps/worker-security/package.json
+COPY packages/contracts/package.json ./packages/contracts/package.json
+COPY packages/document-processing/package.json ./packages/document-processing/package.json
+COPY packages/export-adapters/package.json ./packages/export-adapters/package.json
+COPY packages/guidance/package.json ./packages/guidance/package.json
+COPY packages/layer-domain/package.json ./packages/layer-domain/package.json
+COPY packages/media-processing/package.json ./packages/media-processing/package.json
+COPY packages/presets/package.json ./packages/presets/package.json
+RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
 COPY apps ./apps
 COPY packages ./packages
-RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
 RUN npm run build --workspace @motionprep/web
 
 FROM nginx:stable-alpine@sha256:97d490c12ba55b4946b01546d1c3ed324e8d41ab1c9fcb2a616aa470620e5b46

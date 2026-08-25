@@ -1,8 +1,13 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { completeMfaLogin, login } from "../../lib/api";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  completeMfaLogin,
+  confirmPasswordReset,
+  login,
+  verifyEmail,
+} from "../../lib/api";
 import AuthGateway from "./AuthGateway";
 
 vi.mock("../../lib/api", async () => {
@@ -12,8 +17,14 @@ vi.mock("../../lib/api", async () => {
   return {
     ...actual,
     completeMfaLogin: vi.fn(),
+    confirmPasswordReset: vi.fn(),
     login: vi.fn(),
+    verifyEmail: vi.fn(),
   };
+});
+
+beforeEach(() => {
+  window.history.replaceState(null, "", "/");
 });
 
 afterEach(() => {
@@ -84,6 +95,101 @@ describe("AuthGateway MFA challenge", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain(
       "خطأ في الخادم",
+    );
+  });
+});
+
+describe("AuthGateway email verification entry", () => {
+  it("verifies a direct link and removes only auth tokens safely", async () => {
+    const historyState = { preserved: "state" };
+    window.history.replaceState(
+      historyState,
+      "",
+      "/?verificationToken=verification-secret&view=projects#details",
+    );
+    vi.mocked(verifyEmail).mockResolvedValue({
+      id: "user-1",
+      name: "مستخدم",
+      email: "person@example.com",
+      role: "creator",
+      mfaEnabled: false,
+    });
+    const onAuthenticated = vi.fn();
+
+    render(
+      <AuthGateway
+        onAuthenticated={onAuthenticated}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "جارٍ تأكيد بريدك" }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(verifyEmail).toHaveBeenCalledWith("verification-secret"),
+    );
+    await waitFor(() => expect(onAuthenticated).toHaveBeenCalledOnce());
+    expect(window.location.search).toBe("?view=projects");
+    expect(window.location.hash).toBe("#details");
+    expect(window.history.state).toEqual(historyState);
+  });
+
+  it("keeps a failed token only in memory and removes it from the URL immediately", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?verificationToken=expired-token&view=help",
+    );
+    vi.mocked(verifyEmail).mockRejectedValue(new Error("expired"));
+
+    render(<AuthGateway onAuthenticated={vi.fn()} onBack={vi.fn()} />);
+
+    expect(
+      await screen.findByRole("heading", { name: "تعذر تأكيد البريد" }),
+    ).toBeTruthy();
+    expect(window.location.search).toBe("?view=help");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "العودة لتسجيل الدخول" }),
+    );
+    expect(window.location.search).toBe("?view=help");
+    expect(
+      screen.getByRole("heading", { name: "مرحبًا بعودتك" }),
+    ).toBeTruthy();
+  });
+
+  it("captures a password-reset token before removing it from browser history", async () => {
+    const historyState = { reset: "preserved" };
+    window.history.replaceState(
+      historyState,
+      "",
+      "/?token=reset-secret&view=settings#security",
+    );
+    vi.mocked(confirmPasswordReset).mockResolvedValue({
+      passwordReset: true,
+      reauthenticationRequired: true,
+    });
+
+    render(<AuthGateway onAuthenticated={vi.fn()} onBack={vi.fn()} />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "تعيين كلمة مرور جديدة" }),
+    ).toBeTruthy();
+    expect(window.location.search).toBe("?view=settings");
+    expect(window.location.hash).toBe("#security");
+    expect(window.history.state).toEqual(historyState);
+
+    fireEvent.change(screen.getByLabelText("كلمة المرور الجديدة"), {
+      target: { value: "Correct-Horse-42!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "حفظ والعودة للدخول" }));
+
+    await waitFor(() =>
+      expect(confirmPasswordReset).toHaveBeenCalledWith(
+        "reset-secret",
+        "Correct-Horse-42!",
+      ),
     );
   });
 });

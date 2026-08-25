@@ -1,0 +1,75 @@
+.capability-rail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: var(--vp-space-4);
+  border-block: 1px solid var(--mk-line);
+}
+
+.capability-rail article {
+  display: grid;
+  min-height: 118px;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: 3px var(--vp-space-3);
+  padding: var(--vp-space-5);
+  border-inline-start: 1px solid var(--mk-line);
+}
+
+.capability-rail article:first-child {
+  border-inline-start: 0;
+}
+
+.capability-rail article > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  grid-row: 1 / 3;
+  place-items: center;
+  border-radius: var(--vp-radius-sm);
+  background: rgba(34, 211, 238, 0.08);
+  color: var(--vp-cyan);
+}
+
+.capability-rail strong {
+  font: 760 18px/1.2 "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+.capability-rail small {
+  color: var(--mk-muted);
+  font-size: 11px;
+}
+
+.marketing-section {
+  padding-block: clamp(76px, 9vw, 128px);
+}
+
+.marketing-section__heading {
+  display: grid;
+  max-width: 690px;
+  gap: var(--vp-space-3);
+  margin-bottom: clamp(34px, 5vw, 64px);
+}
+
+.marketing-section__heading > span,
+.marketing-final-cta > div > span {
+  color: var(--vp-cyan);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+}
+
+.marketing-section__heading h2,
+.marketing-final-cta h2 {
+  font-size: clamp(30px, 4vw, 54px);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+
+.marketing-section__heading p,
+.marketing-final-cta p {
+  max-width: 630px;
+  color: var(--mk-muted);
+  font-size: 14px;
+  line-height: 1.9;
+}

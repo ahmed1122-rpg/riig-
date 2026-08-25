@@ -39,6 +39,9 @@
 9. For a scan incident, inspect `malware_scan_jobs` attempt, lease, error code,
    engine, and definitions version. Never move an object from `quarantine/`
    manually and never convert `scan_failed` to `ready`.
+10. Confirm ClamAV is reached through a mounted Unix socket or loopback proxy.
+    A remote raw TCP exception must have a named owner, expiry, private network
+    proof, and rollback plan; port 3310 must never be internet-accessible.
 
 ## Safe mitigation
 

@@ -31,6 +31,37 @@ afterEach(() => {
 });
 
 describe("guarded application navigation", () => {
+  it("adopts a created project into the current URL without guarded navigation", () => {
+    window.history.replaceState(null, "", "/?view=workspace&mode=image");
+    const controls = { current: null } as MutableRefObject<Navigation | null>;
+    render(<Harness controls={controls} />);
+    const guard = vi.fn().mockResolvedValue(false);
+    controls.current?.registerWorkspaceNavigationGuard(guard);
+
+    act(() => {
+      controls.current?.adoptWorkspaceProject({
+        mode: "image",
+        project: {
+          id: "project-created",
+          name: "مشروع جديد",
+          currentSourceVersionId: "source-created",
+          currentSourceVersionNumber: 1,
+        },
+      });
+    });
+
+    expect(guard).not.toHaveBeenCalled();
+    expect(controls.current?.workspaceProject?.id).toBe("project-created");
+    expect(window.location.search).toContain("projectId=project-created");
+    expect(window.location.search).toContain("sourceVersionId=source-created");
+    expect(resolveEntryIntent(window.location.search).workspace.project).toEqual({
+      id: "project-created",
+      name: "مشروع جديد",
+      currentSourceVersionId: "source-created",
+      currentSourceVersionNumber: 1,
+    });
+  });
+
   it("lets only the latest guarded navigation commit", async () => {
     window.history.replaceState(
       null,

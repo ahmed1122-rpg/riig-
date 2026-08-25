@@ -55,6 +55,18 @@ the cause is fixed, the immutable source and document revision are verified,
 no active job conflicts, and an authenticated administrative action records
 the reason in the audit log.
 
+## Host disk space low
+
+1. Confirm `MotionPrepHostDiskSpaceLow` identifies the expected Node Exporter
+   target and inspect filesystem usage without deleting application data.
+2. Confirm Compose still uses the bounded `local` log driver and identify any
+   external log, artifact, image, or backup retention that exceeded policy.
+3. Preserve incident evidence, drain or move traffic if free space is falling,
+   then use the platform's approved log/image retention mechanism. Never remove
+   PostgreSQL, Redis, object-storage, or active container volumes as a shortcut.
+4. Resolve the alert, verify `/readyz`, queue drain, and the authenticated smoke
+   journey, then record the capacity cause and a preventive threshold change.
+
 ## Closure evidence
 
 Record the UTC incident window, alert names, release digest, affected provider,

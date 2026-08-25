@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: dependency-audit
@@ -25,16 +24,12 @@ jobs:
           cache: npm
       - name: Reject known high or critical dependency vulnerabilities
         run: npm run verify:dependency-audit
-      - name: Escalate a failed scheduled dependency audit
+      - name: Record private escalation instructions
         if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          title="Dependency audit failure on ${GITHUB_SHA}"
-          existing="$(gh issue list --state open --search 'Dependency audit failure in:title' --json number --jq 'length')"
-          if [ "$existing" = "0" ]; then
-            gh issue create \
-              --title "$title" \
-              --body "The scheduled dependency security gate failed. Inspect workflow run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
-          fi
+          {
+            echo "## Dependency security gate failed"
+            echo
+            echo "Do not open a public issue. The security owner must inspect this protected workflow run and coordinate remediation through the repository's private vulnerability-reporting channel."
+          } >> "$GITHUB_STEP_SUMMARY"

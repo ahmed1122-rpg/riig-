@@ -1,0 +1,88 @@
+@media (min-width: 961px) and (max-height: 950px) {
+  .quality-summary { padding: 8px 10px; }
+  .quality-summary__heading { padding: 7px 8px; }
+  .quality-summary li { padding: 3px 2px; line-height: 1.35; }
+  .export-setup > .review-section-heading { min-height: 42px; }
+  .format-options,
+  .scope-options { gap: 3px; padding-top: 5px; padding-bottom: 6px; }
+  .format-options label,
+  .scope-options label { min-height: 36px; padding-block: 4px; }
+  .export-fields { gap: 5px; padding-bottom: 6px; }
+  .export-fields output { min-height: 27px; }
+  .advanced-export-toggle { min-height: 28px; margin-bottom: 5px; }
+  .export-estimate { margin-bottom: 5px; padding-top: 6px; }
+  .local-demo-note { margin-bottom: 5px; padding-block: 6px; }
+  .create-export-button { min-height: 36px; }
+}
+
+@media (max-width: 1180px) {
+  .export-review__body { grid-template-columns: minmax(390px, 1fr) 252px 302px; }
+  .export-preview-scale { width: min(76%, 500px); }
+  .background-switch button { padding-inline: 5px; }
+  .export-review__title p { max-width: 320px; }
+}
+
+@media (max-width: 960px) {
+  .export-review-backdrop { padding: 0; }
+  .export-review { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .export-review__body {
+    display: block;
+    overflow-y: auto;
+    background: var(--surface-soft);
+  }
+  .export-preview-panel { display: grid; height: 560px; border: 0; }
+  .export-layer-review,
+  .export-setup-panel { margin: 10px; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .export-layer-list { max-height: 260px; }
+  .selected-layer-editor { grid-template-columns: minmax(180px, 1fr) minmax(200px, 1fr); align-items: end; }
+  .fixed-layer-note { grid-column: 1 / -1; }
+  .export-setup-panel { display: block; overflow: visible; }
+  .export-setup-scroll { overflow: visible; }
+  .export-action-footer {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    margin: 0;
+    box-shadow: 0 -12px 28px color-mix(in srgb, var(--surface) 78%, transparent);
+  }
+  .quality-summary { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.2fr); gap: 8px; }
+  .quality-summary ul { margin: 0; }
+  .format-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .scope-options { grid-template-columns: repeat(2, 1fr); }
+  .export-fields { grid-template-columns: repeat(3, 1fr); }
+  .export-fields > div { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .export-review { grid-template-rows: 56px minmax(0, 1fr) auto; }
+  .export-review__header { position: sticky; z-index: 10; top: 0; padding: 0 9px; }
+  .export-proof-mark,
+  .review-file-name { display: none; }
+  .export-review__title { gap: 5px; }
+  .export-review__title h2 { font-size: 12px; }
+  .export-review__title p { max-width: 160px; font-size: 7px; }
+  .ready-pill { padding-inline: 7px; font-size: 7px; }
+  .export-preview-panel { height: 470px; grid-template-rows: auto minmax(0, 1fr); }
+  .export-preview-toolbar { min-height: 78px; flex-wrap: wrap; align-content: center; justify-content: flex-start; padding: 7px; }
+  .preview-group button { padding-inline: 5px; }
+  .preview-group:first-child button:nth-last-child(-n+2) { display: none; }
+  .safe-toggle { margin-inline-start: auto; }
+  .export-preview-scale { width: min(84%, 420px); height: min(78%, 430px); min-height: 280px; }
+  .export-image-board { min-height: 280px; }
+  .export-image-board .character { transform: translateX(-50%) scale(.78); }
+  .export-pdf-page { width: 76%; min-height: 310px; padding: 28px 27px 28px; }
+  .export-pdf-page h3 { font-size: 18px; }
+  .export-pdf-page p { margin-bottom: 12px; font-size: 8px; }
+  .export-pdf-page footer { inset-inline: 27px; }
+  .adobe-proof { inset-inline-start: 7px; top: 7px; }
+  .adobe-proof span { display: none; }
+  .pdf-page-navigation { bottom: 7px; }
+  .export-layer-review,
+  .export-setup-panel { margin: 8px; }
+  .selected-layer-editor { grid-template-columns: 1fr; }
+  .quality-summary { display: block; }
+  .quality-summary ul { margin-top: 7px; }
+  .format-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scope-options,
+  .export-fields { grid-template-columns: 1fr; }
+  .export-estimate { position: static; }
+}

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Icon } from "../../shared/Icon";
 import {
   PASSWORD_MAX_LENGTH,
@@ -32,11 +39,19 @@ interface AuthGatewayProps {
   onBack: () => void;
 }
 
+function clearAuthEntryTokens(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("token");
+  url.searchParams.delete("verificationToken");
+  window.history.replaceState(window.history.state, "", url);
+}
+
 export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProps) {
   const onAuthenticatedRef = useRef(onAuthenticated);
-  const initialResetToken = new URLSearchParams(window.location.search).get("token");
-  const initialVerificationToken = new URLSearchParams(window.location.search)
-    .get("verificationToken");
+  const [[initialResetToken, initialVerificationToken]] = useState(() => {
+    const query = new URLSearchParams(window.location.search);
+    return [query.get("token"), query.get("verificationToken")] as const;
+  });
   const [screen, setScreen] = useState<AuthScreen>(
     initialVerificationToken ? "verifying" : initialResetToken ? "reset" : "login",
   );
@@ -56,6 +71,13 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
     onAuthenticatedRef.current = onAuthenticated;
   }, [onAuthenticated]);
 
+  useLayoutEffect(() => {
+    // Keep callback secrets only in component memory. Removing them before any
+    // passive effect prevents same-origin session/API requests and access logs
+    // from receiving the token through the browser Referer header.
+    if (initialResetToken || initialVerificationToken) clearAuthEntryTokens();
+  }, [initialResetToken, initialVerificationToken]);
+
   useEffect(() => {
     if (screen !== "mfa" || seconds <= 0) return;
     const timeout = window.setTimeout(
@@ -71,9 +93,6 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
     void verifyEmail(initialVerificationToken)
       .then(() => {
         if (!active) return;
-        const url = new URL(window.location.href);
-        url.searchParams.delete("verificationToken");
-        window.history.replaceState({}, "", `${url.pathname}${url.search}`);
         onAuthenticatedRef.current();
       })
       .catch(() => {
@@ -213,7 +232,6 @@ export default function AuthGateway({ onAuthenticated, onBack }: AuthGatewayProp
     setSubmitState("loading");
     try {
       await confirmPasswordReset(initialResetToken, password);
-      window.history.replaceState({}, "", window.location.pathname);
       setPassword("");
       setSubmitState("idle");
       setScreen("login");

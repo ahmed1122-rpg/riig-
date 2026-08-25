@@ -151,3 +151,21 @@ tests:
             exp_annotations:
               summary: A browser reported a Content Security Policy violation
               runbook: docs/runbooks/client-experience.md
+
+  - name: host disk exhaustion alerts before container logs fill the filesystem
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="host-a",device="/dev/sda1",mountpoint="/",fstype="ext4"}'
+        values: '100x20'
+      - series: 'node_filesystem_size_bytes{instance="host-a",device="/dev/sda1",mountpoint="/",fstype="ext4"}'
+        values: '1000x20'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: MotionPrepHostDiskSpaceLow
+        exp_alerts:
+          - exp_labels:
+              instance: host-a
+              severity: warning
+            exp_annotations:
+              summary: A MotionPrep host has less than 15% filesystem space available
+              runbook: docs/runbooks/production-dependency-recovery.md

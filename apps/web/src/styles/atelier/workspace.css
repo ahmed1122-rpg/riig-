@@ -1,0 +1,21 @@
+/* Workspace remains immersive */
+.app-shell--workspace .topbar {
+  background-color: var(--atelier-midnight);
+}
+
+.layer-action,
+.preview-toolbar button {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.layer-row.is-selected {
+  border-color: rgba(32, 217, 238, .42);
+  background: linear-gradient(90deg, rgba(32, 217, 238, .14), rgba(113, 103, 255, .12));
+}
+
+.layer-dock,
+.export-review {
+  border-color: rgba(113, 103, 255, .2);
+  box-shadow: 0 20px 52px rgba(0, 0, 0, .24);
+}

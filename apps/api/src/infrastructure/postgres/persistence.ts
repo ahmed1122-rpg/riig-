@@ -45,7 +45,11 @@ export function createPostgresPersistence(config: AppConfig) {
         database.pool,
         config.MALWARE_SCAN_MODE === "required",
       ),
-      uploadFinalization: new PostgresUploadFinalizationCommand(database.pool),
+      uploadFinalization: new PostgresUploadFinalizationCommand(
+        database.pool,
+        {},
+        config.MALWARE_SCAN_MODE === "required",
+      ),
       uploadIntegrityFailures: new PostgresUploadIntegrityFailureCommand(
         database.pool,
       ),
@@ -53,13 +57,20 @@ export function createPostgresPersistence(config: AppConfig) {
       sourceVersions: new PostgresSourceVersionRepository(database.pool),
       sourceVersionRestores: new PostgresSourceVersionRestoreCommand(
         database.pool,
+        config.MALWARE_SCAN_MODE === "required",
       ),
-      exports: new PostgresExportRepository(database.pool),
+      exports: new PostgresExportRepository(
+        database.pool,
+        config.MALWARE_SCAN_MODE === "required",
+      ),
       auth: new PostgresAuthRepository(database.pool),
       audit: new PostgresAuditRepository(database.pool),
       billing: new PostgresBillingRepository(database.pool),
       idempotency: new PostgresIdempotencyStore(database.pool),
-      processingJobs: new PostgresProcessingJobRepository(database.pool),
+      processingJobs: new PostgresProcessingJobRepository(
+        database.pool,
+        config.MALWARE_SCAN_MODE === "required",
+      ),
       layerDocuments: new PostgresLayerDocumentRepository(database.pool),
       accountPrivacy: new PostgresAccountPrivacyRepository(database.pool),
       characterRigs: new PostgresCharacterRigRepository(database.pool),

@@ -14,6 +14,7 @@ const requiredKeys = [
   "OBJECT_STORAGE_SESSION_TOKEN",
   "OBJECT_STORAGE_ENCRYPTION_MODE",
   "MALWARE_SCAN_MODE",
+  "MALWARE_SCANNER_SOCKET_PATH",
   "MALWARE_SCANNER_HOST",
   "MALWARE_SCANNER_PORT",
   "MALWARE_DEFINITIONS_MAX_AGE_HOURS",
@@ -26,6 +27,13 @@ const requiredKeys = [
   "CHARACTER_RIG_ENABLED",
   "CHARACTER_INFERENCE_URL",
   "CHARACTER_INFERENCE_API_KEY",
+  "CHARACTER_INFERENCE_PROTOCOL",
+  "CHARACTER_INFERENCE_TIMEOUT_MS",
+  "CHARACTER_INFERENCE_OPERATION_TIMEOUT_MS",
+  "CHARACTER_INFERENCE_POLL_INTERVAL_MS",
+  "CHARACTER_INFERENCE_MAX_POLL_INTERVAL_MS",
+  "CHARACTER_INFERENCE_ALLOW_INSECURE_LOCALHOST",
+  "CHARACTER_CONCURRENCY",
   "CHARACTER_LEASE_MS",
   "WORKER_EVENT_RETENTION_DAYS",
   "RUNTIME_IMAGE_REF",
@@ -38,6 +46,7 @@ const requiredKeys = [
   "MOTIONPREP_EXPORT_WORKER_ENV_FILE",
   "MOTIONPREP_SECURITY_WORKER_ENV_FILE",
   "MOTIONPREP_CHARACTER_WORKER_ENV_FILE",
+  "MOTIONPREP_CLAMAV_SOCKET_DIR",
 ];
 
 export function verifyProductionEnvironmentTemplate(source) {
@@ -57,9 +66,29 @@ export function verifyProductionEnvironmentTemplate(source) {
       "Production uploads must keep fail-closed malware scanning required.",
     );
   }
+  if (!/^MALWARE_SCANNER_SOCKET_PATH=\/run\/clamav\/clamd\.sock$/mu.test(source)) {
+    violations.push(
+      "The production security worker must use the mounted local ClamAV Unix socket.",
+    );
+  }
+  if (!/^MOTIONPREP_CLAMAV_SOCKET_DIR=\/.+$/mu.test(source)) {
+    violations.push(
+      "Production Compose must receive an absolute host-local ClamAV socket directory.",
+    );
+  }
   if (!/^CHARACTER_RIG_ENABLED=false$/mu.test(source)) {
     violations.push(
       "Character Studio must remain disabled in the production template until its private-provider and Golden gates pass.",
+    );
+  }
+  if (!/^CHARACTER_INFERENCE_PROTOCOL=async-v1$/mu.test(source)) {
+    violations.push(
+      "The production Character worker must use the bounded async-v1 provider protocol.",
+    );
+  }
+  if (!/^CHARACTER_INFERENCE_ALLOW_INSECURE_LOCALHOST=false$/mu.test(source)) {
+    violations.push(
+      "The production Character provider cannot allow insecure localhost transport.",
     );
   }
   for (const key of requiredKeys) {

@@ -87,7 +87,7 @@ const tools: readonly ReadyWorkspaceTool[] = [
     id: "image.exclude",
     mode: "image",
     label: "استبعد",
-    icon: "brush",
+    icon: "brushOff",
     group: "prompts",
     shortcut: { key: "2", label: "2" },
     color: "#fb7185",
@@ -134,7 +134,7 @@ const tools: readonly ReadyWorkspaceTool[] = [
     id: "image.redo",
     mode: "image",
     label: "إعادة تعديل محفوظ",
-    icon: "refresh",
+    icon: "redo",
     group: "history",
     shortcut: {
       key: "z",
@@ -220,7 +220,7 @@ const tools: readonly ReadyWorkspaceTool[] = [
     id: "pdf.redo",
     mode: "book",
     label: "إعادة تعديل محفوظ",
-    icon: "refresh",
+    icon: "redo",
     group: "history",
     shortcut: {
       key: "z",

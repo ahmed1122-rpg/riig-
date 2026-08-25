@@ -2,7 +2,7 @@
 
 # Keep the explicit image version aligned with .node-version. The deployment
 # verifier rejects drift while the digest preserves immutable builds.
-FROM node:24.18.1-trixie-slim@sha256:ac39e4b5fcb2b1b34b20364fd58b2e898f3bb80731ee6f62a7536f9df3d6aadc AS build
+FROM node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110 AS build
 WORKDIR /workspace
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
@@ -30,7 +30,7 @@ RUN npm run build
 RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 COPY scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
-FROM node:24.18.1-trixie-slim@sha256:ac39e4b5fcb2b1b34b20364fd58b2e898f3bb80731ee6f62a7536f9df3d6aadc AS runtime-base
+FROM node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110 AS runtime-base
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000
@@ -38,10 +38,7 @@ ENV API_PORT=4000
 # Sharp/Pango requires a fontconfig configuration even when every exported
 # text layer supplies its own reviewed font file. Keep discovery deterministic
 # and avoid production warnings from the slim base image.
-RUN apt-get update \
-  && apt-get upgrade --yes \
-  && apt-get install --yes --no-install-recommends fontconfig \
-  && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache fontconfig
 
 # Generates the reviewed Adobe fixtures in the exact Linux/font stack used by
 # production. The host command targets this stage so Windows and macOS cannot

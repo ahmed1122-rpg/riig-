@@ -19,6 +19,14 @@ node_modules
 .npm-cache
 **/node_modules
 **/dist
+**/*.tsbuildinfo
+.tmp
+tmp
+test-results
+playwright-report
+dogfood-output
+.eslintcache
+.stylelintcache
 coverage
 artifacts/*
 !artifacts/baselines/

@@ -43,6 +43,7 @@ const emptyCounts: RetentionDatabaseCounts = {
   sourceVersions: 0,
   uploadIntegrityEvents: 0,
   characterJobs: 0,
+  malwareScanJobs: 0,
 };
 
 function successfulClaims(): Pick<
@@ -51,12 +52,14 @@ function successfulClaims(): Pick<
   | "claimArtifactPurge"
   | "claimCharacterReferencePurge"
   | "claimDerivedAssetPurge"
+  | "claimMalwareQuarantinePurge"
 > {
   return {
     async claimUploadPurge() { return true; },
     async claimArtifactPurge() { return true; },
     async claimCharacterReferencePurge() { return true; },
     async claimDerivedAssetPurge() { return true; },
+    async claimMalwareQuarantinePurge() { return true; },
   };
 }
 
@@ -86,6 +89,18 @@ describe("retention cleanup", () => {
       contentType: "image/png",
       sizeBytes: 1,
       body: Buffer.from([4]),
+    });
+    await storage.put({
+      key: "quarantine/project/upload.png",
+      contentType: "image/png",
+      sizeBytes: 1,
+      body: Buffer.from([5]),
+    });
+    await storage.put({
+      key: "sources/project/legacy-clean.png",
+      contentType: "image/png",
+      sizeBytes: 1,
+      body: Buffer.from([6]),
     });
     const marked: string[] = [];
     const store: RetentionStore = {
@@ -136,6 +151,24 @@ describe("retention cleanup", () => {
         marked.push(objectKey);
         return true;
       },
+      async listExpiredMalwareQuarantines() {
+        return [
+          {
+            scanJobId: "scan-quarantine",
+            objectKey: "quarantine/project/upload.png",
+            deleteObject: true,
+          },
+          {
+            scanJobId: "scan-legacy-clean",
+            objectKey: "sources/project/legacy-clean.png",
+            deleteObject: false,
+          },
+        ];
+      },
+      async markMalwareQuarantinePurged(scanJobId) {
+        marked.push(scanJobId);
+        return true;
+      },
       async pruneDatabase() {
         return emptyCounts;
       },
@@ -154,6 +187,7 @@ describe("retention cleanup", () => {
       artifactsPurged: 1,
       characterReferencesPurged: 1,
       derivedAssetsPurged: 1,
+      malwareQuarantinesPurged: 2,
       failures: [],
     });
     expect(marked).toEqual([
@@ -161,6 +195,8 @@ describe("retention cleanup", () => {
       "export",
       "reference",
       "derived/project/source/revision-1/orphan.png",
+      "scan-quarantine",
+      "scan-legacy-clean",
     ]);
     await expect(storage.get("sources/project/upload.png")).resolves.toBeNull();
     await expect(
@@ -172,6 +208,12 @@ describe("retention cleanup", () => {
     await expect(
       storage.get("derived/project/source/revision-1/orphan.png"),
     ).resolves.toBeNull();
+    await expect(
+      storage.get("quarantine/project/upload.png"),
+    ).resolves.toBeNull();
+    await expect(
+      storage.get("sources/project/legacy-clean.png"),
+    ).resolves.not.toBeNull();
   });
 
   it("keeps database state retryable when an object deletion fails", async () => {

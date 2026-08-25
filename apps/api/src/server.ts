@@ -144,16 +144,50 @@ const dependencyReadiness: Record<string, () => Promise<void>> = {
       }
     : {}),
   ...(emailSender ? { smtp: () => emailSender.ready() } : {}),
+  ...(config.PROCESSING_EXECUTION_MODE === "worker" && persistence
+    ? {
+        media_worker: () =>
+          assertLiveWorker(
+            persistence.operationalStatus,
+            "media",
+            config.RELEASE_VERSION,
+          ),
+        document_worker: () =>
+          assertLiveWorker(
+            persistence.operationalStatus,
+            "document",
+            config.RELEASE_VERSION,
+          ),
+      }
+    : {}),
+  ...(config.EXPORT_EXECUTION_MODE === "worker" && persistence
+    ? {
+        export_worker: () =>
+          assertLiveWorker(
+            persistence.operationalStatus,
+            "export",
+            config.RELEASE_VERSION,
+          ),
+      }
+    : {}),
   ...(config.CHARACTER_RIG_ENABLED && persistence
     ? {
         character_worker: () =>
-          assertLiveWorker(persistence.operationalStatus, "character"),
+          assertLiveWorker(
+            persistence.operationalStatus,
+            "character",
+            config.RELEASE_VERSION,
+          ),
       }
     : {}),
   ...(config.MALWARE_SCAN_MODE === "required" && persistence
     ? {
         security_worker: () =>
-          assertLiveWorker(persistence.operationalStatus, "security"),
+          assertLiveWorker(
+            persistence.operationalStatus,
+            "security",
+            config.RELEASE_VERSION,
+          ),
       }
     : {}),
 };

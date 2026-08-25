@@ -12,6 +12,7 @@ describe("marketing entry state", () => {
       initialView: "dashboard",
       billingReturn: false,
       passwordReset: false,
+      emailVerification: false,
       workspace: { mode: "image", project: null },
     });
     expect(
@@ -82,6 +83,22 @@ describe("marketing entry state", () => {
     ).toBe("auth");
   });
 
+  it("opens an email verification link directly before session resolution", () => {
+    const intent = resolveEntryIntent(
+      "?verificationToken=email-verification-token",
+    );
+    expect(intent.emailVerification).toBe(true);
+    expect(
+      resolveRootSurface({
+        sessionPhase: "checking",
+        authenticated: false,
+        guestStudioOpen: false,
+        authOpen: intent.emailVerification,
+        billingReturn: false,
+      }),
+    ).toBe("auth");
+  });
+
   it("opens the creator shell when the visitor explicitly chooses guest mode", () => {
     expect(
       resolveRootSurface({
@@ -132,5 +149,14 @@ describe("marketing entry state", () => {
     expect(search).not.toContain("payment");
     expect(search).not.toContain("checkout_id");
     expect(search).not.toContain("secret");
+  });
+
+  it("removes authentication callback tokens from a navigated view URL", () => {
+    const search = buildViewSearch(
+      "?token=reset-secret&verificationToken=verify-secret",
+      "projects",
+    );
+
+    expect(search).toBe("?view=projects");
   });
 });

@@ -6,8 +6,64 @@ import { PostgresProcessingJobRepository } from "./postgres-processing-repositor
 import { PostgresExportRepository } from "./postgres-export-repository.js";
 import { PostgresProjectRepository } from "./postgres-project-repository.js";
 import { PostgresSourceVersionRestoreCommand } from "./postgres-source-version-restore.js";
+import { PostgresMalwareScanRepository } from "./postgres-malware-scan-repository.js";
 
 describe("PostgreSQL job and source transaction contracts", () => {
+  it("settles malware scans in upload-source-project-job lock order", async () => {
+    const job = {
+      id: crypto.randomUUID(),
+      uploadId: crypto.randomUUID(),
+      projectId: crypto.randomUUID(),
+      sourceVersionId: crypto.randomUUID(),
+      objectKey: "quarantine/project/source.png",
+      quarantineObjectKey: "quarantine/project/source.png",
+      contentType: "image/png" as const,
+      sizeBytes: 1,
+      sha256: "a".repeat(64),
+      attempt: 1,
+      maxAttempts: 3,
+      leaseOwner: "security-worker",
+      backfill: false,
+    };
+    const statements: string[] = [];
+    const client = fakeClient(async (sql) => {
+      statements.push(sql);
+      if (
+        sql.includes("FROM malware_scan_jobs WHERE id = $1") &&
+        !sql.includes("FOR UPDATE")
+      ) {
+        return result([{
+          upload_id: job.uploadId,
+          project_id: job.projectId,
+          source_version_id: job.sourceVersionId,
+        }]);
+      }
+      if (sql.includes("FROM projects") && sql.includes("FOR UPDATE")) {
+        return result([{ current_source_version_id: null, status: "uploading" }]);
+      }
+      if (sql.includes("FROM malware_scan_jobs") && sql.includes("FOR UPDATE")) {
+        return result([{ id: job.id }]);
+      }
+      if (sql.startsWith("UPDATE malware_scan_jobs")) return result([], 1);
+      return result([], 1);
+    });
+    const repository = new PostgresMalwareScanRepository(fakePool(client));
+
+    await repository.retry(job, "CLAMAV_UNAVAILABLE", 1_000);
+
+    const lockOrder = [
+      "FROM upload_sessions",
+      "FROM source_versions",
+      "FROM projects",
+      "FROM malware_scan_jobs",
+    ].map((fragment) => statements.findIndex(
+      (sql) => sql.includes(fragment) && sql.includes("FOR UPDATE"),
+    ));
+    expect(lockOrder.every((index) => index >= 0)).toBe(true);
+    expect(lockOrder).toEqual([...lockOrder].sort((left, right) => left - right));
+    expect(statements).toContain("COMMIT");
+  });
+
   it("rolls back the project fence when processing INSERT faults", async () => {
     const fixture = processingFixture();
     const statements: string[] = [];
@@ -221,8 +277,13 @@ describe("PostgreSQL job and source transaction contracts", () => {
         return result([{ version_number: 2 }]);
       }
       if (sql.includes("AS busy")) return result([{ busy: false }]);
-      if (sql.includes("SELECT id, version_number, status")) {
-        return result([{ id: targetSourceVersionId, version_number: 1, status: "ready" }]);
+      if (sql.includes("source.version_number") && sql.includes("malware_ready")) {
+        return result([{
+          id: targetSourceVersionId,
+          version_number: 1,
+          status: "ready",
+          malware_ready: true,
+        }]);
       }
       if (sql.startsWith("UPDATE projects")) return result([], 0);
       return result([]);
@@ -243,6 +304,62 @@ describe("PostgreSQL job and source transaction contracts", () => {
     expect(update).toContain("current_source_version_id = $3");
     expect(update).toContain("active_upload");
     expect(update).toContain("active_source");
+    expect(statements).toContain("ROLLBACK");
+  });
+
+  it("rejects a ready restore target that lacks the required clean scan", async () => {
+    const actorUserId = crypto.randomUUID();
+    const projectId = crypto.randomUUID();
+    const currentSourceVersionId = crypto.randomUUID();
+    const targetSourceVersionId = crypto.randomUUID();
+    const statements: string[] = [];
+    const client = fakeClient(async (sql) => {
+      statements.push(sql);
+      if (sql.includes("source_version_restore_events") && sql.includes("SELECT")) {
+        return result([]);
+      }
+      if (sql.includes("FROM projects") && sql.includes("FOR UPDATE")) {
+        return result([{
+          id: projectId,
+          name: "Malware-gated project",
+          kind: "image",
+          status: "needs_review",
+          current_source_version_id: currentSourceVersionId,
+          active_job_id: null,
+          created_at: "2026-08-13T00:00:00.000Z",
+          updated_at: "2026-08-13T00:00:00.000Z",
+        }]);
+      }
+      if (sql.includes("SELECT version_number FROM source_versions")) {
+        return result([{ version_number: 2 }]);
+      }
+      if (sql.includes("AS busy")) return result([{ busy: false }]);
+      if (sql.includes("source.version_number") && sql.includes("malware_ready")) {
+        return result([{
+          id: targetSourceVersionId,
+          version_number: 1,
+          status: "ready",
+          malware_ready: false,
+        }]);
+      }
+      return result([]);
+    });
+    const command = new PostgresSourceVersionRestoreCommand(
+      fakePool(client),
+      true,
+    );
+
+    await expect(command.restore({
+      projectId,
+      actorUserId,
+      targetSourceVersionId,
+      expectedCurrentSourceVersionId: currentSourceVersionId,
+      reason: "A pending source cannot be restored.",
+      idempotencyKey: "restore-malware-gate-test",
+      originatingRequestId: crypto.randomUUID(),
+    })).rejects.toMatchObject({ code: "SOURCE_VERSION_NOT_READY" });
+
+    expect(statements.some((sql) => sql.startsWith("UPDATE projects"))).toBe(false);
     expect(statements).toContain("ROLLBACK");
   });
 

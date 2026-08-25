@@ -16,11 +16,23 @@ and the authorization guard shared by every Character Rig HTTP operation.
    for explicitly enabled localhost development. A private path prefix is
    preserved with or without a trailing slash. Embedded credentials, query
    strings, and fragments are invalid configuration.
-3. Start the optional Compose profile with
+3. For a production GPU Serverless provider, set
+   `CHARACTER_INFERENCE_PROTOCOL=async-v1`, keep
+   `CHARACTER_INFERENCE_OPERATION_TIMEOUT_MS=900000`, and use bounded polling
+   from 1000 to 10000 milliseconds. Keep `CHARACTER_CONCURRENCY=1` for the first
+   canary; GPU replicas are scaled by the provider queue, not by multiplying the
+   application worker prematurely.
+4. Run `npm run verify:character-provider` from the protected readiness
+   environment. It must produce release-bound verified evidence satisfying
+   [`../CHARACTER_GPU_SERVERLESS.md`](../CHARACTER_GPU_SERVERLESS.md).
+5. Start the optional Compose profile with
    `docker compose --profile character-rig up -d worker-character`.
-4. Confirm `motionprep_worker_up{worker_type="character"} == 1`, queue age is
+6. Confirm `motionprep_worker_up{worker_type="character"} == 1`, queue age is
    below five minutes, and the sealed Character Rig benchmark passes.
-5. Set `CHARACTER_RIG_ENABLED=true` on the API and restart only the API.
+   Observe structured `character.provider_operation` events for submission,
+   polling, total duration, and provider retry delays. Reject the canary if cold
+   starts, queue age, failure rate, or cost exceed the approved evidence.
+7. Set `CHARACTER_RIG_ENABLED=true` on the API and restart only the API.
 
 ## Safe disablement
 
@@ -35,6 +47,9 @@ the platform stop grace period above this timeout.
 
 - Provider unavailable or rate-limited: disable the feature, retain queued
   attempts, and investigate without replaying with new idempotency keys.
+- Cold-start or queue-budget breach: keep the feature disabled; inspect model
+  image size and provider queue metrics before changing the maximum replica
+  ceiling. Do not hide GPU saturation by increasing Character worker concurrency.
 - Identity drift: reject the attempt, preserve its quality report and review,
   retire the affected identity model version, and rerun the holdout benchmark.
 - Artifact integrity failure: do not expose or compile the artifact. Compare the

@@ -1,5 +1,11 @@
 name: motionprep-integration
 
+x-logging: &bounded-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-runtime: &runtime
   # The default keeps the ordinary CI build unchanged. Release/rollback drills
   # inject an already-published digest and use --no-build so the tested bytes
@@ -66,6 +72,15 @@ x-runtime: &runtime
   networks:
     - integration
   init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  pids_limit: 256
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging: *bounded-logging
 
 services:
   postgres:
@@ -75,7 +90,7 @@ services:
       POSTGRES_USER: motionprep
       POSTGRES_PASSWORD: motionprep-integration
     ports:
-      - "${INTEGRATION_POSTGRES_PORT:-55432}:5432"
+      - "127.0.0.1:${INTEGRATION_POSTGRES_PORT:-55432}:5432"
     networks:
       - integration
     healthcheck:
@@ -83,6 +98,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    logging: *bounded-logging
 
   redis:
     image: redis:8-alpine@sha256:8096655e437712b07503796fb64d81359256cfcff0ab29d95a7da72863786efb
@@ -94,6 +110,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    logging: *bounded-logging
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
@@ -108,6 +125,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    logging: *bounded-logging
 
   minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
@@ -124,20 +142,70 @@ services:
         mc version enable local/motionprep-integration
         mc version info local/motionprep-integration
     restart: "no"
+    logging: *bounded-logging
+
+  clamav-db-init:
+    image: clamav/clamav:stable_base@sha256:85dbdcae852ad2e51a54e4a6e29c099f45971df746204ffc1274cb7ef7ff3f7b
+    entrypoint: ["/bin/sh", "-ec"]
+    user: clamav
+    command:
+      - |
+        cp /fixture/motionprep.ndb /var/lib/clamav/daily.ndb
+        cp /fixture/COPYING /var/lib/clamav/COPYING
+        cd /var/lib/clamav
+        sigtool --build=daily --unsigned --cvd-version=1 --flevel=90 --no-cdiff
+        mv daily daily.cud
+        rm -f COPYING daily.info daily.ndb
+        sigtool --info=daily.cud
+    environment:
+      SIGNDUSER: motionprep-integration
+    volumes:
+      - clamav-definitions:/var/lib/clamav
+      - ./artifacts/fixtures/malware-test-signatures.ndb:/fixture/motionprep.ndb:ro
+      - ./LICENSE:/fixture/COPYING:ro
+    networks:
+      - integration
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: "no"
+    logging: *bounded-logging
 
   clamav:
     image: clamav/clamav:stable_base@sha256:85dbdcae852ad2e51a54e4a6e29c099f45971df746204ffc1274cb7ef7ff3f7b
+    # The base image's /init downloads the public database before starting.
+    # Integration only needs the deterministic local EICAR signature, so run
+    # clamd directly and keep this topology independent from the public mirror.
+    entrypoint: ["clamd", "--foreground"]
+    user: clamav
+    depends_on:
+      clamav-db-init:
+        condition: service_completed_successfully
     networks:
       - integration
-    init: true
+    read_only: true
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/log/clamav:size=4m,mode=1777
     volumes:
-      - ./artifacts/fixtures/malware-test-signatures.ndb:/var/lib/clamav/motionprep-integration.ndb
+      - clamav-definitions:/var/lib/clamav:ro
     healthcheck:
       test: ["CMD-SHELL", "clamdcheck.sh"]
       interval: 3s
       timeout: 3s
       start_period: 15s
       retries: 120
+    logging: *bounded-logging
 
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
@@ -145,7 +213,7 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
     ports:
-      - "${INTEGRATION_MAILPIT_PORT:-58025}:8025"
+      - "127.0.0.1:${INTEGRATION_MAILPIT_PORT:-58025}:8025"
     networks:
       - integration
     healthcheck:
@@ -153,6 +221,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    logging: *bounded-logging
 
   migrate:
     <<: *runtime
@@ -179,7 +248,7 @@ services:
       clamav:
         condition: service_healthy
     ports:
-      - "${INTEGRATION_API_A_PORT:-54101}:4000"
+      - "127.0.0.1:${INTEGRATION_API_A_PORT:-54101}:4000"
     networks:
       integration:
         aliases:
@@ -198,7 +267,7 @@ services:
     <<: *runtime
     depends_on: *application-dependencies
     ports:
-      - "${INTEGRATION_API_B_PORT:-54102}:4000"
+      - "127.0.0.1:${INTEGRATION_API_B_PORT:-54102}:4000"
     healthcheck: *api-healthcheck
 
   worker-media:
@@ -263,14 +332,16 @@ services:
     networks:
       - integration
     ports:
-      - "${RELEASE_WEB_PORT:-58080}:8080"
+      - "127.0.0.1:${RELEASE_WEB_PORT:-58080}:8080"
     init: true
     read_only: true
+    pids_limit: 128
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
     tmpfs:
+      - /etc/nginx/conf.d:size=1m,mode=1777
       - /var/cache/nginx:size=32m,mode=1777
       - /var/run:size=1m,mode=1777
       - /tmp:size=16m
@@ -279,7 +350,11 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    logging: *bounded-logging
 
 networks:
   integration:
     driver: bridge
+
+volumes:
+  clamav-definitions:

@@ -6,12 +6,12 @@ import { gzipSync } from "node:zlib";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const assetsDirectory = path.join(root, "apps/web/dist/assets");
 const budgets = {
-  // The measured release candidate is 184.0 KiB after adding canvas fit/pan,
-  // dual-currency checkout, clickable PDF split points, merge preview, and
-  // full-workspace file drop. Keep a narrow 1.0 KiB ratchet; route startup
-  // remains protected independently by request, LCP-asset, font, and chunk
-  // budgets below.
-  ".js": 185 * 1024,
+  // The measured release candidate is 185.7 KiB after adding secure callback
+  // token cleanup, abortable resource loads, bounded initial retries, durable
+  // project URL adoption, and browser-native bidirectional text handling. Keep
+  // a narrow 1.3 KiB ratchet; route startup remains protected independently by
+  // request, LCP-asset, font, and per-chunk budgets below.
+  ".js": 187 * 1024,
   ".css": 50 * 1024,
 };
 const maximumJavaScriptChunk = 68 * 1024;

@@ -10,6 +10,7 @@ import {
 import { prepareImageSource } from "@motionprep/media-processing";
 import type { Pool, PoolClient } from "pg";
 import type { UsageMeter } from "../billing/usage-meter.js";
+import type { UploadRepository } from "../uploads/upload-repository.js";
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { isObjectStorageIntegrityFailure } from "../storage/object-storage.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
@@ -31,6 +32,7 @@ import { processingJobOptionsSchema } from "./processing-job-options.js";
 
 export interface ProcessingJobExecutionContext {
   pool: Pool;
+  readyUploads: Pick<UploadRepository, "findReadyBySourceVersion">;
   storage: ObjectStorage;
   projectKind: ProjectKind;
   workerId: string;
@@ -65,26 +67,16 @@ export async function processClaimedJob(
   );
 
   try {
-    const upload = await context.pool.query<{
-      object_key: string;
-      content_type: string;
-      expected_size_bytes: number;
-      sha256: string | null;
-    }>(
-      `SELECT object_key, content_type, expected_size_bytes, sha256
-       FROM upload_sessions
-       WHERE project_id = $1 AND source_version_id = $2 AND status = 'ready'
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [job.projectId, job.sourceVersionId],
+    const readyUpload = await context.readyUploads.findReadyBySourceVersion(
+      job.projectId,
+      job.sourceVersionId,
     );
-    const readyUpload = upload.rows[0];
     if (!readyUpload) throw new ProcessingWorkerError("SOURCE_NOT_READY");
 
     let response;
     try {
-      response = await context.storage.get(readyUpload.object_key, {
-        maxBytes: readyUpload.expected_size_bytes,
+      response = await context.storage.get(readyUpload.objectKey, {
+        maxBytes: readyUpload.expectedSizeBytes,
       });
     } catch (error) {
       if (isObjectStorageIntegrityFailure(error)) {
@@ -96,8 +88,8 @@ export async function processClaimedJob(
     if (
       !readyUpload.sha256 ||
       !hasExpectedObjectIntegrity(response, {
-        contentType: readyUpload.content_type,
-        sizeBytes: readyUpload.expected_size_bytes,
+        contentType: readyUpload.contentType,
+        sizeBytes: readyUpload.expectedSizeBytes,
         sha256: readyUpload.sha256,
       })
     ) {

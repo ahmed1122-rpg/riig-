@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import type {
   ExpiredCharacterReference,
   ExpiredExportArtifact,
+  ExpiredMalwareQuarantine,
   ExpiredUploadObject,
   RetentionStore,
   UnreferencedDerivedAsset,
@@ -16,14 +17,85 @@ interface ArtifactRow {
 }
 interface ReferenceRow { id: string; object_key: string }
 interface DerivedRow { object_key: string; updated_at: Date | string }
+interface MalwareQuarantineRow {
+  id: string;
+  quarantine_object_key: string;
+  delete_object: boolean;
+}
 
 export class PostgresRetentionStore implements RetentionStore {
   constructor(private readonly pool: Pool) {}
 
+  async listExpiredMalwareQuarantines(
+    now: string,
+    limit: number,
+  ): Promise<ExpiredMalwareQuarantine[]> {
+    const result = await this.pool.query<MalwareQuarantineRow>(
+      `SELECT scan.id, scan.quarantine_object_key,
+         CASE
+           WHEN scan.status = 'malicious' THEN true
+           WHEN scan.quarantine_object_key = scan.object_key
+             AND (
+               scan.status = 'clean'
+               OR (scan.status = 'failed' AND upload.malware_scan_backfill = true)
+             ) THEN false
+           ELSE true
+         END AS delete_object
+       FROM malware_scan_jobs AS scan
+       JOIN upload_sessions AS upload ON upload.upload_id = scan.upload_id
+       WHERE scan.status IN ('clean', 'malicious', 'failed')
+         AND scan.quarantine_object_purged_at IS NULL
+         AND (scan.quarantine_purge_claimed_at IS NULL
+           OR scan.quarantine_purge_claimed_at <= $1::timestamptz - interval '1 hour')
+       ORDER BY scan.completed_at NULLS LAST, scan.id
+       LIMIT $2`,
+      [now, limit],
+    );
+    return result.rows.map((row) => ({
+      scanJobId: row.id,
+      objectKey: row.quarantine_object_key,
+      deleteObject: row.delete_object,
+    }));
+  }
+
+  async claimMalwareQuarantinePurge(
+    quarantine: ExpiredMalwareQuarantine,
+    now: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE malware_scan_jobs
+       SET quarantine_purge_claimed_at = $3, updated_at = $3
+       WHERE id = $1 AND quarantine_object_key = $2
+         AND status IN ('clean', 'malicious', 'failed')
+         AND quarantine_object_purged_at IS NULL
+         AND (quarantine_purge_claimed_at IS NULL
+           OR quarantine_purge_claimed_at <= $3::timestamptz - interval '1 hour')`,
+      [quarantine.scanJobId, quarantine.objectKey, now],
+    );
+    return result.rowCount === 1;
+  }
+
+  async markMalwareQuarantinePurged(
+    scanJobId: string,
+    now: string,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE malware_scan_jobs
+       SET quarantine_object_purged_at = $2,
+           quarantine_purge_claimed_at = NULL,
+           updated_at = $2
+       WHERE id = $1 AND quarantine_purge_claimed_at = $2
+         AND quarantine_object_purged_at IS NULL`,
+      [scanJobId, now],
+    );
+    return result.rowCount === 1;
+  }
+
   async listExpiredUploads(now: string, limit: number): Promise<ExpiredUploadObject[]> {
     const result = await this.pool.query<UploadRow>(
       `SELECT upload_id, object_key FROM upload_sessions
-       WHERE expires_at <= $1 AND status <> 'ready' AND object_purged_at IS NULL
+       WHERE expires_at <= $1 AND ${uploadObjectMayBePurged("upload_sessions")}
+         AND object_purged_at IS NULL
        ORDER BY expires_at, upload_id LIMIT $2`,
       [now, limit],
     );
@@ -32,10 +104,13 @@ export class PostgresRetentionStore implements RetentionStore {
 
   async claimUploadPurge(upload: ExpiredUploadObject, now: string): Promise<boolean> {
     const result = await this.pool.query(
-      `UPDATE upload_sessions SET purge_claimed_at = $3, updated_at = $3
-       WHERE upload_id = $1 AND object_key = $2 AND status <> 'ready'
-         AND object_purged_at IS NULL AND (purge_claimed_at IS NULL
-           OR purge_claimed_at <= $3::timestamptz - interval '1 hour')`,
+      `UPDATE upload_sessions AS upload
+       SET purge_claimed_at = $3, updated_at = $3
+       WHERE upload.upload_id = $1 AND upload.object_key = $2
+         AND ${uploadObjectMayBePurged("upload")}
+         AND upload.object_purged_at IS NULL
+         AND (upload.purge_claimed_at IS NULL
+           OR upload.purge_claimed_at <= $3::timestamptz - interval '1 hour')`,
       [upload.uploadId, upload.objectKey, now],
     );
     return result.rowCount === 1;
@@ -43,14 +118,16 @@ export class PostgresRetentionStore implements RetentionStore {
 
   async markUploadPurged(uploadId: string, now: string): Promise<boolean> {
     const result = await this.pool.query<{ changed: number }>(
-      `WITH purged AS (
-         UPDATE upload_sessions SET status = CASE
-             WHEN status IN ('validating', 'uploading', 'verifying', 'scanning')
+       `WITH purged AS (
+         UPDATE upload_sessions AS upload SET status = CASE
+             WHEN upload.status IN ('validating', 'uploading', 'verifying', 'scanning')
                THEN 'cancelled' ELSE status END,
            object_purged_at = $2, updated_at = $2
-         WHERE upload_id = $1 AND status <> 'ready'
-           AND object_purged_at IS NULL AND purge_claimed_at = $2
-         RETURNING source_version_id
+         WHERE upload.upload_id = $1
+           AND ${uploadObjectMayBePurged("upload")}
+           AND upload.object_purged_at IS NULL
+           AND upload.purge_claimed_at = $2
+         RETURNING upload.source_version_id
        ), updated_source AS (
          UPDATE source_versions source SET status = CASE
              WHEN source.status IN ('validating', 'uploading', 'verifying', 'scanning')
@@ -242,6 +319,19 @@ export class PostgresRetentionStore implements RetentionStore {
   pruneDatabase(now: string, config: Parameters<RetentionStore["pruneDatabase"]>[1]) {
     return pruneRetentionDatabase(this.pool, now, config);
   }
+}
+
+function uploadObjectMayBePurged(alias: string): string {
+  return `${alias}.status <> 'ready'
+    AND NOT (
+      ${alias}.malware_scan_backfill = true
+      AND (
+        (${alias}.status = 'scanning'
+          AND ${alias}.malware_scan_verdict = 'pending')
+        OR (${alias}.status = 'scan_failed'
+          AND ${alias}.malware_scan_verdict = 'error')
+      )
+    )`;
 }
 
 function derivedAssetIsUnreferenced(alias: string): string {

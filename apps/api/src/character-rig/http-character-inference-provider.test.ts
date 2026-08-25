@@ -146,6 +146,194 @@ describe("HttpCharacterInferenceProvider", () => {
     });
   });
 
+  it("submits and polls an async serverless operation without duplicating work", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            operationId: "gpu-operation-1",
+            statusUrl: "v1/operations/gpu-operation-1",
+            retryAfterMilliseconds: 250,
+          },
+          { status: 202 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { status: "running", retryAfterMilliseconds: 500 },
+          { status: 202 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "succeeded",
+          result: {
+            providerModelReference: "serverless:model-1",
+            metrics: { coldStartMilliseconds: 1_200 },
+          },
+        }),
+      );
+    const delay = vi.fn(async (_milliseconds: number) => undefined);
+    const events: Array<{ phase: string; status: string; pollCount: number }> = [];
+    const provider = new HttpCharacterInferenceProvider({
+      baseUrl: "https://inference.internal/",
+      apiKey: "a-secure-test-key",
+      protocol: "async-v1",
+      timeoutMilliseconds: 10_000,
+      operationTimeoutMilliseconds: 20_000,
+      pollIntervalMilliseconds: 250,
+      maxPollIntervalMilliseconds: 2_000,
+      fetch: request,
+      delay,
+      onOperationEvent: (event) => events.push(event),
+    });
+
+    await expect(
+      provider.trainIdentity({ bible, modelVersion: model, references }),
+    ).resolves.toEqual({
+      providerModelReference: "serverless:model-1",
+      metrics: { coldStartMilliseconds: 1_200 },
+    });
+
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(request.mock.calls.map((call) => call[1]?.method)).toEqual([
+      "POST",
+      "GET",
+      "GET",
+    ]);
+    expect(request.mock.calls.map((call) => String(call[0]))).toEqual([
+      "https://inference.internal/v1/identity-models",
+      "https://inference.internal/v1/operations/gpu-operation-1",
+      "https://inference.internal/v1/operations/gpu-operation-1",
+    ]);
+    expect(
+      request.mock.calls.map((call) =>
+        new Headers(call[1]?.headers).get("x-idempotency-key"),
+      ),
+    ).toEqual([model.id, model.id, model.id]);
+    expect(delay.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([
+      250,
+      500,
+    ]);
+    expect(events).toMatchObject([
+      { phase: "submitted", status: "accepted", pollCount: 0 },
+      { phase: "poll", status: "running", pollCount: 1 },
+      { phase: "completed", status: "succeeded", pollCount: 2 },
+    ]);
+  });
+
+  it("rejects async status URLs that could leak provider credentials", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          operationId: "gpu-operation-1",
+          statusUrl: "https://attacker.example/steal",
+        },
+        { status: 202 },
+      ),
+    );
+    const provider = new HttpCharacterInferenceProvider({
+      baseUrl: "https://inference.internal/private-api/",
+      apiKey: "a-secure-test-key",
+      protocol: "async-v1",
+      timeoutMilliseconds: 10_000,
+      operationTimeoutMilliseconds: 20_000,
+      fetch: request,
+    });
+
+    await expect(
+      provider.trainIdentity({ bible, modelVersion: model, references }),
+    ).rejects.toMatchObject({
+      code: "CHARACTER_PROVIDER_STATUS_URL_INVALID",
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps an async serverless capacity failure to a retryable provider code", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            operationId: "gpu-operation-1",
+            statusUrl: "v1/operations/gpu-operation-1",
+          },
+          { status: 202 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "failed",
+          errorCode: "CAPACITY_EXHAUSTED",
+        }),
+      );
+    const provider = new HttpCharacterInferenceProvider({
+      baseUrl: "https://inference.internal/",
+      apiKey: "a-secure-test-key",
+      protocol: "async-v1",
+      timeoutMilliseconds: 10_000,
+      operationTimeoutMilliseconds: 20_000,
+      pollIntervalMilliseconds: 250,
+      fetch: request,
+      delay: async () => undefined,
+    });
+
+    await expect(
+      provider.trainIdentity({ bible, modelVersion: model, references }),
+    ).rejects.toMatchObject({ code: "CHARACTER_PROVIDER_RATE_LIMITED" });
+  });
+
+  it("cancels an async operation while it is waiting to poll", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          operationId: "gpu-operation-1",
+          statusUrl: "v1/operations/gpu-operation-1",
+        },
+        { status: 202 },
+      ),
+    );
+    let markDelayStarted: (() => void) | undefined;
+    const delayStarted = new Promise<void>((resolve) => {
+      markDelayStarted = resolve;
+    });
+    const provider = new HttpCharacterInferenceProvider({
+      baseUrl: "https://inference.internal/",
+      apiKey: "a-secure-test-key",
+      protocol: "async-v1",
+      timeoutMilliseconds: 10_000,
+      operationTimeoutMilliseconds: 20_000,
+      pollIntervalMilliseconds: 250,
+      fetch: request,
+      delay: async (_milliseconds, signal) => {
+        markDelayStarted?.();
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      },
+    });
+    const controller = new AbortController();
+    const training = provider.trainIdentity({
+      bible,
+      modelVersion: model,
+      references,
+      signal: controller.signal,
+    });
+
+    await delayStarted;
+    controller.abort();
+
+    await expect(training).rejects.toMatchObject({
+      code: "CHARACTER_JOB_ABORTED",
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it("maps provider failures without exposing response bodies", async () => {
     const provider = createProvider(
       vi.fn<typeof fetch>().mockResolvedValue(
@@ -182,6 +370,20 @@ describe("HttpCharacterInferenceProvider", () => {
       code: "CHARACTER_JOB_ABORTED",
     });
     expect(request.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  it("bounds provider response bodies before parsing them", async () => {
+    const provider = createProvider(
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("x".repeat(1024 * 1024 + 1), {
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(
+      provider.trainIdentity({ bible, modelVersion: model, references }),
+    ).rejects.toMatchObject({ code: "CHARACTER_PROVIDER_RESPONSE_INVALID" });
   });
 });
 

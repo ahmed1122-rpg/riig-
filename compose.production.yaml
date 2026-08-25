@@ -1,5 +1,11 @@
 name: motionprep
 
+x-logging: &bounded-logging
+  driver: local
+  options:
+    max-size: "${CONTAINER_LOG_MAX_SIZE:-10m}"
+    max-file: "${CONTAINER_LOG_MAX_FILE:-5}"
+
 x-runtime: &runtime
   image: ${RUNTIME_IMAGE_REF:?Set RUNTIME_IMAGE_REF to an immutable registry digest}
   environment:
@@ -21,6 +27,7 @@ x-runtime: &runtime
     - no-new-privileges:true
   cap_drop:
     - ALL
+  logging: *bounded-logging
 
 services:
   migrate:
@@ -117,6 +124,13 @@ services:
     <<: *runtime
     env_file:
       - ${MOTIONPREP_SECURITY_WORKER_ENV_FILE:?Set MOTIONPREP_SECURITY_WORKER_ENV_FILE to the security-worker secret file}
+    volumes:
+      - type: bind
+        source: ${MOTIONPREP_CLAMAV_SOCKET_DIR:?Set MOTIONPREP_CLAMAV_SOCKET_DIR to the host-local ClamAV socket directory}
+        target: /run/clamav
+        read_only: true
+        bind:
+          create_host_path: false
     command:
       - node
       - --conditions=production
@@ -225,6 +239,7 @@ services:
     mem_limit: ${WEB_MEMORY_LIMIT:-256m}
     cpus: ${WEB_CPU_LIMIT:-0.5}
     restart: unless-stopped
+    logging: *bounded-logging
     # Dockerfile.web owns the /healthz image healthcheck. Compose deliberately
     # inherits it so local, staging, and production use the same probe.
 

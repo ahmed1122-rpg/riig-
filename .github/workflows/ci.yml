@@ -41,7 +41,14 @@ jobs:
           cache-from: type=gha,scope=qa
           cache-to: type=gha,mode=max,scope=qa
       - name: Prepare QA evidence directory
-        run: mkdir -p artifacts/qa
+        shell: bash
+        run: |
+          mkdir -p artifacts/qa
+          docker run --rm \
+            --user root \
+            --volume "${GITHUB_WORKSPACE}/artifacts/qa:/workspace/artifacts/qa" \
+            motionprep-qa:ci \
+            chown node:node /workspace/artifacts/qa
       - name: Verify staging dependency probes in the QA image
         run: >-
           docker run --rm motionprep-qa:ci

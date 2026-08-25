@@ -57,6 +57,9 @@ export interface ResourcePollingOptions<T> {
   revision?: number;
   intervalMs: number;
   maximumRetryIntervalMs?: number;
+  /** Stops the initial load after this many consecutive retryable failures. */
+  initialRetryLimit?: number;
+  onInitialRetryExhausted?: (error: unknown) => void;
   load: (signal: AbortSignal) => Promise<T>;
   shouldPoll: (value: T) => boolean;
   onSuccess: (value: T) => void;
@@ -74,6 +77,7 @@ export function useResourcePolling<T>(
     let active = true;
     let pollingWanted = true;
     let failureCount = 0;
+    let receivedValue = false;
     let timer: number | undefined;
     let releaseRequest: (() => void) | undefined;
 
@@ -115,6 +119,7 @@ export function useResourcePolling<T>(
         const value = await ticket.promise;
         if (!active) return;
         failureCount = 0;
+        receivedValue = true;
         latest.current.onSuccess(value);
         pollingWanted = latest.current.shouldPoll(value);
         if (pollingWanted) schedule(latest.current.intervalMs);
@@ -124,7 +129,16 @@ export function useResourcePolling<T>(
         }
         failureCount += 1;
         latest.current.onError(error);
-        pollingWanted = retryable(error);
+        const canRetry = retryable(error);
+        const initialFailuresExhausted =
+          canRetry &&
+          !receivedValue &&
+          latest.current.initialRetryLimit !== undefined &&
+          failureCount >= latest.current.initialRetryLimit;
+        pollingWanted = canRetry && !initialFailuresExhausted;
+        if (initialFailuresExhausted) {
+          latest.current.onInitialRetryExhausted?.(error);
+        }
         if (pollingWanted) schedule(retryDelay(error));
       } finally {
         ticket.release();
@@ -161,6 +175,7 @@ export function useResourcePolling<T>(
     options.enabled,
     options.intervalMs,
     options.maximumRetryIntervalMs,
+    options.initialRetryLimit,
     options.resourceKey,
     options.revision,
   ]);

@@ -42,7 +42,10 @@ interface WorkspaceUploadOptions {
     confirmLabel: string;
   }) => Promise<boolean>;
   onLayerAssetUrls: (urls: string[]) => void;
-  onLifecycleUpdate: (update: UploadLifecycleUpdate) => void;
+  onLifecycleUpdate: (
+    update: UploadLifecycleUpdate,
+    file: File,
+  ) => void;
   onDocumentReady: (
     file: File,
     result: UploadResult,
@@ -186,7 +189,7 @@ export function useWorkspaceUpload(options: WorkspaceUploadOptions) {
               );
             },
             onLifecycleUpdate: (update) => {
-              if (isCurrent()) options.onLifecycleUpdate(update);
+              if (isCurrent()) options.onLifecycleUpdate(update, file);
             },
             ...(options.mode === "book"
               ? {
