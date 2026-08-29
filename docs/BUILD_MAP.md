@@ -230,7 +230,7 @@ apps/
   worker-media/      مدخل عامل الصور
   worker-document/   مدخل عامل PDF/OCR
   worker-export/     مدخل عامل التصدير
-  worker-character/  مدخل عامل الهوية والتوليد وتجميع Character Rig
+  worker-character/  مدخل عامل تجميع PSD المحافظ على مصدر Character Rig
 packages/
   contracts/         العقود المشتركة
   media-processing/  فصل Raster والإرشاد والملء

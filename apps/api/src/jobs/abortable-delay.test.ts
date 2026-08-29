@@ -33,4 +33,18 @@ describe("abortable delay", () => {
 
     await expect(pending).resolves.toBeUndefined();
   });
+
+  it("supports an injected scheduler without duplicating abort logic", async () => {
+    const controller = new AbortController();
+    let resolveScheduled!: () => void;
+    const schedule = vi.fn(
+      () => new Promise<void>((resolve) => { resolveScheduled = resolve; }),
+    );
+    const pending = abortableDelay(500, controller.signal, schedule);
+
+    controller.abort();
+    await expect(pending).resolves.toBeUndefined();
+    expect(schedule).toHaveBeenCalledWith(500);
+    resolveScheduled();
+  });
 });

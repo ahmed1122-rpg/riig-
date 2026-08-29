@@ -372,6 +372,42 @@ test("creates an account, processes an image, saves review, and downloads export
   await expect(page.getByText("جاهز للمراجعة")).toBeVisible({
     timeout: 30_000,
   });
+  const viewportLayout = await page.locator(".page-content.is-workspace").evaluate(
+    (content) => {
+      const workspace = content.querySelector<HTMLElement>(".pro-workspace");
+      const statusBar = content.querySelector<HTMLElement>(".pro-status-bar");
+      const banner = content.querySelector<HTMLElement>(
+        ".capabilities-health-banner",
+      );
+      if (!workspace || !statusBar) {
+        throw new Error("Workspace layout elements are missing.");
+      }
+      const contentRect = content.getBoundingClientRect();
+      const workspaceRect = workspace.getBoundingClientRect();
+      const statusRect = statusBar.getBoundingClientRect();
+      const bannerRect = banner?.getBoundingClientRect();
+      return {
+        viewportHeight: window.innerHeight,
+        contentBottom: contentRect.bottom,
+        workspaceBottom: workspaceRect.bottom,
+        statusTop: statusRect.top,
+        statusBottom: statusRect.bottom,
+        occupiedHeight:
+          workspaceRect.height + (bannerRect?.height ?? 0),
+        contentHeight: contentRect.height,
+      };
+    },
+  );
+  expect(viewportLayout.statusTop).toBeGreaterThanOrEqual(0);
+  expect(viewportLayout.statusBottom).toBeLessThanOrEqual(
+    viewportLayout.viewportHeight + 1,
+  );
+  expect(viewportLayout.workspaceBottom).toBeLessThanOrEqual(
+    viewportLayout.contentBottom + 1,
+  );
+  expect(viewportLayout.occupiedHeight).toBeLessThanOrEqual(
+    viewportLayout.contentHeight + 1,
+  );
   const workspaceGeometry = await page.locator(".pro-preview-column").evaluate(
     (preview) => {
       const toolbar = preview.querySelector<HTMLElement>(".pro-preview-toolbar");
@@ -390,6 +426,27 @@ test("creates an account, processes an image, saves review, and downloads export
   expect(workspaceGeometry.toolbarOverflow).toBeLessThanOrEqual(2);
   expect(workspaceGeometry.guidanceOverflow).toBeLessThanOrEqual(2);
   await assertNoSeriousAccessibilityViolations(page);
+
+  if (testInfo.project.name === "desktop-chromium") {
+    const coordinateForm = page.locator(".guidance-coordinate-entry");
+    const coordinateInputs = coordinateForm.locator('input[type="number"]');
+    await coordinateInputs.nth(0).fill("37");
+    await coordinateInputs.nth(1).fill("61");
+    await coordinateForm.getByRole("button", { name: "إضافة إشارة" }).click();
+    await expect(page.locator(".guidance-overlay .guidance-stroke"))
+      .toHaveCount(1);
+
+    const refinementResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/guided-refinements"),
+    );
+    await page.getByRole("button", { name: "تطبيق وحفظ القناع" }).click();
+    expect((await refinementResponse).status()).toBe(200);
+    await expect(page.getByText("تم حفظ مراجعة Raster جديدة"))
+      .toBeVisible();
+  }
+
   const layerCount = page.getByText(/الطبقات 5/u);
   if (!(await layerCount.isVisible())) {
     await page.getByRole("button", { name: /الطبقات/u }).last().click();

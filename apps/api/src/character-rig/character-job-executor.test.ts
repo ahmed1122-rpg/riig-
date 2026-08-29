@@ -1,25 +1,15 @@
-import type {
-  CharacterBible,
-  CharacterGenerationAttempt,
-  CharacterIdentityModelVersion,
-  CharacterReferenceAsset,
-  CharacterRigVersion,
-} from "@motionprep/contracts";
-import { InMemoryObjectStorage } from "../storage/object-storage.js";
+import type { CharacterBible, CharacterRigVersion } from "@motionprep/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  InMemoryCharacterJobRepository,
-} from "./character-job-repository.js";
+import { InMemoryObjectStorage } from "../storage/object-storage.js";
+import { InMemoryCharacterJobRepository } from "./character-job-repository.js";
 import { executeClaimedCharacterJob } from "./character-job-executor.js";
-import { CharacterJobService } from "./character-job-service.js";
 import { InMemoryCharacterJobResultCommitter } from "./character-job-result-committer.js";
+import { CharacterJobService } from "./character-job-service.js";
 import { InMemoryCharacterRigRepository } from "./character-rig-repository.js";
-import { FakeCharacterInferenceProvider } from "./fake-character-inference-provider.js";
-import { CharacterProviderError } from "./character-inference-provider.js";
 
 const projectId = crypto.randomUUID();
-const userId = crypto.randomUUID();
 const initialTime = new Date("2026-08-11T00:00:00.000Z");
+const compileOperationId = "compile-operation-1";
 
 describe("character job runtime", () => {
   it("queues idempotently and rejects request-hash reuse", async () => {
@@ -27,12 +17,17 @@ describe("character job runtime", () => {
     const service = new CharacterJobService(jobs);
     const input = {
       projectId,
-      type: "train-identity" as const,
-      operationKey: "train-operation-1",
+      type: "compile-rig" as const,
+      operationKey: compileOperationId,
       requestHash: "a".repeat(64),
-      payload: { modelVersionId: crypto.randomUUID() },
+      payload: {
+        rigVersionId: crypto.randomUUID(),
+        width: 128,
+        height: 128,
+      },
       now: initialTime.toISOString(),
     };
+
     const first = await service.enqueue(input);
     expect(await service.enqueue(input)).toEqual(first);
     await expect(
@@ -42,49 +37,33 @@ describe("character job runtime", () => {
 
   it("claims with a lease and recovers only after expiry", async () => {
     const jobs = new InMemoryCharacterJobRepository();
-    const service = new CharacterJobService(jobs);
-    await service.enqueue({
-      projectId,
-      type: "train-identity",
-      operationKey: "lease-operation-1",
-      requestHash: "c".repeat(64),
-      payload: { modelVersionId: crypto.randomUUID() },
-      now: initialTime.toISOString(),
-    });
+    await enqueueCompile(jobs, "lease-operation-1");
     const first = await jobs.claimNext(
       "worker-a",
       initialTime.toISOString(),
       new Date(initialTime.getTime() + 60_000).toISOString(),
     );
+
     expect(first?.attempt).toBe(1);
-    expect(
-      await jobs.claimNext(
+    await expect(
+      jobs.claimNext(
         "worker-b",
         new Date(initialTime.getTime() + 30_000).toISOString(),
         new Date(initialTime.getTime() + 90_000).toISOString(),
       ),
-    ).toBeNull();
-    expect(
-      (
-        await jobs.claimNext(
-          "worker-b",
-          new Date(initialTime.getTime() + 60_001).toISOString(),
-          new Date(initialTime.getTime() + 120_001).toISOString(),
-        )
-      )?.leaseOwner,
-    ).toBe("worker-b");
+    ).resolves.toBeNull();
+    await expect(
+      jobs.claimNext(
+        "worker-b",
+        new Date(initialTime.getTime() + 60_001).toISOString(),
+        new Date(initialTime.getTime() + 120_001).toISOString(),
+      ),
+    ).resolves.toMatchObject({ leaseOwner: "worker-b", attempt: 2 });
   });
 
   it("releases a shutdown claim for immediate retry without consuming an attempt", async () => {
     const jobs = new InMemoryCharacterJobRepository();
-    await new CharacterJobService(jobs).enqueue({
-      projectId,
-      type: "train-identity",
-      operationKey: "shutdown-release-operation",
-      requestHash: "9".repeat(64),
-      payload: { modelVersionId: crypto.randomUUID() },
-      now: initialTime.toISOString(),
-    });
+    await enqueueCompile(jobs, "shutdown-release-operation");
     const first = await claim(jobs);
 
     expect(
@@ -94,147 +73,130 @@ describe("character job runtime", () => {
         new Date(initialTime.getTime() + 1_000).toISOString(),
       ),
     ).toBe(true);
-    const recovered = await jobs.claimNext(
-      "worker-b",
-      new Date(initialTime.getTime() + 1_001).toISOString(),
-      new Date(initialTime.getTime() + 61_001).toISOString(),
-    );
-
-    expect(recovered).toMatchObject({ leaseOwner: "worker-b", attempt: 1 });
-  });
-
-  it("trains an identity version before generation", async () => {
-    const setup = await createReadyContext();
-    const service = new CharacterJobService(setup.jobs);
-    await service.enqueue({
-      projectId,
-      type: "train-identity",
-      operationKey: "train-operation-2",
-      requestHash: "d".repeat(64),
-      payload: { modelVersionId: setup.model.id },
-      now: initialTime.toISOString(),
-    });
-    const claimed = await claim(setup.jobs);
-    const result = await executeClaimedCharacterJob(
-      { ...setup.context, now: advancingClock() },
-      claimed,
-    );
-    expect(result?.status).toBe("succeeded");
-    expect(
-      (await setup.rigs.findIdentityModelVersion(projectId, setup.model.id))
-        ?.providerModelReference,
-    ).toMatch(/^fake:/u);
-  });
-
-  it("stores generated pixels and requires human review after automated success", async () => {
-    const setup = await createReadyContext("ready");
-    const attempt = makeAttempt(setup.bible, setup.model);
-    await setup.rigs.saveGenerationAttempt(attempt);
-    const job = await enqueueAndClaimGeneration(setup.jobs, attempt);
-    await executeClaimedCharacterJob(
-      { ...setup.context, now: advancingClock() },
-      job,
-    );
-    const storedAttempt = await setup.rigs.findGenerationAttempt(projectId, attempt.id);
-    expect(storedAttempt?.status).toBe("needs-review");
-    expect(storedAttempt?.qualityReport?.passedAutomatedGate).toBe(true);
-    expect(await setup.storage.inspect(storedAttempt?.outputArtifact?.objectKey ?? "")).not.toBeNull();
-  });
-
-  it("rejects drifted output instead of promoting it", async () => {
-    const setup = await createReadyContext("ready", false);
-    const attempt = makeAttempt(setup.bible, setup.model);
-    await setup.rigs.saveGenerationAttempt(attempt);
-    const job = await enqueueAndClaimGeneration(setup.jobs, attempt);
-    await executeClaimedCharacterJob(
-      { ...setup.context, now: advancingClock() },
-      job,
-    );
-    expect(
-      await setup.rigs.findGenerationAttempt(projectId, attempt.id),
-    ).toMatchObject({
-      status: "rejected",
-      failureCode: "CHARACTER_QUALITY_GATE_FAILED",
-    });
-  });
-
-  it("removes a generated artifact when the fenced result commit is rejected", async () => {
-    const setup = await createReadyContext("ready");
-    const attempt = makeAttempt(setup.bible, setup.model);
-    await setup.rigs.saveGenerationAttempt(attempt);
-    const job = await enqueueAndClaimGeneration(setup.jobs, attempt);
-
-    const result = await executeClaimedCharacterJob(
-      {
-        ...setup.context,
-        resultCommitter: { async commit() { return false; } },
-        now: advancingClock(),
-      },
-      job,
-    );
-
-    expect(result).toBeNull();
-    expect(
-      await setup.storage.inspect(
-        `projects/${projectId}/character-rig/generations/${attempt.id}.png`,
+    await expect(
+      jobs.claimNext(
+        "worker-b",
+        new Date(initialTime.getTime() + 1_001).toISOString(),
+        new Date(initialTime.getTime() + 61_001).toISOString(),
       ),
-    ).toBeNull();
+    ).resolves.toMatchObject({ leaseOwner: "worker-b", attempt: 1 });
   });
 
-  it("fails permanent provider responses once but retries transient outages", async () => {
-    for (const [code, expectedStatus] of [
-      ["CHARACTER_PROVIDER_RESPONSE_INVALID", "failed"],
-      ["CHARACTER_PROVIDER_UNAVAILABLE", "queued"],
-    ] as const) {
-      const setup = await createReadyContext();
-      await new CharacterJobService(setup.jobs).enqueue({
-        projectId,
-        type: "train-identity",
-        operationKey: `provider-taxonomy-${code}`,
-        requestHash: code === "CHARACTER_PROVIDER_UNAVAILABLE" ? "e".repeat(64) : "f".repeat(64),
-        payload: { modelVersionId: setup.model.id },
-        now: initialTime.toISOString(),
-      });
-      const claimed = await claim(setup.jobs);
-      const settled = await executeClaimedCharacterJob(
-        {
-          ...setup.context,
-          provider: {
-            key: "failing-provider",
-            async trainIdentity() {
-              throw new CharacterProviderError(code);
-            },
-            async generate() {
-              throw new CharacterProviderError(code);
-            },
-          },
-          now: advancingClock(),
-        },
-        claimed,
-      );
-      expect(settled).toMatchObject({ status: expectedStatus, errorCode: code });
-    }
-  });
-
-  it("persists a terminal compile failure on the rig snapshot", async () => {
-    const setup = await createReadyContext();
-    const rig: CharacterRigVersion = {
-      schemaVersion: "1.0",
+  it("fails legacy training jobs closed without contacting an external provider", async () => {
+    const setup = createContext();
+    await setup.jobs.save({
       id: crypto.randomUUID(),
       projectId,
-      bibleId: setup.bible.id,
-      version: 1,
+      type: "train-identity",
+      status: "queued",
+      operationKey: "retired-training-operation",
+      requestHash: "d".repeat(64),
+      payload: { modelVersionId: crypto.randomUUID() },
+      attempt: 0,
+      maxAttempts: 3,
+      nextAttemptAt: initialTime.toISOString(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      errorCode: null,
+      createdAt: initialTime.toISOString(),
+      updatedAt: initialTime.toISOString(),
+    });
+
+    const settled = await executeClaimedCharacterJob(
+      { ...setup.context, now: advancingClock() },
+      await claim(setup.jobs),
+    );
+
+    expect(settled).toMatchObject({
+      status: "failed",
+      errorCode: "CHARACTER_GENERATION_DISABLED_SOURCE_ONLY",
+      attempt: 1,
+    });
+  });
+
+  it("persists a terminal source compile failure on the rig snapshot", async () => {
+    const setup = createContext();
+    const rig = makeRigWithMissingRaster();
+    await setup.rigs.saveBibleIfRevision(makeBible(rig.bibleId), null);
+    await setup.rigs.saveRigVersion(rig);
+    await enqueueCompile(
+      setup.jobs,
+      "compile-terminal-failure",
+      rig.id,
+      1,
+    );
+
+    const settled = await executeClaimedCharacterJob(
+      { ...setup.context, now: advancingClock() },
+      await claim(setup.jobs),
+    );
+
+    expect(settled).toMatchObject({
+      status: "failed",
+      errorCode: "CHARACTER_RIG_ASSET_INTEGRITY_FAILED",
+    });
+    await expect(
+      setup.rigs.findRigVersion(projectId, rig.id),
+    ).resolves.toMatchObject({
       status: "draft",
-      failureCode: null,
-      canvas: { width: 128, height: 128 },
-      nodes: [{
+      failureCode: "CHARACTER_RIG_ASSET_INTEGRITY_FAILED",
+    });
+  });
+});
+
+function createContext() {
+  const jobs = new InMemoryCharacterJobRepository();
+  const rigs = new InMemoryCharacterRigRepository();
+  const storage = new InMemoryObjectStorage();
+  return {
+    jobs,
+    rigs,
+    context: {
+      jobs,
+      characterRigs: rigs,
+      resultCommitter: new InMemoryCharacterJobResultCommitter(jobs, rigs),
+      storage,
+      workerId: "worker-a",
+      leaseMilliseconds: 60_000,
+    },
+  };
+}
+
+function makeRigWithMissingRaster(): CharacterRigVersion {
+  return {
+    schemaVersion: "1.0",
+    id: crypto.randomUUID(),
+    projectId,
+    bibleId: crypto.randomUUID(),
+    version: 1,
+    pipeline: "source-preserving",
+    sourceFingerprint: "f".repeat(64),
+    source: {
+      sourceVersionId: crypto.randomUUID(),
+      referenceId: crypto.randomUUID(),
+      artifact: {
+        objectKey: `projects/${projectId}/uploads/source.png`,
+        contentType: "image/png",
+        sizeBytes: 1,
+        sha256: "b".repeat(64),
+        createdAt: initialTime.toISOString(),
+        retentionExpiresAt: null,
+      },
+      layerDocumentRevision: 1,
+      pixelIdentityRequired: true,
+    },
+    status: "draft",
+    failureCode: null,
+    canvas: { width: 128, height: 128 },
+    nodes: [
+      {
         id: crypto.randomUUID(),
         parentId: null,
         kind: "raster",
         name: "+Head",
         canonicalView: "frontal",
         semanticPart: "head",
-        sourceGenerationAttemptId: null,
+        sourceLayerId: crypto.randomUUID(),
         artifact: {
           objectKey: `projects/${projectId}/character-rig/missing.png`,
           contentType: "image/png",
@@ -248,139 +210,27 @@ describe("character job runtime", () => {
         locked: false,
         opacity: 1,
         zIndex: 0,
-      }],
-      psdArtifact: null,
-      manifestArtifact: null,
-      approvedByUserId: null,
-      approvedAt: null,
-      createdAt: initialTime.toISOString(),
-      updatedAt: initialTime.toISOString(),
-    };
-    await setup.rigs.saveRigVersion(rig);
-    await new CharacterJobService(setup.jobs).enqueue({
-      projectId,
-      type: "compile-rig",
-      operationKey: "compile-terminal-failure",
-      requestHash: "c".repeat(64),
-      payload: { rigVersionId: rig.id, width: 128, height: 128 },
-      maxAttempts: 1,
-      now: initialTime.toISOString(),
-    });
-
-    const settled = await executeClaimedCharacterJob(
-      { ...setup.context, now: advancingClock() },
-      await claim(setup.jobs),
-    );
-
-    expect(settled).toMatchObject({
-      status: "failed",
-      errorCode: "CHARACTER_RIG_ASSET_INTEGRITY_FAILED",
-    });
-    await expect(setup.rigs.findRigVersion(projectId, rig.id)).resolves.toMatchObject({
-      status: "draft",
-      failureCode: "CHARACTER_RIG_ASSET_INTEGRITY_FAILED",
-    });
-  });
-
-  it("cancels an in-flight provider request and requeues it during shutdown", async () => {
-    const setup = await createReadyContext();
-    await new CharacterJobService(setup.jobs).enqueue({
-      projectId,
-      type: "train-identity",
-      operationKey: "abort-provider-operation",
-      requestHash: "8".repeat(64),
-      payload: { modelVersionId: setup.model.id },
-      now: initialTime.toISOString(),
-    });
-    const claimed = await claim(setup.jobs);
-    const controller = new AbortController();
-    let providerStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      providerStarted = resolve;
-    });
-    const execution = executeClaimedCharacterJob(
-      {
-        ...setup.context,
-        signal: controller.signal,
-        provider: {
-          key: "abort-aware-provider",
-          async trainIdentity(input) {
-            providerStarted();
-            return new Promise((_resolve, reject) => {
-              input.signal?.addEventListener(
-                "abort",
-                () => reject(new CharacterProviderError("CHARACTER_JOB_ABORTED")),
-                { once: true },
-              );
-            });
-          },
-          async generate() {
-            throw new Error("Generation was not expected.");
-          },
-        },
-        now: advancingClock(),
       },
-      claimed,
-    );
-    await started;
-    controller.abort();
-
-    await expect(execution).resolves.toMatchObject({
-      status: "queued",
-      attempt: 0,
-      leaseOwner: null,
-    });
-    await expect(
-      setup.jobs.claimNext(
-        "worker-b",
-        new Date(initialTime.getTime() + 1_000).toISOString(),
-        new Date(initialTime.getTime() + 61_000).toISOString(),
-      ),
-    ).resolves.toMatchObject({ leaseOwner: "worker-b", attempt: 1 });
-  });
-});
-
-async function createReadyContext(
-  modelStatus: CharacterIdentityModelVersion["status"] = "draft",
-  automatedGatePasses = true,
-) {
-  const jobs = new InMemoryCharacterJobRepository();
-  const rigs = new InMemoryCharacterRigRepository();
-  const storage = new InMemoryObjectStorage();
-  const bible = makeBible();
-  await rigs.saveBibleIfRevision(bible, null);
-  const reference = makeReference(bible);
-  await rigs.addReference(reference);
-  const model = makeModel(bible, modelStatus);
-  await rigs.saveIdentityModelVersion(model);
-  return {
-    jobs,
-    rigs,
-    storage,
-    bible,
-    model,
-    context: {
-      jobs,
-      characterRigs: rigs,
-      resultCommitter: new InMemoryCharacterJobResultCommitter(jobs, rigs),
-      provider: new FakeCharacterInferenceProvider(automatedGatePasses),
-      storage,
-      workerId: "worker-a",
-      leaseMilliseconds: 60_000,
-    },
+    ],
+    psdArtifact: null,
+    manifestArtifact: null,
+    approvedByUserId: null,
+    approvedAt: null,
+    createdAt: initialTime.toISOString(),
+    updatedAt: initialTime.toISOString(),
   };
 }
 
-function makeBible(): CharacterBible {
+function makeBible(id: string): CharacterBible {
   return {
     schemaVersion: "1.0",
-    id: crypto.randomUUID(),
+    id,
     projectId,
     version: 1,
     revision: 1,
     status: "approved",
-    displayName: "Adam",
-    identityDescription: "Stable identity",
+    displayName: "Source character",
+    identityDescription: "Metadata for the uploaded source.",
     negativeConstraints: [],
     distinguishingFeatures: [],
     proportions: {
@@ -391,103 +241,29 @@ function makeBible(): CharacterBible {
     },
     palette: [],
     materials: [],
-    createdByUserId: userId,
-    approvedByUserId: userId,
+    createdByUserId: crypto.randomUUID(),
+    approvedByUserId: crypto.randomUUID(),
     approvedAt: initialTime.toISOString(),
     createdAt: initialTime.toISOString(),
     updatedAt: initialTime.toISOString(),
   };
 }
 
-function makeReference(bible: CharacterBible): CharacterReferenceAsset {
-  return {
-    id: crypto.randomUUID(),
-    projectId,
-    bibleId: bible.id,
-    role: "identity-primary",
-    canonicalView: "frontal",
-    rightsClassification: "owned-by-user",
-    rightsAttestedByUserId: userId,
-    rightsAttestedAt: initialTime.toISOString(),
-    artifact: {
-      objectKey: "references/primary.png",
-      contentType: "image/png",
-      sizeBytes: 1,
-      sha256: "e".repeat(64),
-      createdAt: initialTime.toISOString(),
-      retentionExpiresAt: null,
-    },
-    width: 100,
-    height: 100,
-    createdAt: initialTime.toISOString(),
-  };
-}
-
-function makeModel(
-  bible: CharacterBible,
-  status: CharacterIdentityModelVersion["status"],
-): CharacterIdentityModelVersion {
-  return {
-    id: crypto.randomUUID(),
-    projectId,
-    bibleId: bible.id,
-    version: 1,
-    status,
-    providerKey: "fake",
-    providerModelReference: status === "ready" ? "fake:ready" : null,
-    baseModelReference: "evaluation-candidate",
-    datasetFingerprint: "f".repeat(64),
-    trainingConfiguration: {},
-    failureCode: null,
-    createdAt: initialTime.toISOString(),
-    updatedAt: initialTime.toISOString(),
-  };
-}
-
-function makeAttempt(
-  bible: CharacterBible,
-  model: CharacterIdentityModelVersion,
-): CharacterGenerationAttempt {
-  return {
-    id: crypto.randomUUID(),
-    projectId,
-    bibleId: bible.id,
-    identityModelVersionId: model.id,
-    target: { kind: "canonical-view", view: "left-quarter" },
-    status: "queued",
-    controls: {
-      canvas: { width: 1024, height: 1024 },
-      seed: 9,
-      poseReferenceId: null,
-      depthReferenceId: null,
-      maskReferenceId: null,
-      parameters: {},
-    },
-    requestHash: "1".repeat(64),
-    idempotencyKey: `generation-${crypto.randomUUID()}`,
-    outputArtifact: null,
-    outputGeometry: null,
-    qualityReport: null,
-    failureCode: null,
-    createdByUserId: userId,
-    createdAt: initialTime.toISOString(),
-    updatedAt: initialTime.toISOString(),
-  };
-}
-
-async function enqueueAndClaimGeneration(
+async function enqueueCompile(
   jobs: InMemoryCharacterJobRepository,
-  attempt: CharacterGenerationAttempt,
+  operationKey: string,
+  rigVersionId: string = crypto.randomUUID(),
+  maxAttempts = 5,
 ) {
-  await new CharacterJobService(jobs).enqueue({
+  return new CharacterJobService(jobs).enqueue({
     projectId,
-    type: "generate-view",
-    operationKey: `job-${attempt.id}`,
-    requestHash: attempt.requestHash,
-    payload: { generationAttemptId: attempt.id },
+    type: "compile-rig",
+    operationKey,
+    requestHash: crypto.randomUUID().replaceAll("-", "").repeat(2),
+    payload: { rigVersionId, width: 128, height: 128 },
+    maxAttempts,
     now: initialTime.toISOString(),
   });
-  return claim(jobs);
 }
 
 async function claim(jobs: InMemoryCharacterJobRepository) {

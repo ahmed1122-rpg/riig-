@@ -13,9 +13,6 @@ const environment = {
   OBJECT_STORAGE_FORCE_PATH_STYLE: "true",
   OBJECT_STORAGE_ENCRYPTION_MODE: "none",
   OBJECT_STORAGE_REQUIRE_VERSIONING: "false",
-  CHARACTER_INFERENCE_URL: "http://127.0.0.1:8188/",
-  CHARACTER_INFERENCE_API_KEY: "character-test-api-key",
-  CHARACTER_INFERENCE_ALLOW_INSECURE_LOCALHOST: "true",
   CHARACTER_WORKER_ID: "character-test",
 } as const;
 
@@ -35,10 +32,5 @@ test("maps validated environment into the character runtime", async () => {
   assert.equal(received?.databaseUrl, environment.DATABASE_URL);
   assert.equal(received?.workerId, "character-test");
   assert.equal(received?.objectStorage.bucket, "motionprep-test");
-  assert.equal(received?.inferenceProtocol, "direct-v1");
-  assert.equal(received?.inferenceTimeoutMilliseconds, 300_000);
-  assert.equal(received?.inferenceOperationTimeoutMilliseconds, 900_000);
-  assert.equal(received?.inferencePollIntervalMilliseconds, 1_000);
-  assert.equal(received?.inferenceMaxPollIntervalMilliseconds, 10_000);
   assert.equal(received?.drainTimeoutMilliseconds, 30_000);
 });

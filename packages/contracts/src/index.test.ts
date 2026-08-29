@@ -14,13 +14,10 @@ import {
   acceptedSourceTypes,
   characterBibleStatuses,
   characterCanonicalViews,
-  characterGenerationStatuses,
   characterJobStatuses,
   characterJobTypes,
-  characterModelStatuses,
+  characterStoredJobTypes,
   characterRigStatuses,
-  characterRequiredFrontalBodyParts,
-  characterRequiredHeadParts,
   evaluatePasswordRequirements,
   exportFormats,
   exportFormatsByProjectKind,
@@ -183,21 +180,12 @@ describe("upload contract", () => {
 });
 
 describe("character-rig contract", () => {
-  it("locks the MVP to five canonical views and explicit lifecycle states", () => {
-    expect(characterCanonicalViews).toEqual([
-      "frontal",
-      "left-quarter",
-      "left-profile",
-      "right-quarter",
-      "right-profile",
-    ]);
+  it("locks the source-preserving workflow to one frontal view", () => {
+    expect(characterCanonicalViews).toEqual(["frontal"]);
     expect(characterBibleStatuses).toEqual(["draft", "approved", "retired"]);
-    expect(characterModelStatuses).toContain("training");
-    expect(characterGenerationStatuses).toContain("needs-review");
     expect(characterRigStatuses).toContain("exported");
-    expect(characterRequiredHeadParts).toContain("mouth");
-    expect(characterRequiredFrontalBodyParts).toContain("left-hand");
-    expect(characterJobTypes).toContain("repair-part");
+    expect(characterJobTypes).toEqual(["compile-rig"]);
+    expect(characterStoredJobTypes).toContain("train-identity");
     expect(characterJobStatuses).toEqual([
       "queued",
       "processing",

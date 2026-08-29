@@ -8,7 +8,6 @@ import sharp from "sharp";
 
 import {
   assertDocumentDimensions,
-  MAX_DECODED_PIXELS,
 } from "./document-dimensions.js";
 import { ExportAdapterError } from "./export-adapter-error.js";
 import {
@@ -17,6 +16,7 @@ import {
   pixelData,
   withScaledAlpha,
 } from "./psd-buffer.js";
+import { decodeRasterRgba, transparentCanvas } from "./raster-utils.js";
 
 export { ExportAdapterError } from "./export-adapter-error.js";
 export {
@@ -188,25 +188,11 @@ async function prepareRasterAssets(
     }
     seen.add(asset.layer.id);
 
-    let decoded: {
-      data: Buffer;
-      info: { width: number; height: number };
-    };
-    try {
-      decoded = await sharp(asset.source, {
-        failOn: "error",
-        limitInputPixels: MAX_DECODED_PIXELS,
-      })
-        .toColourspace("srgb")
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-    } catch {
-      throw new ExportAdapterError(
-        "RASTER_DECODE_FAILED",
-        `تعذر فك ترميز أصل الطبقة ${asset.layer.name}.`,
-      );
-    }
+    const decoded = await decodeRasterRgba(
+      asset.source,
+      "RASTER_DECODE_FAILED",
+      `تعذر فك ترميز أصل الطبقة ${asset.layer.name}.`,
+    );
 
     decodedPixels += decoded.info.width * decoded.info.height;
     if (decodedPixels > RASTER_DECODE_PIXEL_BUDGET) {
@@ -281,17 +267,6 @@ function fullCanvas(document: LayerDocument, item: PreparedRaster) {
       top: item.top,
     },
   ]);
-}
-
-function transparentCanvas(width: number, height: number) {
-  return sharp({
-    create: {
-      width,
-      height,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  });
 }
 
 function resolvePlacement(

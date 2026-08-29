@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "../../shared/Icon";
 import {
   getReadyWorkspaceToolDefinition,
@@ -50,11 +50,21 @@ export function createGuidancePromptTools<Id extends string>(
 
 export function useGuidanceReview(guidanceRevision: number) {
   const [reviewState, setReviewState] = useState<ReviewState>("editing");
-  const [version, setVersion] = useState(guidanceRevision);
+  const [version, setVersionState] = useState(guidanceRevision);
   const [applying, setApplying] = useState(false);
   const [applyWarnings, setApplyWarnings] = useState<string[]>([]);
+  const appliedRevisionRef = useRef<number | null>(null);
+  const setVersion = (nextVersion: number) => {
+    appliedRevisionRef.current = nextVersion;
+    setVersionState(nextVersion);
+  };
   useEffect(() => {
-    setVersion(guidanceRevision);
+    if (appliedRevisionRef.current === guidanceRevision) {
+      appliedRevisionRef.current = null;
+      return;
+    }
+    appliedRevisionRef.current = null;
+    setVersionState(guidanceRevision);
     setReviewState("editing");
     setApplyWarnings([]);
   }, [guidanceRevision]);

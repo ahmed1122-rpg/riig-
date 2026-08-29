@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useStoredPreference } from "./useStoredPreference";
 
@@ -41,5 +41,14 @@ describe("useStoredPreference", () => {
     expect(window.localStorage.getItem("density")).toBe(
       JSON.stringify("comfortable"),
     );
+  });
+
+  it("synchronizes the same preference across mounted consumers", async () => {
+    const source = renderHook(() => useStoredPreference("motion", false));
+    const mirror = renderHook(() => useStoredPreference("motion", false));
+
+    act(() => source.result.current[1](true));
+
+    await waitFor(() => expect(mirror.result.current[0]).toBe(true));
   });
 });

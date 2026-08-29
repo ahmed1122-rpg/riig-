@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "reference": {
-    "role": "semantic-structure-reference",
+    "role": "source-layer-structure-reference",
     "releaseGolden": false,
     "rightsClassification": "user-provided-private-reference",
     "binaryStoredInRepository": false,
@@ -25,25 +25,20 @@
       "Hue/Saturation 1"
     ],
     "presentCanonicalViews": [
-      "frontal",
-      "left-quarter"
+      "frontal"
     ]
   },
   "target": {
-    "canonicalViews": [
-      "frontal",
-      "left-quarter",
-      "left-profile",
-      "right-quarter",
-      "right-profile"
-    ],
+    "pipeline": "source-preserving",
+    "canonicalViews": ["frontal"],
+    "sourceIntegrityMode": "pixel-exact",
     "colorMode": "RGB",
     "bitsPerChannel": 8,
     "hierarchicalPsd": true,
     "characterAnimatorGoldenRequired": true
   },
   "limitations": [
-    "The reference has two of the five target canonical views.",
+    "Only the frontal source hierarchy is evaluated; additional legacy view names are ignored.",
     "The reference is RGB/16-bit while the current supported export target is RGB/8-bit.",
     "Rights permit local analysis for this task; the binary must not be committed or redistributed."
   ]

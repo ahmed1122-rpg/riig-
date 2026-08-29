@@ -48,7 +48,7 @@ export function Dashboard({
           </div>
         </div>
 
-        <div className="time-saved" aria-label="حدود عملية التجهيز">
+        <div className="time-saved" role="group" aria-label="حدود عملية التجهيز">
           <span className="time-saved__icon"><Icon name="shieldCheck" size={23} /></span>
           <span>عقد تجهيز واضح</span>
           <strong>{MAX_PDF_UPLOAD_MEBIBYTES} <small>MiB</small></strong>
@@ -73,7 +73,7 @@ export function Dashboard({
               <small>للشخصيات، الأشكال والحيوانات</small>
               <strong>تجهيز صورة</strong>
               <p>حتى {MAX_IMAGE_LAYERS} طبقة بأسماء تبدأ بـ +، مع ملء تلقائي للفراغات.</p>
-              <span className="path-output-preview" aria-label="مثال على مخرجات الطبقات">
+              <span className="path-output-preview" role="group" aria-label="مثال على مخرجات الطبقات">
                 <b>مخرج جاهز</b><i dir="rtl">+رأس</i><i dir="rtl">+ذراع_يمين</i><i>≤ 15</i>
               </span>
               <span className="path-meta">PNG · JPG · WEBP <Icon name="arrow" size={16} /></span>
@@ -86,7 +86,7 @@ export function Dashboard({
               <small>للكتب والصفحات النصية</small>
               <strong>فصل نص PDF</strong>
               <p>خلفية بيضاء ثابتة، والنص طبقات حسب العناوين أو الجمل أو الكلمات.</p>
-              <span className="path-output-preview" aria-label="مثال على مخرجات الصفحة">
+              <span className="path-output-preview" role="group" aria-label="مثال على مخرجات الصفحة">
                 <b>مخرج جاهز</b><i dir="ltr">+page_001_background</i><i dir="rtl">+العنوان</i>
               </span>
               <span className="path-meta">PDF <Icon name="arrow" size={16} /></span>

@@ -1,5 +1,8 @@
 # ADR 0018 — Identity-locked character rig pipeline
 
+> Superseded for the product workflow by ADR 0020. The application now prepares
+> only the uploaded source and rejects identity training and image generation.
+
 ## Status
 
 Accepted for incremental implementation. The external inference provider and the

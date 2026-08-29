@@ -62,7 +62,7 @@ export function ExportReviewPreviewPanel({
   return (
     <section className="export-preview-panel" aria-label="المعاينة النهائية">
       <div className="export-preview-toolbar">
-        <div className="preview-group" aria-label="تكبير المعاينة">
+        <div className="preview-group" role="group" aria-label="تكبير المعاينة">
           <button type="button" onClick={() => setZoom((value) => Math.max(30, value - 10))} aria-label="تصغير"><Icon name="zoomOut" size={16} /></button>
           <button type="button" className="zoom-value" onClick={() => setZoom(100)} aria-label="عرض مئة بالمئة">{zoom}%</button>
           <button type="button" onClick={() => setZoom((value) => Math.min(160, value + 10))} aria-label="تكبير"><Icon name="zoomIn" size={16} /></button>

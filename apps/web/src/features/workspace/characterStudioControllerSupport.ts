@@ -6,7 +6,7 @@ export interface CharacterStudioControllerOptions {
 }
 
 export const defaultCharacterReviewReason =
-  "تتطابق الهوية والنسب والملامح مع حزمة المراجع المعتمدة.";
+  "تمت مراجعة طبقات المصدر وتطابق الصورة المركبة مع الصورة المرفوعة.";
 
 export function characterStudioErrorMessage(
   caught: unknown,

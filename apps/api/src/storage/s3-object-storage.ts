@@ -15,7 +15,7 @@ import {
   type HeadObjectCommandOutput,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { createHash } from "node:crypto";
+import { sha256Hex } from "../shared/sha256.js";
 import { Readable } from "node:stream";
 import {
   assertWritableSize,
@@ -118,7 +118,7 @@ export class S3ObjectStorage implements ObjectStorage {
 
   async put(object: StoredObject): Promise<StoredObjectMetadata> {
     assertWritableSize(object);
-    const sha256 = createHash("sha256").update(object.body).digest("hex");
+    const sha256 = sha256Hex(object.body);
     return this.#putVerified({ ...object, sha256 });
   }
 
@@ -140,7 +140,7 @@ export class S3ObjectStorage implements ObjectStorage {
   ): Promise<StoredObjectMetadata> {
     const sha256 = "sha256" in object
       ? object.sha256
-      : createHash("sha256").update(object.body).digest("hex");
+      : sha256Hex(object.body);
     await this.#client.send(
       new PutObjectCommand({
         Bucket: this.options.bucket,

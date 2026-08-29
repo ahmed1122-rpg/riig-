@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { constants } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { access, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
@@ -74,7 +75,15 @@ async function collectManifests(workspace) {
       withFileTypes: true,
     });
     for (const entry of entries) {
-      if (entry.isDirectory()) files.push(`${root}/${entry.name}/package.json`);
+      if (!entry.isDirectory()) continue;
+      const manifest = `${root}/${entry.name}/package.json`;
+      try {
+        await access(path.join(workspace, manifest), constants.R_OK);
+        files.push(manifest);
+      } catch {
+        // Build caches may leave an empty workspace directory after a package
+        // is retired; only actual manifests define npm workspaces.
+      }
     }
   }
   files.sort(compareStrings);

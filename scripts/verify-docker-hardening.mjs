@@ -62,9 +62,34 @@ export function verifyDockerHardening({
     );
   }
 
-  if (!runtimeDockerfile.includes("RUN apk add --no-cache fontconfig")) {
+  if (
+    !runtimeDockerfile.includes("RUN apk add --no-cache") ||
+    !runtimeDockerfile.includes("fontconfig")
+  ) {
     violations.push(
       "Runtime Dockerfile must install fontconfig without retaining an Alpine package index.",
+    );
+  }
+  for (const [label, source] of [
+    ["Runtime", runtimeDockerfile],
+    ["Web", webDockerfile],
+  ]) {
+    for (const packageName of ["openssl", "libssl3", "libcrypto3"]) {
+      if (!source.includes(`${packageName}=3.5.8-r0`)) {
+        violations.push(
+          `${label} Dockerfile must pin patched ${packageName} 3.5.8-r0.`,
+        );
+      }
+    }
+  }
+  if (
+    !runtimeDockerfile.includes(
+      "find /workspace/node_modules /workspace/apps /workspace/packages",
+    ) ||
+    !runtimeDockerfile.includes("find /app -type f -name '*.ts' -delete")
+  ) {
+    violations.push(
+      "Runtime Dockerfile must remove TypeScript-only files before and after assembling the production image.",
     );
   }
 
@@ -73,20 +98,23 @@ export function verifyDockerHardening({
     violations.push("QA image must run as the non-root node user.");
   }
   const qaInstallIndex = qaDockerfile.search(/^RUN\s+.*\bnpm ci\b/mu);
-  const qaLayerDomainIndex = qaDockerfile.indexOf(
+  for (const manifest of [
     "packages/layer-domain/package.json",
-  );
-  if (
-    qaInstallIndex < 0 ||
-    qaLayerDomainIndex < 0 ||
-    qaLayerDomainIndex > qaInstallIndex
-  ) {
-    violations.push(
-      "QA Dockerfile must copy the layer-domain workspace manifest before installing dependencies.",
-    );
+  ]) {
+    const manifestIndex = qaDockerfile.indexOf(manifest);
+    if (qaInstallIndex < 0 || manifestIndex < 0 || manifestIndex > qaInstallIndex) {
+      violations.push(
+        `QA Dockerfile must copy the ${manifest.replace("/package.json", "")} workspace manifest before installing dependencies.`,
+      );
+    }
   }
 
   const installIndex = webDockerfile.search(/^RUN\s+.*\bnpm ci\b/mu);
+  if (!webDockerfile.includes("sed -i '/^user[[:space:]]/d' /etc/nginx/nginx.conf")) {
+    violations.push(
+      "Web Dockerfile must remove the root-only Nginx user directive before running as nginx.",
+    );
+  }
   const broadCopyIndexes = [
     webDockerfile.indexOf("COPY apps ./apps"),
     webDockerfile.indexOf("COPY packages ./packages"),
@@ -220,6 +248,20 @@ export function verifyDockerHardening({
   }
   if (!hasBoundedLogging(runtime?.logging)) {
     violations.push("Integration runtime containers must use bounded local logging.");
+  }
+
+  const characterWorker = integrationDocument?.services?.["worker-character"];
+  if (
+    !String(characterWorker?.command ?? "").includes(
+      "apps/worker-character/dist/index.js",
+    ) ||
+    !String(characterWorker?.healthcheck?.test ?? "").includes(
+      "check-worker-health.mjs,character",
+    )
+  ) {
+    violations.push(
+      "Integration Compose must exercise the production Character worker and its health contract.",
+    );
   }
 
   const releaseWeb = integrationDocument?.services?.["release-web"];

@@ -1,32 +1,39 @@
 import { useCallback, useEffect, useState } from "react";
+import {
+  readStoredPreference,
+  useStoredPreference,
+} from "../shared/useStoredPreference";
 import type { ViewId } from "../types";
 
 const MOBILE_SHELL_QUERY = "(max-width: 900px)";
 
 export function readStoredLightTheme(storage: Pick<Storage, "getItem">): boolean {
-  try {
-    return storage.getItem("motionprep.settings.light-theme") !== "false";
-  } catch {
-    return true;
-  }
+  return readStoredPreference(
+    storage,
+    "motionprep.settings.light-theme",
+    true,
+  );
 }
 
 export function readStoredReducedMotion(
   storage: Pick<Storage, "getItem">,
 ): boolean {
-  try {
-    return JSON.parse(
-      storage.getItem("motionprep.settings.reduced-motion") ?? "false",
-    ) as boolean;
-  } catch {
-    return false;
-  }
+  return readStoredPreference(
+    storage,
+    "motionprep.settings.reduced-motion",
+    false,
+  );
 }
 
 export function useAppDisplayPreferences(view: ViewId) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [lightTheme, setLightTheme] = useState(() =>
-    readStoredLightTheme(window.localStorage),
+  const [lightTheme, setLightTheme] = useStoredPreference(
+    "motionprep.settings.light-theme",
+    true,
+  );
+  const [reducedMotion] = useStoredPreference(
+    "motionprep.settings.reduced-motion",
+    false,
   );
   const [isMobile, setIsMobile] = useState(() =>
     window.matchMedia(MOBILE_SHELL_QUERY).matches,
@@ -45,14 +52,6 @@ export function useAppDisplayPreferences(view: ViewId) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = lightTheme ? "light" : "dark";
-    try {
-      window.localStorage.setItem(
-        "motionprep.settings.light-theme",
-        String(lightTheme),
-      );
-    } catch {
-      // The in-memory preference remains usable when storage is unavailable.
-    }
   }, [lightTheme]);
 
   useEffect(() => {
@@ -62,12 +61,8 @@ export function useAppDisplayPreferences(view: ViewId) {
   }, [view]);
 
   useEffect(() => {
-    document.documentElement.dataset.motion = readStoredReducedMotion(
-      window.localStorage,
-    )
-      ? "reduced"
-      : "full";
-  }, []);
+    document.documentElement.dataset.motion = reducedMotion ? "reduced" : "full";
+  }, [reducedMotion]);
 
   const closeMobileNavigation = useCallback(() => setMobileNavOpen(false), []);
   const toggleMobileNavigation = useCallback(

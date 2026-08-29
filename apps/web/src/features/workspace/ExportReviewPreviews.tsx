@@ -34,7 +34,7 @@ export function ExportCharacterPreview({
           className="export-source-image"
         />
       ) : (
-        <div className="character" aria-label="معاينة إرشادية للشخصية قبل رفع المصدر">
+        <div className="character" role="img" aria-label="معاينة إرشادية للشخصية قبل رفع المصدر">
           {visible("legs") && <span className={`character-legs ${selectedLayerId === "legs" ? "is-selected" : ""}`} />}
           {visible("body") && <span className={`character-body ${selectedLayerId === "body" ? "is-selected" : ""}`} />}
           {visible("arm-right") && <span className={`character-arm character-arm--right ${selectedLayerId === "arm-right" ? "is-selected" : ""}`} />}

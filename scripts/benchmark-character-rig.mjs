@@ -22,12 +22,6 @@ const defaultThresholdsPath = join(
 const canonicalViewAliases = new Map([
   ["frontal", "frontal"],
   ["front", "frontal"],
-  ["left quarter", "left-quarter"],
-  ["left 3 4", "left-quarter"],
-  ["left profile", "left-profile"],
-  ["right quarter", "right-quarter"],
-  ["right 3 4", "right-quarter"],
-  ["right profile", "right-profile"],
 ]);
 
 export function analyzePsd(psd) {
@@ -77,10 +71,10 @@ export function analyzePsd(psd) {
 
 export function validateBenchmarkManifest(manifest, thresholds) {
   const errors = [];
-  if (manifest?.schemaVersion !== 1) errors.push("Unsupported manifest schemaVersion.");
-  if (thresholds?.schemaVersion !== 1) errors.push("Unsupported threshold schemaVersion.");
-  if (manifest?.reference?.role !== "semantic-structure-reference") {
-    errors.push("Reference role must be semantic-structure-reference.");
+  if (manifest?.schemaVersion !== 2) errors.push("Unsupported manifest schemaVersion.");
+  if (thresholds?.schemaVersion !== 2) errors.push("Unsupported threshold schemaVersion.");
+  if (manifest?.reference?.role !== "source-layer-structure-reference") {
+    errors.push("Reference role must be source-layer-structure-reference.");
   }
   if (manifest?.reference?.releaseGolden !== false) {
     errors.push("The incomplete private reference must not be marked as a release Golden.");
@@ -99,8 +93,25 @@ export function validateBenchmarkManifest(manifest, thresholds) {
   }
 
   const requiredViews = thresholds?.canonicalViews;
-  if (!isUniqueStringArray(requiredViews) || requiredViews.length !== 5) {
-    errors.push("Quality thresholds must declare five unique canonical views.");
+  if (
+    !isUniqueStringArray(requiredViews) ||
+    requiredViews.length !== 1 ||
+    requiredViews[0] !== "frontal"
+  ) {
+    errors.push("Quality thresholds must declare only the frontal source view.");
+  }
+  if (
+    thresholds?.pipeline !== "source-preserving" ||
+    manifest?.target?.pipeline !== "source-preserving"
+  ) {
+    errors.push("Character Rig benchmark must use the source-preserving pipeline.");
+  }
+  if (
+    thresholds?.sourceIntegrity?.mode !== "pixel-exact" ||
+    thresholds?.sourceIntegrity?.maxMismatchedPixels !== 0 ||
+    manifest?.target?.sourceIntegrityMode !== "pixel-exact"
+  ) {
+    errors.push("Character Rig benchmark requires zero-mismatch pixel identity.");
   }
   if (JSON.stringify(manifest?.target?.canonicalViews) !== JSON.stringify(requiredViews)) {
     errors.push("Manifest target views must match the versioned quality thresholds.");

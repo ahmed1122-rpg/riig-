@@ -1,4 +1,5 @@
 import type { CharacterJob } from "@motionprep/contracts";
+import { abortableDelay } from "../jobs/abortable-delay.js";
 import { initialPollingDelay, jitteredPollingDelay } from "../jobs/polling-delay.js";
 import {
   executeClaimedCharacterJob,
@@ -18,11 +19,10 @@ export interface CharacterWorkerLoopOptions extends CharacterJobExecutionContext
 export async function runCharacterWorkerLoop(
   options: CharacterWorkerLoopOptions,
 ): Promise<void> {
-  const delay = options.delay ?? defaultDelay;
   await abortableDelay(
     initialPollingDelay(options.pollMilliseconds),
     options.signal,
-    delay,
+    options.delay,
   );
   let consecutiveErrors = 0;
   while (!options.signal.aborted) {
@@ -40,7 +40,7 @@ export async function runCharacterWorkerLoop(
         await abortableDelay(
           jitteredPollingDelay(options.pollMilliseconds),
           options.signal,
-          delay,
+          options.delay,
         );
         continue;
       }
@@ -67,53 +67,41 @@ export async function runCharacterWorkerLoop(
             options.workerId,
             (options.now?.() ?? new Date()).toISOString(),
           );
-        } catch {
+        } catch (releaseError) {
           // The lease remains fenced and recoverable after expiry if the
           // repository itself is temporarily unavailable.
+          notifyLoopError(options, releaseError);
         }
       }
-      try {
-        options.onLoopError?.(error);
-      } catch {
-        // A logging failure must not terminate the worker loop.
-      }
+      notifyLoopError(options, error);
       await abortableDelay(
         Math.min(
           30_000,
           options.pollMilliseconds * 2 ** Math.min(consecutiveErrors, 5),
         ),
         options.signal,
-        delay,
+        options.delay,
       );
     } finally {
       if (registered && claimedJob) {
         try {
           options.onFinished?.(claimedJob);
-        } catch {
+        } catch (callbackError) {
           // Drain bookkeeping and logging callbacks must not terminate a loop.
+          notifyLoopError(options, callbackError);
         }
       }
     }
   }
 }
 
-function defaultDelay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function abortableDelay(
-  milliseconds: number,
-  signal: AbortSignal,
-  delay: (milliseconds: number) => Promise<void>,
-): Promise<void> {
-  if (signal.aborted) return;
-  let stop: (() => void) | undefined;
-  await Promise.race([
-    delay(milliseconds),
-    new Promise<void>((resolve) => {
-      stop = () => resolve();
-      signal.addEventListener("abort", stop, { once: true });
-    }),
-  ]);
-  if (stop) signal.removeEventListener("abort", stop);
+function notifyLoopError(
+  options: Pick<CharacterWorkerLoopOptions, "onLoopError">,
+  error: unknown,
+): void {
+  try {
+    options.onLoopError?.(error);
+  } catch {
+    // A failing observer must not terminate the durable worker loop.
+  }
 }

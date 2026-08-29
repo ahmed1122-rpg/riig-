@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import { normalizePostgresTextArray } from "./postgres-text-array.js";
 import type {
@@ -7,6 +6,7 @@ import type {
   ReconcileAccountDeletionResult,
 } from "../../privacy/account-privacy.js";
 import { rollbackTransaction, toIso } from "./database.js";
+import { sha256Hex } from "../../shared/sha256.js";
 import {
   collectAccountObjectKeys,
   collectAccountObjectPrefixes,
@@ -213,7 +213,7 @@ export class PostgresAccountDeletionState {
   ): Promise<AccountDeletionRequest> {
     const uniqueKeys = [...new Set(objectKeys)]
       .sort((left, right) => left.localeCompare(right));
-    const digest = createHash("sha256").update(uniqueKeys.join("\0")).digest("hex");
+    const digest = sha256Hex(uniqueKeys.join("\0"));
     const result = await this.pool.query<DeletionRow>(
       `UPDATE account_deletion_requests
        SET object_keys = $2, inventory_object_count = $3,

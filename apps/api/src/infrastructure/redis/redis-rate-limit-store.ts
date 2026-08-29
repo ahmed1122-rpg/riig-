@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import type fastifyRateLimit from "@fastify/rate-limit";
+import { sha256Hex } from "../../shared/sha256.js";
 
 interface RedisRateLimitCommands {
   sendCommand(arguments_: string[]): Promise<unknown>;
@@ -132,7 +132,7 @@ function parseResult(value: unknown): RateLimitResult {
 }
 
 function digest(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+  return sha256Hex(value);
 }
 
 const incrementScript = `

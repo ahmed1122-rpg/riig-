@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { LayerDocument, RasterAssetReference } from "@motionprep/contracts";
 import {
   isObjectStorageIntegrityFailure,
@@ -8,6 +7,7 @@ import {
 import { hasExpectedObjectIntegrity } from "../storage/object-integrity.js";
 import { ProcessingDomainError } from "./processing-errors.js";
 import type { DerivedAssetRegistry } from "../storage/derived-asset-registry.js";
+import { sha256Hex } from "../shared/sha256.js";
 
 export class RasterAssetStore {
   constructor(
@@ -89,7 +89,7 @@ export class RasterAssetStore {
       objectKey,
       contentType: "image/png",
       sizeBytes: body.byteLength,
-      sha256: createHash("sha256").update(body).digest("hex"),
+      sha256: sha256Hex(body),
     };
     await this.registry?.register(projectId, objectKey, category);
     await this.storage.put({ key: objectKey, ...reference, body });

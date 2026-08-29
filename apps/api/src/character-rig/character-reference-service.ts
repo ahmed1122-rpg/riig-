@@ -29,7 +29,7 @@ export class CharacterReferenceService {
     sourceVersionId: string;
     bibleId: string;
     role: CharacterReferenceRole;
-    canonicalView: CharacterCanonicalView | null;
+    canonicalView: CharacterCanonicalView;
     rightsClassification: CharacterReferenceRights;
     actorUserId: string;
   }): Promise<CharacterReferenceAsset> {
@@ -37,12 +37,6 @@ export class CharacterReferenceService {
     if (!bible) throw new CharacterReferenceError("CHARACTER_BIBLE_NOT_FOUND");
     if (bible.status !== "approved") {
       throw new CharacterReferenceError("CHARACTER_BIBLE_NOT_APPROVED");
-    }
-    if (
-      ["identity-primary", "canonical-view", "part-mask"].includes(input.role) &&
-      !input.canonicalView
-    ) {
-      throw new CharacterReferenceError("CHARACTER_REFERENCE_VIEW_REQUIRED");
     }
     const existing = await this.characterRigs.listReferences(
       input.projectId,
@@ -114,6 +108,7 @@ export class CharacterReferenceService {
       id,
       projectId: input.projectId,
       bibleId: input.bibleId,
+      sourceVersionId: input.sourceVersionId,
       role: input.role,
       canonicalView: input.canonicalView,
       rightsClassification: input.rightsClassification,

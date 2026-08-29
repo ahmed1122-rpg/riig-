@@ -26,6 +26,10 @@ for (const workspaceRoot of ["apps", "packages"]) {
 }
 
 for (const path of [
+  // Retired Character generation workspaces may remain locally as ignored
+  // dependency/build caches after upgrading to the source-preserving pipeline.
+  "apps/character-provider",
+  "services/runpod-character-worker",
   "tmp",
   ".tmp",
   "artifacts/runtime-qa",

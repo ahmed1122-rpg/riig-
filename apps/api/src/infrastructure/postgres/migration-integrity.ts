@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
+import { sha256Hex } from "../../shared/sha256.js";
 
 export function migrationChecksum(sql: string): string {
-  return createHash("sha256").update(sql, "utf8").digest("hex");
+  return sha256Hex(sql);
 }
 
 export function assertMigrationNames(files: readonly string[]): void {

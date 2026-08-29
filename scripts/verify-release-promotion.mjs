@@ -2,7 +2,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { verifyReleaseGateEvidence } from "./package-release-gate-evidence.mjs";
-import { validateCharacterProviderEvidence } from "./character-provider-evidence.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const shaPattern = /^[a-f0-9]{40}$/u;
@@ -107,13 +106,6 @@ export function validateReleasePromotion(input) {
     "provider object storage",
     input.providerObjectStorage,
     expected,
-  );
-  violations.push(
-    ...validateCharacterProviderEvidence(
-      input.characterProvider,
-      expected.gitSha,
-      input.providerEnv?.characterRigEnabled,
-    ),
   );
   requireRecoveryEvidence(violations, input.recovery, expected);
   requireRollbackEvidence(violations, input.rollback, expected);
@@ -282,7 +274,6 @@ function parseEnvironment(source) {
     webImageRef: values.get("WEB_IMAGE_REF") ?? "",
     signatureWorkflow: values.get("RELEASE_SIGNATURE_WORKFLOW") ?? "",
     signatureIdentityRef: values.get("RELEASE_SIGNATURE_IDENTITY_REF") ?? "",
-    characterRigEnabled: values.get("CHARACTER_RIG_ENABLED") ?? "",
   };
 }
 
@@ -313,7 +304,6 @@ async function main() {
       "pdf-load-report.json",
     ]),
     verifyReleaseGateEvidence(join(inputRoot, "provider"), [
-      "character-provider-evidence.json",
       "provider-release.env",
       "provider-object-storage-evidence.json",
       "recovery-verification-evidence.json",
@@ -402,9 +392,6 @@ async function main() {
         "provider",
         "provider-object-storage-evidence.json",
       ),
-    ),
-    characterProvider: await readJson(
-      join(inputRoot, "provider", "character-provider-evidence.json"),
     ),
     recovery: await readJson(
       join(

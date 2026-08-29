@@ -8,21 +8,17 @@ import {
 } from "./benchmark-character-rig.mjs";
 
 const thresholds = {
-  schemaVersion: 1,
-  canonicalViews: [
-    "frontal",
-    "left-quarter",
-    "left-profile",
-    "right-quarter",
-    "right-profile",
-  ],
+  schemaVersion: 2,
+  pipeline: "source-preserving",
+  canonicalViews: ["frontal"],
+  sourceIntegrity: { mode: "pixel-exact", maxMismatchedPixels: 0 },
   targetExport: { colorMode: "RGB", bitsPerChannel: 8 },
 };
 
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   reference: {
-    role: "semantic-structure-reference",
+    role: "source-layer-structure-reference",
     releaseGolden: false,
     rightsClassification: "user-provided-private-reference",
     binaryStoredInRepository: false,
@@ -41,10 +37,12 @@ const manifest = {
     masks: 1,
     maxDepth: 2,
     rootStoredOrder: ["+Character"],
-    presentCanonicalViews: ["frontal", "left-quarter"],
+    presentCanonicalViews: ["frontal"],
   },
   target: {
+    pipeline: "source-preserving",
     canonicalViews: thresholds.canonicalViews,
+    sourceIntegrityMode: "pixel-exact",
     colorMode: "RGB",
     bitsPerChannel: 8,
   },
@@ -61,7 +59,7 @@ test("analyzes hierarchy and canonical views without reading pixel data", () => 
         name: "+Character",
         children: [
           { name: "+frontal", mask: {} },
-          { name: "+left quarter", hidden: true },
+          { name: "+legacy alternate view", hidden: true },
         ],
       },
     ],
@@ -80,7 +78,7 @@ test("analyzes hierarchy and canonical views without reading pixel data", () => 
     maxDepth: 2,
     rootStoredOrder: ["+Character"],
     rootPhotoshopPanelOrder: ["+Character"],
-    presentCanonicalViews: ["frontal", "left-quarter"],
+    presentCanonicalViews: ["frontal"],
   });
 });
 

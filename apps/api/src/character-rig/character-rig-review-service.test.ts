@@ -49,6 +49,15 @@ describe("CharacterRigReviewService", () => {
     ).rejects.toMatchObject({
       code: "CHARACTER_RIG_REVIEW_IDEMPOTENCY_CONFLICT",
     });
+    for (const drift of [
+      { projectId: crypto.randomUUID() },
+      { rigVersionId: crypto.randomUUID() },
+      { reason: "A different review reason." },
+    ]) {
+      await expect(setup.service.review({ ...operation, ...drift })).rejects.toMatchObject({
+        code: "CHARACTER_RIG_REVIEW_IDEMPOTENCY_CONFLICT",
+      });
+    }
 
     const second = await fixture({ manifestArtifact: null });
     await expect(
@@ -62,6 +71,47 @@ describe("CharacterRigReviewService", () => {
         reviewedAt: now,
       }),
     ).rejects.toMatchObject({ code: "CHARACTER_RIG_NOT_REVIEWABLE" });
+  });
+
+  it("distinguishes missing, unreviewable, and corrupt rig artifacts", async () => {
+    const missing = await fixture();
+    await expect(missing.service.review({
+      projectId: missing.projectId,
+      rigVersionId: crypto.randomUUID(),
+      decision: "approved",
+      reason: "No such rig exists.",
+      operationId: "rig-review-operation-missing",
+      actorUserId: missing.userId,
+      reviewedAt: now,
+    })).rejects.toMatchObject({ code: "CHARACTER_RIG_NOT_FOUND" });
+
+    for (const override of [
+      { status: "draft" as const },
+      { psdArtifact: null },
+    ]) {
+      const unreviewable = await fixture(override);
+      await expect(unreviewable.service.review({
+        projectId: unreviewable.projectId,
+        rigVersionId: unreviewable.rig.id,
+        decision: "approved",
+        reason: "The rig must have verified artifacts.",
+        operationId: crypto.randomUUID(),
+        actorUserId: unreviewable.userId,
+        reviewedAt: now,
+      })).rejects.toMatchObject({ code: "CHARACTER_RIG_NOT_REVIEWABLE" });
+    }
+
+    const corrupt = await fixture();
+    await corrupt.storage.purge([corrupt.rig.psdArtifact!.objectKey], []);
+    await expect(corrupt.service.review({
+      projectId: corrupt.projectId,
+      rigVersionId: corrupt.rig.id,
+      decision: "approved",
+      reason: "The missing PSD must fail closed.",
+      operationId: "rig-review-operation-corrupt",
+      actorUserId: corrupt.userId,
+      reviewedAt: now,
+    })).rejects.toMatchObject({ code: "CHARACTER_RIG_ARTIFACT_INTEGRITY_FAILED" });
   });
 });
 
@@ -123,7 +173,16 @@ async function fixture(overrides: Partial<CharacterRigVersion> = {}) {
     bibleId: bible.id,
     version: 1,
     status: "needs-review",
+    pipeline: "source-preserving",
+    failureCode: null,
     sourceFingerprint: "b".repeat(64),
+    source: {
+      sourceVersionId: crypto.randomUUID(),
+      referenceId: crypto.randomUUID(),
+      artifact: await artifact("source.png", "image/png"),
+      layerDocumentRevision: 1,
+      pixelIdentityRequired: true,
+    },
     canvas: { width: 1024, height: 1024 },
     nodes: [],
     psdArtifact: await artifact("character.psd", "image/vnd.adobe.photoshop"),
@@ -139,6 +198,7 @@ async function fixture(overrides: Partial<CharacterRigVersion> = {}) {
     projectId,
     userId,
     rig,
+    storage,
     service: new CharacterRigReviewService(repository, storage),
   };
 }

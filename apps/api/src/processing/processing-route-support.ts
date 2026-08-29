@@ -129,7 +129,7 @@ const imageStrokeSchema = z.object({
   targetLayerId: z.string().min(1).max(128).nullable(),
   kind: z.enum(["include", "exclude", "separate"]),
   brushSize: z.number().finite().min(2).max(80),
-  points: z.array(normalizedPointSchema).min(2).max(1_000),
+  points: z.array(normalizedPointSchema).min(1).max(1_000),
   createdAt: z.string().datetime(),
 });
 const pdfRegionSchema = z

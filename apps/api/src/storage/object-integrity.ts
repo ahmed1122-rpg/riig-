@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256Hex } from "../shared/sha256.js";
 import type {
   StoredObject,
   StoredObjectMetadata,
@@ -22,7 +22,7 @@ export function hasExpectedObjectIntegrity(
     return false;
   }
   return (
-    createHash("sha256").update(object.body).digest("hex") ===
+    sha256Hex(object.body) ===
     expected.sha256.toLowerCase()
   );
 }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Readable, Transform } from "node:stream";
+import { sha256Hex } from "../shared/sha256.js";
 
 const DEFAULT_MAX_COLLECT_BYTES = 128 * 1024 * 1024;
 
@@ -266,6 +267,6 @@ function metadataFor(object: StoredObject): StoredObjectMetadata {
     key: object.key,
     contentType: object.contentType,
     sizeBytes: object.sizeBytes,
-    sha256: createHash("sha256").update(object.body).digest("hex"),
+    sha256: sha256Hex(object.body),
   };
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Dialog } from "../../shared/Dialog";
 import { Icon } from "../../shared/Icon";
+import { useSingleFlightAction } from "../../shared/hooks/useSingleFlightAction";
 import type { Layer } from "../../types";
 
 interface PdfRegionOcrDialogProps {
@@ -17,24 +18,13 @@ export function PdfRegionOcrDialog({
   onApply,
 }: PdfRegionOcrDialogProps) {
   const [paddingPercent, setPaddingPercent] = useState(2);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string>();
+  const { submitting, error, run } = useSingleFlightAction(
+    "تعذر تشغيل OCR على المنطقة المحددة.",
+  );
 
   const submit = async () => {
-    setSubmitting(true);
-    setError(undefined);
-    try {
-      await onApply(paddingPercent);
-      onClose();
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "تعذر تشغيل OCR على المنطقة المحددة.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
+    const succeeded = await run(() => onApply(paddingPercent));
+    if (succeeded) onClose();
   };
 
   return (

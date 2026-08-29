@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Dialog } from "../../shared/Dialog";
 import { Icon } from "../../shared/Icon";
+import { useSingleFlightAction } from "../../shared/hooks/useSingleFlightAction";
 import type { Layer } from "../../types";
 import { RasterLayerPreview } from "./RasterLayerPreview";
 
@@ -23,29 +24,20 @@ export function ImageRasterOperationDialog({
 }: ImageRasterOperationDialogProps) {
   const [radius, setRadius] = useState<1 | 2 | 3>(1);
   const [strength, setStrength] = useState(0.65);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string>();
+  const { submitting, error, run } = useSingleFlightAction(
+    "تعذر تنفيذ عملية Raster.",
+  );
   const previewSize = mergePreviewSize(layers);
 
   const submit = async () => {
-    setSubmitting(true);
-    setError(undefined);
-    try {
-      await onApply(
+    const succeeded = await run(() =>
+      onApply(
         operation === "edge-refine"
           ? { operation, radius, strength }
           : { operation },
-      );
-      onClose();
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "تعذر تنفيذ عملية Raster.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
+      ),
+    );
+    if (succeeded) onClose();
   };
 
   return (

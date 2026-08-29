@@ -1,23 +1,17 @@
 /** @vitest-environment jsdom */
 
-import {
-  characterCanonicalViews,
-  characterRequiredFrontalBodyParts,
-  characterRequiredHeadParts,
-  type CharacterBible,
-  type CharacterGenerationAttempt,
-  type CharacterIdentityModelVersion,
-  type CharacterJob,
-  type CharacterReferenceAsset,
+import type {
+  CharacterBible,
+  CharacterReferenceAsset,
+  CharacterRigVersion,
 } from "@motionprep/contracts";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  addCurrentSourceCharacterReference,
   approveCharacterBible,
   compileCharacterRig,
   getCharacterRigStudio,
-  queueCharacterGeneration,
-  reviewCharacterGeneration,
   saveCharacterBibleDraft,
 } from "../../lib/api/character-rig-client";
 import { CharacterStudioDialog } from "./CharacterStudioDialog";
@@ -30,17 +24,13 @@ vi.mock("../../lib/api/character-rig-client", async () => {
     ...actual,
     addCurrentSourceCharacterReference: vi.fn(),
     approveCharacterBible: vi.fn(),
-    bootstrapCharacterIdentity: vi.fn(),
     compileCharacterRig: vi.fn(),
     getCharacterRigStudio: vi.fn(),
-    queueCharacterGeneration: vi.fn(),
-    reviewCharacterGeneration: vi.fn(),
     saveCharacterBibleDraft: vi.fn(),
   };
 });
 
-const timestamp = "2026-08-12T12:00:00.000Z";
-
+const timestamp = "2026-08-28T12:00:00.000Z";
 const bible: CharacterBible = {
   schemaVersion: "1.0",
   id: "bible-1",
@@ -49,9 +39,9 @@ const bible: CharacterBible = {
   revision: 3,
   status: "approved",
   displayName: "Hero",
-  identityDescription: "A stable visual identity with a distinctive silhouette.",
-  negativeConstraints: ["Do not change the eye color"],
-  distinguishingFeatures: ["Angular blue glasses"],
+  identityDescription: "The uploaded image is the only visual source of truth.",
+  negativeConstraints: ["Never synthesize replacement pixels"],
+  distinguishingFeatures: ["Preserve every source pixel"],
   proportions: {
     headToBodyHeightRatio: 0.2,
     shoulderToBodyHeightRatio: 0.25,
@@ -68,84 +58,28 @@ const bible: CharacterBible = {
   createdAt: timestamp,
   updatedAt: timestamp,
 };
-
-const model: CharacterIdentityModelVersion = {
-  id: "model-1",
+const reference: CharacterReferenceAsset = {
+  id: "reference-1",
   projectId: "project-1",
   bibleId: bible.id,
-  version: 1,
-  status: "ready",
-  providerKey: "private-provider",
-  providerModelReference: "provider-model-1",
-  baseModelReference: "base-model-1",
-  datasetFingerprint: "a".repeat(64),
-  trainingConfiguration: {},
-  failureCode: null,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-};
-
-const job: CharacterJob = {
-  id: "job-1",
-  projectId: "project-1",
-  type: "generate-view",
-  status: "queued",
-  operationKey: "operation-1",
-  requestHash: "b".repeat(64),
-  payload: {},
-  attempt: 0,
-  maxAttempts: 3,
-  nextAttemptAt: timestamp,
-  leaseOwner: null,
-  leaseExpiresAt: null,
-  errorCode: null,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-};
-
-const artifact = {
-  objectKey: "character/attempt.png",
-  contentType: "image/png" as const,
-  sizeBytes: 100,
-  sha256: "c".repeat(64),
-  createdAt: timestamp,
-  retentionExpiresAt: null,
-};
-
-function generation(
-  id: string,
-  target: CharacterGenerationAttempt["target"],
-  status: CharacterGenerationAttempt["status"] = "approved",
-): CharacterGenerationAttempt {
-  return {
-    id,
-    projectId: "project-1",
-    bibleId: bible.id,
-    identityModelVersionId: model.id,
-    target,
-    status,
-    controls: {
-      seed: 1,
-      canvas: { width: 1_024, height: 1_024 },
-      poseReferenceId: null,
-      depthReferenceId: null,
-      maskReferenceId: null,
-      parameters: {},
-    },
-    requestHash: "d".repeat(64),
-    idempotencyKey: `key-${id}`,
-    outputArtifact: artifact,
-    outputGeometry: {
-      canvas: { width: 1_024, height: 1_024 },
-      bounds: { x: 0, y: 0, width: 1_024, height: 1_024 },
-    },
-    qualityReport: null,
-    failureCode: null,
-    createdByUserId: "user-1",
+  sourceVersionId: "source-1",
+  role: "identity-primary",
+  canonicalView: "frontal",
+  rightsClassification: "owned-by-user",
+  rightsAttestedByUserId: "user-1",
+  rightsAttestedAt: timestamp,
+  artifact: {
+    objectKey: "projects/project-1/character-rig/references/source.png",
+    contentType: "image/png",
+    sizeBytes: 100,
+    sha256: "c".repeat(64),
     createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-}
+    retentionExpiresAt: null,
+  },
+  width: 1200,
+  height: 1600,
+  createdAt: timestamp,
+};
 
 function renderStudio(
   overrides: Partial<React.ComponentProps<typeof CharacterStudioDialog>> = {},
@@ -166,8 +100,6 @@ beforeEach(() => {
   vi.mocked(getCharacterRigStudio).mockResolvedValue({
     bible: null,
     references: [],
-    identityModel: null,
-    generations: [],
     rig: null,
     jobs: [],
   });
@@ -178,7 +110,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("CharacterStudioDialog", () => {
+describe("CharacterStudioDialog source-preserving workflow", () => {
   it("aborts its state request when the dialog unmounts", async () => {
     let observedSignal: AbortSignal | undefined;
     vi.mocked(getCharacterRigStudio).mockImplementation((_projectId, signal) => {
@@ -192,53 +124,48 @@ describe("CharacterStudioDialog", () => {
     expect(observedSignal?.aborted).toBe(true);
   });
 
-  it("normalizes multiline Bible fields before saving a draft", async () => {
+  it("normalizes descriptive fields before saving", async () => {
     vi.mocked(saveCharacterBibleDraft).mockResolvedValue({
       ...bible,
       status: "draft",
       approvedAt: null,
       approvedByUserId: null,
     });
-    const onNotify = vi.fn();
-    const view = renderStudio({ onNotify });
-
-    await view.findByText("دليل هوية الشخصية");
+    const view = renderStudio();
+    await waitFor(() => expect(view.container.querySelector(".character-bible-form")).toBeTruthy());
     const form = view.container.querySelector(".character-bible-form")!;
     const name = form.querySelector<HTMLInputElement>('input:not([type="color"]):not([type="number"])')!;
     const textareas = form.querySelectorAll<HTMLTextAreaElement>("textarea");
     fireEvent.change(name, { target: { value: "Hero" } });
     fireEvent.change(textareas[0]!, {
-      target: { value: "A stable visual identity with enough detail." },
+      target: { value: "A source-preserving character description." },
     });
     fireEvent.change(textareas[1]!, {
       target: { value: "  blue glasses  \n\n scar above eye " },
     });
     fireEvent.change(textareas[2]!, {
-      target: { value: " keep eye color \n keep silhouette " },
+      target: { value: " preserve all pixels \n never generate content " },
     });
-    const saveButton = Array.from(form.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("المسودة"),
-    )!;
-    fireEvent.click(saveButton);
+    fireEvent.click(
+      Array.from(form.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("المسودة"),
+      )!,
+    );
 
     await waitFor(() => expect(saveCharacterBibleDraft).toHaveBeenCalledOnce());
     expect(saveCharacterBibleDraft).toHaveBeenCalledWith(
       "project-1",
       expect.objectContaining({
-        bibleId: null,
-        expectedRevision: null,
         displayName: "Hero",
         distinguishingFeatures: ["blue glasses", "scar above eye"],
-        negativeConstraints: ["keep eye color", "keep silhouette"],
+        negativeConstraints: ["preserve all pixels", "never generate content"],
       }),
     );
-    expect(onNotify).toHaveBeenCalledOnce();
   });
 
-  it("saves dirty Bible fields before approving the returned revision", async () => {
+  it("saves dirty metadata before approving its returned revision", async () => {
     const draft = {
       ...bible,
-      revision: 3,
       status: "draft" as const,
       approvedAt: null,
       approvedByUserId: null,
@@ -246,8 +173,6 @@ describe("CharacterStudioDialog", () => {
     vi.mocked(getCharacterRigStudio).mockResolvedValue({
       bible: draft,
       references: [],
-      identityModel: null,
-      generations: [],
       rig: null,
       jobs: [],
     });
@@ -266,194 +191,115 @@ describe("CharacterStudioDialog", () => {
     fireEvent.change(view.getByDisplayValue("Hero"), {
       target: { value: "Hero revised" },
     });
-    fireEvent.click(view.getByRole("button", { name: /حفظ واعتماد الهوية/u }));
+    fireEvent.click(view.getByRole("button", { name: /حفظ واعتماد البيانات/u }));
 
     await waitFor(() => expect(approveCharacterBible).toHaveBeenCalledOnce());
-    expect(saveCharacterBibleDraft).toHaveBeenCalledWith(
-      "project-1",
-      expect.objectContaining({
-        bibleId: draft.id,
-        expectedRevision: 3,
-        displayName: "Hero revised",
-      }),
-    );
-    expect(approveCharacterBible).toHaveBeenCalledWith(
-      "project-1",
-      saved.id,
-      4,
-    );
+    expect(approveCharacterBible).toHaveBeenCalledWith("project-1", saved.id, 4);
   });
 
-  it("polls active Character jobs until their completed state is visible", async () => {
-    vi.mocked(getCharacterRigStudio)
-      .mockResolvedValueOnce({
-        bible,
-        references: [],
-        identityModel: { ...model, status: "training" },
-        generations: [],
-        rig: null,
-        jobs: [{ ...job, type: "train-identity", status: "queued" }],
-      })
-      .mockResolvedValue({
-        bible,
-        references: [],
-        identityModel: model,
-        generations: [],
-        rig: null,
-        jobs: [{ ...job, type: "train-identity", status: "succeeded" }],
-      });
-    const view = renderStudio();
-
-    await view.findByText(/قيد التدريب/u);
-    await waitFor(
-      () => {
-        expect(getCharacterRigStudio).toHaveBeenCalledTimes(2);
-        expect(view.getByText(/جاهز/u)).toBeTruthy();
-      },
-      { timeout: 3_500 },
-    );
-  });
-
-  it("maps a turntable angle to the canonical view submitted to the queue", async () => {
+  it("locks only the current upload as the frontal primary source", async () => {
     vi.mocked(getCharacterRigStudio).mockResolvedValue({
       bible,
       references: [],
-      identityModel: model,
-      generations: [],
       rig: null,
       jobs: [],
     });
-    const queued = generation(
-      "attempt-queued",
-      { kind: "canonical-view", view: "right-profile" },
-      "queued",
-    );
-    vi.mocked(queueCharacterGeneration).mockResolvedValue({
-      attempt: queued,
-      job,
-      replayed: false,
-    });
+    vi.mocked(addCurrentSourceCharacterReference).mockResolvedValue(reference);
     const view = renderStudio();
 
-    await view.findByText("دليل هوية الشخصية");
-    fireEvent.click(view.container.querySelectorAll(".character-studio-steps button")[2]!);
-    const stage = view.container.querySelector(".character-turntable-stage")!;
-    fireEvent.change(stage.querySelector('input[type="range"]')!, {
-      target: { value: "90" },
-    });
-    fireEvent.click(stage.querySelector(".button--primary")!);
+    await view.findByText(/المصدر الأصلي موثّق|يلزم توثيق المصدر الحالي/u);
+    fireEvent.click(view.container.querySelectorAll(".character-studio-steps button")[1]!);
+    const checkbox = view.container.querySelector<HTMLInputElement>('.rights-attestation input')!;
+    fireEvent.click(checkbox);
+    fireEvent.click(view.getByRole("button", { name: /قفل الصورة الحالية/u }));
 
-    await waitFor(() => expect(queueCharacterGeneration).toHaveBeenCalledOnce());
-    expect(queueCharacterGeneration).toHaveBeenCalledWith(
-      "project-1",
-      expect.objectContaining({
-        bibleId: bible.id,
-        identityModelVersionId: model.id,
-        target: { kind: "canonical-view", view: "right-profile" },
-        angleDegrees: 90,
-      }),
+    await waitFor(() =>
+      expect(addCurrentSourceCharacterReference).toHaveBeenCalledWith(
+        "project-1",
+        {
+          bibleId: bible.id,
+          sourceVersionId: "source-1",
+          role: "identity-primary",
+          canonicalView: "frontal",
+          rightsClassification: "user-provided-private-reference",
+        },
+      ),
     );
   });
 
-  it("persists manual approval for the visible review candidate", async () => {
-    const candidate = generation(
-      "attempt-review",
-      { kind: "canonical-view", view: "frontal" },
-      "needs-review",
-    );
+  it("queues PSD compilation with the locked source version", async () => {
     vi.mocked(getCharacterRigStudio).mockResolvedValue({
       bible,
-      references: [],
-      identityModel: model,
-      generations: [candidate],
-      rig: null,
-      jobs: [],
-    });
-    vi.mocked(reviewCharacterGeneration).mockResolvedValue({
-      attempt: { ...candidate, status: "approved" },
-      review: {
-        id: "review-1",
-        projectId: "project-1",
-        generationAttemptId: candidate.id,
-        decision: "approved",
-        reason: "Manual identity approval",
-        reviewerUserId: "user-1",
-        operationId: "operation-review",
-        createdAt: timestamp,
-      },
-      replayed: false,
-    });
-    const view = renderStudio();
-
-    await view.findByText("دليل هوية الشخصية");
-    fireEvent.click(view.container.querySelectorAll(".character-studio-steps button")[3]!);
-    const stage = view.container.querySelector(".character-comparison-stage")!;
-    const reason = stage.querySelector("textarea")!;
-    fireEvent.change(reason, { target: { value: "Manual identity approval" } });
-    fireEvent.click(stage.querySelector(".button--primary")!);
-
-    await waitFor(() => expect(reviewCharacterGeneration).toHaveBeenCalledWith(
-      "project-1",
-      candidate.id,
-      { decision: "approved", reason: "Manual identity approval" },
-    ));
-  });
-
-  it("queues compilation only after every required part is approved", async () => {
-    const approvedParts = characterCanonicalViews.flatMap((view) =>
-      characterRequiredHeadParts.map((partName) =>
-        generation(`${view}-${partName}`, { kind: "part", view, partName }),
-      ),
-    );
-    approvedParts.push(
-      ...characterRequiredFrontalBodyParts.map((partName) =>
-        generation(`frontal-${partName}`, {
-          kind: "part",
-          view: "frontal",
-          partName,
-        }),
-      ),
-    );
-    vi.mocked(getCharacterRigStudio).mockResolvedValue({
-      bible,
-      references: [] as CharacterReferenceAsset[],
-      identityModel: model,
-      generations: approvedParts,
+      references: [reference],
       rig: null,
       jobs: [],
     });
     vi.mocked(compileCharacterRig).mockResolvedValue({
-      rig: {
-        schemaVersion: "1.0",
-        id: "rig-1",
+      rig: sourceRig(),
+      job: {
+        id: "job-1",
         projectId: "project-1",
-        bibleId: bible.id,
-        version: 1,
-        status: "draft",
-        nodes: [],
-        psdArtifact: null,
-        manifestArtifact: null,
-        approvedByUserId: null,
-        approvedAt: null,
+        type: "compile-rig",
+        status: "queued",
+        operationKey: "compile-source-1",
+        requestHash: "d".repeat(64),
+        payload: {},
+        attempt: 0,
+        maxAttempts: 2,
+        nextAttemptAt: timestamp,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        errorCode: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       },
-      job: { ...job, type: "compile-rig" },
       replayed: false,
     });
     const view = renderStudio();
 
-    await view.findByText("دليل هوية الشخصية");
-    fireEvent.click(view.container.querySelectorAll(".character-studio-steps button")[4]!);
-    const compileButton = view.container.querySelector<HTMLButtonElement>(
-      ".character-rig-stage .button--primary",
-    )!;
-    expect(compileButton.disabled).toBe(false);
-    fireEvent.click(compileButton);
+    await view.findByText(/بصمة المصدر محفوظة/u);
+    fireEvent.click(view.container.querySelectorAll(".character-studio-steps button")[2]!);
+    fireEvent.click(view.getByRole("button", { name: /بناء PSD من المصدر الحالي/u }));
 
     await waitFor(() => expect(compileCharacterRig).toHaveBeenCalledWith(
       "project-1",
-      { bibleId: bible.id, width: 1200, height: 1600 },
+      {
+        bibleId: bible.id,
+        sourceVersionId: "source-1",
+        width: 1200,
+        height: 1600,
+      },
     ));
+    expect(view.queryByText(/توليد زاوية/u)).toBeNull();
+    expect(view.queryByText(/بناء نموذج الهوية/u)).toBeNull();
   });
 });
+
+function sourceRig(): CharacterRigVersion {
+  return {
+    schemaVersion: "1.0",
+    id: "rig-1",
+    projectId: "project-1",
+    bibleId: bible.id,
+    version: 1,
+    status: "draft",
+    pipeline: "source-preserving",
+    failureCode: null,
+    sourceFingerprint: "e".repeat(64),
+    source: {
+      sourceVersionId: "source-1",
+      referenceId: reference.id,
+      artifact: reference.artifact,
+      layerDocumentRevision: 1,
+      pixelIdentityRequired: true,
+    },
+    canvas: { width: 1200, height: 1600 },
+    nodes: [],
+    psdArtifact: null,
+    manifestArtifact: null,
+    approvedByUserId: null,
+    approvedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}

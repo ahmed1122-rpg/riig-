@@ -244,6 +244,43 @@ describe("prepareImageSource", () => {
 });
 
 describe("applyRasterGuidance", () => {
+  it("paints a one-point brush dab instead of silently ignoring it", async () => {
+    const source = await sharp({
+      create: {
+        width: 9,
+        height: 9,
+        channels: 4,
+        background: { r: 220, g: 40, b: 40, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    const result = await applyRasterGuidance({
+      source,
+      documentWidth: 9,
+      documentHeight: 9,
+      strokes: [
+        {
+          id: "stroke-single-dab",
+          targetLayerId: "source",
+          kind: "exclude",
+          brushSize: 3,
+          points: [{ x: 0.5, y: 0.5 }],
+          createdAt: "2026-07-28T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const refined = await sharp(result.refined)
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+    expect(result.changed).toBe(true);
+    expect(refined[(4 * 9 + 4) * 4 + 3]).toBe(0);
+    expect(refined[(0 * 9 + 0) * 4 + 3]).toBe(255);
+  });
+
   it("fills only brushed transparent gaps from nearby visible pixels", async () => {
     const pixels = Buffer.alloc(9 * 9 * 4);
     paintRect(pixels, 9, 1, 1, 7, 7, [30, 140, 220, 255]);

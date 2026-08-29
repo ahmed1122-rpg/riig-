@@ -59,7 +59,7 @@ const valid = {
   expected,
   candidateEnv: coordinates,
   stagingEnv: coordinates,
-  providerEnv: { ...coordinates, characterRigEnabled: "false" },
+  providerEnv: coordinates,
   candidateEvidence: {
     releaseStage: "candidate",
     source: { gitSha: expected.gitSha },
@@ -85,14 +85,6 @@ const valid = {
   performanceApplication: appEvidence,
   performanceLoad: loadEvidence,
   providerObjectStorage: objectStorage,
-  characterProvider: {
-    schemaVersion: 1,
-    enabled: false,
-    verified: false,
-    status: "disabled",
-    releaseGitSha: expected.gitSha,
-    checks: ["feature-disabled"],
-  },
   recovery: {
     manifestDigest: `sha256:${"d".repeat(64)}`,
     release: coordinates,
@@ -198,37 +190,4 @@ test("blocks stable promotion while any High or Critical exception remains", () 
     currentTrivyExceptionCount: 1,
   });
   assert.match(violations.join("\n"), /zero unfixed High\/Critical/u);
-});
-
-test("requires verified async GPU evidence when Character Rig is enabled", () => {
-  const violations = validateReleasePromotion({
-    ...valid,
-    providerEnv: { ...coordinates, characterRigEnabled: "true" },
-  });
-  assert.match(violations.join("\n"), /Enabled Character provider gate/u);
-
-  const checks = [
-    "https",
-    "capabilities",
-    "scale-to-zero-policy",
-    "async-submission",
-    "same-origin-status-polling",
-    "terminal-success",
-  ];
-  assert.deepEqual(
-    validateReleasePromotion({
-      ...valid,
-      providerEnv: { ...coordinates, characterRigEnabled: "true" },
-      characterProvider: {
-        schemaVersion: 1,
-        enabled: true,
-        verified: true,
-        status: "verified",
-        releaseGitSha: expected.gitSha,
-        protocol: "async-v1",
-        checks,
-      },
-    }),
-    [],
-  );
 });

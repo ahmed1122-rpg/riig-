@@ -26,6 +26,8 @@ export function verifyNginxDeployment(nginx, securityHeaders) {
   }
   for (const token of [
     "Content-Security-Policy",
+    "Cross-Origin-Opener-Policy",
+    '"same-origin"',
     "style-src 'self';",
     "report-uri /v1/security/csp-report",
     "report-to csp-endpoint",

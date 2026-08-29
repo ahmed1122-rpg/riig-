@@ -4,9 +4,8 @@ import type { AuthService } from "../auth/auth-service.js";
 import type { ProjectRepository } from "../projects/project-repository.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
+import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import { CharacterBibleService } from "./character-bible-service.js";
-import { CharacterGenerationService } from "./character-generation-service.js";
-import { CharacterIdentityBootstrapService } from "./character-identity-bootstrap-service.js";
 import {
   InMemoryCharacterJobRepository,
   type CharacterJobRepository,
@@ -26,6 +25,7 @@ interface CharacterRigFeatureOptions {
   uploads: UploadRepository;
   storage: ObjectStorage;
   audit: AuditService;
+  layerDocuments: LayerDocumentRepository;
   enabled: boolean;
   now?: () => Date;
   repositories?: {
@@ -53,15 +53,15 @@ export async function registerCharacterRigFeature(
       options.storage,
       options.now,
     ),
-    identityService: new CharacterIdentityBootstrapService(rigs, jobs),
-    generationService: new CharacterGenerationService(rigs, jobs),
-    compilerService: new CharacterRigCompilerService(rigs, jobs),
+    compilerService: new CharacterRigCompilerService(
+      rigs,
+      jobs,
+      options.layerDocuments,
+    ),
     rigReviewService: new CharacterRigReviewService(rigs, options.storage),
     objectStorage: options.storage,
     audit: options.audit,
     enabled: options.enabled,
-    providerKey: "private-http",
-    baseModelReference: "identity-preserving-v1",
     ...(options.now ? { now: options.now } : {}),
   });
 }

@@ -6,26 +6,6 @@ import {
   text,
 } from "../http/openapi-schema-builders.js";
 
-const characterCanonicalViews = [
-  "frontal",
-  "left-quarter",
-  "left-profile",
-  "right-quarter",
-  "right-profile",
-];
-const characterReferenceRoles = [
-  "identity-primary",
-  "canonical-view",
-  "body-proportion",
-  "style-material",
-  "part-mask",
-  "pose-control",
-  "depth-control",
-];
-const nullableUuid = {
-  anyOf: [{ type: "string", format: "uuid" }, { type: "null" }],
-};
-
 export const characterDocumentedBodies = new Map<
   string,
   Record<string, unknown>
@@ -90,18 +70,12 @@ export const characterDocumentedBodies = new Map<
       {
         bibleId: text("uuid"),
         sourceVersionId: text("uuid"),
-        role: { type: "string", enum: characterReferenceRoles },
-        canonicalView: {
-          anyOf: [
-            { type: "string", enum: characterCanonicalViews },
-            { type: "null" },
-          ],
-        },
+        role: { type: "string", enum: ["identity-primary"] },
+        canonicalView: { type: "string", enum: ["frontal"] },
         rightsClassification: {
           type: "string",
           enum: [
             "owned-by-user",
-            "licensed-for-model-use",
             "user-provided-private-reference",
           ],
         },
@@ -109,75 +83,10 @@ export const characterDocumentedBodies = new Map<
     ),
   ],
   [
-    "POST /v1/projects/:projectId/character-rig/identity-model",
-    objectBody(["bibleId"], { bibleId: text("uuid") }),
-  ],
-  [
-    "POST /v1/projects/:projectId/character-rig/generations",
-    objectBody(
-      ["bibleId", "identityModelVersionId", "target", "controls"],
-      {
-        bibleId: text("uuid"),
-        identityModelVersionId: text("uuid"),
-        target: {
-          type: "object",
-          required: ["kind", "view"],
-          properties: {
-            kind: {
-              type: "string",
-              enum: ["canonical-view", "part", "masked-repair"],
-            },
-            view: { type: "string", enum: characterCanonicalViews },
-            partName: text(),
-          },
-        },
-        controls: objectBody(
-          [
-            "seed",
-            "canvas",
-            "poseReferenceId",
-            "depthReferenceId",
-            "maskReferenceId",
-            "parameters",
-          ],
-          {
-            seed: integer,
-            canvas: objectBody(["width", "height"], {
-              width: integer,
-              height: integer,
-            }),
-            poseReferenceId: nullableUuid,
-            depthReferenceId: nullableUuid,
-            maskReferenceId: nullableUuid,
-            parameters: {
-              type: "object",
-              additionalProperties: {
-                anyOf: [
-                  { type: "string" },
-                  { type: "number" },
-                  { type: "boolean" },
-                ],
-              },
-            },
-          },
-        ),
-      },
-    ),
-  ],
-  [
-    "POST /v1/projects/:projectId/character-rig/generations/:generationAttemptId/reviews",
-    objectBody(["decision", "reason"], {
-      decision: {
-        type: "string",
-        enum: ["approved", "rejected", "changes-requested"],
-      },
-      reason: text(),
-    }),
-  ],
-  [
     "POST /v1/projects/:projectId/character-rig/compile",
-    objectBody(["bibleId", "width", "height"], {
+    objectBody(["bibleId", "sourceVersionId", "width", "height"], {
       bibleId: text("uuid"),
+      sourceVersionId: text("uuid"),
       width: integer,
       height: integer,
     }),
@@ -207,22 +116,6 @@ export const characterRouteSummaries = new Map([
   [
     "POST /v1/projects/:projectId/character-rig/references/current-source",
     "Attach the current source as a Character reference",
-  ],
-  [
-    "POST /v1/projects/:projectId/character-rig/identity-model",
-    "Queue identity-model training",
-  ],
-  [
-    "POST /v1/projects/:projectId/character-rig/generations",
-    "Queue an identity-locked generation",
-  ],
-  [
-    "POST /v1/projects/:projectId/character-rig/generations/:generationAttemptId/reviews",
-    "Review a generated Character artifact",
-  ],
-  [
-    "GET /v1/projects/:projectId/character-rig/generations/:generationAttemptId/artifact",
-    "Download a verified Character artifact",
   ],
   [
     "POST /v1/projects/:projectId/character-rig/compile",

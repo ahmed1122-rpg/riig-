@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import type { SourceType } from "@motionprep/contracts";
+import { sha256Hex } from "../shared/sha256.js";
 
 export interface InspectedSource {
   contentType: SourceType;
@@ -57,6 +57,6 @@ export function inspectSource(bytes: Buffer): InspectedSource | null {
   return {
     contentType,
     sizeBytes: bytes.byteLength,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
+    sha256: sha256Hex(bytes),
   };
 }

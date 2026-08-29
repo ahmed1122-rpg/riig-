@@ -13,6 +13,7 @@ import { claimNextProcessingJob } from "../infrastructure/postgres/postgres-proc
 import { PostgresDerivedAssetRegistry } from "../infrastructure/postgres/postgres-derived-asset-registry.js";
 import { PostgresUploadRepository } from "../infrastructure/postgres/postgres-upload-repository.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
+import { abortableDelay } from "../jobs/abortable-delay.js";
 import { releaseProcessingJobForShutdown } from "../jobs/worker-shutdown-requeue.js";
 import {
   initialPollingDelay,
@@ -104,6 +105,7 @@ export async function runProcessingWorker(
   const derivedAssets = new PostgresDerivedAssetRegistry(pool);
   const readyUploads = new PostgresUploadRepository(pool, true);
   let running = true;
+  const shutdownSignal = new AbortController();
   const drain = new WorkerDrainCoordinator<{
     job: ProcessingJob;
     workerId: string;
@@ -138,6 +140,7 @@ export async function runProcessingWorker(
   const requestShutdown = () => {
     if (!running) return;
     running = false;
+    shutdownSignal.abort();
     log(options.serviceName, "info", "worker.drain_started", {
       active_jobs: drain.activeCount,
       drain_timeout_ms: config.PROCESSING_DRAIN_TIMEOUT_MS,
@@ -196,6 +199,7 @@ export async function runProcessingWorker(
             log: (level, message, context) =>
               log(options.serviceName, level, message, context),
             isRunning: () => running,
+            signal: shutdownSignal.signal,
             onClaimed: (job) =>
               drain.register(`${instanceId}:${index + 1}`, {
                 job,
@@ -224,11 +228,15 @@ interface WorkerLoopContext extends ProcessingJobExecutionContext {
   isRunning: () => boolean;
   onClaimed: (job: ProcessingJob) => Promise<boolean>;
   onSettled: () => void;
+  signal: AbortSignal;
 }
 
 async function workerLoop(context: WorkerLoopContext): Promise<void> {
-  await delay(initialPollingDelay(context.pollMilliseconds));
-  while (context.isRunning()) {
+  await abortableDelay(
+    initialPollingDelay(context.pollMilliseconds),
+    context.signal,
+  );
+  while (context.isRunning() && !context.signal.aborted) {
     let registered = false;
     try {
       const job = await claimNextProcessingJob(
@@ -239,7 +247,10 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
         true,
       );
       if (!job) {
-        await delay(jitteredPollingDelay(context.pollMilliseconds));
+        await abortableDelay(
+          jitteredPollingDelay(context.pollMilliseconds),
+          context.signal,
+        );
         continue;
       }
       registered = await context.onClaimed(job);
@@ -265,15 +276,14 @@ async function workerLoop(context: WorkerLoopContext): Promise<void> {
         worker_id: context.workerId,
         error: error instanceof Error ? error.message : "unknown",
       });
-      await delay(jitteredPollingDelay(context.pollMilliseconds));
+      await abortableDelay(
+        jitteredPollingDelay(context.pollMilliseconds),
+        context.signal,
+      );
     } finally {
       if (registered) context.onSettled();
     }
   }
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function log(

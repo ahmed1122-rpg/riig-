@@ -8,8 +8,6 @@ import { PostgresCharacterJobResultCommitter } from "../infrastructure/postgres/
 import { startWorkerHeartbeat } from "../observability/worker-heartbeat.js";
 import { recordWorkerEvent } from "../observability/worker-events.js";
 import { WorkerDrainCoordinator } from "../jobs/worker-drain.js";
-import { HttpCharacterInferenceProvider } from "./http-character-inference-provider.js";
-import type { CharacterInferenceProtocol } from "./http-character-inference-provider.js";
 import { runCharacterWorkerLoop } from "./character-worker-loop.js";
 import { LeaseGuardedObjectStorage } from "../storage/leased-object-storage.js";
 import { PostgresObjectWriteLeaseCoordinator } from "../infrastructure/postgres/postgres-object-write-lease.js";
@@ -18,14 +16,6 @@ export interface CharacterWorkerConfig {
   databaseUrl: string;
   databasePoolMax: number;
   objectStorage: S3ObjectStorageOptions;
-  inferenceBaseUrl: string;
-  inferenceApiKey: string;
-  inferenceProtocol: CharacterInferenceProtocol;
-  inferenceTimeoutMilliseconds: number;
-  inferenceOperationTimeoutMilliseconds: number;
-  inferencePollIntervalMilliseconds: number;
-  inferenceMaxPollIntervalMilliseconds: number;
-  allowInsecureLocalhost: boolean;
   pollMilliseconds: number;
   concurrency: number;
   leaseMilliseconds: number;
@@ -69,28 +59,6 @@ export async function runCharacterWorker(
   const jobs = new PostgresCharacterJobRepository(database.pool);
   const characterRigs = new PostgresCharacterRigRepository(database.pool);
   const resultCommitter = new PostgresCharacterJobResultCommitter(database.pool);
-  const provider = new HttpCharacterInferenceProvider({
-    baseUrl: config.inferenceBaseUrl,
-    apiKey: config.inferenceApiKey,
-    protocol: config.inferenceProtocol,
-    timeoutMilliseconds: config.inferenceTimeoutMilliseconds,
-    operationTimeoutMilliseconds:
-      config.inferenceOperationTimeoutMilliseconds,
-    pollIntervalMilliseconds: config.inferencePollIntervalMilliseconds,
-    maxPollIntervalMilliseconds:
-      config.inferenceMaxPollIntervalMilliseconds,
-    allowInsecureLocalhost: config.allowInsecureLocalhost,
-    onOperationEvent: (event) =>
-      log("info", "character.provider_operation", {
-        phase: event.phase,
-        status: event.status,
-        poll_count: event.pollCount,
-        duration_ms: event.durationMilliseconds,
-        ...(event.retryAfterMilliseconds === undefined
-          ? {}
-          : { retry_after_ms: event.retryAfterMilliseconds }),
-      }),
-  });
   const instanceId =
     config.workerId ??
     `${hostname()}:${process.pid}:${crypto.randomUUID().slice(0, 8)}`;
@@ -165,7 +133,6 @@ export async function runCharacterWorker(
         jobs,
         characterRigs,
         resultCommitter,
-        provider,
         storage,
         workerId,
         leaseMilliseconds: config.leaseMilliseconds,

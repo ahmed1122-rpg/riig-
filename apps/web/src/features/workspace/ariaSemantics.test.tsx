@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 import { ProjectsView } from "../projects/ProjectsView";
 import { LayerDock } from "./LayerDock";
 import { getLayerCheckSummary } from "./layerChecks";
-import { WorkspaceHeader, WorkspaceStatusBar } from "./WorkspaceChrome";
+import {
+  WorkspaceHeader,
+  WorkspacePipeline,
+  WorkspaceStatusBar,
+} from "./WorkspaceChrome";
 import { WorkspaceToolRail } from "./WorkspaceToolRail";
 
 const noop = () => undefined;
@@ -129,6 +133,22 @@ describe("truthful selection semantics", () => {
     expect(markup).toContain("فشل ترتيب القراءة");
     expect(markup).toContain('class="is-error"');
     expect(markup).toContain("المصدر v3");
+  });
+
+  it("presents production stages as a named list", () => {
+    const markup = renderToStaticMarkup(
+      <WorkspacePipeline
+        persistedSource
+        steps={[
+          { name: "رفع", output: "المصدر" },
+          { name: "مراجعة", output: "الطبقات" },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('role="list"');
+    expect(markup.match(/role="listitem"/gu)).toHaveLength(2);
+    expect(markup).toContain('aria-label="مراحل الإنتاج"');
   });
 
   it("links dock tabs to a panel and exposes interactive layers as named groups", () => {

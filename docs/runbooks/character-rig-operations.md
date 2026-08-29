@@ -1,8 +1,9 @@
 # Character Studio operations
 
-Character Studio is fail-closed. Keep `CHARACTER_RIG_ENABLED=false` unless the
-release has a passing private-provider benchmark, a signed Adobe Character
-Animator Golden, and a running `worker-character` heartbeat.
+Character Studio is fail-closed and source-preserving. It compiles only the
+current upload's raster layers and verifies that their visible RGBA composite
+matches the upload pixel-for-pixel. It does not require a GPU model, model
+weights, RunPod, or an inference-provider license.
 
 The feature accepts image projects only. PDF/book projects are excluded by the
 public capability contract, the workspace tool registry, the dialog boundary,
@@ -10,48 +11,29 @@ and the authorization guard shared by every Character Rig HTTP operation.
 
 ## Enablement
 
-1. Store `CHARACTER_INFERENCE_API_KEY` in the deployment secret store. Never
-   place it in source control or logs.
-2. Configure an HTTPS `CHARACTER_INFERENCE_URL`. Plain HTTP is accepted only
-   for explicitly enabled localhost development. A private path prefix is
-   preserved with or without a trailing slash. Embedded credentials, query
-   strings, and fragments are invalid configuration.
-3. For a production GPU Serverless provider, set
-   `CHARACTER_INFERENCE_PROTOCOL=async-v1`, keep
-   `CHARACTER_INFERENCE_OPERATION_TIMEOUT_MS=900000`, and use bounded polling
-   from 1000 to 10000 milliseconds. Keep `CHARACTER_CONCURRENCY=1` for the first
-   canary; GPU replicas are scaled by the provider queue, not by multiplying the
-   application worker prematurely.
-4. Run `npm run verify:character-provider` from the protected readiness
-   environment. It must produce release-bound verified evidence satisfying
-   [`../CHARACTER_GPU_SERVERLESS.md`](../CHARACTER_GPU_SERVERLESS.md).
-5. Start the optional Compose profile with
+1. Confirm the source upload, processed `LayerDocument`, and object storage are
+   available and pass their existing integrity checks.
+2. Start the optional Compose profile with
    `docker compose --profile character-rig up -d worker-character`.
-6. Confirm `motionprep_worker_up{worker_type="character"} == 1`, queue age is
-   below five minutes, and the sealed Character Rig benchmark passes.
-   Observe structured `character.provider_operation` events for submission,
-   polling, total duration, and provider retry delays. Reject the canary if cold
-   starts, queue age, failure rate, or cost exceed the approved evidence.
-7. Set `CHARACTER_RIG_ENABLED=true` on the API and restart only the API.
+3. Confirm `motionprep_worker_up{worker_type="character"} == 1`, queue age is
+   below five minutes, and the pixel-identity tests pass.
+4. Set `CHARACTER_RIG_ENABLED=true` on the API and restart only the API.
 
 ## Safe disablement
 
 Set `CHARACTER_RIG_ENABLED=false` and restart the API. Existing jobs remain in
 durable storage but no new user operations can be submitted. Stop the worker
-gracefully with `SIGTERM`: in-flight provider requests receive cancellation,
+gracefully with `SIGTERM`: in-flight compilation receives cancellation,
 the worker drains for `CHARACTER_DRAIN_TIMEOUT_MS` (30 seconds by default), and
 any claim still active is fenced and requeued without consuming a retry. Keep
 the platform stop grace period above this timeout.
 
 ## Incident response
 
-- Provider unavailable or rate-limited: disable the feature, retain queued
-  attempts, and investigate without replaying with new idempotency keys.
-- Cold-start or queue-budget breach: keep the feature disabled; inspect model
-  image size and provider queue metrics before changing the maximum replica
-  ceiling. Do not hide GPU saturation by increasing Character worker concurrency.
-- Identity drift: reject the attempt, preserve its quality report and review,
-  retire the affected identity model version, and rerun the holdout benchmark.
+- `CHARACTER_SOURCE_COMPOSITE_MISMATCH`: do not export. Restore source layer
+  visibility, opacity, bounds, and ordering until the composite is exact.
+- `CHARACTER_GENERATION_DISABLED_SOURCE_ONLY`: expected when a legacy client
+  tries to train or generate. Keep the retired operation disabled.
 - Artifact integrity failure: do not expose or compile the artifact. Compare the
   object-store SHA-256 with the recorded artifact and follow the storage
   recovery procedure.
@@ -62,6 +44,6 @@ the platform stop grace period above this timeout.
 
 Reference objects are copied under the project-scoped `character-rig` prefix.
 Deleting a project cascades its database records; object cleanup must be
-included in the retention task before broad release. Provider retention must be
-zero or contractually bounded, and provider logs must never contain image bytes,
-Bible text, API keys, or signed object URLs.
+included in the retention task before broad release. The source-only worker
+makes no inference-provider request. Logs must never
+contain image bytes, Bible text, storage credentials, or signed object URLs.

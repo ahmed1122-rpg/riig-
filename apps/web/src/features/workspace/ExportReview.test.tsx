@@ -261,7 +261,7 @@ describe("ExportReview production editing policy", () => {
       />,
     );
 
-    expect(markup).toContain("2 طبقات فعلية في 1 صفحة");
+    expect(markup).toContain("طبقتان فعليتان في صفحة واحدة");
     expect(markup).not.toContain("3 طبقات فعلية");
     expect(markup).not.toContain("+page_001</strong>");
     expect(markup).not.toContain("4,860");
