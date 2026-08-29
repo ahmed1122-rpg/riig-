@@ -234,7 +234,7 @@ export function CreatorActivityCenter({
       )}
 
       {viewState === "ready" && feed && (
-        <div className="activity-list" aria-label="آخر أنشطة الإنتاج">
+        <div className="activity-list" role="feed" aria-label="آخر أنشطة الإنتاج">
           {feed.items.map((item) => {
             const phase = activityKindPresentation[item.kind];
             return (
@@ -258,7 +258,11 @@ export function CreatorActivityCenter({
                   {item.progress !== null && (
                     <div
                       className="activity-row__progress"
+                      role="progressbar"
                       aria-label={`التقدم ${item.progress}%`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.max(0, Math.min(100, item.progress))}
                     >
                       <span>
                         <i

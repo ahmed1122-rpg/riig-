@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Dialog } from "../../shared/Dialog";
 import { Icon } from "../../shared/Icon";
+import { useSingleFlightAction } from "../../shared/hooks/useSingleFlightAction";
 import type { Layer } from "../../types";
 
 type PdfTextOperation = "split" | "merge";
@@ -28,8 +29,9 @@ export function PdfTextOperationDialog({
   const wordTargets = useMemo(() => pdfSplitWordTargets(text), [text]);
   const [offset, setOffset] = useState(() => suggestedOffset(characters));
   const [separator, setSeparator] = useState<"space" | "newline">("space");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string>();
+  const { submitting, error, setError, run } = useSingleFlightAction(
+    "تعذر تنفيذ العملية النصية.",
+  );
   const firstPart = characters.slice(0, offset).join("");
   const secondPart = characters.slice(offset).join("");
   const splitValid =
@@ -43,24 +45,14 @@ export function PdfTextOperationDialog({
       setError("اختر موضعًا يُنتج جزأين نصيين غير فارغين.");
       return;
     }
-    setSubmitting(true);
-    setError(undefined);
-    try {
-      await onApply(
+    const succeeded = await run(() =>
+      onApply(
         operation === "split"
           ? { operation, offset }
           : { operation, separator },
-      );
-      onClose();
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "تعذر تنفيذ العملية النصية.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
+      ),
+    );
+    if (succeeded) onClose();
   };
 
   return (

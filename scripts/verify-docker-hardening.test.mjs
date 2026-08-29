@@ -45,12 +45,27 @@ test("rejects a retained Alpine package index", () => {
   const violations = verifyDockerHardening({
     ...valid,
     runtimeDockerfile: valid.runtimeDockerfile.replace(
-      "RUN apk add --no-cache fontconfig",
-      "RUN apk add fontconfig",
+      "RUN apk add --no-cache",
+      "RUN apk add",
     ),
   });
   assert.ok(
     violations.some((message) => message.includes("Alpine package index")),
+  );
+});
+
+test("rejects Docker images without the pinned OpenSSL security release", () => {
+  const violations = verifyDockerHardening({
+    ...valid,
+    runtimeDockerfile: valid.runtimeDockerfile.replaceAll(
+      "3.5.8-r0",
+      "3.5.7-r0",
+    ),
+    webDockerfile: valid.webDockerfile.replaceAll("3.5.8-r0", "3.5.7-r0"),
+  });
+  assert.equal(
+    violations.filter((message) => message.includes("3.5.8-r0")).length,
+    6,
   );
 });
 
@@ -64,6 +79,26 @@ test("rejects an incomplete QA dependency-cache manifest set", () => {
   });
   assert.ok(
     violations.some((message) => message.includes("layer-domain workspace manifest")),
+  );
+});
+
+test("rejects retained runtime declarations and the root-only Nginx directive", () => {
+  const violations = verifyDockerHardening({
+    ...valid,
+    runtimeDockerfile: valid.runtimeDockerfile.replace(
+      "  && find /app -type f -name '*.ts' -delete\n",
+      "",
+    ),
+    webDockerfile: valid.webDockerfile.replace(
+      "  && sed -i '/^user[[:space:]]/d' /etc/nginx/nginx.conf \\\n",
+      "",
+    ),
+  });
+  assert.ok(
+    violations.some((message) => message.includes("TypeScript-only files")),
+  );
+  assert.ok(
+    violations.some((message) => message.includes("Nginx user directive")),
   );
 });
 
@@ -84,6 +119,21 @@ test("rejects weakened integration isolation", () => {
   });
   assert.ok(violations.some((message) => message.includes("read-only root filesystem")));
   assert.ok(violations.some((message) => message.includes("drop all Linux capabilities")));
+});
+
+test("rejects integration topology without the Character worker", () => {
+  const violations = verifyDockerHardening({
+    ...valid,
+    integrationCompose: valid.integrationCompose.replace(
+      /\n {2}worker-character:[\s\S]*?\n {2}worker-security:/u,
+      "\n  worker-security:",
+    ),
+  });
+  assert.ok(
+    violations.some((message) =>
+      message.includes("exercise the production Character worker"),
+    ),
+  );
 });
 
 test("rejects a second init process in front of direct clamd", () => {

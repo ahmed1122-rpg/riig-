@@ -282,6 +282,11 @@ function paintStrokeMask(
     y: point.y * Math.max(1, documentHeight - 1) - originY,
   }));
   const radius = Math.max(1, stroke.brushSize / 2);
+  if (points.length === 1) {
+    const point = points[0]!;
+    paintCircle(mask, width, height, point.x, point.y, radius);
+    return;
+  }
   for (let index = 1; index < points.length; index += 1) {
     const start = points[index - 1]!;
     const end = points[index]!;

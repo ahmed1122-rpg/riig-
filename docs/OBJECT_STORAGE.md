@@ -44,7 +44,7 @@ the workload-specific env-file checks are a second guard, not a substitute.
 | `sources/` | Validated image or PDF bytes for a source version | Retain while the source-version record exists |
 | `derived/` | Immutable normalized raster layers and guided refinements | Register ownership before every write; retain while a current or revision `LayerDocument` references the key |
 | `artifacts/` | Generated PSD, TIFF, ZIP, or text exports | Application access expires after 24 hours |
-| `projects/<projectId>/character-rig/` | Private identity references, generated candidates, manifests, and rig PSDs | Retain only while referenced by the project; reference metadata carries a bounded expiry |
+| `projects/<projectId>/character-rig/` | Private source copies, source-integrity manifests, and source-preserving rig PSDs | Retain while referenced by an active rig; unreferenced source copies carry a bounded expiry |
 
 Do not apply a blanket time-based expiry to `sources/` or `derived/`; doing so
 would break review and regeneration for live source versions. Project/source
@@ -69,19 +69,20 @@ registry timestamp before marking the cleanup complete. A prefix-wide expiry
 is unsafe because live and historical documents reference these objects.
 
 Character objects are never public URLs. API reads are ownership-checked and
-the worker exchanges only scoped object metadata with the private inference
-service. Account deletion collects object keys from Character references,
-generation attempts, and rig versions before deleting project rows. Do not
-enable Character Studio broadly until the scheduled reference-expiry sweep is
-deployed and exercised against the selected object provider.
+the worker reads the locked source and writes only its deterministic PSD and
+manifest. Account deletion collects object keys from current Character source
+references and rig versions, plus any historical records created by older
+releases, before deleting project rows. Do not enable Character Studio broadly
+until the scheduled reference-expiry sweep is deployed and exercised against
+the selected object provider.
 
 All production writes under `sources/`, `artifacts/`, `derived/`, and
 `projects/` are wrapped by a durable PostgreSQL `object_write_leases` fence.
 Acquisition serializes with the account tombstone, long writes renew the lease,
 and successful writes retain a 15-minute cooldown for database publication.
-The private Character provider receives one exact output key and its external
-write is covered by the same fence. Any failed, ambiguous, lease-lost, or
-otherwise unpublished write is removed with exact version purge. Normal
+Character artifact writes are covered by the same fence. Any failed,
+ambiguous, lease-lost, or otherwise unpublished write is removed with exact
+version purge. Normal
 time-based retention may continue to use `DeleteObject` according to the
 approved recovery policy.
 

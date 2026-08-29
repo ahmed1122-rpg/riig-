@@ -342,10 +342,7 @@ describe("API — المعالجة ووثائق الطبقات", () => {
             targetLayerId: target.id,
             kind: "separate",
             brushSize: 3,
-            points: [
-              { x: centerX, y: Math.max(0, centerY - 0.03) },
-              { x: centerX, y: Math.min(1, centerY + 0.03) },
-            ],
+            points: [{ x: centerX, y: centerY }],
             createdAt: "2026-07-28T00:00:00.000Z",
           },
         ],

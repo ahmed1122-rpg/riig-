@@ -76,7 +76,7 @@ delete request rows to force a retry.
 - An injected storage failure must remain retryable.
 - A project/object-write/billable-subscription race after tombstoning must fail
   closed.
-- A ready Character identity model must prevent reference expiration.
+- An active source-preserving Character rig must prevent expiration of its locked source reference.
 - A versioned-bucket purge must remove current versions, historical versions,
   and delete markers.
 - A completed request must have zero owned projects, no captured keys, revoked

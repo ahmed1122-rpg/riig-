@@ -4,14 +4,8 @@ import type {
   CharacterRigNode,
   CharacterRigVersion,
 } from "@motionprep/contracts";
-import {
-  characterCanonicalViews,
-  characterRequiredFrontalBodyParts,
-  characterRequiredHeadParts,
-} from "@motionprep/contracts";
 import { writePsdBuffer, type Layer as PsdLayer, type Psd } from "ag-psd";
-import sharp from "sharp";
-import { assertDocumentDimensions, MAX_DECODED_PIXELS } from "./document-dimensions.js";
+import { assertDocumentDimensions } from "./document-dimensions.js";
 import { ExportAdapterError } from "./export-adapter-error.js";
 import {
   clampOpacity,
@@ -19,6 +13,7 @@ import {
   pixelData,
   withScaledAlpha,
 } from "./psd-buffer.js";
+import { decodeRasterRgba, transparentCanvas } from "./raster-utils.js";
 
 export interface CharacterRigRasterAsset {
   nodeId: string;
@@ -30,6 +25,8 @@ export interface CreateCharacterRigPsdInput {
   width: number;
   height: number;
   assets: readonly CharacterRigRasterAsset[];
+  /** Original uploaded image used for pixel-identity verification. */
+  source: Buffer;
   generatedAt: string;
 }
 
@@ -75,7 +72,7 @@ export async function createCharacterRigPsd(
       kind: node.kind,
       canonicalView: node.canonicalView,
       semanticPart: node.semanticPart,
-      sourceGenerationAttemptId: node.sourceGenerationAttemptId,
+      sourceLayerId: node.sourceLayerId,
       artifactSha256: node.artifact?.sha256 ?? null,
     });
     const visible = ancestorsVisible && node.visible;
@@ -124,6 +121,7 @@ export async function createCharacterRigPsd(
     .composite(compositeInputs)
     .raw()
     .toBuffer();
+  await verifySourceComposite(input, composite);
   const psdDocument: Psd = {
     width: input.width,
     height: input.height,
@@ -148,8 +146,14 @@ export async function createCharacterRigPsd(
         colorMode: "RGB",
         bitsPerChannel: 8,
       },
-      canonicalViews: [...characterCanonicalViews],
+      canonicalViews: ["frontal"],
       generatedAt: input.generatedAt,
+      sourceIntegrity: {
+        mode: "pixel-exact",
+        sourceVersionId: input.rig.source.sourceVersionId,
+        sourceSha256: input.rig.source.artifact.sha256,
+        verified: true,
+      },
       nodes: manifestNodes,
     },
   };
@@ -183,36 +187,78 @@ export function validateCharacterRigTemplate(rig: CharacterRigVersion) {
   ) {
     throw templateError("Rig requires exactly one character-root group.");
   }
-  for (const view of characterCanonicalViews) {
-    const viewGroups = (childrenByParent.get(root.id) ?? []).filter(
-      (node) =>
-        node.kind === "group" &&
-        node.semanticPart === "view" &&
-        node.canonicalView === view,
-    );
-    if (viewGroups.length !== 1) {
-      throw templateError(`Rig requires exactly one ${view} view group.`);
-    }
-    const viewGroup = viewGroups[0];
-    if (!viewGroup) throw templateError(`Rig is missing the ${view} view group.`);
-    const descendants = descendantsOf(viewGroup.id, childrenByParent);
-    const requiredParts = [
-      ...characterRequiredHeadParts,
-      ...(view === "frontal" ? characterRequiredFrontalBodyParts : []),
-    ];
-    for (const part of requiredParts) {
-      const matches = descendants.filter(
-        (node) =>
-          node.kind === "raster" &&
-          node.canonicalView === view &&
-          node.semanticPart === part,
-      );
-      if (matches.length !== 1) {
-        throw templateError(`View ${view} requires exactly one ${part} raster.`);
-      }
-    }
-  }
+  validateSourcePreservingTemplate(rig, root, childrenByParent);
   return { nodesById, childrenByParent };
+}
+
+function validateSourcePreservingTemplate(
+  rig: CharacterRigVersion,
+  root: CharacterRigNode,
+  childrenByParent: ReadonlyMap<string | null, CharacterRigNode[]>,
+): void {
+  if (!rig.source?.pixelIdentityRequired) {
+    throw templateError("Source-preserving rig requires an immutable source artifact.");
+  }
+  const viewGroups = (childrenByParent.get(root.id) ?? []).filter(
+    (node) => node.kind === "group" && node.semanticPart === "view",
+  );
+  if (
+    viewGroups.length !== 1 ||
+    viewGroups[0]?.canonicalView !== "frontal"
+  ) {
+    throw templateError("Source-preserving rig requires one frontal source group.");
+  }
+  const rasterNodes = rig.nodes.filter((node) => node.kind === "raster");
+  if (rasterNodes.length === 0) {
+    throw templateError("Source-preserving rig requires at least one raster layer.");
+  }
+  const sourceLayerIds = new Set<string>();
+  for (const node of rig.nodes) {
+    if (node.kind !== "raster") continue;
+    if (!node.sourceLayerId) {
+      throw templateError("Every source raster must point to a source layer only.");
+    }
+    if (sourceLayerIds.has(node.sourceLayerId)) {
+      throw templateError(`Duplicate source layer ${node.sourceLayerId}.`);
+    }
+    sourceLayerIds.add(node.sourceLayerId);
+  }
+}
+
+async function verifySourceComposite(
+  input: CreateCharacterRigPsdInput,
+  composite: Buffer,
+): Promise<void> {
+  const sourceMetadata = input.rig.source.artifact;
+  if (
+    input.source.byteLength !== sourceMetadata.sizeBytes ||
+    createHash("sha256").update(input.source).digest("hex") !== sourceMetadata.sha256
+  ) {
+    throw new ExportAdapterError(
+      "CHARACTER_SOURCE_INTEGRITY_FAILED",
+      "The original uploaded source failed integrity verification.",
+    );
+  }
+  const decoded = await decodeRasterRgba(
+    input.source,
+    "CHARACTER_SOURCE_DECODE_FAILED",
+    "Could not decode the original uploaded source.",
+  );
+  if (
+    decoded.info.width !== input.width ||
+    decoded.info.height !== input.height
+  ) {
+    throw new ExportAdapterError(
+      "CHARACTER_SOURCE_CANVAS_MISMATCH",
+      "The uploaded source does not match the rig canvas.",
+    );
+  }
+  if (!composite.equals(decoded.data)) {
+    throw new ExportAdapterError(
+      "CHARACTER_SOURCE_COMPOSITE_MISMATCH",
+      "Visible rig layers do not reproduce the uploaded source pixel-for-pixel.",
+    );
+  }
 }
 
 async function prepareAssets(
@@ -243,22 +289,11 @@ async function prepareAssets(
     ) {
       throw templateError(`Raster node ${node.id} failed artifact integrity validation.`);
     }
-    let decoded: { data: Buffer; info: { width: number; height: number } };
-    try {
-      decoded = await sharp(source, {
-        failOn: "error",
-        limitInputPixels: MAX_DECODED_PIXELS,
-      })
-        .toColourspace("srgb")
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-    } catch {
-      throw new ExportAdapterError(
-        "RASTER_DECODE_FAILED",
-        `Could not decode character rig asset ${node.id}.`,
-      );
-    }
+    const decoded = await decodeRasterRgba(
+      source,
+      "RASTER_DECODE_FAILED",
+      `Could not decode character rig asset ${node.id}.`,
+    );
     const placement = resolvePlacement(input, node, decoded.info);
     prepared.set(node.id, {
       node,
@@ -313,38 +348,12 @@ function assertAcyclic(
   }
 }
 
-function descendantsOf(
-  parentId: string,
-  childrenByParent: ReadonlyMap<string | null, CharacterRigNode[]>,
-): CharacterRigNode[] {
-  const result: CharacterRigNode[] = [];
-  const pending = [...(childrenByParent.get(parentId) ?? [])];
-  while (pending.length > 0) {
-    const node = pending.shift();
-    if (!node) continue;
-    result.push(node);
-    pending.push(...(childrenByParent.get(node.id) ?? []));
-  }
-  return result;
-}
-
 function protectionFor(node: CharacterRigNode) {
   return {
     position: node.locked,
     composite: node.locked,
     transparency: node.locked,
   };
-}
-
-function transparentCanvas(width: number, height: number) {
-  return sharp({
-    create: {
-      width,
-      height,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  });
 }
 
 function templateError(message: string): ExportAdapterError {

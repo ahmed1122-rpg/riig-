@@ -135,6 +135,18 @@ describe("CreatorActivityCenter", () => {
     expect(onNavigateExports).toHaveBeenCalledOnce();
   });
 
+  it("exposes the activity feed and bounded progress to assistive technology", async () => {
+    vi.mocked(listWorkflowActivity).mockResolvedValue(activityFeed([runningItem]));
+    const { view } = renderActivity();
+
+    expect(await view.findByRole("feed", { name: "آخر أنشطة الإنتاج" }))
+      .toBeTruthy();
+    const progress = view.getByRole("progressbar", { name: "التقدم 42%" });
+    expect(progress.getAttribute("aria-valuemin")).toBe("0");
+    expect(progress.getAttribute("aria-valuemax")).toBe("100");
+    expect(progress.getAttribute("aria-valuenow")).toBe("42");
+  });
+
   it("presents failure codes as secondary diagnostics", async () => {
     const failedItem: WorkflowActivityItem = {
       ...runningItem,

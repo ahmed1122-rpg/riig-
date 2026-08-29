@@ -26,6 +26,26 @@ describe("image guidance", () => {
     ]);
   });
 
+  it("accepts one-point brush dabs and rejects empty strokes", () => {
+    const stroke = createImageGuidanceStroke({
+      id: "stroke-dab",
+      targetLayerId: "arm",
+      kind: "exclude",
+      brushSize: 12,
+      points: [{ x: 0.5, y: 0.25 }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(stroke.points).toEqual([{ x: 0.5, y: 0.25 }]);
+    expect(() => createImageGuidanceStroke({
+      id: "stroke-empty",
+      targetLayerId: "arm",
+      kind: "exclude",
+      brushSize: 12,
+      points: [],
+    })).toThrow("GUIDANCE_STROKE_TOO_SHORT");
+  });
+
   it("reprocesses only an expanded local bounding region", () => {
     const bounds = guidanceBounds([
       { x: 0.4, y: 0.3 },

@@ -42,51 +42,22 @@ export const characterBibleSchema = objectSchema(
 );
 export const characterReferenceSchema = objectSchema(
   [
-    "id", "projectId", "bibleId", "role", "canonicalView",
+    "id", "projectId", "bibleId", "sourceVersionId", "role", "canonicalView",
     "rightsClassification", "rightsAttestedByUserId", "rightsAttestedAt",
     "artifact", "width", "height", "createdAt",
   ],
   {
     id: text("uuid"), projectId: text("uuid"), bibleId: text("uuid"),
-    role: text(), canonicalView: nullableText, rightsClassification: text(),
+    sourceVersionId: text("uuid"),
+    role: { type: "string", enum: ["identity-primary"] },
+    canonicalView: { type: "string", enum: ["frontal"] },
+    rightsClassification: {
+      type: "string",
+      enum: ["owned-by-user", "user-provided-private-reference"],
+    },
     rightsAttestedByUserId: text("uuid"), rightsAttestedAt: text("date-time"),
     artifact: characterArtifactSchema, width: integer, height: integer,
     createdAt: text("date-time"),
-  },
-);
-const characterIdentityModelSchema = objectSchema(
-  [
-    "id", "projectId", "bibleId", "version", "status", "providerKey",
-    "providerModelReference", "baseModelReference", "datasetFingerprint",
-    "trainingConfiguration", "failureCode", "createdAt", "updatedAt",
-  ],
-  {
-    id: text("uuid"), projectId: text("uuid"), bibleId: text("uuid"), version: integer,
-    status: text(), providerKey: text(), providerModelReference: nullableText,
-    baseModelReference: text(), datasetFingerprint: text(),
-    trainingConfiguration: { type: "object", additionalProperties: true },
-    trainingMetrics: { type: "object", additionalProperties: { type: "number" } },
-    failureCode: nullableText, createdAt: text("date-time"), updatedAt: text("date-time"),
-  },
-);
-const characterGenerationSchema = objectSchema(
-  [
-    "id", "projectId", "bibleId", "identityModelVersionId", "target",
-    "status", "controls", "requestHash", "idempotencyKey", "outputArtifact",
-    "outputGeometry", "qualityReport", "failureCode", "createdByUserId", "createdAt", "updatedAt",
-  ],
-  {
-    id: text("uuid"), projectId: text("uuid"), bibleId: text("uuid"),
-    identityModelVersionId: text("uuid"), target: { type: "object", additionalProperties: true },
-    status: text(), controls: { type: "object", additionalProperties: true },
-    requestHash: text(), idempotencyKey: text(),
-    outputArtifact: { anyOf: [characterArtifactSchema, { type: "null" }] },
-    outputGeometry: {
-      anyOf: [{ type: "object", additionalProperties: true }, { type: "null" }],
-    },
-    qualityReport: { anyOf: [{ type: "object", additionalProperties: true }, { type: "null" }] },
-    failureCode: nullableText, createdByUserId: text("uuid"),
-    createdAt: text("date-time"), updatedAt: text("date-time"),
   },
 );
 const characterJobSchema = objectSchema(
@@ -107,14 +78,18 @@ const characterJobSchema = objectSchema(
 const characterRigSchema = objectSchema(
   [
     "schemaVersion", "id", "projectId", "bibleId", "version", "status",
+    "pipeline", "failureCode", "sourceFingerprint", "source", "canvas",
     "nodes", "psdArtifact", "manifestArtifact", "approvedByUserId",
     "approvedAt", "createdAt", "updatedAt",
   ],
   {
     schemaVersion: { type: "string", const: "1.0" }, id: text("uuid"),
     projectId: text("uuid"), bibleId: text("uuid"), version: integer, status: text(),
+    pipeline: { type: "string", enum: ["source-preserving"] },
+    failureCode: nullableText,
     sourceFingerprint: text(), canvas: { type: "object", additionalProperties: false,
       required: ["width", "height"], properties: { width: integer, height: integer } },
+    source: { type: "object", additionalProperties: true },
     nodes: { type: "array", items: { type: "object", additionalProperties: true } },
     psdArtifact: { anyOf: [characterArtifactSchema, { type: "null" }] },
     manifestArtifact: { anyOf: [characterArtifactSchema, { type: "null" }] },
@@ -123,31 +98,12 @@ const characterRigSchema = objectSchema(
   },
 );
 export const characterStateSchema = objectSchema(
-  ["bible", "references", "identityModel", "generations", "rig", "jobs"],
+  ["bible", "references", "rig", "jobs"],
   {
     bible: { anyOf: [characterBibleSchema, { type: "null" }] },
     references: arrayOf(characterReferenceSchema),
-    identityModel: { anyOf: [characterIdentityModelSchema, { type: "null" }] },
-    generations: arrayOf(characterGenerationSchema),
     rig: { anyOf: [characterRigSchema, { type: "null" }] },
     jobs: arrayOf(characterJobSchema),
-  },
-);
-export const identityQueueSchema = objectSchema(["modelVersion", "job"], {
-  modelVersion: characterIdentityModelSchema,
-  job: characterJobSchema,
-});
-export const generationQueueSchema = objectSchema(["attempt", "job", "replayed"], {
-  attempt: characterGenerationSchema,
-  job: characterJobSchema,
-  replayed: { type: "boolean" },
-});
-export const characterReviewSchema = objectSchema(
-  ["attempt", "review", "replayed"],
-  {
-    attempt: characterGenerationSchema,
-    review: { type: "object", additionalProperties: true },
-    replayed: { type: "boolean" },
   },
 );
 export const rigQueueSchema = objectSchema(["rig", "job", "replayed"], {

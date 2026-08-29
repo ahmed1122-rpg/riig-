@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { createClient } from "redis";
 import type { LoginAttemptStore } from "../../auth/login-attempt-store.js";
+import { sha256Hex } from "../../shared/sha256.js";
 import { createRedisRateLimitStore } from "./redis-rate-limit-store.js";
 
 interface RedisCommands {
@@ -99,7 +99,7 @@ export function createRedisSecurityWithClient(
 }
 
 function hashKey(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+  return sha256Hex(value);
 }
 
 const failureScript = `

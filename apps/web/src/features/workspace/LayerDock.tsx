@@ -386,7 +386,7 @@ export function LayerDock({
                 <Icon name={density === "dense" ? "grid" : "list"} size={14} /> {density === "dense" ? "مريح" : "كثيف"}
               </button>
             </div>
-            <div className="pro-layer-compact-actions" aria-label="إجراءات الأسماء والترتيب">
+            <div className="pro-layer-compact-actions" role="group" aria-label="إجراءات الأسماء والترتيب">
               <button type="button" onClick={commandWorkflow.requestNormalize}>معاينة توحيد الأسماء</button>
               <button type="button" disabled={!canReorder} title={canReorder ? "عكس ترتيب الطبقات داخل كل مجلد" : "إعادة الترتيب تحتاج عقد حفظ على الخادم"} onClick={() => executeCommand({ kind: "arrange-reading-order", scope: { kind: "document" }, order: "reverse" })}>عكس الترتيب</button>
               {mode === "book" && <button type="button" disabled={!canReorder} title={canReorder ? "ترتيب الوحدات حسب الصفحة والموضع" : "ترتيب القراءة محفوظ من المعالجة الحالية"} onClick={() => executeCommand({ kind: "arrange-reading-order", scope: { kind: "document" }, order: "reading" })}>ترتيب القراءة</button>}

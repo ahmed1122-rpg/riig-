@@ -106,7 +106,7 @@
   .pdf-text-preview-grid { grid-template-columns: 1fr; }
   .image-edge-controls { grid-template-columns: 1fr; }
   .page-content.is-workspace { padding: 0; }
-  .pro-workspace { height: calc(100dvh - var(--topbar-height)); }
+  .page-content.is-workspace > .pro-workspace { height: 100%; min-height: 0; }
   .pro-preview-column { grid-template-rows: 43px auto minmax(0, 1fr); }
   .pro-source-row { padding-inline: 7px; }
   .pro-source-file small,

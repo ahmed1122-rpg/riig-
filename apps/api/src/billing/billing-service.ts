@@ -4,7 +4,6 @@ import type {
   SubscriptionView,
   UserSummary,
 } from "@motionprep/contracts";
-import { createHash } from "node:crypto";
 import { BILLING_PLAN_CATALOG } from "@motionprep/contracts";
 import type { AuditService } from "../audit/audit-service.js";
 import {
@@ -12,6 +11,7 @@ import {
   type IdempotencyStore,
 } from "../idempotency/idempotency-store.js";
 import { requestFingerprint } from "../idempotency/request-fingerprint.js";
+import { sha256Hex } from "../shared/sha256.js";
 import type { BillingRepository } from "./billing-repository.js";
 import { planFor, usageForPlan } from "./billing-plan-usage.js";
 import { BillingDomainError } from "./billing-errors.js";
@@ -222,7 +222,7 @@ export class BillingService {
       "billing-webhook",
       claimKey,
       claimId,
-      createHash("sha256").update(input.rawBody).digest("hex"),
+      sha256Hex(input.rawBody),
       90 * 24 * 60 * 60,
     );
     if (claim.outcome === "conflict") {

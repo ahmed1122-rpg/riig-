@@ -73,7 +73,7 @@ describe("PostgresRetentionStore privacy fences", () => {
     });
   });
 
-  it("protects ready identity models in list, claim, and finalize", async () => {
+  it("protects references used by active source-preserving rigs", async () => {
     const statements: string[] = [];
     const query = vi.fn(async (sqlValue: unknown) => {
       const sql = String(sqlValue);
@@ -104,11 +104,14 @@ describe("PostgresRetentionStore privacy fences", () => {
     );
 
     const protectedStatements = statements.filter((sql) =>
-      sql.includes("character_identity_model_versions"),
+      sql.includes("character_rig_versions"),
     );
     expect(protectedStatements).toHaveLength(3);
     protectedStatements.forEach((sql) => {
-      expect(sql).toContain("model.status IN ('draft', 'training', 'ready')");
+      expect(sql).toContain("rig.document->'source'->>'referenceId'");
+      expect(sql).toContain(
+        "rig.status IN ('draft', 'needs-review', 'approved', 'exported')",
+      );
     });
   });
 

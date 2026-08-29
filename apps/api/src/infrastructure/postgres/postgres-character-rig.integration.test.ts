@@ -1,9 +1,7 @@
 import type {
   CharacterBible,
-  CharacterGenerationAttempt,
-  CharacterGenerationReview,
-  CharacterIdentityModelVersion,
   CharacterJob,
+  CharacterRigReview,
   CharacterRigVersion,
 } from "@motionprep/contracts";
 import { Pool } from "pg";
@@ -38,32 +36,33 @@ describe("PostgreSQL Character Rig persistence", () => {
     expect(await repository.saveBibleIfRevision(bible, null)).toBe(true);
     expect(await repository.findLatestBible(fixture.projectId)).toEqual(bible);
 
-    const model = makeModel(fixture, bible);
-    await repository.saveIdentityModelVersion(model);
-    const attempt = makeAttempt(fixture, bible, model, "generation-review-001");
-    await repository.saveGenerationAttempt(attempt);
-    const reviewable = makeReviewable(attempt);
-    await repository.saveGenerationAttempt(reviewable);
-    const review: CharacterGenerationReview = {
+    const reviewable = { ...makeRig(fixture, bible), status: "needs-review" as const };
+    await repository.saveRigVersion(reviewable);
+    const review: CharacterRigReview = {
       id: crypto.randomUUID(),
       projectId: fixture.projectId,
-      generationAttemptId: attempt.id,
+      rigVersionId: reviewable.id,
       decision: "approved",
-      reason: "The generated identity matches the approved references.",
+      reason: "The source composite and layer structure are verified.",
       reviewerUserId: fixture.userId,
       operationId: "review-operation-001",
       createdAt: now,
     };
-    const approved = { ...reviewable, status: "approved" as const };
+    const approved = {
+      ...reviewable,
+      status: "approved" as const,
+      approvedByUserId: fixture.userId,
+      approvedAt: now,
+    };
 
-    expect(await repository.commitGenerationReview(review, approved)).toBe(true);
-    expect(await repository.commitGenerationReview(review, approved)).toBe(false);
+    expect(await repository.commitRigReview(review, approved)).toBe(true);
+    expect(await repository.commitRigReview(review, approved)).toBe(false);
     expect(
-      await repository.findGenerationAttempt(fixture.projectId, attempt.id),
+      await repository.findRigVersion(fixture.projectId, reviewable.id),
     ).toMatchObject({ status: "approved" });
     expect(
-      await repository.listGenerationReviews(fixture.projectId, attempt.id),
-    ).toEqual([review]);
+      await repository.findRigReviewByOperation(fixture.userId, review.operationId),
+    ).toEqual(review);
   });
 
   it("converges concurrent version and idempotency conflicts without database errors", async () => {
@@ -78,34 +77,6 @@ describe("PostgreSQL Character Rig persistence", () => {
     expect(bibleResults.filter(Boolean)).toHaveLength(1);
 
     const bible = (await repository.findLatestBible(fixture.projectId))!;
-    const modelA = makeModel(fixture, bible);
-    const modelB = { ...makeModel(fixture, bible), version: modelA.version };
-    const modelResults = await Promise.all([
-      repository.saveIdentityModelVersion(modelA),
-      repository.saveIdentityModelVersion(modelB),
-    ]);
-    expect(modelResults.filter(Boolean)).toHaveLength(1);
-
-    const model = (await repository.findLatestIdentityModelVersion(
-      fixture.projectId,
-      bible.id,
-    ))!;
-    const attemptA = makeAttempt(
-      fixture,
-      bible,
-      model,
-      "generation-concurrent-001",
-    );
-    const attemptB = {
-      ...makeAttempt(fixture, bible, model, attemptA.idempotencyKey),
-      requestHash: attemptA.requestHash,
-    };
-    const generationResults = await Promise.all([
-      repository.saveGenerationAttempt(attemptA),
-      repository.saveGenerationAttempt(attemptB),
-    ]);
-    expect(generationResults.filter(Boolean)).toHaveLength(1);
-
     const rigA = makeRig(fixture, bible);
     const rigB = { ...makeRig(fixture, bible), version: rigA.version };
     const rigResults = await Promise.all([
@@ -155,11 +126,11 @@ describe("PostgreSQL Character Rig persistence", () => {
     const committer = new PostgresCharacterJobResultCommitter(pool);
     const bible = makeBible(fixture);
     await rigs.saveBibleIfRevision(bible, null);
-    const model = { ...makeModel(fixture, bible), status: "draft" as const };
-    await rigs.saveIdentityModelVersion(model);
+    const rig = makeRig(fixture, bible);
+    await rigs.saveRigVersion(rig);
     const job = {
       ...makeJob(fixture.projectId, "lease-fencing-operation"),
-      payload: { modelVersionId: model.id },
+      payload: { rigVersionId: rig.id, width: 128, height: 128 },
     };
     await jobs.save(job);
     await jobs.claimNext("worker-a", now, "2026-08-12T00:01:00.000Z");
@@ -175,11 +146,10 @@ describe("PostgreSQL Character Rig persistence", () => {
         "worker-a",
         "2026-08-12T00:01:00.002Z",
         {
-          kind: "identity-model",
-          model: {
-            ...model,
-            status: "ready",
-            providerModelReference: "stale:model",
+          kind: "rig",
+          rig: {
+            ...rig,
+            status: "needs-review",
             updatedAt: "2026-08-12T00:01:00.002Z",
           },
         },
@@ -191,11 +161,10 @@ describe("PostgreSQL Character Rig persistence", () => {
         "worker-b",
         "2026-08-12T00:01:01.000Z",
         {
-          kind: "identity-model",
-          model: {
-            ...model,
-            status: "ready",
-            providerModelReference: "winner:model",
+          kind: "rig",
+          rig: {
+            ...rig,
+            status: "needs-review",
             updatedAt: "2026-08-12T00:01:01.000Z",
           },
         },
@@ -203,8 +172,11 @@ describe("PostgreSQL Character Rig persistence", () => {
     ).toBe(true);
     expect(await jobs.findById(job.id)).toMatchObject({ status: "succeeded" });
     expect(
-      await rigs.findIdentityModelVersion(fixture.projectId, model.id),
-    ).toMatchObject({ providerModelReference: "winner:model" });
+      await rigs.findRigVersion(fixture.projectId, rig.id),
+    ).toMatchObject({
+      status: "needs-review",
+      updatedAt: "2026-08-12T00:01:01.000Z",
+    });
   });
 });
 
@@ -257,88 +229,6 @@ function makeBible(fixture: Fixture): CharacterBible {
   };
 }
 
-function makeModel(
-  fixture: Fixture,
-  bible: CharacterBible,
-): CharacterIdentityModelVersion {
-  return {
-    id: crypto.randomUUID(),
-    projectId: fixture.projectId,
-    bibleId: bible.id,
-    version: 1,
-    status: "ready",
-    providerKey: "integration",
-    providerModelReference: "integration:model",
-    baseModelReference: "integration-base",
-    datasetFingerprint: "a".repeat(64),
-    trainingConfiguration: { rank: 16 },
-    failureCode: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function makeAttempt(
-  fixture: Fixture,
-  bible: CharacterBible,
-  model: CharacterIdentityModelVersion,
-  idempotencyKey: string,
-): CharacterGenerationAttempt {
-  return {
-    id: crypto.randomUUID(),
-    projectId: fixture.projectId,
-    bibleId: bible.id,
-    identityModelVersionId: model.id,
-    target: { kind: "canonical-view", view: "left-profile" },
-    status: "queued",
-    controls: {
-      canvas: { width: 1024, height: 1024 },
-      seed: 42,
-      poseReferenceId: null,
-      depthReferenceId: null,
-      maskReferenceId: null,
-      parameters: {},
-    },
-    requestHash: "b".repeat(64),
-    idempotencyKey,
-    outputArtifact: null,
-    outputGeometry: null,
-    qualityReport: null,
-    failureCode: null,
-    createdByUserId: fixture.userId,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function makeReviewable(
-  attempt: CharacterGenerationAttempt,
-): CharacterGenerationAttempt {
-  return {
-    ...attempt,
-    status: "needs-review",
-    outputArtifact: {
-      objectKey: `projects/${attempt.projectId}/character-rig/generations/${attempt.id}.png`,
-      contentType: "image/png",
-      sizeBytes: 1,
-      sha256: "c".repeat(64),
-      createdAt: now,
-      retentionExpiresAt: null,
-    },
-    qualityReport: {
-      thresholdsSchemaVersion: 1,
-      landmarkMeanHeadWidthRatio: 0.01,
-      landmarkCriticalPointHeadWidthRatio: 0.01,
-      proportionDeviationRatio: 0.01,
-      paletteMeanDeltaE00: 1,
-      heroMaterialDeltaE00: 1,
-      outsideMaskChangedPixelRatio: 0,
-      severeDefects: [],
-      passedAutomatedGate: true,
-    },
-  };
-}
-
 function makeRig(fixture: Fixture, bible: CharacterBible): CharacterRigVersion {
   return {
     schemaVersion: "1.0",
@@ -347,6 +237,24 @@ function makeRig(fixture: Fixture, bible: CharacterBible): CharacterRigVersion {
     bibleId: bible.id,
     version: 1,
     status: "draft",
+    pipeline: "source-preserving",
+    failureCode: null,
+    sourceFingerprint: "f".repeat(64),
+    source: {
+      sourceVersionId: crypto.randomUUID(),
+      referenceId: crypto.randomUUID(),
+      artifact: {
+        objectKey: `projects/${fixture.projectId}/character-rig/source.png`,
+        contentType: "image/png",
+        sizeBytes: 1,
+        sha256: "a".repeat(64),
+        createdAt: now,
+        retentionExpiresAt: null,
+      },
+      layerDocumentRevision: 1,
+      pixelIdentityRequired: true,
+    },
+    canvas: { width: 128, height: 128 },
     nodes: [],
     psdArtifact: null,
     manifestArtifact: null,
@@ -361,11 +269,15 @@ function makeJob(projectId: string, operationKey: string): CharacterJob {
   return {
     id: crypto.randomUUID(),
     projectId,
-    type: "train-identity",
+    type: "compile-rig",
     status: "queued",
     operationKey,
     requestHash: "d".repeat(64),
-    payload: { modelVersionId: crypto.randomUUID() },
+    payload: {
+      rigVersionId: crypto.randomUUID(),
+      width: 128,
+      height: 128,
+    },
     attempt: 0,
     maxAttempts: 3,
     nextAttemptAt: now,

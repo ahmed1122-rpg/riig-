@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted for a controlled, disabled-by-default proof of concept. No GPU vendor,
-region, base model, or paid deployment is selected by this decision.
+Superseded by ADR 0020 on 2026-08-28. This historical proof-of-concept must not
+be used by the current product workflow.
 
 ## Context
 

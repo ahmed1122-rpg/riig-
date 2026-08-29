@@ -113,14 +113,12 @@ describe("OpenAPI discovery", () => {
       ["/v1/projects/{projectId}/character-rig/bible", "put"],
       ["/v1/projects/{projectId}/character-rig/bible/approve", "post"],
       ["/v1/projects/{projectId}/character-rig/references/current-source", "post"],
-      ["/v1/projects/{projectId}/character-rig/identity-model", "post"],
-      ["/v1/projects/{projectId}/character-rig/generations", "post"],
       [
-        "/v1/projects/{projectId}/character-rig/generations/{generationAttemptId}/reviews",
+        "/v1/projects/{projectId}/character-rig/rigs/{rigVersionId}/reviews",
         "post",
       ],
       [
-        "/v1/projects/{projectId}/character-rig/generations/{generationAttemptId}/artifact",
+        "/v1/projects/{projectId}/character-rig/rigs/{rigVersionId}/artifacts/{artifactType}",
         "get",
       ],
       ["/v1/projects/{projectId}/character-rig/compile", "post"],
@@ -141,14 +139,15 @@ describe("OpenAPI discovery", () => {
       );
     }
     expect(
-      document.paths["/v1/projects/{projectId}/character-rig/generations"].post
+      document.paths["/v1/projects/{projectId}/character-rig/compile"].post
         .requestBody.content["application/json"].schema.required,
-    ).toEqual(["bibleId", "identityModelVersionId", "target", "controls"]);
+    ).toEqual(["bibleId", "sourceVersionId", "width", "height"]);
     expect(
-      document.paths["/v1/projects/{projectId}/character-rig/identity-model"]
-        .post.responses["202"].content["application/json"].schema.properties
-        .data.required,
-    ).toEqual(["modelVersion", "job"]);
+      document.paths["/v1/projects/{projectId}/character-rig/identity-model"],
+    ).toBeUndefined();
+    expect(
+      document.paths["/v1/projects/{projectId}/character-rig/generations"],
+    ).toBeUndefined();
 
     await app.close();
   });

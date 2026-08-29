@@ -32,7 +32,7 @@ export function createImageGuidanceStroke(input: {
   points: NormalizedPoint[];
   createdAt?: string;
 }): ImageGuidanceStroke {
-  if (input.points.length < 2) {
+  if (input.points.length < 1) {
     throw new Error("GUIDANCE_STROKE_TOO_SHORT");
   }
 

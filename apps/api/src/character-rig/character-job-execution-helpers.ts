@@ -1,9 +1,5 @@
-import type {
-  CharacterGenerationAttempt,
-  CharacterJob,
-} from "@motionprep/contracts";
-import type { CharacterInferenceProvider } from "./character-inference-provider.js";
-import { CharacterProviderError } from "./character-inference-provider.js";
+import type { CharacterJob } from "@motionprep/contracts";
+import { CharacterJobError } from "./character-job-error.js";
 import type { CharacterJobResult } from "./character-job-result-committer.js";
 import type { CharacterJobExecutionContext } from "./character-job-execution-context.js";
 
@@ -11,16 +7,11 @@ export async function cleanupResultArtifacts(
   context: CharacterJobExecutionContext,
   result: CharacterJobResult,
 ): Promise<void> {
-  if (result.kind === "generation" && result.attempt.outputArtifact) {
-    await removeFailedArtifact(context, result.attempt.outputArtifact.objectKey);
-  }
-  if (result.kind === "rig") {
-    await Promise.all(
-      [result.rig.psdArtifact, result.rig.manifestArtifact]
-        .filter((artifact) => artifact !== null)
-        .map((artifact) => removeFailedArtifact(context, artifact.objectKey)),
-    );
-  }
+  await Promise.all(
+    [result.rig.psdArtifact, result.rig.manifestArtifact]
+      .filter((artifact) => artifact !== null)
+      .map((artifact) => removeFailedArtifact(context, artifact.objectKey)),
+  );
 }
 
 export async function removeFailedArtifact(
@@ -38,45 +29,10 @@ export async function removeFailedArtifact(
   }
 }
 
-export async function materializeGenerationArtifact(
-  context: CharacterJobExecutionContext,
-  job: CharacterJob,
-  attempt: CharacterGenerationAttempt,
-  artifact: Awaited<ReturnType<CharacterInferenceProvider["generate"]>>["artifact"],
-) {
-  const requiredPrefix = `projects/${job.projectId}/character-rig/`;
-  if (artifact.kind === "bytes") {
-    const objectKey = `${requiredPrefix}generations/${attempt.id}.png`;
-    return context.storage.put({
-      key: objectKey,
-      contentType: artifact.contentType,
-      sizeBytes: artifact.body.byteLength,
-      body: artifact.body,
-    });
-  }
-  if (!artifact.objectKey.startsWith(requiredPrefix)) {
-    throw new CharacterProviderError("CHARACTER_ARTIFACT_SCOPE_INVALID");
-  }
-  const expectedObjectKey = `${requiredPrefix}generations/${attempt.id}.png`;
-  if (artifact.objectKey !== expectedObjectKey) {
-    throw new CharacterProviderError("CHARACTER_ARTIFACT_SCOPE_INVALID");
-  }
-  const stored = await context.storage.inspect(artifact.objectKey);
-  if (
-    !stored ||
-    stored.contentType !== artifact.contentType ||
-    stored.sizeBytes !== artifact.sizeBytes ||
-    stored.sha256 !== artifact.sha256
-  ) {
-    throw new CharacterProviderError("CHARACTER_ARTIFACT_INTEGRITY_FAILED");
-  }
-  return stored;
-}
-
 export function requiredPayloadId(job: CharacterJob, key: string): string {
   const value = optionalPayloadId(job, key);
   if (!value) {
-    throw new CharacterProviderError("CHARACTER_JOB_PAYLOAD_INVALID");
+    throw new CharacterJobError("CHARACTER_JOB_PAYLOAD_INVALID");
   }
   return value;
 }
@@ -89,7 +45,7 @@ export function optionalPayloadId(job: CharacterJob, key: string): string | null
 export function requiredPayloadNumber(job: CharacterJob, key: string): number {
   const value = job.payload[key];
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
-    throw new CharacterProviderError("CHARACTER_JOB_PAYLOAD_INVALID");
+    throw new CharacterJobError("CHARACTER_JOB_PAYLOAD_INVALID");
   }
   return value;
 }
@@ -110,7 +66,7 @@ export function retryDelayMilliseconds(attempt: number): number {
 
 export function throwIfCharacterJobAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
-    throw new CharacterProviderError("CHARACTER_JOB_ABORTED");
+    throw new CharacterJobError("CHARACTER_JOB_ABORTED");
   }
 }
 

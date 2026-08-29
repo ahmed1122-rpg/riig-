@@ -1,4 +1,5 @@
 import type { ObjectStorage } from "../storage/object-storage.js";
+import { unknownErrorMessage } from "../shared/unknown-error.js";
 import type { RetentionConfig } from "./retention-config.js";
 import type {
   AccountDeletionProcessor,
@@ -85,7 +86,7 @@ export class RetentionCleanup {
       } catch (error) {
         failures.push({
           key: quarantine.objectKey,
-          message: errorMessage(error),
+          message: unknownErrorMessage(error),
         });
       }
     }
@@ -111,7 +112,7 @@ export class RetentionCleanup {
       } catch (error) {
         failures.push({
           key: `account-deletion:${request.id}`,
-          message: errorMessage(error),
+          message: unknownErrorMessage(error),
         });
       }
     }
@@ -134,7 +135,7 @@ export class RetentionCleanup {
       } catch (error) {
         failures.push({
           key: upload.objectKey,
-          message: errorMessage(error),
+          message: unknownErrorMessage(error),
         });
       }
     }
@@ -160,7 +161,7 @@ export class RetentionCleanup {
       } catch (error) {
         failures.push({
           key: artifact.objectKey,
-          message: errorMessage(error),
+          message: unknownErrorMessage(error),
         });
       }
     }
@@ -193,7 +194,7 @@ export class RetentionCleanup {
       } catch (error) {
         failures.push({
           key: reference.objectKey,
-          message: errorMessage(error),
+          message: unknownErrorMessage(error),
         });
       }
     }
@@ -225,14 +226,10 @@ export class RetentionCleanup {
       } catch (error) {
         failures.push({
           key: asset.objectKey,
-          message: errorMessage(error),
+          message: unknownErrorMessage(error),
         });
       }
     }
     return purged;
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

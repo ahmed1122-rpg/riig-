@@ -1,21 +1,20 @@
 import type {
-  CharacterCanonicalView,
-  CharacterGenerationAttempt,
+  CharacterArtifactReference,
+  CharacterReferenceAsset,
   CharacterRigNode,
   CharacterRigVersion,
-} from "@motionprep/contracts";
-import {
-  characterCanonicalViews,
-  characterRequiredFrontalBodyParts,
-  characterRequiredHeadParts,
+  LayerDocument,
+  LayerNode,
 } from "@motionprep/contracts";
 import { requestFingerprint } from "../idempotency/request-fingerprint.js";
+import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import type { CharacterJobRepository } from "./character-job-repository.js";
 import { CharacterJobService } from "./character-job-service.js";
 import type { CharacterRigRepository } from "./character-rig-repository.js";
 
 export interface QueueCharacterRigCompilationInput {
   projectId: string;
+  sourceVersionId: string;
   bibleId: string;
   width: number;
   height: number;
@@ -23,14 +22,16 @@ export interface QueueCharacterRigCompilationInput {
   requestedAt: string;
 }
 
+/** Compiles source pixels only; no inference provider participates. */
 export class CharacterRigCompilerService {
   readonly #jobs: CharacterJobService;
 
   constructor(
     private readonly repository: CharacterRigRepository,
-    jobs: CharacterJobRepository,
+    private readonly jobRepository: CharacterJobRepository,
+    private readonly documents: LayerDocumentRepository,
   ) {
-    this.#jobs = new CharacterJobService(jobs);
+    this.#jobs = new CharacterJobService(jobRepository);
   }
 
   async queue(input: QueueCharacterRigCompilationInput) {
@@ -38,63 +39,71 @@ export class CharacterRigCompilerService {
     if (!bible || bible.status !== "approved") {
       throw new CharacterRigCompilerError("CHARACTER_BIBLE_NOT_APPROVED");
     }
-    const attempts = await this.repository.listGenerationAttempts(
-      input.projectId,
-      bible.id,
-    );
-    const approvedParts = indexApprovedParts(attempts);
-    const missing = requiredPartKeys().filter((key) => !approvedParts.has(key));
-    if (missing.length > 0) {
-      throw new CharacterRigCompilerError(
-        "CHARACTER_RIG_PARTS_INCOMPLETE",
-        missing,
-      );
+    const [references, document] = await Promise.all([
+      this.repository.listReferences(input.projectId, bible.id),
+      this.documents.findBySource(input.projectId, input.sourceVersionId),
+    ]);
+    const source = selectSourceReference(references, input.sourceVersionId);
+    if (!source) {
+      throw new CharacterRigCompilerError("CHARACTER_SOURCE_REFERENCE_REQUIRED");
     }
-    const invalidGeometry = [...approvedParts.entries()]
-      .filter(([, attempt]) =>
-        !isValidPartGeometry(attempt, input.width, input.height),
-      )
-      .map(([key]) => key);
-    if (invalidGeometry.length > 0) {
-      throw new CharacterRigCompilerError(
-        "CHARACTER_RIG_PART_GEOMETRY_INVALID",
-        invalidGeometry,
-      );
+    if (source.canonicalView !== "frontal") {
+      throw new CharacterRigCompilerError("CHARACTER_SOURCE_MUST_BE_FRONTAL");
     }
-    const sourceFingerprint = requestFingerprint(
-      "character-rig-sources",
-      [...approvedParts.entries()]
-        .sort(([left], [right]) => compareStrings(left, right))
-        .map(([key, attempt]) => ({
-          key,
-          artifactSha256: attempt.outputArtifact!.sha256,
-        })),
-    );
-    const requestHash = requestFingerprint("character-rig-compilation", {
+    if (!document) {
+      throw new CharacterRigCompilerError("CHARACTER_SOURCE_LAYERS_NOT_READY");
+    }
+    validateSourceDocument(document, input, source);
+
+    const sourceFingerprint = fingerprintSource(document, source);
+    const requestHash = requestFingerprint("character-rig-source-compilation", {
       bibleId: bible.id,
-      width: input.width,
-      height: input.height,
+      sourceVersionId: input.sourceVersionId,
       sourceFingerprint,
     });
     const operationKey = `rig-compile:${input.idempotencyKey}`;
+    const replay = await this.findReplay(
+      input.projectId,
+      operationKey,
+      requestHash,
+    );
+    if (replay) return replay;
     const latest = await this.repository.findLatestRigVersion(
       input.projectId,
       bible.id,
     );
     const matching =
-      latest?.sourceFingerprint === sourceFingerprint &&
+      latest?.pipeline === "source-preserving" &&
+      latest.sourceFingerprint === sourceFingerprint &&
       latest.canvas?.width === input.width &&
       latest.canvas.height === input.height;
+    if (matching && latest) {
+      const existingCompile = (await this.jobRepository.listByProject(input.projectId))
+        .find(
+          (job) =>
+            job.type === "compile-rig" &&
+            job.payload.rigVersionId === latest.id,
+        );
+      if (
+        existingCompile &&
+        (latest.status !== "draft" ||
+          !["failed", "cancelled"].includes(existingCompile.status))
+      ) {
+        return { rig: latest, job: existingCompile, replayed: true };
+      }
+      if (latest.status !== "draft") {
+        throw new CharacterRigCompilerError("CHARACTER_RIG_JOB_MISSING");
+      }
+    }
     const rig = matching && latest
       ? latest
-      : createRigVersion({
+      : createSourcePreservingRig({
           projectId: input.projectId,
           bibleId: bible.id,
           version: (latest?.version ?? 0) + 1,
-          approvedParts,
+          source,
+          document,
           sourceFingerprint,
-          width: input.width,
-          height: input.height,
           now: input.requestedAt,
         });
     let persistedRig = rig;
@@ -105,7 +114,8 @@ export class CharacterRigCompilerService {
         bible.id,
       );
       if (
-        raced?.sourceFingerprint !== sourceFingerprint ||
+        raced?.pipeline !== "source-preserving" ||
+        raced.sourceFingerprint !== sourceFingerprint ||
         raced.canvas?.width !== input.width ||
         raced.canvas.height !== input.height
       ) {
@@ -129,6 +139,30 @@ export class CharacterRigCompilerService {
     });
     return { rig: persistedRig, job, replayed };
   }
+
+  private async findReplay(
+    projectId: string,
+    operationKey: string,
+    requestHash: string,
+  ) {
+    const job = await this.jobRepository.findByOperationKey(
+      projectId,
+      operationKey,
+    );
+    if (!job) return null;
+    if (job.requestHash !== requestHash) {
+      throw new CharacterRigCompilerError("CHARACTER_JOB_IDEMPOTENCY_CONFLICT");
+    }
+    const rigVersionId = job.payload.rigVersionId;
+    if (typeof rigVersionId !== "string") {
+      throw new CharacterRigCompilerError("CHARACTER_RIG_JOB_INVALID");
+    }
+    const rig = await this.repository.findRigVersion(projectId, rigVersionId);
+    if (!rig) {
+      throw new CharacterRigCompilerError("CHARACTER_RIG_NOT_FOUND");
+    }
+    return { rig, job, replayed: true };
+  }
 }
 
 export class CharacterRigCompilerError extends Error {
@@ -140,89 +174,99 @@ export class CharacterRigCompilerError extends Error {
   }
 }
 
-function indexApprovedParts(attempts: CharacterGenerationAttempt[]) {
-  const result = new Map<string, CharacterGenerationAttempt>();
-  for (const attempt of attempts) {
-    if (
-      attempt.status !== "approved" ||
-      attempt.target.kind !== "part" ||
-      !attempt.outputArtifact
-    ) {
-      continue;
-    }
-    const key = partKey(attempt.target.view, attempt.target.partName);
-    if (!result.has(key)) result.set(key, attempt);
-  }
-  return result;
-}
-
-function requiredPartKeys(): string[] {
-  return characterCanonicalViews.flatMap((view) =>
-    [
-      ...characterRequiredHeadParts,
-      ...(view === "frontal" ? characterRequiredFrontalBodyParts : []),
-    ].map((part) => partKey(view, part)),
+function selectSourceReference(
+  references: readonly CharacterReferenceAsset[],
+  sourceVersionId: string,
+): CharacterReferenceAsset | undefined {
+  return references.find(
+    (reference) =>
+      reference.role === "identity-primary" &&
+      reference.sourceVersionId === sourceVersionId,
   );
 }
 
-function partKey(view: CharacterCanonicalView, part: string): string {
-  return `${view}:${part}`;
+function validateSourceDocument(
+  document: LayerDocument,
+  input: QueueCharacterRigCompilationInput,
+  source: CharacterReferenceAsset,
+): void {
+  if (
+    document.sourceVersionId !== input.sourceVersionId ||
+    document.width !== input.width ||
+    document.height !== input.height ||
+    source.width !== input.width ||
+    source.height !== input.height
+  ) {
+    throw new CharacterRigCompilerError("CHARACTER_SOURCE_CANVAS_MISMATCH");
+  }
+  if (!Number.isSafeInteger(document.revision) || (document.revision ?? 0) < 1) {
+    throw new CharacterRigCompilerError("CHARACTER_SOURCE_REVISION_INVALID");
+  }
+  if (document.layers.length === 0) {
+    throw new CharacterRigCompilerError("CHARACTER_SOURCE_LAYERS_EMPTY");
+  }
+  const ids = new Set(document.layers.map((layer) => layer.id));
+  let rasterCount = 0;
+  for (const layer of document.layers) {
+    if (layer.kind === "text") {
+      throw new CharacterRigCompilerError("CHARACTER_SOURCE_LAYER_KIND_UNSUPPORTED");
+    }
+    if (layer.parentId && !ids.has(layer.parentId)) {
+      throw new CharacterRigCompilerError("CHARACTER_SOURCE_LAYER_PARENT_INVALID");
+    }
+    if (layer.kind !== "raster") continue;
+    rasterCount += 1;
+    if (!layer.rasterAsset || !validBounds(layer, document.width, document.height)) {
+      throw new CharacterRigCompilerError("CHARACTER_SOURCE_LAYER_INVALID");
+    }
+  }
+  if (rasterCount === 0) {
+    throw new CharacterRigCompilerError("CHARACTER_SOURCE_RASTER_REQUIRED");
+  }
 }
 
-function createRigVersion(input: {
+function fingerprintSource(
+  document: LayerDocument,
+  source: CharacterReferenceAsset,
+): string {
+  return requestFingerprint("character-rig-source-layers", {
+    sourceVersionId: document.sourceVersionId,
+    sourceSha256: source.artifact.sha256,
+    revision: document.revision,
+    width: document.width,
+    height: document.height,
+    layers: document.layers.map((layer) => ({
+      id: layer.id,
+      parentId: layer.parentId,
+      kind: layer.kind,
+      name: layer.name,
+      visible: layer.visible,
+      opacity: layer.opacity,
+      zIndex: layer.zIndex,
+      bounds: layer.bounds,
+      rasterSha256: layer.rasterAsset?.sha256 ?? null,
+    })),
+  });
+}
+
+function createSourcePreservingRig(input: {
   projectId: string;
   bibleId: string;
   version: number;
-  approvedParts: ReadonlyMap<string, CharacterGenerationAttempt>;
+  source: CharacterReferenceAsset;
+  document: LayerDocument;
   sourceFingerprint: string;
-  width: number;
-  height: number;
   now: string;
 }): CharacterRigVersion {
   const rootId = crypto.randomUUID();
+  const frontalId = crypto.randomUUID();
   const nodes: CharacterRigNode[] = [
     groupNode(rootId, null, "+Character", null, "character-root", 0),
+    groupNode(frontalId, rootId, "+Frontal", "frontal", "view", 0),
+    ...input.document.layers.map((layer) =>
+      sourceLayerNode(layer, frontalId, input.now),
+    ),
   ];
-  for (const [viewIndex, view] of characterCanonicalViews.entries()) {
-    const viewId = crypto.randomUUID();
-    nodes.push(
-      groupNode(
-        viewId,
-        rootId,
-        `+${titleCase(view)}`,
-        view,
-        "view",
-        viewIndex,
-      ),
-    );
-    const parts = [
-      ...characterRequiredHeadParts,
-      ...(view === "frontal" ? characterRequiredFrontalBodyParts : []),
-    ];
-    for (const [partIndex, part] of parts.entries()) {
-      const attempt = input.approvedParts.get(partKey(view, part));
-      if (!attempt?.outputArtifact) {
-        throw new CharacterRigCompilerError("CHARACTER_RIG_PARTS_INCOMPLETE", [
-          partKey(view, part),
-        ]);
-      }
-      nodes.push({
-        id: crypto.randomUUID(),
-        parentId: viewId,
-        kind: "raster",
-        name: `+${titleCase(part)}`,
-        canonicalView: view,
-        semanticPart: part,
-        sourceGenerationAttemptId: attempt.id,
-        artifact: attempt.outputArtifact,
-        bounds: structuredClone(attempt.outputGeometry!.bounds),
-        visible: view === "frontal",
-        locked: false,
-        opacity: 1,
-        zIndex: partIndex,
-      });
-    }
-  }
   return {
     schemaVersion: "1.0",
     id: crypto.randomUUID(),
@@ -230,9 +274,17 @@ function createRigVersion(input: {
     bibleId: input.bibleId,
     version: input.version,
     status: "draft",
+    pipeline: "source-preserving",
     failureCode: null,
     sourceFingerprint: input.sourceFingerprint,
-    canvas: { width: input.width, height: input.height },
+    source: {
+      sourceVersionId: input.source.sourceVersionId,
+      referenceId: input.source.id,
+      artifact: structuredClone(input.source.artifact),
+      layerDocumentRevision: input.document.revision!,
+      pixelIdentityRequired: true,
+    },
+    canvas: { width: input.document.width, height: input.document.height },
     nodes,
     psdArtifact: null,
     manifestArtifact: null,
@@ -243,31 +295,49 @@ function createRigVersion(input: {
   };
 }
 
-function isValidPartGeometry(
-  attempt: CharacterGenerationAttempt,
-  width: number,
-  height: number,
-): boolean {
-  const geometry = attempt.outputGeometry;
-  if (
-    !geometry ||
-    geometry.canvas.width !== width ||
-    geometry.canvas.height !== height
-  ) {
-    return false;
-  }
-  const bounds = geometry.bounds;
-  return (
-    Number.isSafeInteger(bounds.x) &&
-    Number.isSafeInteger(bounds.y) &&
-    Number.isSafeInteger(bounds.width) &&
-    Number.isSafeInteger(bounds.height) &&
-    bounds.x >= 0 &&
-    bounds.y >= 0 &&
-    bounds.width > 0 &&
-    bounds.height > 0 &&
-    bounds.x + bounds.width <= width &&
-    bounds.y + bounds.height <= height
+function sourceLayerNode(
+  layer: LayerNode,
+  frontalId: string,
+  createdAt: string,
+): CharacterRigNode {
+  const artifact: CharacterArtifactReference | null = layer.rasterAsset
+    ? {
+        ...structuredClone(layer.rasterAsset),
+        createdAt,
+        retentionExpiresAt: null,
+      }
+    : null;
+  return {
+    id: layer.id,
+    parentId: layer.parentId ?? frontalId,
+    kind: layer.kind === "raster" ? "raster" : "group",
+    name: layer.name,
+    canonicalView: "frontal",
+    semanticPart: null,
+    sourceLayerId: layer.id,
+    artifact,
+    bounds: layer.bounds ? structuredClone(layer.bounds) : null,
+    visible: layer.visible,
+    locked: layer.locked || layer.fixed,
+    opacity: layer.opacity,
+    zIndex: layer.zIndex,
+  };
+}
+
+function validBounds(layer: LayerNode, width: number, height: number): boolean {
+  const bounds = layer.bounds;
+  return Boolean(
+    bounds &&
+      Number.isSafeInteger(bounds.x) &&
+      Number.isSafeInteger(bounds.y) &&
+      Number.isSafeInteger(bounds.width) &&
+      Number.isSafeInteger(bounds.height) &&
+      bounds.x >= 0 &&
+      bounds.y >= 0 &&
+      bounds.width > 0 &&
+      bounds.height > 0 &&
+      bounds.x + bounds.width <= width &&
+      bounds.y + bounds.height <= height,
   );
 }
 
@@ -275,7 +345,7 @@ function groupNode(
   id: string,
   parentId: string | null,
   name: `+${string}`,
-  canonicalView: CharacterCanonicalView | null,
+  canonicalView: "frontal" | null,
   semanticPart: string,
   zIndex: number,
 ): CharacterRigNode {
@@ -286,23 +356,12 @@ function groupNode(
     name,
     canonicalView,
     semanticPart,
-    sourceGenerationAttemptId: null,
+    sourceLayerId: null,
     artifact: null,
     bounds: null,
-    visible: canonicalView === null || canonicalView === "frontal",
+    visible: true,
     locked: false,
     opacity: 1,
     zIndex,
   };
-}
-
-function titleCase(value: string): string {
-  return value
-    .split("-")
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
-}
-
-function compareStrings(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }

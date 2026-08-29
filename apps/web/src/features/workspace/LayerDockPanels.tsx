@@ -254,7 +254,7 @@ export const LayerRow = memo(function LayerRow({
 
 export function LayerSkeleton() {
   return (
-    <div className="pro-layer-skeleton" aria-label="جارٍ تحميل الطبقات">
+    <div className="pro-layer-skeleton" role="status" aria-label="جارٍ تحميل الطبقات">
       {Array.from({ length: 7 }, (_, index) => (
         <i key={index} />
       ))}

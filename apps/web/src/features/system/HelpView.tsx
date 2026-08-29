@@ -32,10 +32,10 @@ export function HelpView() {
             لا تحتاج إلى فصل كل تفصيلة. حدّد الحركة المطلوبة، راجع الحواف
             والتسمية، ثم احتفظ بإصدار يمكنك الرجوع إليه قبل التصدير.
           </p>
-          <div className="help-atlas__tags" aria-label="نقاط المراجعة">
-            <span><Icon name="layers" size={15} /> تسمية واضحة</span>
-            <span><Icon name="review" size={15} /> مراجعة بصرية</span>
-            <span><Icon name="history" size={15} /> إصدار محفوظ</span>
+          <div className="help-atlas__tags" role="list" aria-label="نقاط المراجعة">
+            <span role="listitem"><Icon name="layers" size={15} /> تسمية واضحة</span>
+            <span role="listitem"><Icon name="review" size={15} /> مراجعة بصرية</span>
+            <span role="listitem"><Icon name="history" size={15} /> إصدار محفوظ</span>
           </div>
         </div>
         <img

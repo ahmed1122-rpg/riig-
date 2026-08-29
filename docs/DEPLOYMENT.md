@@ -41,12 +41,9 @@ access keys are optional when the runner receives a workload identity. For AWS
 OIDC, set `AWS_ROLE_ARN` and `AWS_REGION` on the protected environment and
 leave the object-storage access/secret key pair unset. For another
 S3-compatible provider, leave `AWS_ROLE_ARN` unset and provide both secrets;
-   the workflow rejects mixed or partial credential modes. Set the protected
-   `CHARACTER_RIG_ENABLED` variable explicitly. While it is `false`, the same
-   workflow retains a release-bound fail-closed record. When it is `true`, also
-   provide `CHARACTER_INFERENCE_URL` and `CHARACTER_INFERENCE_API_KEY`; the
-   workflow verifies the live GPU Serverless async contract and packages its
-   redacted evidence for stable promotion.
+the workflow rejects mixed or partial credential modes. Character Rig has no
+external inference dependency; its production gate is the source-preservation
+test suite, licensed Adobe Golden evidence, and explicit activation approval.
 
 After `release-images` has created signed candidate digests, but before a tag
 or stable release exists, run `staging-readiness` on `main`. It performs live,
@@ -151,27 +148,16 @@ use Stripe Customer Portal.
 13. Store every completed workload file in a secrets manager. The production
     launcher rejects reused env files, workload identities, database users, or
     explicit S3 credentials. Do not commit any of them.
-14. Keep `CHARACTER_RIG_ENABLED=false` by default. To enable the optional
-    identity-preserving pipeline, configure the private HTTPS inference
-    endpoint and secret, set `CHARACTER_INFERENCE_PROTOCOL=async-v1`, pass
-    `npm run verify:character-provider`, the Character benchmark, and Adobe Golden, then
-    start `worker-character` with the `character-rig` Compose profile. Follow
-     [`runbooks/character-rig-operations.md`](runbooks/character-rig-operations.md).
-    `CHARACTER_INFERENCE_URL` may include a provider path prefix; both
-    `https://provider.example/private-api` and the trailing-slash form resolve
-    requests below `/private-api/`. Credentials, query strings, and fragments
-    are rejected. Do not include `/v1` unless it is genuinely part of the
-    provider's prefix, because the adapter appends its own versioned routes.
-    The initial provider policy requires scale-to-zero, zero minimum replicas,
-    at most two replicas, and target concurrency one. See
-    [`CHARACTER_GPU_SERVERLESS.md`](CHARACTER_GPU_SERVERLESS.md); these settings
-    govern the external GPU endpoint, not the CPU Compose worker.
+14. Keep `CHARACTER_RIG_ENABLED=false` by default. Before enabling the optional
+    source-preserving compiler, pass the Character source/reference/compiler,
+    API, UI, pixel-identity PSD, benchmark, and licensed Adobe Golden gates;
+    then start `worker-character` with the `character-rig` Compose profile.
+    Follow [`runbooks/character-rig-operations.md`](runbooks/character-rig-operations.md).
     The API advertises Character Studio only after both the flag is enabled and
     a fresh `worker-character` heartbeat is visible. Keep
     `CHARACTER_DRAIN_TIMEOUT_MS=30000` below the Compose stop grace period so an
-    interrupted inference request is cancelled and its fenced job is requeued.
-    For local end-to-end development, use `npm run dev:stack:character` after a
-    compatible provider is listening at the configured URL.
+    interrupted compile is fenced and requeued. For local end-to-end
+    development, use `npm run dev:stack:character`.
 15. Set `TRUSTED_PROXY_CIDR` to the narrow source CIDR used by the immediate TLS
     load balancer when it connects to Nginx. The load balancer must overwrite
     `X-Forwarded-Proto` and append the socket client address to
@@ -241,6 +227,26 @@ Its single command runs `npm run quality` and writes
 `artifacts/qa/quality-summary.json`, including the application/toolchain
 identity, timestamps, duration, outcome, and CI SHA when supplied. The QA image
 must never be promoted as a runtime artifact.
+
+For a local Linux/amd64 image smoke before CI, build the two production
+artifacts explicitly. Both builds use immutable base-image digests and a
+bounded BuildKit cache; neither image receives `.env`, test output, or host
+dependency directories from the build
+context.
+
+```bash
+docker buildx build --platform linux/amd64 --target runtime --load \
+  --tag motionprep-runtime:local .
+docker buildx build --platform linux/amd64 --file Dockerfile.web --load \
+  --tag motionprep-web:local .
+```
+
+The runtime image contains production dependencies and compiled output only,
+removes package-manager executables and TypeScript-only files, and runs as
+`node`. The web image runs as `nginx` with its root-only Nginx directive
+removed; Compose supplies only the bounded writable paths required for template
+rendering and caches. Never prune Docker volumes as part of image cleanup:
+PostgreSQL, Redis, MinIO, and ClamAV data may live there.
 
 The repository also enables npm's strict install-script policy in `.npmrc`.
 Only the exact reviewed `esbuild` postinstall and macOS-only `fsevents` native

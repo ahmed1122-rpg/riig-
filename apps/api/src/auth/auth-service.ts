@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type {
   LegalAcceptance,
   SessionView,
@@ -16,6 +16,7 @@ import type {
   SessionRecord,
   UserRecord,
 } from "./auth-repository.js";
+import { sha256Hex } from "../shared/sha256.js";
 import {
   InMemoryLoginAttemptStore,
   type LoginAttemptStore,
@@ -426,7 +427,7 @@ export class AuthService {
   }
 
   private hashToken(token: string): string {
-    return createHash("sha256").update(token).digest("hex");
+    return sha256Hex(token);
   }
 
   private publicUser(user: UserRecord): UserSummary {

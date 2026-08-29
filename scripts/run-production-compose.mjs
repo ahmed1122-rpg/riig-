@@ -81,9 +81,6 @@ export function validateServiceEnvironmentIsolation(sources) {
   if (api?.has("MIGRATION_DATABASE_URL")) {
     violations.push("The API environment cannot receive MIGRATION_DATABASE_URL.");
   }
-  if (api?.get("CHARACTER_INFERENCE_API_KEY")?.trim()) {
-    violations.push("The API environment cannot receive the Character provider secret.");
-  }
 
   const forbiddenWorkerSecrets = [
     "AUTH_ENCRYPTION_KEY",
@@ -99,12 +96,6 @@ export function validateServiceEnvironmentIsolation(sources) {
           violations.push(`${name} cannot receive API-only secret ${secret}.`);
         }
       }
-    }
-    if (
-      name !== "MOTIONPREP_CHARACTER_WORKER_ENV_FILE" &&
-      environment.get("CHARACTER_INFERENCE_API_KEY")?.trim()
-    ) {
-      violations.push(`${name} cannot receive the Character provider secret.`);
     }
   }
 

@@ -379,7 +379,7 @@ export function PdfGuidanceEditor({
               </select>
             </label>
           )}
-          <div className="generated-layer-preview" aria-label="معاينة أسماء الطبقات">
+          <div className="generated-layer-preview" role="group" aria-label="معاينة أسماء الطبقات">
             <span>معاينة الأسماء</span>
             <div>
               {names.length > 0

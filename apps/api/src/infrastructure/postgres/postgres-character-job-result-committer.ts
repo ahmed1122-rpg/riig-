@@ -68,40 +68,6 @@ async function persistResult(
   client: PoolClient,
   result: CharacterJobResult,
 ): Promise<boolean> {
-  if (result.kind === "identity-model") {
-    const saved = await client.query(
-      `UPDATE character_identity_model_versions
-       SET status = $3, provider_key = $4, document = $5::jsonb,
-           updated_at = $6::timestamptz
-       WHERE id = $1 AND project_id = $2
-       RETURNING id`,
-      [
-        result.model.id,
-        result.model.projectId,
-        result.model.status,
-        result.model.providerKey,
-        JSON.stringify(result.model),
-        result.model.updatedAt,
-      ],
-    );
-    return saved.rowCount === 1;
-  }
-  if (result.kind === "generation") {
-    const saved = await client.query(
-      `UPDATE character_generation_attempts
-       SET status = $3, document = $4::jsonb, updated_at = $5::timestamptz
-       WHERE id = $1 AND project_id = $2
-       RETURNING id`,
-      [
-        result.attempt.id,
-        result.attempt.projectId,
-        result.attempt.status,
-        JSON.stringify(result.attempt),
-        result.attempt.updatedAt,
-      ],
-    );
-    return saved.rowCount === 1;
-  }
   const saved = await client.query(
     `UPDATE character_rig_versions
      SET status = $3, document = $4::jsonb, approved_by_user_id = $5,
@@ -122,9 +88,5 @@ async function persistResult(
 }
 
 function resultProjectId(result: CharacterJobResult): string {
-  return result.kind === "identity-model"
-    ? result.model.projectId
-    : result.kind === "generation"
-      ? result.attempt.projectId
-      : result.rig.projectId;
+  return result.rig.projectId;
 }

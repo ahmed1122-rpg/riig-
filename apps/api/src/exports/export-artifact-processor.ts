@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
 import type { ExportJob, ProjectKind } from "@motionprep/contracts";
 import { ExportAdapterError } from "@motionprep/export-adapters";
 import { validateProductionDocument } from "@motionprep/layer-domain";
 import type { LayerDocumentRepository } from "../processing/processing-repository.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
+import { sha256Hex } from "../shared/sha256.js";
 import type { UploadRepository } from "../uploads/upload-repository.js";
 import { ExportArtifactBuilder } from "./export-artifact-builder.js";
 import type { GeneratedArtifact } from "./export-artifact-helpers.js";
@@ -101,7 +101,7 @@ export class ExportArtifactProcessor {
         objectKey: attemptObjectKey,
         filename: artifact.filename,
         sizeBytes: artifact.body.byteLength,
-        sha256: createHash("sha256").update(artifact.body).digest("hex"),
+        sha256: sha256Hex(artifact.body),
         expiresAt,
       },
       leaseOwner: workerId ? null : verifying.leaseOwner,

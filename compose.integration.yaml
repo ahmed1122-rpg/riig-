@@ -309,6 +309,19 @@ services:
       timeout: 3s
       retries: 20
 
+  worker-character:
+    <<: *runtime
+    depends_on: *application-dependencies
+    command:
+      - node
+      - --conditions=production
+      - apps/worker-character/dist/index.js
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-worker-health.mjs", "character"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   worker-security:
     <<: *runtime
     depends_on: *application-dependencies

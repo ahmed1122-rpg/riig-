@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256Hex } from "../shared/sha256.js";
 
 /**
  * Produces a deterministic JSON representation for request identity checks.
@@ -10,11 +10,7 @@ export function canonicalRequestJson(value: unknown): string {
 }
 
 export function requestFingerprint(namespace: string, value: unknown): string {
-  return createHash("sha256")
-    .update(namespace, "utf8")
-    .update("\0", "utf8")
-    .update(canonicalRequestJson(value), "utf8")
-    .digest("hex");
+  return sha256Hex(`${namespace}\0${canonicalRequestJson(value)}`);
 }
 
 function canonicalize(

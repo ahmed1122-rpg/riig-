@@ -191,9 +191,10 @@ export class PostgresRetentionStore implements RetentionStore {
       `SELECT reference.id, reference.artifact->>'objectKey' AS object_key
        FROM character_reference_assets reference
        WHERE reference.retention_expires_at <= $1 AND reference.artifact ? 'objectKey'
-         AND NOT EXISTS (SELECT 1 FROM character_identity_model_versions model
-           WHERE model.bible_id = reference.bible_id
-             AND model.status IN ('draft', 'training', 'ready'))
+         AND NOT EXISTS (SELECT 1 FROM character_rig_versions rig
+           WHERE rig.project_id = reference.project_id
+             AND rig.document->'source'->>'referenceId' = reference.id::text
+             AND rig.status IN ('draft', 'needs-review', 'approved', 'exported'))
        ORDER BY reference.retention_expires_at, reference.id LIMIT $2`,
       [now, limit],
     );
@@ -224,9 +225,10 @@ export class PostgresRetentionStore implements RetentionStore {
            AND reference.retention_expires_at <= $3
            AND (reference.purge_claimed_at IS NULL
              OR reference.purge_claimed_at <= $3::timestamptz - interval '1 hour')
-           AND NOT EXISTS (SELECT 1 FROM character_identity_model_versions model
-             WHERE model.bible_id = reference.bible_id
-               AND model.status IN ('draft', 'training', 'ready'))`,
+           AND NOT EXISTS (SELECT 1 FROM character_rig_versions rig
+             WHERE rig.project_id = reference.project_id
+               AND rig.document->'source'->>'referenceId' = reference.id::text
+               AND rig.status IN ('draft', 'needs-review', 'approved', 'exported'))`,
         [reference.referenceId, reference.objectKey, now],
       );
       await client.query("COMMIT");
@@ -243,9 +245,10 @@ export class PostgresRetentionStore implements RetentionStore {
     const result = await this.pool.query(
       `DELETE FROM character_reference_assets WHERE id = $1
        AND retention_expires_at <= $2 AND purge_claimed_at = $2
-       AND NOT EXISTS (SELECT 1 FROM character_identity_model_versions model
-         WHERE model.bible_id = character_reference_assets.bible_id
-           AND model.status IN ('draft', 'training', 'ready'))`,
+       AND NOT EXISTS (SELECT 1 FROM character_rig_versions rig
+         WHERE rig.project_id = character_reference_assets.project_id
+           AND rig.document->'source'->>'referenceId' = character_reference_assets.id::text
+           AND rig.status IN ('draft', 'needs-review', 'approved', 'exported'))`,
       [referenceId, now],
     );
     return result.rowCount === 1;

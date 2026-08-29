@@ -357,6 +357,7 @@ export async function buildApp(
     uploads: uploadRepository,
     storage: objectStorage,
     audit: auditService,
+    layerDocuments: layerDocumentRepository,
     enabled: config.CHARACTER_RIG_ENABLED,
     ...(dependencies.now ? { now: dependencies.now } : {}),
     repositories: {

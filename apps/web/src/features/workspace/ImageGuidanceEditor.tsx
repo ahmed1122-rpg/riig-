@@ -242,7 +242,7 @@ export function ImageGuidanceEditor({
                 : "Raster أصلية"
             }`}
           </span>
-          <div className="overlay-legend" aria-label="دليل ألوان الإرشاد">
+          <div className="overlay-legend" role="group" aria-label="دليل ألوان الإرشاد">
             {imagePrompts.slice(0, 3).map((item) => <span key={item.id}><i style={{ "--guide-color": item.color } as React.CSSProperties} />{item.label}</span>)}
           </div>
         </div>

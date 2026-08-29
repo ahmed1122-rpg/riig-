@@ -15,8 +15,6 @@ vi.mock("../../lib/api/character-rig-client", () => ({
 const emptyStudio: CharacterRigStudioState = {
   bible: null,
   references: [],
-  identityModel: null,
-  generations: [],
   rig: null,
   jobs: [],
 };

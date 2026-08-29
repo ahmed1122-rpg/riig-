@@ -2,6 +2,7 @@ import type { UserSummary } from "@motionprep/contracts";
 import type { AuthRepository } from "../auth/auth-repository.js";
 import type { AuthService } from "../auth/auth-service.js";
 import type { ObjectStorage } from "../storage/object-storage.js";
+import { unknownErrorMessage } from "../shared/unknown-error.js";
 
 export interface AccountDataExport {
   schemaVersion: "2";
@@ -157,7 +158,7 @@ export class AccountDeletionProcessor {
         await this.repository.markDeletionFailed(
           request.id,
           attemptedAt,
-          errorMessage(error).slice(0, 1_000),
+          unknownErrorMessage(error).slice(0, 1_000),
           processorLeaseId,
         );
       } catch (markError) {
@@ -399,8 +400,4 @@ export class InMemoryAccountPrivacyRepository
       throw new Error("Account deletion processor lease was lost.");
     }
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

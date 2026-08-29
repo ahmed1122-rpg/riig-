@@ -6,10 +6,7 @@ import {
 import {
   characterBibleSchema,
   characterReferenceSchema,
-  characterReviewSchema,
   characterStateSchema,
-  generationQueueSchema,
-  identityQueueSchema,
   rigQueueSchema,
   rigReviewSchema,
 } from "./openapi-character-schemas.js";
@@ -324,31 +321,6 @@ export const documentedSuccessResponses = new Map<
   [
     "POST /v1/projects/:projectId/character-rig/references/current-source",
     { 201: successEnvelope(characterReferenceSchema, "Created Character reference") },
-  ],
-  [
-    "POST /v1/projects/:projectId/character-rig/identity-model",
-    {
-      200: successEnvelope(identityQueueSchema, "Replayed identity training"),
-      202: successEnvelope(identityQueueSchema, "Accepted identity training"),
-    },
-  ],
-  [
-    "POST /v1/projects/:projectId/character-rig/generations",
-    {
-      200: successEnvelope(generationQueueSchema, "Replayed Character generation"),
-      202: successEnvelope(generationQueueSchema, "Accepted Character generation"),
-    },
-  ],
-  [
-    "POST /v1/projects/:projectId/character-rig/generations/:generationAttemptId/reviews",
-    {
-      200: successEnvelope(characterReviewSchema, "Replayed Character review"),
-      201: successEnvelope(characterReviewSchema, "Created Character review"),
-    },
-  ],
-  [
-    "GET /v1/projects/:projectId/character-rig/generations/:generationAttemptId/artifact",
-    { 200: { type: "string", format: "binary", description: "Verified PNG artifact" } },
   ],
   [
     "POST /v1/projects/:projectId/character-rig/compile",

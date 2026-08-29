@@ -32,7 +32,7 @@ const pdfModes = [
 
 function Brand() {
   return (
-    <span className="marketing-brand" aria-label="MotionPrep">
+    <span className="marketing-brand" role="img" aria-label="MotionPrep">
       <span aria-hidden="true">
         <Icon name="layers" size={21} />
       </span>
@@ -46,7 +46,7 @@ function Brand() {
 
 function PipelineRibbon() {
   return (
-    <div className="marketing-pipeline" aria-label="من المصدر إلى طبقات جاهزة ثم ملف PSD">
+    <div className="marketing-pipeline" role="group" aria-label="من المصدر إلى طبقات جاهزة ثم ملف PSD">
       <div className="pipeline-art">
         <picture>
           <img
@@ -297,9 +297,9 @@ export default function LandingPage({
                 اختر مستوى الفصل الملائم للسرد. عدد طبقات PDF لا يخضع لسقف
                 طبقات الصور، وتظل الخلفية البيضاء طبقة مقفلة.
               </p>
-              <div className="pdf-mode-map" aria-label="أنماط تقسيم PDF">
+              <div className="pdf-mode-map" role="list" aria-label="أنماط تقسيم PDF">
                 {pdfModes.map((mode, index) => (
-                  <span key={mode}>
+                  <span key={mode} role="listitem">
                     <b>{String(index + 1).padStart(2, "0")}</b>
                     {mode}
                   </span>

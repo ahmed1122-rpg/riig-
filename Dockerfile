@@ -27,7 +27,9 @@ RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
 COPY apps ./apps
 COPY packages ./packages
 RUN npm run build
-RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
+RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund \
+  && find /workspace/node_modules /workspace/apps /workspace/packages \
+    -type f -name '*.ts' -delete
 COPY scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
 FROM node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110 AS runtime-base
@@ -38,7 +40,11 @@ ENV API_PORT=4000
 # Sharp/Pango requires a fontconfig configuration even when every exported
 # text layer supplies its own reviewed font file. Keep discovery deterministic
 # and avoid production warnings from the slim base image.
-RUN apk add --no-cache fontconfig
+RUN apk add --no-cache \
+  fontconfig \
+  openssl=3.5.8-r0 \
+  libssl3=3.5.8-r0 \
+  libcrypto3=3.5.8-r0
 
 # Generates the reviewed Adobe fixtures in the exact Linux/font stack used by
 # production. The host command targets this stage so Windows and macOS cannot
@@ -107,7 +113,8 @@ RUN ADOBE_GOLDEN_OUTPUT_DIRECTORY=/tmp/adobe-golden-actual \
 # tooling. Removing it also reduces the vulnerability and mutation surface.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
   && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
-    /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx \
+  && find /app -type f -name '*.ts' -delete
 
 USER node
 EXPOSE 4000

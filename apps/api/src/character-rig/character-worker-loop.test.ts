@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ObjectStorage } from "../storage/object-storage.js";
-import type { CharacterInferenceProvider } from "./character-inference-provider.js";
 import type { CharacterJobRepository } from "./character-job-repository.js";
 import type { CharacterJobResultCommitter } from "./character-job-result-committer.js";
 import type { CharacterRigRepository } from "./character-rig-repository.js";
@@ -22,7 +21,6 @@ describe("runCharacterWorkerLoop", () => {
       jobs: { claimNext } as unknown as CharacterJobRepository,
       characterRigs: {} as CharacterRigRepository,
       resultCommitter: {} as CharacterJobResultCommitter,
-      provider: {} as CharacterInferenceProvider,
       storage: {} as ObjectStorage,
       workerId: "character-loop-1",
       leaseMilliseconds: 60_000,

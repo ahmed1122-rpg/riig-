@@ -166,6 +166,7 @@ export function WorkspacePipeline({
   return (
     <div
       className="workspace-progress pro-workspace-progress"
+      role="list"
       aria-label="مراحل الإنتاج"
     >
       {steps.map((step, index) => {
@@ -179,7 +180,7 @@ export function WorkspacePipeline({
             ? "is-current"
             : "";
         return (
-          <div key={step.name} className={className}>
+          <div key={step.name} className={className} role="listitem">
             <span>
               {persistedSource && index < 2 ? (
                 <Icon name="check" size={12} />

@@ -1,8 +1,14 @@
 export function abortableDelay(
   milliseconds: number,
   signal?: AbortSignal,
+  schedule?: (milliseconds: number) => Promise<void>,
 ): Promise<void> {
   if (signal?.aborted) return Promise.resolve();
+
+  if (schedule) {
+    if (!signal) return schedule(milliseconds);
+    return scheduledAbortableDelay(milliseconds, signal, schedule);
+  }
 
   return new Promise((resolve) => {
     const done = () => {
@@ -15,4 +21,23 @@ export function abortableDelay(
     // keep the process alive even when a dependency outage closes every socket.
     signal?.addEventListener("abort", done, { once: true });
   });
+}
+
+async function scheduledAbortableDelay(
+  milliseconds: number,
+  signal: AbortSignal,
+  schedule: (milliseconds: number) => Promise<void>,
+): Promise<void> {
+  let stop: (() => void) | undefined;
+  try {
+    await Promise.race([
+      schedule(milliseconds),
+      new Promise<void>((resolve) => {
+        stop = resolve;
+        signal.addEventListener("abort", stop, { once: true });
+      }),
+    ]);
+  } finally {
+    if (stop) signal.removeEventListener("abort", stop);
+  }
 }

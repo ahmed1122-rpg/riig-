@@ -22,6 +22,7 @@ include /etc/nginx/snippets/security-headers.conf;
 test("accepts the trusted proxy and all-path security header contract", () => {
   const securityHeaders = `
 add_header Strict-Transport-Security;
+add_header Cross-Origin-Opener-Policy "same-origin";
 add_header Reporting-Endpoints 'csp-endpoint="/v1/security/csp-report"';
 add_header Content-Security-Policy "style-src 'self'; report-uri /v1/security/csp-report; report-to csp-endpoint";
 `;
@@ -35,6 +36,7 @@ test("rejects an enforced CSP that retains unsafe-inline", () => {
   const violations = verifyNginxDeployment(
     validNginx,
     `add_header Strict-Transport-Security;
+add_header Cross-Origin-Opener-Policy "same-origin";
 add_header Reporting-Endpoints 'csp-endpoint="/v1/security/csp-report"';
 add_header Content-Security-Policy "style-src 'self' 'unsafe-inline'; report-uri /v1/security/csp-report; report-to csp-endpoint";`,
   );
