@@ -2,7 +2,7 @@
 
 # QA intentionally retains Git and development dependencies. It is never used
 # as a production runtime image.
-FROM node:24.18.1-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS qa-dependencies
+FROM node:26.8-bookworm-slim@sha256:cd9f682fa2885cd1056e830424764158570061c59736a1da836bc3d73df095ae AS qa-dependencies
 WORKDIR /workspace
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
@@ -24,7 +24,7 @@ COPY packages/media-processing/package.json ./packages/media-processing/package.
 COPY packages/presets/package.json ./packages/presets/package.json
 RUN --mount=type=cache,id=motionprep-npm,target=/root/.npm,sharing=locked npm ci
 
-FROM node:24.18.1-bookworm@sha256:19cd848a0e073d34bd8cd5545a1b6b4d28489b3e3b607366621ced442bd5f6b4 AS qa
+FROM node:26.8-bookworm@sha256:e7bc1a4cd2419953c91f9a6f7bb6efb3737773093fb4ded0b1c77a0a5831fac4 AS qa
 WORKDIR /workspace
 ENV CI=true
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
