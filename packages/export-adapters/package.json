@@ -21,7 +21,7 @@
     "@motionprep/contracts": "*",
     "@motionprep/layer-domain": "*",
     "ag-psd": "31.0.2",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@types/node": "^24.0.10",
