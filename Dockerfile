@@ -2,7 +2,7 @@
 
 # Keep the explicit image version aligned with .node-version. The deployment
 # verifier rejects drift while the digest preserves immutable builds.
-FROM node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110 AS build
+FROM node:26.8-alpine3.23@sha256:a3024faf41c40992531ecfb00604384665be870a44626afaf181c6d583f89296 AS build
 WORKDIR /workspace
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 ENV NPM_CONFIG_FUND=false
@@ -32,7 +32,7 @@ RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund \
     -type f -name '*.ts' -delete
 COPY scripts/check-worker-health.mjs ./scripts/check-worker-health.mjs
 
-FROM node:24.18.1-alpine3.23@sha256:c2cc26d8f991c2db236ad51a61efee843c482372d6d22570787309d511694110 AS runtime-base
+FROM node:26.8-alpine3.23@sha256:a3024faf41c40992531ecfb00604384665be870a44626afaf181c6d583f89296 AS runtime-base
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000
